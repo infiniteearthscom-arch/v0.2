@@ -13,6 +13,7 @@ export const hashPassword = async (password) => {
 };
 
 export const verifyPassword = async (password, hash) => {
+  if (!hash) return false;
   return bcrypt.compare(password, hash);
 };
 
@@ -44,13 +45,13 @@ export const verifyToken = (token) => {
 // USER OPERATIONS
 // ============================================
 
+// Create user with email/password
 export const createUser = async (username, email, password) => {
   const passwordHash = await hashPassword(password);
   
-  // Create user
   const userResult = await query(
-    `INSERT INTO users (username, email, password_hash, display_name)
-     VALUES ($1, $2, $3, $1)
+    `INSERT INTO users (username, email, password_hash, display_name, auth_provider)
+     VALUES ($1, $2, $3, $1, 'local')
      RETURNING id, username, email, display_name, created_at`,
     [username, email, passwordHash]
   );
@@ -66,9 +67,80 @@ export const createUser = async (username, email, password) => {
   return user;
 };
 
+// Create or find user from OAuth provider
+export const findOrCreateOAuthUser = async (provider, oauthId, email, displayName, avatarUrl) => {
+  // First check if this OAuth account already exists
+  let user = await queryOne(
+    `SELECT id, username, email, display_name, avatar_url, created_at
+     FROM users WHERE auth_provider = $1 AND oauth_id = $2`,
+    [provider, oauthId]
+  );
+
+  if (user) {
+    // Update avatar and display name in case they changed
+    await query(
+      `UPDATE users SET display_name = $1, avatar_url = $2 WHERE id = $3`,
+      [displayName || user.display_name, avatarUrl || user.avatar_url, user.id]
+    );
+    return { user, isNew: false };
+  }
+
+  // Check if email already exists (user might have registered with email/password first)
+  user = await queryOne(
+    `SELECT id, username, email, display_name, avatar_url, created_at
+     FROM users WHERE email = $1`,
+    [email]
+  );
+
+  if (user) {
+    // Link OAuth to existing account
+    await query(
+      `UPDATE users SET auth_provider = $1, oauth_id = $2, avatar_url = COALESCE($3, avatar_url)
+       WHERE id = $4`,
+      [provider, oauthId, avatarUrl, user.id]
+    );
+    return { user, isNew: false };
+  }
+
+  // Create new user — generate a username from email or display name
+  let baseUsername = (displayName || email.split('@')[0])
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .substring(0, 24);
+  
+  // Make sure username is unique
+  let username = baseUsername;
+  let attempt = 0;
+  while (true) {
+    const existing = await queryOne(
+      `SELECT id FROM users WHERE username = $1`,
+      [username]
+    );
+    if (!existing) break;
+    attempt++;
+    username = `${baseUsername}_${attempt}`;
+  }
+
+  const userResult = await query(
+    `INSERT INTO users (username, email, display_name, avatar_url, auth_provider, oauth_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, username, email, display_name, avatar_url, created_at`,
+    [username, email, displayName || username, avatarUrl, provider, oauthId]
+  );
+
+  user = userResult.rows[0];
+
+  // Create initial resources
+  await query(
+    `INSERT INTO player_resources (user_id) VALUES ($1)`,
+    [user.id]
+  );
+
+  return { user, isNew: true };
+};
+
 export const findUserByEmail = async (email) => {
   return queryOne(
-    `SELECT id, username, email, password_hash, display_name, avatar_url, created_at
+    `SELECT id, username, email, password_hash, display_name, avatar_url, auth_provider, created_at
      FROM users WHERE email = $1`,
     [email]
   );
@@ -84,7 +156,7 @@ export const findUserByUsername = async (username) => {
 
 export const findUserById = async (id) => {
   return queryOne(
-    `SELECT id, username, email, display_name, avatar_url, credits, created_at
+    `SELECT id, username, email, display_name, avatar_url, credits, auth_provider, created_at
      FROM users WHERE id = $1`,
     [id]
   );
@@ -95,6 +167,44 @@ export const updateUserOnline = async (userId, isOnline) => {
     `UPDATE users SET is_online = $1, last_seen_at = NOW() WHERE id = $2`,
     [isOnline, userId]
   );
+};
+
+// ============================================
+// GOOGLE OAuth HELPERS
+// ============================================
+
+// Exchange Google auth code for tokens
+export const getGoogleTokens = async (code) => {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: `${process.env.SERVER_URL || 'http://localhost:3001'}/api/auth/google/callback`,
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(`Google token error: ${data.error_description || data.error}`);
+  }
+  return data;
+};
+
+// Get Google user profile from access token
+export const getGoogleUserProfile = async (accessToken) => {
+  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(`Google profile error: ${data.error.message}`);
+  }
+  return data;
 };
 
 // ============================================

@@ -3,16 +3,19 @@ import {
   createUser, 
   findUserByEmail, 
   findUserByUsername,
+  findOrCreateOAuthUser,
   verifyPassword, 
   generateToken,
-  authMiddleware 
+  authMiddleware,
+  getGoogleTokens,
+  getGoogleUserProfile,
 } from '../auth/index.js';
 import { queryOne } from '../db/index.js';
 
 const router = Router();
 
 // ============================================
-// REGISTER
+// EMAIL/PASSWORD REGISTER
 // ============================================
 router.post('/register', async (req, res) => {
   try {
@@ -67,7 +70,7 @@ router.post('/register', async (req, res) => {
 });
 
 // ============================================
-// LOGIN
+// EMAIL/PASSWORD LOGIN
 // ============================================
 router.post('/login', async (req, res) => {
   try {
@@ -81,6 +84,13 @@ router.post('/login', async (req, res) => {
     const user = await findUserByEmail(email);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Check if this is an OAuth-only account
+    if (user.auth_provider !== 'local' && !user.password_hash) {
+      return res.status(401).json({ 
+        error: `This account uses ${user.auth_provider} login. Please sign in with ${user.auth_provider}.` 
+      });
     }
     
     // Verify password
@@ -110,6 +120,68 @@ router.post('/login', async (req, res) => {
 });
 
 // ============================================
+// GOOGLE OAUTH
+// ============================================
+
+// Step 1: Redirect user to Google
+router.get('/google', (req, res) => {
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: `${process.env.SERVER_URL || 'http://localhost:3001'}/api/auth/google/callback`,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'offline',
+    prompt: 'consent',
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+// Step 2: Google redirects back with a code
+router.get('/google/callback', async (req, res) => {
+  try {
+    const { code, error } = req.query;
+
+    if (error) {
+      console.error('Google OAuth error:', error);
+      return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}?auth_error=${error}`);
+    }
+
+    if (!code) {
+      return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}?auth_error=no_code`);
+    }
+
+    // Exchange code for tokens
+    const tokens = await getGoogleTokens(code);
+
+    // Get user profile
+    const profile = await getGoogleUserProfile(tokens.access_token);
+
+    // Find or create user
+    const { user, isNew } = await findOrCreateOAuthUser(
+      'google',
+      profile.id,
+      profile.email,
+      profile.name,
+      profile.picture
+    );
+
+    // Generate JWT
+    const token = generateToken(user);
+
+    // Redirect to frontend with token
+    // Frontend will pick up the token from the URL and store it
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    res.redirect(`${clientUrl}?token=${token}&provider=google&isNew=${isNew}`);
+
+  } catch (error) {
+    console.error('Google callback error:', error);
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    res.redirect(`${clientUrl}?auth_error=google_failed`);
+  }
+});
+
+// ============================================
 // GET CURRENT USER
 // ============================================
 router.get('/me', authMiddleware, async (req, res) => {
@@ -127,6 +199,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         email: req.user.email,
         displayName: req.user.display_name,
         avatarUrl: req.user.avatar_url,
+        authProvider: req.user.auth_provider,
         createdAt: req.user.created_at,
       },
       resources: resources ? {
