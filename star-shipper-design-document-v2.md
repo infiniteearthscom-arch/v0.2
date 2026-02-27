@@ -531,39 +531,320 @@ Hybrid system: real-time travel and encounters, tactical pause for combat decisi
 
 ---
 
-## Resource Economy
+## Resource System
 
-### Resources
+Resources are the foundation of Star Shipper's economy. Players survey planets to discover deposits, harvest them manually or via automated harvesters, and use resources for crafting, trading, shipbuilding, and quests.
 
-| Resource | Source | Primary Use |
-|----------|--------|-------------|
-| Credits | Trade, missions | Universal currency |
-| Metals | Asteroids, planets | Construction, ships, hull cells |
-| Crystals | Asteroids, planets | Electronics, advanced systems |
-| Gases | Gas giants, ice planets | Fuel, chemicals |
-| Rare Earth | Specialized extraction | Advanced tech, rare systems |
-| Fuel | Refined from gases | Ship operation |
-| Food | Terran/Ocean planets | Population |
-| Electronics | Manufactured | Systems, buildings |
-| Components | Manufactured | Ships, advanced buildings |
+Every resource has four quality stats (0-100) that determine its value and effectiveness. Higher stats make resources more valuable for crafting and trading, creating a hunt for "perfect rolls" on rare materials.
 
-### Production Chains
+### Resource Categories
 
-```
-Gases → Fuel Refinery → Fuel
+#### 1. Raw Ores
+Solid minerals extracted from rocky planets, moons, and asteroids.
 
-Metals + Crystals → Electronics Plant → Electronics
+| Resource | Primary Locations | Notes |
+|----------|-------------------|-------|
+| **Iron** | Rocky planets, asteroids | Common building material |
+| **Titanium** | Barren moons, asteroids | Lightweight hull material |
+| **Copper** | Rocky planets | Electronics, wiring |
+| **Crystite** | Crystal caves, ice planets | Energy conductors |
+| **Uranium** | Barren planets, moons | Fuel production, reactors |
 
-Rare Earth + Electronics → Component Forge → Ship Components
+#### 2. Gases
+Atmospheric and nebula resources, collected from gas giants and space.
 
-Ship Components + Metals → Shipyard → Ships/Rooms/Systems
-```
+| Resource | Primary Locations | Notes |
+|----------|-------------------|-------|
+| **Hydrogen** | Gas giants, nebulae | Basic fuel component |
+| **Helium-3** | Gas giants, moons | Advanced fuel, fusion |
+| **Plasma** | Stars (dangerous!), nebulae | High-energy applications |
+| **Nitrogen** | Atmospheric planets | Life support, chemicals |
+| **Xenon** | Gas giants | Ion thrusters, lighting |
 
-### Trade
-- Stations buy/sell at varying prices
-- Supply and demand affects prices
-- Trade routes can be automated (mid-game)
-- Faction relationships affect trade access
+#### 3. Biologicals
+Organic materials from life-bearing worlds.
+
+| Resource | Primary Locations | Notes |
+|----------|-------------------|-------|
+| **Biomass** | Terrestrial planets | Food, organic compounds |
+| **Spores** | Fungal worlds, caves | Medicine, bioweapons |
+| **Coral** | Ocean planets | Decorative, structural |
+| **Amber Sap** | Forest planets | Preservatives, luxury |
+
+#### 4. Energy
+Refined or naturally-occurring power sources.
+
+| Resource | Primary Locations | Notes |
+|----------|-------------------|-------|
+| **Fuel Cells** | Stations (crafted) | Universal harvester fuel |
+| **Solar Crystals** | Close to stars | Passive energy generation |
+| **Dark Matter** | Anomalies, deep space | Rare, experimental tech |
+
+#### 5. Exotic / Rare
+Unusual materials with special properties, often found in dangerous zones.
+
+| Resource | Primary Locations | Notes |
+|----------|-------------------|-------|
+| **Void Essence** | Black hole proximity | Reality-bending properties |
+| **Ancient Alloy** | Ruins, derelicts | Precursor technology |
+| **Quantum Dust** | Unstable anomalies | Unpredictable, powerful |
+| **Neutronium** | Neutron stars (deadly!) | Impossibly dense |
+
+### Quality Stats
+
+Every resource instance has four stats ranging from 0-100:
+
+| Stat | Description | Affects |
+|------|-------------|---------|
+| **Purity** | How free of contaminants | Refining yield, crafting efficiency |
+| **Stability** | Molecular/atomic integrity | Crafting success rate, storage safety |
+| **Potency** | Effectiveness/concentration | Recipe output quality, fuel efficiency |
+| **Density** | Mass per unit volume | Cargo weight, structural applications |
+
+#### Stat Generation
+
+When a deposit spawns, each stat is rolled independently:
+
+- **Base Roll**: 1-100 (uniform random)
+- **Planet type match**: +10 to +20 bonus
+- **Dangerous zone**: +15 to +30 bonus
+- **Rare resource**: Stats tend toward extremes (very high or very low)
+
+#### Quality Tiers
+
+Quality tier is determined by the **average** of all four stats:
+
+| Tier | Average Stats | Prefix | Color Code |
+|------|---------------|--------|------------|
+| 1 | 0-20 | Impure | Gray |
+| 2 | 21-40 | Standard | White |
+| 3 | 41-60 | Refined | Green |
+| 4 | 61-80 | Superior | Blue |
+| 5 | 81-100 | Pristine | Purple |
+
+**Examples:**
+- "Impure Iron" (Purity: 12, Stability: 18, Potency: 8, Density: 22) → Avg: 15
+- "Pristine Titanium" (Purity: 92, Stability: 88, Potency: 85, Density: 91) → Avg: 89
+
+#### Stat Importance by Category
+
+While all resources have all 4 stats, certain stats matter more for specific crafting uses:
+
+| Category | Primary Stats | Secondary Stats |
+|----------|---------------|-----------------|
+| Ores | Purity, Density | Stability, Potency |
+| Gases | Potency, Stability | Purity, Density |
+| Biologicals | All equal | — |
+| Energy | Potency, Stability | Purity, Density |
+| Exotic | All equal (all matter!) | — |
+
+### Surveying System
+
+#### Orbital Scan
+
+**Requirements:** Ship in orbit around planet/moon
+**Costs:** 1 Scanner Probe (consumed)
+
+**Reveals:**
+- List of resource TYPES present on the body
+- Approximate abundance (Scarce / Moderate / Abundant)
+- Number of harvestable deposits
+- Presence of hazards (general warning)
+
+**Does NOT reveal:**
+- Exact resource quantities
+- Quality stats
+- Specific deposit locations
+
+#### Ground Scanner
+
+**Requirements:** Ship landed on planet OR drone deployed from orbit
+**Costs:** 1 Advanced Scanner Probe (consumed)
+
+**Reveals:**
+- Exact deposit locations (marked on map)
+- Resource type and quantity per deposit
+- Stat RANGES per deposit (e.g., "Purity: 70-85")
+- Hazard specifics (damage per hour, enemy types)
+
+**Does NOT reveal:**
+- Exact stats (revealed only when harvested)
+
+### Harvesting
+
+#### Deposits
+
+Each planet/moon has a fixed number of **Harvesting Slots** (typically 2-6 based on body size):
+
+- Small moon: 2 slots
+- Medium planet: 4 slots
+- Large planet: 6 slots
+- Gas giant: 4 slots (orbital platforms)
+
+Each slot contains one **Deposit** with:
+- Resource type
+- Quantity (slightly randomized, e.g., 500 units)
+- Four quality stats (exact values)
+
+**Respawn:** 24 hours after depletion, a new deposit spawns with:
+- Possibly different resource type
+- New randomized quantity
+- New randomized stats
+
+This makes discovering high-stat deposits extremely valuable!
+
+#### Manual Harvesting (Ship Module)
+
+**Requirements:**
+- Ship landed at deposit
+- Harvesting Module installed on ship
+
+**Process:**
+1. Player lands at deposit
+2. Activates harvesting (can go AFK/offline)
+3. Resources extracted over time
+4. Extraction continues until deposit depleted or player stops
+
+**Speed:** ~50 units/hour (affected by module quality)
+**Hazards:** Environmental damage applies to ship hull during harvest
+
+**Pros:** No fuel cost, faster than automated
+**Cons:** Ship is occupied, vulnerable to hazards
+
+#### Automated Harvester (Deployable)
+
+**Requirements:**
+- Harvester unit (crafted or purchased)
+- Fuel Cells for operation
+
+**Process:**
+1. Player deploys harvester at deposit (from orbit or landed)
+2. Harvester consumes fuel and extracts resources
+3. Player returns later to collect
+4. Harvester remains until retrieved
+
+**Speed:** ~30 units/hour (slower than manual)
+**Fuel Cost:** 1 Fuel Cell per 6 hours of operation
+**Capacity:** 200 units (must collect before continuing)
+**Max Deployed:** 5 harvesters per player (expandable via skill tree)
+
+**Pros:** Passive income, can deploy multiple across planets
+**Cons:** Fuel cost, slower, visible to other players
+
+#### Harvesting Slots & Multiplayer
+
+- Each deposit slot can have ONE harvester OR one player manually harvesting
+- Multiple players can harvest DIFFERENT slots on same planet
+- Players can see others' deployed harvesters (ownership visible)
+- Cannot steal or destroy other players' harvesters
+- Cannot harvest from a slot another player is using
+- Deposits only visible after player scans (encourages exploration)
+
+### Dangerous Zones
+
+Certain areas have environmental hazards that damage ships/harvesters but offer better resources:
+
+#### Hazard Types
+
+| Hazard | Damage | Found At | Stat Bonus |
+|--------|--------|----------|------------|
+| Dust Storms | 2 hull/hour | Desert planets | +5 |
+| Radiation | 5 hull/hour | Near stars, uranium deposits | +10 |
+| Extreme Cold | 3 hull/hour | Ice planets, far orbits | +5 |
+| Toxic Atmosphere | 4 hull/hour | Volcanic, gas giants | +10 |
+| Gravitational Stress | 6 hull/hour | Near black holes, neutron stars | +20 |
+
+#### Enemy Presence
+
+Some zones have NPC pirates or hostile creatures:
+
+- **Pirate Patrols:** Random attacks during harvesting, can destroy harvesters
+- **Hostile Fauna:** Damage over time on biological worlds
+- **Automated Defenses:** Ancient ruins have guardian drones
+
+### Resource Spawning Rules
+
+#### Planet Type Affinities
+
+| Planet Type | Common Resources | Rare Resources |
+|-------------|------------------|----------------|
+| Rocky/Barren | Iron, Copper, Titanium | Uranium, Ancient Alloy |
+| Gas Giant | Hydrogen, Helium-3, Xenon | Plasma |
+| Ice/Frozen | Nitrogen, Crystite | Helium-3 |
+| Volcanic | Iron, Copper | Plasma, Neutronium |
+| Terrestrial | Biomass, Iron | Spores, Amber Sap |
+| Ocean | Coral, Biomass | Spores |
+| Anomaly/Special | Quantum Dust, Void Essence | Dark Matter |
+
+#### Spawn Chances
+
+For each deposit slot when generating:
+- 70% - Roll from planet's Common pool
+- 20% - Roll from planet's Rare pool
+- 8% - Roll from ANY Common pool (random planet type)
+- 2% - Roll from ANY Rare pool (includes Exotic)
+
+This means most resources match the planet type, but there's a small chance of finding anything anywhere.
+
+### Economy Integration
+
+#### Base Prices
+
+| Tier | Price Multiplier |
+|------|------------------|
+| Common resources | 1x |
+| Rare resources | 5x |
+| Exotic resources | 25x |
+
+#### Quality Multiplier
+
+Price = Base Price × Quality Multiplier
+
+Quality Multiplier = 0.5 + (Average Stats / 100)
+
+Examples:
+- Impure (avg 15): 0.65x
+- Standard (avg 35): 0.85x
+- Refined (avg 50): 1.0x
+- Superior (avg 70): 1.2x
+- Pristine (avg 90): 1.4x
+
+#### Location-Based Pricing (Future)
+
+- Local Abundance: -30% to -50% price
+- Same System: -10% price
+- Adjacent Systems: Base price
+- Far Systems: +20% to +50% price
+- Scarcity: +100% or more
+
+### Resource Items
+
+#### Scanner Probes
+
+| Item | Crafting Cost | Use |
+|------|---------------|-----|
+| Scanner Probe | 5 Iron, 2 Copper | Orbital scan |
+| Advanced Scanner Probe | 3 Titanium, 5 Copper, 1 Crystite | Ground scan |
+
+#### Harvesters
+
+| Item | Crafting Cost | Stats |
+|------|---------------|-------|
+| Basic Harvester | 20 Iron, 10 Copper | 30 units/hr, 200 capacity |
+| Advanced Harvester | 15 Titanium, 10 Copper, 5 Crystite | 50 units/hr, 500 capacity |
+| Industrial Harvester | 30 Titanium, 20 Crystite, 5 Uranium | 100 units/hr, 1000 capacity |
+
+#### Fuel
+
+| Item | Crafting Cost | Use |
+|------|---------------|-----|
+| Fuel Cell | 10 Hydrogen, 2 Copper | Powers harvester for 6 hours |
+
+### Inventory Rules
+
+- Resources with identical stats stack together
+- Resources with different stats stored separately
+- Weight system limits cargo capacity (uses Density stat)
 
 ---
 
@@ -662,13 +943,109 @@ All management interfaces use draggable windows:
 
 ## Open Questions
 
-1. **Saving**: Local storage? Cloud saves? Export/import?
-2. **Multiplayer**: Single player only, or future MP consideration?
+1. **Saving**: ~~Local storage? Cloud saves? Export/import?~~ ✅ Cloud saves via PostgreSQL
+2. **Multiplayer**: ~~Single player only, or future MP consideration?~~ ✅ Real-time multiplayer planned (hybrid: shared hubs, instanced missions)
 3. **Procedural vs. Fixed**: Fully procedural galaxy, or handcrafted story systems?
 4. **Faction depth**: How complex should AI factions be?
 5. **Real-time pacing**: How fast should time pass? Adjustable speed?
 6. **Room destruction**: Can rooms be completely destroyed, or just damaged?
 7. **Crew permadeath**: Are dead crew gone forever, or can cloning recover them?
+
+---
+
+## System View Design
+
+The System View is the main gameplay screen where players fly their ships through solar systems, visit planets and stations, and interact with other players.
+
+### Core Specifications
+
+- **Perspective**: Top-down 2D (like FTL, Asteroids)
+- **Rendering**: SVG elements (sharp, scalable, easy to style)
+- **Window Type**: Large draggable window (allows other management windows around it)
+- **Camera**: Both follow mode (ship centered) and free camera (pan around), togglable
+
+### Scale & Zoom
+
+- Zoom level allows viewing 2-3 planets/points of interest at a time
+- Scroll wheel to zoom in/out
+- Minimap in corner showing most (not all) of the system
+- Minimap helps navigation to off-screen points of interest
+
+### Movement & Physics
+
+- **Controls**: WASD/Arrow keys (direct control) AND click-to-move (autopilot)
+- **Physics**: Floaty/drifty with momentum (space physics feel)
+- **Autopilot**: Click on planet/station to auto-fly there, can cancel anytime
+- **Stopping**: Can dock at stations/planets OR stop anywhere in open space
+
+### Sol System Contents
+
+Sol is **handcrafted** (not procedural) with:
+- Sun (center, glowing effect)
+- Mercury, Venus, Earth, Mars (inner planets)
+- Asteroid Belt (between Mars and Jupiter)
+- Jupiter, Saturn (outer planets — can add more later)
+- Luna Station (orbiting Earth, starting location)
+- Planets orbit the sun in real-time
+
+### Procedural System Generation
+
+All systems except Sol are procedurally generated using seeded randomness (system ID = seed). Generated data is stored in the database on first visit for persistence.
+
+#### Star Types & Rarity
+
+| Star Type | Rarity | Planet Count | Planet Types | Asteroid Belts | Notes |
+|-----------|--------|--------------|--------------|----------------|-------|
+| **Red Dwarf** | 50% | 1-3 | Rocky, Ice | 0-1 | Common, cold, small systems |
+| **Yellow Star** | 25% | 4-8 | All types | 1-2 | Balanced, habitable zones |
+| **Blue Giant** | 10% | 5-10 | Gas giants, Hot rocky | 1-3 | Hot inner zone, many moons |
+| **White Dwarf** | 8% | 0-3 | Barren, Ice | 0-1 | Old, sparse, mostly dead |
+| **Neutron Star** | 5% | 0-2 | Exotic, Barren | 0-1 | Dangerous, rare resources |
+| **Black Hole** | 2% | 0-1 | Exotic | 0-2 (debris disks) | Very dangerous, extreme loot |
+
+#### Space Stations
+- 20-30% of systems have a station
+- More likely in Yellow/Red star systems (civilized space)
+- Less likely near Neutron Stars/Black Holes (frontier)
+- Station presence stored in database for persistence
+
+#### Generation Flow
+1. First player to visit a system triggers generation
+2. Server generates using system ID as seed
+3. Generated data stored in database
+4. All subsequent visits load from database
+
+### Build Chunks
+
+**Chunk 1: Basic Canvas**
+- Large draggable window with SVG viewport
+- Camera system (pan, zoom with scroll wheel)
+- Starfield background
+- Sun at center (glowing effect)
+
+**Chunk 2: Celestial Bodies**
+- Planets orbiting the sun (Mercury → Saturn)
+- Asteroid belt between Mars and Jupiter
+- Luna Station (orbiting Earth)
+- Planets slowly orbit in real-time
+
+**Chunk 3: Your Ship**
+- Ship appears at Luna Station (starting dock)
+- WASD controls with floaty/drift physics
+- Ship rotation (point toward movement or mouse)
+- Camera follow mode (toggle with a key)
+
+**Chunk 4: Navigation**
+- Minimap in corner (shows whole system, your position, major bodies)
+- Click on planet/station to set autopilot destination
+- Autopilot flies you there (can cancel anytime)
+- Arrival/docking when you reach a destination
+
+**Chunk 5: Polish**
+- Zoom levels (scroll wheel)
+- Free camera mode (middle-click drag or toggle)
+- Visual effects (engine glow, trails)
+- UI overlay (speed, destination, coordinates)
 
 ---
 
@@ -679,3 +1056,276 @@ Star Shipper is a serious 4X space sandbox with deep FTL-inspired ship construct
 The layered ship building (hull → rooms → systems → crew) provides enormous customization depth while remaining visually clear through the clean vector aesthetic. The windowed management interface allows players to handle complex multi-system empires without losing sight of their ships.
 
 Progression flows naturally from lone pilot with a single scout to galactic emperor commanding fleets of custom-designed warships and managing a network of colonies. The hybrid real-time/tactical combat system creates tense battles where ship design decisions matter.
+
+---
+
+## Implementation Status (Updated 2026-02-19, Session 8)
+
+### Design Decisions & Pivots
+
+The original design doc describes a cell-painting ship builder (hull grid → rooms → systems). During implementation, this was **redesigned to a hull-with-slots system** (Session 5-6) where players buy pre-designed hull types and fit modules into typed slots. The old cell-painting code has been fully removed. The hull shapes are still procedurally rendered using the original grid data, but players don't paint cells — they select from 6 hull types (fighter, scout, shuttle, freighter, frigate, capital) and fit modules.
+
+### Completed Features
+
+#### Core Infrastructure
+- ✅ React 18 + Vite frontend with Tailwind CSS
+- ✅ Node.js + Express + PostgreSQL 18 backend
+- ✅ Session-based authentication (express-session + bcrypt)
+- ✅ Zustand state management with immer middleware
+- ✅ Draggable, resizable, minimizable window system with z-order stacking
+- ✅ Toolbar with toggle buttons (open/close windows, active state highlighting)
+- ✅ Credits economy (starting 1000 cr, deducted on purchases)
+
+#### Ship System (Redesigned — Hull-with-Slots)
+- ✅ 6 hull types with unique shapes, stats, and slot configurations
+- ✅ Procedural canvas ship renderer (multi-pass: base fill, panel lines, edge lighting, viewport, engine glow)
+- ✅ Ship fitting window — drag modules from cargo into typed slots
+- ✅ Module quality system — crafting quality affects fitted stat scaling (Q50 = baseline, Q100 = 2x)
+- ✅ Quality visualization (colored bars, tier badges, stat breakdowns in tooltips)
+- ✅ Station vendor tab — buy hulls, modules, and supplies with credits
+
+#### Fleet System
+- ✅ Fleet management window — ship list with thumbnails, rename, set active
+- ✅ Active ship drives flight physics (speed/maneuver scale from ship stats)
+- ✅ Up to 3 ships in active fleet (configurable, planned to tie to skill tree)
+- ✅ Fleet rendered in system view — Flying-V formation with tiny procedural ship icons
+- ✅ Engine contrails — per-ship, engine-colored, fading trails
+- ✅ Formation badges in fleet window (LEAD, WING 1, WING 2, DOCKED)
+
+#### System View & Flight
+- ✅ Top-down 2D SVG rendering of Sol system (Sun + 8 planets + asteroid belt + 2 stations)
+- ✅ Real-time orbital mechanics with synchronized physics/rendering time
+- ✅ Parallax starfield background
+- ✅ Camera: follow mode + free pan + scroll zoom
+- ✅ WASD/arrow ship controls with momentum physics, drag, speed clamping
+- ✅ S key: brake first, then reverse thrust when stopped
+- ✅ Click-to-autopilot with intercept prediction for moving targets
+- ✅ Tuned approach/docking (slowdown at 200px, fast snap at 150/s)
+- ✅ Ships follow orbiting bodies while docked
+- ✅ HUD: speed, autopilot status, fleet count, active ship name
+
+#### Resource System
+- ✅ 19 resources across 5 categories seeded in database
+- ✅ Planet type affinities, deposit spawning on first visit
+- ✅ Orbital scan (reveals types + abundance) and ground scan (stats + quantities)
+- ✅ Manual harvesting with cargo limits and volume system
+- ✅ Automated harvesters (deploy with fuel, auto-collect into hoppers)
+- ✅ Unified crafting system — drag-drop ingredients, quality inheritance
+- ✅ 12 module crafting recipes integrated with resource economy
+- ✅ Cargo/inventory with volume tracking, module quality display, trash
+
+#### UI/UX
+- ✅ Planet interaction window — Scan, Harvest, Vendor tabs
+- ✅ Navigation window — system overview, body list, autopilot targets
+- ✅ Resource bar HUD — credits + active ship name
+- ✅ Inventory window — items with slot-type color coding, quality tooltips
+- ✅ Crafting window — collapsible recipe list, ingredient drag-drop
+
+### Not Yet Implemented
+
+| System | Priority | Design Doc Section | Notes |
+|--------|----------|-------------------|-------|
+| Combat | High | §4 Combat Mechanics | Weapon module slots exist, no firing/damage/enemies |
+| Trading (sell resources) | High | §Resource Items | Vendor sells but doesn't buy from player |
+| Multiple star systems | High | §3 Exploration | Only Sol exists, no jump gates/drives |
+| Research/tech tree | Medium | §3.3 Research | UI placeholder exists, no mechanics. Fleet capacity expansion planned here. |
+| Crew management | Medium | §1.5 Crew System | No crew mechanics, just stat placeholders |
+| NPC factions & reputation | Medium | §3.5 Factions | No NPCs beyond static stations |
+| Colonies | Medium | §2 Planetary Dev | Database has colony tables, no UI/mechanics |
+| Dangerous zones/hazards | Low | §Resource System | Designed but not implemented |
+| Per-ship cargo capacity | Low | — | Inventory is global, should tie to active ship cargo stat |
+| Multiplayer sync | Low | — | Socket.io infrastructure exists, no real-time sync |
+
+---
+
+## Technical Architecture
+
+### Tech Stack
+- **Client:** React 18 + Vite, Zustand (with immer), Tailwind CSS, no router, no TypeScript
+- **Server:** Node.js + Express, PostgreSQL 18, express-session, bcrypt, raw SQL (no ORM)
+- **Auth:** Session-based with cookies (`credentials: 'include'`)
+
+### File Locations
+
+#### Server (`star-shipper-server/`)
+```
+src/
+├── api/
+│   ├── auth.js          # Authentication routes
+│   ├── ships.js         # Ship CRUD, design management (some legacy endpoints)
+│   ├── fitting.js       # Fleet, modules, hull/module purchasing, credits
+│   ├── resources.js     # Scanning, harvesting, crafting, cargo management
+│   └── harvesters.js    # Automated harvester deployment and management
+├── auth/
+│   └── index.js         # Auth middleware & helpers
+├── db/
+│   ├── index.js         # PostgreSQL connection (query, queryOne, queryAll)
+│   ├── migrate.js       # Migration runner
+│   └── seed.js          # Data seeding
+├── game/
+│   ├── resources.js     # Resource type definitions
+│   └── deposits.js      # Deposit spawning logic
+├── realtime/
+│   └── socketHandler.js # Socket.io handler (multiplayer infrastructure)
+└── index.js             # Express server entry, session config, route mounting
+
+migrations/
+├── 001_initial_schema.sql    # Users, auth tables
+├── 002_add_oauth.sql         # OAuth additions
+├── 003_resource_system.sql   # Resources, deposits, surveys, harvesters
+├── 004_scanner_probes.sql    # Scanner probe inventory
+├── 005_seed_sol_system.sql   # Sol system bodies + resource seeding
+├── 006_harvest_status.sql    # Harvest session tracking
+├── 007_cargo_slots.sql       # Cargo slot system
+├── 008_unified_cargo_items.sql # Unified cargo items with volume
+├── 009_fix_negative_values.sql # Data integrity fixes
+├── 010_cargo_volume.sql      # Volume-based cargo
+├── 011_harvester_system.sql  # Automated harvester tables
+├── 012_hull_modules.sql      # Hull types, module slots, ships table redesign
+├── 013_module_recipes.sql    # Crafting recipes for modules
+└── 014_active_ship.sql       # Active ship tracking on users table
+```
+
+#### Client (`star-shipper/`)
+```
+src/
+├── components/
+│   ├── ship/
+│   │   ├── ShipBuilderWindow.jsx    # Ship fitting — canvas hull renderer, slot management
+│   │   └── FleetWindow.jsx          # Fleet management — list, rename, active ship
+│   ├── system/
+│   │   ├── SystemView.jsx           # THE BIG FILE (~1600 lines) — SVG solar system,
+│   │   │                            #   flight physics, autopilot, fleet rendering, contrails
+│   │   └── PlanetInteractionWindow.jsx  # Planet/station — scan, harvest, vendor tabs
+│   └── ui/
+│       ├── DraggableWindow.jsx      # Reusable window frame (drag, resize, minimize)
+│       ├── InventoryWindow.jsx      # Cargo with module quality display
+│       ├── CraftingWindow.jsx       # Crafting with drag-drop ingredients
+│       ├── NavigationWindow.jsx     # System map overview, autopilot targets
+│       ├── ResourceBar.jsx          # HUD — credits + active ship name
+│       └── Toolbar.jsx              # Menu buttons (toggle windows)
+├── stores/
+│   ├── authStore.js                 # Auth state (login, session, user data)
+│   └── gameStore.js                 # Zustand — all shared state + actions
+├── utils/
+│   ├── api.js                       # All API calls (resources, ships, fitting, harvesters)
+│   └── shipRenderer.js              # Procedural ship art (detail + icon render modes)
+├── systems/
+│   └── gameData.js                  # Legacy constants (mostly unused — room types, etc.)
+└── App.jsx                          # Auth gate, window rendering, toolbar
+```
+
+**Files that can be deleted** (legacy, replaced):
+- `ShipGrid.jsx`, `MyDesignsWindow.jsx`, `MyShipWindow.jsx`
+- `ShipGraphics.jsx` (replaced by `shipRenderer.js`)
+
+### Database Schema (key tables)
+```sql
+users              — id, username, password_hash, credits (default 1000), active_ship_id
+resources          — user_id, resource_type_id, amount (resource balances)
+cargo_items        — id, user_id, item_type, item_data (JSONB), volume, quality metrics
+ships              — id, user_id, hull_type_id, name, fitted_modules (JSONB), status
+hull_types         — id (fighter/scout/etc), hull_name, hull_class, hull_size,
+                     hull_slots (JSONB), base_speed, base_maneuver, base_armor,
+                     base_shield, base_cargo, base_power, price
+module_recipes     — id, module_type, slot_type, ingredients (JSONB), base_stats (JSONB)
+deposits           — planet resource deposits (scanned/unscanned, quantity, quality)
+harvest_sessions   — active mining sessions (user, deposit, start time, rate)
+harvesters         — deployed auto-harvesters (fuel, hopper capacity, target deposit)
+ship_designs       — LEGACY table (old cell-painting system, kept for FK compatibility)
+player_presence    — multiplayer presence tracking (active_ship_id, location)
+```
+
+---
+
+## Critical Technical Knowledge
+
+### Coordinate System (CRITICAL — caused multiple bug cycles)
+
+The system view flight physics uses a specific angle convention. Changing ANY of these formulas without updating the others WILL break flight:
+
+| Formula | Value | Why |
+|---------|-------|-----|
+| Ship rotation | Standard math degrees: `0=right, -90=up, 90=down, 180=left` | Convention throughout |
+| Thrust direction | `thrustAngle = rotation * (PI / 180)` | NO offset — direct conversion |
+| Autopilot target | `targetAngle = atan2(dy, dx) * (180 / PI)` | NO offset — standard atan2 |
+| SVG icon rotation | `rotate(rotation + 90)` | +90 because ship images point UP |
+| Formation offsets | Ship-local: x=lateral(+right), y=longitudinal(+behind) | Converted via heading vectors |
+
+### Time Synchronization
+Physics and rendering MUST share one time source:
+- Physics loop writes: `gameTimeRef.current = frameNum / 60`
+- Rendering reads: `const time = gameTimeRef.current`
+- **Never** use `frameCount` React state for time — it lags due to batching
+
+### Game Loop Architecture
+The main game loop runs in `useEffect([], [])` — an empty-deps effect that creates a `requestAnimationFrame` loop. It captures initial closure values, so:
+- Physics constants (speed, acceleration, rotation speed) MUST be read from `shipPhysicsRef.current` each frame
+- All real-time state (position, velocity, rotation, trails) stored in refs, not React state
+- React re-renders triggered by `setFrameCount(f => f + 1)` — only for UI updates
+
+### Quality System
+Module quality flows from crafting ingredient quality metrics (purity, stability, potency, density):
+- `scaled_stat = base_stat * (avg_quality / 50)`
+- Q50 = baseline (1.0x), Q100 = 2.0x, Q25 = 0.5x
+- Visual tiers: gray (<40) → green (40-60) → blue (60-80) → purple (80+)
+
+### Ship Renderer (`shipRenderer.js`)
+Two render modes from shared hull shape data (6 hulls defined as 2D grids: 0=empty, 1=armor, 2=interior):
+- **`getShipImage(hullId, scale)`** — Detail mode for fleet window thumbnails. Multi-pass procedural art.
+- **`getShipIcon(hullId)`** — Icon mode for system view. Tiny silhouette at exact pixel `displaySize` (5-14px). Both modes cached after first render.
+
+### Autopilot Tuning
+- Slowdown begins at **200px** from target
+- Minimum approach speed: **20** (prevents crawling)
+- Docking trigger: within **50px** at speed **< 40**
+- Final snap speed: **150/s**
+- Intercept prediction: **70%** factor for moving targets
+- Ships follow orbiting bodies while docked (position snapped each frame)
+
+---
+
+## Common Pitfalls
+
+1. **Angle math** — Any change to rotation/thrust/autopilot risks breaking flight. All four formulas must stay consistent.
+2. **Closure staleness** — Game loop `useEffect([])` captures initial values. Use refs for anything that changes.
+3. **Refs vs state** — Position/velocity/rotation = refs (60fps). Window/UI state = React state. Don't mix.
+4. **Migration numbering** — Check highest existing number (currently 014). User runs manually.
+5. **Hull shape data** — `shipRenderer.js` is the single source of truth. Don't duplicate.
+6. **Credit transactions** — Server uses `FOR UPDATE` row locks. Client refreshes after purchases.
+7. **PostgreSQL 18** — Not 16. Use `PostgreSQL\18` in all paths.
+8. **Zustand persist** — New windows must be merged with persisted state. Check `merge` function.
+9. **Body IDs** — Client uses string names ("mars"), DB uses UUIDs. Server has `resolveBodyId()` helper.
+
+---
+
+## Development Session Log
+
+| # | Date | Focus | Key Deliverables |
+|---|------|-------|------------------|
+| 1 | 02-13 | Schema, deposits, scanning | DB init, resource system foundation |
+| 2 | 02-14 | Manual harvesting, cargo, nav | Mining mechanics, inventory, system map |
+| 3 | 02-15 | Crafting, cargo items | Unified crafting, drag-drop, trash |
+| 4 | 02-17 | Volume cargo, harvesters | Density system, automated mining |
+| 5 | 02-18a | Ship builder redesign | Hull-with-slots, canvas renderer |
+| 6 | 02-18b | Ship fitting, vendor | Fitting window, module recipes, vendor tab |
+| 7 | 02-19a | Active ship, credits, quality | Physics scaling, economy, quality display |
+| 8 | 02-19b | Fleet rendering, polish | Fleet in system view, coordinate fixes, contrails, toolbar toggle, dead code cleanup, documentation |
+
+---
+
+## Next Steps for New Chat
+
+**Suggested priority order:**
+1. Trading system — buy/sell resources at stations with price variation
+2. Combat — weapons fire, shields absorb, enemy encounters
+3. Multiple star systems — jump gates connecting 3-4 systems
+4. Research/tech tree — unlock modules, hulls, fleet capacity
+5. NPC factions — reputation affecting prices and hostility
+
+**To start a new chat, upload:**
+1. This document (`star-shipper-design-document-v2.md`)
+2. The working guide (`star-shipper-working-guide.md`)
+3. Any specific source files needed for the task
+
+Say: *"Star Shipper project. Read the design doc and working guide. Continue with [specific task]. Ask me for any files you need."*

@@ -1,0 +1,948 @@
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { DraggableWindow } from '@/components/ui/DraggableWindow';
+import { useGameStore, useShips } from '@/stores/gameStore';
+import { getShipComponent, getShipScale } from './ShipGraphics';
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const SYSTEM_SIZE = 10000;
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 3;
+const ZOOM_SPEED = 0.001;
+
+// Ship physics
+const SHIP_ACCELERATION = 300;
+const SHIP_BRAKE_POWER = 200;
+const SHIP_MAX_SPEED = 500;
+const SHIP_DRAG = 0.995; // Very low drag for space feel
+const SHIP_ROTATION_SPEED = 180; // Degrees per second
+
+// ============================================
+// SEEDED RANDOM (for procedural generation)
+// ============================================
+
+class SeededRandom {
+  constructor(seed) {
+    this.seed = seed;
+  }
+  
+  next() {
+    this.seed = (this.seed * 1103515245 + 12345) & 0x7fffffff;
+    return this.seed / 0x7fffffff;
+  }
+  
+  range(min, max) {
+    return min + this.next() * (max - min);
+  }
+  
+  int(min, max) {
+    return Math.floor(this.range(min, max + 1));
+  }
+  
+  pick(array) {
+    return array[Math.floor(this.next() * array.length)];
+  }
+  
+  chance(probability) {
+    return this.next() < probability;
+  }
+}
+
+// ============================================
+// STAR TYPES
+// ============================================
+
+const STAR_TYPES = {
+  red_dwarf: {
+    name: 'Red Dwarf',
+    rarity: 0.50,
+    colors: { core: '#ff6644', mid: '#ff4422', outer: '#cc2200', glow: '#ff330033' },
+    size: 40,
+    planetCount: [1, 3],
+    planetTypes: ['rocky', 'ice'],
+    asteroidBelts: [0, 1],
+    stationChance: 0.30,
+  },
+  yellow_star: {
+    name: 'Yellow Star',
+    rarity: 0.25,
+    colors: { core: '#ffffff', mid: '#fff7aa', outer: '#ffdd44', glow: '#ffcc0033' },
+    size: 60,
+    planetCount: [4, 8],
+    planetTypes: ['rocky', 'terran', 'desert', 'ice', 'gas_giant', 'ocean'],
+    asteroidBelts: [1, 2],
+    stationChance: 0.35,
+  },
+  blue_giant: {
+    name: 'Blue Giant',
+    rarity: 0.10,
+    colors: { core: '#ffffff', mid: '#aaddff', outer: '#4488ff', glow: '#0066ff33' },
+    size: 100,
+    planetCount: [5, 10],
+    planetTypes: ['lava', 'gas_giant', 'ice', 'rocky'],
+    asteroidBelts: [1, 3],
+    stationChance: 0.20,
+  },
+  white_dwarf: {
+    name: 'White Dwarf',
+    rarity: 0.08,
+    colors: { core: '#ffffff', mid: '#eeeeff', outer: '#aabbcc', glow: '#ffffff22' },
+    size: 25,
+    planetCount: [0, 3],
+    planetTypes: ['barren', 'ice'],
+    asteroidBelts: [0, 1],
+    stationChance: 0.15,
+  },
+  neutron_star: {
+    name: 'Neutron Star',
+    rarity: 0.05,
+    colors: { core: '#ffffff', mid: '#dd88ff', outer: '#8844aa', glow: '#aa44ff44' },
+    size: 15,
+    planetCount: [0, 2],
+    planetTypes: ['exotic', 'barren'],
+    asteroidBelts: [0, 1],
+    stationChance: 0.10,
+    pulsar: true,
+  },
+  black_hole: {
+    name: 'Black Hole',
+    rarity: 0.02,
+    colors: { core: '#000000', mid: '#110011', outer: '#220022', glow: '#ff440022', accretion: '#ff6600' },
+    size: 50,
+    planetCount: [0, 1],
+    planetTypes: ['exotic'],
+    asteroidBelts: [0, 2],
+    stationChance: 0.05,
+    hasAccretionDisk: true,
+  },
+};
+
+// ============================================
+// PLANET TYPES
+// ============================================
+
+const PLANET_TYPES = {
+  rocky: { name: 'Rocky', colors: ['#888888', '#777766', '#665544'], sizeRange: [15, 30] },
+  terran: { name: 'Terran', colors: ['#4488aa', '#55aa66', '#446633'], sizeRange: [25, 40], hasAtmosphere: true },
+  desert: { name: 'Desert', colors: ['#ddaa66', '#cc8844', '#aa6622'], sizeRange: [20, 35] },
+  ice: { name: 'Ice', colors: ['#aaddff', '#88bbee', '#99ccff'], sizeRange: [15, 35] },
+  gas_giant: { name: 'Gas Giant', colors: ['#ddaa77', '#cc9966', '#ffcc88'], sizeRange: [60, 120], hasRings: 0.4 },
+  ocean: { name: 'Ocean', colors: ['#2266aa', '#3377bb', '#4488cc'], sizeRange: [25, 40], hasAtmosphere: true },
+  lava: { name: 'Lava', colors: ['#ff4400', '#cc3300', '#aa2200'], sizeRange: [15, 30], hasGlow: true },
+  barren: { name: 'Barren', colors: ['#444444', '#555555', '#333333'], sizeRange: [10, 25] },
+  exotic: { name: 'Exotic', colors: ['#aa44ff', '#ff44aa', '#44ffaa'], sizeRange: [20, 50], hasGlow: true },
+};
+
+// ============================================
+// SOL SYSTEM (Handcrafted)
+// ============================================
+
+const SOL_SYSTEM = {
+  id: 'sol',
+  name: 'Sol',
+  starType: 'yellow_star',
+  bodies: [
+    // Orbital speeds follow Kepler's 3rd law: speed ∝ 1/√(radius)
+    // Random orbit offsets for starting positions
+    { id: 'mercury', name: 'Mercury', type: 'planet', planetType: 'rocky', orbitRadius: 400, orbitSpeed: 0.015, orbitOffset: 2.1, size: 12, color: '#aaaaaa' },
+    { id: 'venus', name: 'Venus', type: 'planet', planetType: 'desert', orbitRadius: 600, orbitSpeed: 0.011, orbitOffset: 4.7, size: 22, color: '#ddaa66' },
+    { id: 'earth', name: 'Earth', type: 'planet', planetType: 'terran', orbitRadius: 850, orbitSpeed: 0.008, orbitOffset: 1.3, size: 25, color: '#4488aa', hasAtmosphere: true },
+    { id: 'luna_station', name: 'Luna Station', type: 'station', parentBody: 'earth', orbitRadius: 50, orbitSpeed: 0.04, orbitOffset: 0.5, size: 8 },
+    { id: 'mars', name: 'Mars', type: 'planet', planetType: 'desert', orbitRadius: 1100, orbitSpeed: 0.006, orbitOffset: 5.9, size: 18, color: '#cc6644' },
+    { id: 'asteroid_belt_1', name: 'Asteroid Belt', type: 'asteroid_belt', orbitRadius: 1500, width: 250, density: 300 },
+    { id: 'jupiter', name: 'Jupiter', type: 'planet', planetType: 'gas_giant', orbitRadius: 2200, orbitSpeed: 0.003, orbitOffset: 3.2, size: 80, color: '#ddaa77', hasRings: false },
+    { id: 'saturn', name: 'Saturn', type: 'planet', planetType: 'gas_giant', orbitRadius: 3000, orbitSpeed: 0.002, orbitOffset: 0.8, size: 70, color: '#ddcc88', hasRings: true },
+    { id: 'uranus', name: 'Uranus', type: 'planet', planetType: 'ice', orbitRadius: 3800, orbitSpeed: 0.0012, orbitOffset: 4.1, size: 40, color: '#88ccdd' },
+    { id: 'neptune', name: 'Neptune', type: 'planet', planetType: 'ice', orbitRadius: 4500, orbitSpeed: 0.0008, orbitOffset: 2.6, size: 38, color: '#4466cc' },
+  ],
+};
+
+// ============================================
+// STARFIELD GENERATION (more stars!)
+// ============================================
+
+const generateStars = (count, layer, seed = 12345) => {
+  const rng = new SeededRandom(seed + (layer === 'far' ? 0 : layer === 'mid' ? 1000 : 2000));
+  const stars = [];
+  const spread = SYSTEM_SIZE * 4;
+  
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      id: `${layer}-${i}`,
+      x: rng.range(-spread, spread),
+      y: rng.range(-spread, spread),
+      size: rng.range(
+        layer === 'far' ? 0.5 : layer === 'mid' ? 0.8 : 1.2,
+        layer === 'far' ? 1.5 : layer === 'mid' ? 2.2 : 3
+      ),
+      opacity: rng.range(
+        layer === 'far' ? 0.3 : layer === 'mid' ? 0.5 : 0.6,
+        layer === 'far' ? 0.6 : layer === 'mid' ? 0.8 : 1.0
+      ),
+      twinkleSpeed: rng.range(0.5, 3),
+      twinkleOffset: rng.range(0, Math.PI * 2),
+      // More colorful stars
+      color: rng.chance(0.15) ? rng.pick(['#ffddaa', '#aaddff', '#ffaaaa', '#aaffaa', '#ffaaff', '#ffffaa']) : '#ffffff',
+    });
+  }
+  return stars;
+};
+
+// LOTS more stars for a rich cosmic background
+const STAR_LAYERS = {
+  far: generateStars(800, 'far'),
+  mid: generateStars(500, 'mid'),
+  near: generateStars(300, 'near'),
+};
+
+// Parallax factors
+const PARALLAX = {
+  far: 0.05,
+  mid: 0.15,
+  near: 0.35,
+};
+
+// ============================================
+// STAR COMPONENT (Multiple Types)
+// ============================================
+
+const Star = ({ starType, x, y, time }) => {
+  const config = STAR_TYPES[starType];
+  if (!config) return null;
+
+  const { colors, size, pulsar, hasAccretionDisk } = config;
+  const pulsarPhase = pulsar ? Math.sin(time * 5) * 0.2 + 0.8 : 1;
+
+  if (hasAccretionDisk) {
+    // Black hole with accretion disk
+    return (
+      <g transform={`translate(${x}, ${y})`}>
+        <defs>
+          <radialGradient id={`accretion-${starType}`} cx="50%" cy="50%" r="50%">
+            <stop offset="20%" stopColor="#000000" />
+            <stop offset="40%" stopColor={colors.accretion} stopOpacity="0.8" />
+            <stop offset="70%" stopColor="#ff4400" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        {/* Accretion disk */}
+        <ellipse rx={size * 3} ry={size * 0.8} fill="url(#accretion-black_hole)" opacity={0.7} />
+        {/* Event horizon */}
+        <circle r={size} fill="#000000" />
+        {/* Gravitational lensing effect */}
+        <circle r={size * 1.2} fill="none" stroke="#ffffff" strokeWidth="1" opacity="0.3" />
+      </g>
+    );
+  }
+
+  return (
+    <g transform={`translate(${x}, ${y})`}>
+      <defs>
+        <radialGradient id={`starGlow-${starType}`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={colors.core} stopOpacity="1" />
+          <stop offset="40%" stopColor={colors.mid} stopOpacity="0.8" />
+          <stop offset="70%" stopColor={colors.outer} stopOpacity="0.4" />
+          <stop offset="100%" stopColor={colors.outer} stopOpacity="0" />
+        </radialGradient>
+        <filter id={`starBlur-${starType}`} x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation={size * 0.3} />
+        </filter>
+      </defs>
+      
+      {/* Outer glow */}
+      <circle r={size * 3} fill={colors.glow} filter={`url(#starBlur-${starType})`} opacity={0.5 * pulsarPhase} />
+      
+      {/* Corona */}
+      <circle r={size * 1.8} fill={`url(#starGlow-${starType})`} opacity={0.8 * pulsarPhase} />
+      
+      {/* Core */}
+      <circle r={size} fill={colors.mid} opacity={pulsarPhase} />
+      
+      {/* Bright center */}
+      <circle r={size * 0.4} fill={colors.core} opacity={0.95 * pulsarPhase} />
+
+      {/* Pulsar beams */}
+      {pulsar && (
+        <g style={{ transform: `rotate(${time * 100}deg)` }}>
+          <rect x={-2} y={-size * 5} width={4} height={size * 10} fill="#ffffff" opacity={0.6} />
+        </g>
+      )}
+    </g>
+  );
+};
+
+// ============================================
+// PLANET COMPONENT
+// ============================================
+
+const Planet = ({ body, time }) => {
+  // Calculate orbital position
+  const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
+  const x = Math.cos(angle) * body.orbitRadius;
+  const y = Math.sin(angle) * body.orbitRadius;
+
+  const planetConfig = PLANET_TYPES[body.planetType] || {};
+
+  return (
+    <g>
+      {/* Orbit path */}
+      <circle
+        cx={0}
+        cy={0}
+        r={body.orbitRadius}
+        fill="none"
+        stroke="#4488aa"
+        strokeWidth="1"
+        opacity="0.25"
+      />
+
+      {/* Planet */}
+      <g transform={`translate(${x}, ${y})`}>
+        {/* Atmosphere glow */}
+        {body.hasAtmosphere && (
+          <circle r={body.size * 1.15} fill={body.color} opacity="0.2" />
+        )}
+        
+        {/* Lava/exotic glow */}
+        {planetConfig.hasGlow && (
+          <circle r={body.size * 1.3} fill={body.color} opacity="0.3" filter="url(#planetGlow)" />
+        )}
+
+        {/* Rings */}
+        {body.hasRings && (
+          <ellipse
+            rx={body.size * 1.8}
+            ry={body.size * 0.4}
+            fill="none"
+            stroke="#ccbb99"
+            strokeWidth={body.size * 0.15}
+            opacity="0.6"
+          />
+        )}
+
+        {/* Planet body */}
+        <circle r={body.size} fill={body.color} />
+        
+        {/* Highlight */}
+        <circle
+          cx={-body.size * 0.3}
+          cy={-body.size * 0.3}
+          r={body.size * 0.7}
+          fill="url(#planetHighlight)"
+          opacity="0.4"
+        />
+
+        {/* Label */}
+        <text
+          y={body.size + 15}
+          textAnchor="middle"
+          fill="#88ccff"
+          fontSize="10"
+          fontFamily="sans-serif"
+        >
+          {body.name}
+        </text>
+      </g>
+    </g>
+  );
+};
+
+// ============================================
+// STATION COMPONENT
+// ============================================
+
+const Station = ({ body, parentPosition, time }) => {
+  // If station orbits a planet, calculate position relative to parent
+  const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
+  const localX = Math.cos(angle) * body.orbitRadius;
+  const localY = Math.sin(angle) * body.orbitRadius;
+  
+  const x = parentPosition.x + localX;
+  const y = parentPosition.y + localY;
+
+  return (
+    <g transform={`translate(${x}, ${y})`}>
+      {/* Station shape - hexagonal */}
+      <polygon
+        points="-8,-4 -4,-8 4,-8 8,-4 8,4 4,8 -4,8 -8,4"
+        fill="#334455"
+        stroke="#66aacc"
+        strokeWidth="1"
+      />
+      {/* Docking lights */}
+      <circle cx="-6" cy="0" r="2" fill="#00ff88" opacity={Math.sin(time * 3) * 0.5 + 0.5} />
+      <circle cx="6" cy="0" r="2" fill="#00ff88" opacity={Math.sin(time * 3 + Math.PI) * 0.5 + 0.5} />
+      
+      {/* Label */}
+      <text
+        y={16}
+        textAnchor="middle"
+        fill="#00ff88"
+        fontSize="9"
+        fontFamily="sans-serif"
+      >
+        {body.name}
+      </text>
+    </g>
+  );
+};
+
+// ============================================
+// ASTEROID BELT COMPONENT
+// ============================================
+
+const AsteroidBelt = ({ body }) => {
+  // Generate asteroids with seeded random
+  const rng = useMemo(() => new SeededRandom(body.id?.charCodeAt(0) || 999), [body.id]);
+  
+  const asteroids = useMemo(() => {
+    const arr = [];
+    const count = body.density || 300;
+    for (let i = 0; i < count; i++) {
+      const angle = rng.range(0, Math.PI * 2);
+      const radius = body.orbitRadius + rng.range(-body.width / 2, body.width / 2);
+      arr.push({
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        size: rng.range(1, 5),
+        opacity: rng.range(0.4, 0.9),
+        color: rng.pick(['#888888', '#777777', '#999999', '#666666', '#aaaaaa']),
+      });
+    }
+    return arr;
+  }, [body, rng]);
+
+  return (
+    <g>
+      {/* Individual asteroids only - no background */}
+      {asteroids.map((ast, i) => (
+        <circle
+          key={i}
+          cx={ast.x}
+          cy={ast.y}
+          r={ast.size}
+          fill={ast.color}
+          opacity={ast.opacity}
+        />
+      ))}
+    </g>
+  );
+};
+
+// ============================================
+// STARFIELD COMPONENT
+// ============================================
+
+const Starfield = ({ camera, zoom, time }) => {
+  return (
+    <g>
+      {Object.entries(STAR_LAYERS).map(([layer, stars]) => (
+        <g key={layer}>
+          {stars.map(star => {
+            // Parallax based on layer
+            const px = star.x - camera.x * PARALLAX[layer];
+            const py = star.y - camera.y * PARALLAX[layer];
+            
+            // Twinkle
+            const twinkle = Math.sin(time * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
+            
+            return (
+              <circle
+                key={star.id}
+                cx={px}
+                cy={py}
+                r={star.size}
+                fill={star.color}
+                opacity={star.opacity * twinkle}
+              />
+            );
+          })}
+        </g>
+      ))}
+    </g>
+  );
+};
+
+// ============================================
+// MINIMAP COMPONENT
+// ============================================
+
+const Minimap = ({ system, camera, zoom, viewportSize, shipPos }) => {
+  const mapSize = 160;
+  
+  // Find the furthest orbiting object to scale the minimap
+  const maxOrbit = Math.max(...system.bodies.map(b => b.orbitRadius || 0));
+  const mapScale = (mapSize * 0.45) / maxOrbit; // Furthest orbit at 90% of minimap radius
+  
+  const starConfig = STAR_TYPES[system.starType];
+
+  return (
+    <div className="absolute top-3 right-3 bg-slate-900/90 border border-cyan-500/30 rounded-lg p-2">
+      <svg width={mapSize} height={mapSize} viewBox={`${-mapSize/2} ${-mapSize/2} ${mapSize} ${mapSize}`}>
+        {/* Background */}
+        <rect x={-mapSize/2} y={-mapSize/2} width={mapSize} height={mapSize} fill="#0a0a15" rx="4" />
+        
+        {/* Orbit lines */}
+        {system.bodies.map(body => {
+          if (body.type === 'planet') {
+            return (
+              <circle
+                key={`orbit-${body.id}`}
+                cx={0}
+                cy={0}
+                r={body.orbitRadius * mapScale}
+                fill="none"
+                stroke="#335566"
+                strokeWidth="0.5"
+                opacity="0.6"
+              />
+            );
+          }
+          if (body.type === 'asteroid_belt') {
+            return (
+              <circle
+                key={body.id}
+                cx={0}
+                cy={0}
+                r={body.orbitRadius * mapScale}
+                fill="none"
+                stroke="#666666"
+                strokeWidth="3"
+                opacity="0.4"
+              />
+            );
+          }
+          return null;
+        })}
+        
+        {/* Star */}
+        <circle cx={0} cy={0} r={4} fill={starConfig?.colors.mid || '#ffdd44'} />
+        
+        {/* Ship position */}
+        {shipPos && (
+          <g transform={`translate(${shipPos.x * mapScale}, ${shipPos.y * mapScale})`}>
+            <circle r="4" fill="#00ff88" opacity="0.3" />
+            <circle r="2" fill="#00ff88" />
+          </g>
+        )}
+        
+        {/* Camera viewport indicator */}
+        <rect
+          x={camera.x * mapScale - (viewportSize.width / zoom * mapScale / 2)}
+          y={camera.y * mapScale - (viewportSize.height / zoom * mapScale / 2)}
+          width={Math.max(4, (viewportSize.width / zoom) * mapScale)}
+          height={Math.max(4, (viewportSize.height / zoom) * mapScale)}
+          fill="none"
+          stroke="#00ffff"
+          strokeWidth="1.5"
+          opacity="0.9"
+        />
+      </svg>
+      <div className="text-center text-xs text-cyan-400/70 mt-1">{system.name}</div>
+    </div>
+  );
+};
+
+// ============================================
+// SYSTEM VIEW COMPONENT
+// ============================================
+
+export const SystemView = () => {
+  const closeWindow = useGameStore(state => state.closeWindow);
+  const ships = useShips();
+  
+  // Get player's ship (first ship for now)
+  const playerShip = ships.length > 0 ? ships[0] : null;
+  const shipHullSize = playerShip?.hull_size || 30; // Default to scout size
+  
+  // For now, always show Sol
+  const currentSystem = SOL_SYSTEM;
+  const starConfig = STAR_TYPES[currentSystem.starType];
+  
+  // Camera state
+  const [camera, setCamera] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(0.3);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [followMode, setFollowMode] = useState(true);
+  
+  // Ship state
+  const [shipPos, setShipPos] = useState({ x: 900, y: 0 }); // Start near Earth/Luna
+  const [shipVel, setShipVel] = useState({ x: 0, y: 0 });
+  const [shipRotation, setShipRotation] = useState(-90); // Point "up" initially
+  const [thrusting, setThrusting] = useState(false);
+  
+  // Input state
+  const keysPressed = useRef(new Set());
+  
+  // Animation time
+  const [time, setTime] = useState(0);
+  
+  // Viewport ref
+  const svgRef = useRef(null);
+  const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
+
+  // Get ship component based on hull size
+  const ShipComponent = getShipComponent(shipHullSize);
+  const shipScale = getShipScale(shipHullSize) * 0.5; // Half size
+
+  // Main game loop - runs at 60fps for smooth movement
+  useEffect(() => {
+    let animationId;
+    let lastTime = performance.now();
+    
+    const gameLoop = (currentTime) => {
+      const delta = Math.min((currentTime - lastTime) / 1000, 0.05); // Cap delta, use performance.now for smoothness
+      lastTime = currentTime;
+      
+      // Update time for animations
+      setTime(t => t + delta);
+      
+      // Process ship input and physics
+      const keys = keysPressed.current;
+      
+      // Rotation: A = counter-clockwise, D = clockwise
+      let rotationInput = 0;
+      if (keys.has('a') || keys.has('arrowleft')) rotationInput -= 1;
+      if (keys.has('d') || keys.has('arrowright')) rotationInput += 1;
+      
+      // Update rotation
+      setShipRotation(prev => prev + rotationInput * SHIP_ROTATION_SPEED * delta);
+      
+      // Thrust: W = forward thrust, S = brake/reverse
+      let thrustInput = 0;
+      let isBraking = false;
+      if (keys.has('w') || keys.has('arrowup')) thrustInput = 1;
+      if (keys.has('s') || keys.has('arrowdown')) { thrustInput = -0.5; isBraking = true; }
+      
+      setThrusting(thrustInput > 0);
+      
+      // Calculate thrust direction from ship rotation
+      // Rotation 0 = pointing right, -90 = pointing up
+      const thrustAngle = (shipRotation - 90) * (Math.PI / 180);
+      const thrustX = Math.cos(thrustAngle) * thrustInput * SHIP_ACCELERATION;
+      const thrustY = Math.sin(thrustAngle) * thrustInput * SHIP_ACCELERATION;
+      
+      // Update velocity
+      setShipVel(vel => {
+        let newVx = vel.x;
+        let newVy = vel.y;
+        
+        if (isBraking) {
+          // Braking: apply force opposite to current velocity
+          const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+          if (speed > 1) {
+            newVx -= (vel.x / speed) * SHIP_BRAKE_POWER * delta;
+            newVy -= (vel.y / speed) * SHIP_BRAKE_POWER * delta;
+          } else {
+            newVx = 0;
+            newVy = 0;
+          }
+        } else {
+          // Apply thrust
+          newVx += thrustX * delta;
+          newVy += thrustY * delta;
+        }
+        
+        // Apply very slight drag
+        newVx *= SHIP_DRAG;
+        newVy *= SHIP_DRAG;
+        
+        // Clamp to max speed
+        const speed = Math.sqrt(newVx * newVx + newVy * newVy);
+        if (speed > SHIP_MAX_SPEED) {
+          newVx = (newVx / speed) * SHIP_MAX_SPEED;
+          newVy = (newVy / speed) * SHIP_MAX_SPEED;
+        }
+        
+        return { x: newVx, y: newVy };
+      });
+      
+      // Update position using velocity from previous frame for smoothness
+      setShipPos(pos => ({
+        x: pos.x + shipVel.x * delta,
+        y: pos.y + shipVel.y * delta,
+      }));
+      
+      // Update camera if following
+      if (followMode) {
+        setCamera({ x: shipPos.x, y: shipPos.y });
+      }
+      
+      animationId = requestAnimationFrame(gameLoop);
+    };
+    
+    animationId = requestAnimationFrame(gameLoop);
+    return () => cancelAnimationFrame(animationId);
+  }, [followMode, shipVel.x, shipVel.y, shipPos.x, shipPos.y, shipRotation]);
+
+  // Keyboard input
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const key = e.key.toLowerCase();
+      keysPressed.current.add(key);
+      
+      // Toggle follow mode
+      if (key === 'f') {
+        setFollowMode(f => !f);
+      }
+      
+      // Manual camera controls when not following
+      if (!followMode) {
+        const panAmount = 100 / zoom;
+        switch (key) {
+          case 'arrowup': setCamera(c => ({ ...c, y: c.y - panAmount })); break;
+          case 'arrowdown': setCamera(c => ({ ...c, y: c.y + panAmount })); break;
+          case 'arrowleft': setCamera(c => ({ ...c, x: c.x - panAmount })); break;
+          case 'arrowright': setCamera(c => ({ ...c, x: c.x + panAmount })); break;
+        }
+      }
+      
+      // Zoom controls
+      if (key === '=' || key === '+') setZoom(z => Math.min(MAX_ZOOM, z * 1.2));
+      if (key === '-' || key === '_') setZoom(z => Math.max(MIN_ZOOM, z / 1.2));
+      if (key === 'home') {
+        setCamera({ x: 0, y: 0 });
+        setZoom(0.3);
+      }
+    };
+    
+    const handleKeyUp = (e) => {
+      keysPressed.current.delete(e.key.toLowerCase());
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [followMode, zoom]);
+
+  // Viewport size
+  useEffect(() => {
+    const updateSize = () => {
+      if (svgRef.current) {
+        const rect = svgRef.current.getBoundingClientRect();
+        setViewportSize({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    if (svgRef.current) observer.observe(svgRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // ViewBox
+  const viewBox = {
+    x: camera.x - (viewportSize.width / 2) / zoom,
+    y: camera.y - (viewportSize.height / 2) / zoom,
+    width: viewportSize.width / zoom,
+    height: viewportSize.height / zoom,
+  };
+
+  // Calculate planet positions for station parents
+  const getBodyPosition = useCallback((bodyId) => {
+    const body = currentSystem.bodies.find(b => b.id === bodyId);
+    if (!body) return { x: 0, y: 0 };
+    const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
+    return {
+      x: Math.cos(angle) * body.orbitRadius,
+      y: Math.sin(angle) * body.orbitRadius,
+    };
+  }, [currentSystem.bodies, time]);
+
+  // Mouse handlers
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * ZOOM_SPEED;
+    setZoom(z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta * z)));
+  }, []);
+
+  const handleMouseDown = useCallback((e) => {
+    if (e.button === 1 || e.button === 2) {
+      e.preventDefault();
+      setIsDragging(true);
+      setDragStart({ x: e.clientX, y: e.clientY });
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e) => {
+    if (isDragging) {
+      const dx = (e.clientX - dragStart.x) / zoom;
+      const dy = (e.clientY - dragStart.y) / zoom;
+      setCamera(c => ({ x: c.x - dx, y: c.y - dy }));
+      setDragStart({ x: e.clientX, y: e.clientY });
+    }
+  }, [isDragging, dragStart, zoom]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault();
+  }, []);
+
+  return (
+    <DraggableWindow
+      windowId="systemView"
+      title={`${currentSystem.name} System`}
+      initialWidth={1000}
+      initialHeight={700}
+      minWidth={600}
+      minHeight={400}
+    >
+      <div className="h-full flex flex-col">
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/20 bg-slate-900/50">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: starConfig?.colors.mid }}
+              />
+              <span className="text-sm text-cyan-300">{starConfig?.name}</span>
+            </div>
+            <div className="text-xs text-slate-400">
+              Zoom: {(zoom * 100).toFixed(0)}%
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setZoom(z => Math.min(MAX_ZOOM, z * 1.5))}
+              className="w-6 h-6 rounded bg-slate-700/50 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm"
+            >
+              +
+            </button>
+            <button
+              onClick={() => setZoom(z => Math.max(MIN_ZOOM, z / 1.5))}
+              className="w-6 h-6 rounded bg-slate-700/50 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm"
+            >
+              −
+            </button>
+            <button
+              onClick={() => { setCamera({ x: 0, y: 0 }); setZoom(0.3); }}
+              className="px-2 h-6 rounded bg-slate-700/50 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-xs"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* SVG Viewport */}
+        <div className="flex-1 relative overflow-hidden bg-slate-950">
+          <svg
+            ref={svgRef}
+            className="w-full h-full"
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onContextMenu={handleContextMenu}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          >
+            {/* Definitions */}
+            <defs>
+              <radialGradient id="planetHighlight" cx="30%" cy="30%">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.6" />
+                <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+              </radialGradient>
+              <filter id="planetGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" />
+              </filter>
+            </defs>
+
+            {/* Background */}
+            <rect
+              x={viewBox.x - 1000}
+              y={viewBox.y - 1000}
+              width={viewBox.width + 2000}
+              height={viewBox.height + 2000}
+              fill="#030308"
+            />
+
+            {/* Starfield */}
+            <Starfield camera={camera} zoom={zoom} time={time} />
+
+            {/* Asteroid belts (render first, behind planets) */}
+            {currentSystem.bodies
+              .filter(b => b.type === 'asteroid_belt')
+              .map(body => (
+                <AsteroidBelt key={body.id} body={body} />
+              ))}
+
+            {/* Star */}
+            <Star starType={currentSystem.starType} x={0} y={0} time={time} />
+
+            {/* Planets */}
+            {currentSystem.bodies
+              .filter(b => b.type === 'planet')
+              .map(body => (
+                <Planet key={body.id} body={body} time={time} />
+              ))}
+
+            {/* Stations */}
+            {currentSystem.bodies
+              .filter(b => b.type === 'station')
+              .map(body => (
+                <Station
+                  key={body.id}
+                  body={body}
+                  parentPosition={body.parentBody ? getBodyPosition(body.parentBody) : { x: 0, y: 0 }}
+                  time={time}
+                />
+              ))}
+
+            {/* Player Ship */}
+            {playerShip && (
+              <g transform={`translate(${shipPos.x}, ${shipPos.y})`}>
+                <ShipComponent 
+                  rotation={shipRotation} 
+                  thrusting={thrusting} 
+                  scale={shipScale}
+                />
+              </g>
+            )}
+          </svg>
+
+          {/* Minimap */}
+          <Minimap
+            system={currentSystem}
+            camera={camera}
+            zoom={zoom}
+            viewportSize={viewportSize}
+            shipPos={shipPos}
+          />
+
+          {/* Ship velocity indicator */}
+          <div className="absolute top-3 left-3 bg-slate-900/80 border border-cyan-500/30 rounded-lg px-3 py-2">
+            <div className="text-xs text-slate-400 mb-1">
+              {playerShip?.name || 'No Ship'}
+            </div>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-cyan-400">
+                Speed: {Math.round(Math.sqrt(shipVel.x * shipVel.x + shipVel.y * shipVel.y))}
+              </span>
+              <span className={`${followMode ? 'text-green-400' : 'text-slate-500'}`}>
+                {followMode ? '● Follow' : '○ Free Cam'}
+              </span>
+            </div>
+          </div>
+
+          {/* Controls hint */}
+          <div className="absolute bottom-3 left-3 text-xs text-cyan-400/50 bg-slate-900/70 px-2 py-1 rounded">
+            W: Thrust | A/D: Turn | S: Brake | F: Toggle Camera
+          </div>
+        </div>
+      </div>
+    </DraggableWindow>
+  );
+};
+
+export default SystemView;

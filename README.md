@@ -1,133 +1,59 @@
-# Star Shipper
+# Resource System - Chunk 3: Surveying UI
 
-A serious sci-fi space exploration and empire-building game combining deep ship customization with planetary development and galactic expansion.
+## What's Included
 
-## Tech Stack
+### Server Files
+- `src/api/resources.js` - Updated with surveying endpoints
+- `migrations/004_scanner_probes.sql` - Adds probe columns
 
-- **React 18** - UI framework
-- **Vite** - Build tool and dev server
-- **Zustand** - State management (with persistence)
-- **Immer** - Immutable state updates
-- **Tailwind CSS** - Styling
-- **Canvas API** - Starfield rendering
+### Client Files
+- `src/components/system/PlanetInteractionWindow.jsx` - NEW - Planet docking UI
+- `src/components/system/SystemView.jsx` - Updated to show interaction window
 
-## Project Structure
+## Installation
 
-```
-star-shipper/
-├── public/
-│   └── favicon.svg
-├── src/
-│   ├── components/
-│   │   ├── ship/
-│   │   │   ├── ShipBuilderWindow.jsx  # Ship builder window container
-│   │   │   └── ShipGrid.jsx           # Hull/room grid + tool palette + stats
-│   │   └── ui/
-│   │       ├── DraggableWindow.jsx    # Reusable draggable window system
-│   │       ├── ResourceBar.jsx        # Top resource display
-│   │       ├── Starfield.jsx          # Animated space background
-│   │       └── Toolbar.jsx            # Bottom-right action buttons
-│   ├── stores/
-│   │   └── gameStore.js               # Zustand store with all game state
-│   ├── systems/
-│   │   └── gameData.js                # Game constants, room types, systems, templates
-│   ├── App.jsx                        # Main app component
-│   ├── main.jsx                       # Entry point
-│   └── index.css                      # Global styles + Tailwind
-├── index.html
-├── package.json
-├── vite.config.js
-├── tailwind.config.js
-└── postcss.config.js
-```
-
-## Getting Started
+### 1. Run the migration
 
 ```bash
-# Install dependencies
-npm install
-
-# Start dev server
-npm run dev
-
-# Build for production
-npm run build
+"C:\Program Files\PostgreSQL\16\bin\psql" -U postgres -d star_shipper -f migrations/004_scanner_probes.sql
 ```
 
-## Architecture Decisions
+### 2. Copy server files
 
-### State Management (Zustand)
-- Single store for all game state
-- Immer middleware for immutable updates
-- Persist middleware for save games (localStorage by default, prepared for cloud)
-- Separate selectors for optimized re-renders
+```bash
+cp server/src/api/resources.js C:\Dropbox\Star-shipper\v0.2\star-shipper-server\src\api\
+```
 
-### Ship Building System
-1. **Hull Layer** - Set of cell coordinates defining ship shape
-2. **Room Layer** - Rectangular rooms placed within hull
-3. **System Layer** - Equipment installed within rooms (future)
-4. **Crew Layer** - Crew assigned to stations (future)
+### 3. Copy client files
 
-### Window System
-- Draggable, resizable windows for all management screens
-- Z-index stacking with click-to-front
-- Minimize to dock, restore, close
-- Position persistence in state
+```bash
+cp client/src/components/system/PlanetInteractionWindow.jsx C:\Dropbox\Star-shipper\v0.2\star-shipper\src\components\system\
+cp client/src/components/system/SystemView.jsx C:\Dropbox\Star-shipper\v0.2\star-shipper\src\components\system\
+```
 
-### Data Architecture
-- `gameData.js` contains all static game data (room types, systems, templates)
-- Ship designs are stored separately from ship instances
-- Designs can be built into multiple ship instances
+### 4. Restart both server and client
 
-## Current Features (v0.1)
+## How It Works
 
-- [x] Animated starfield background
-- [x] Draggable window system
-- [x] Hull construction (paint cells, templates)
-- [x] Room placement (12 room types)
-- [x] Ship statistics calculation
-- [x] Power budget tracking
-- [x] Ship design validation
-- [x] Save/load designs
-- [x] Resource display
+1. **Autopilot to a planet** - Click on any planet/station
+2. **Ship docks** - When ship arrives, it locks to the planet
+3. **Interaction window opens** - Shows scan/trade/mine tabs
+4. **Perform scans:**
+   - Orbital Scan (1 probe) → See resource types & abundance
+   - Ground Scan (1 advanced probe) → See stat ranges & quantities
+5. **Press WASD to undock** - Window closes, ship can fly away
 
-## Planned Features
+## Starting Probes
 
-### Phase 2
-- [ ] Systems within rooms
-- [ ] Crew management
-- [ ] Basic system view (planets, stations)
-- [ ] Mining and trading
+After running the migration, players get:
+- 5 Scanner Probes
+- 2 Advanced Scanner Probes
 
-### Phase 3
-- [ ] Combat system
-- [ ] Multiple star systems
-- [ ] Jump drives
-- [ ] Colony management
+## UI Features
 
-### Phase 4
-- [ ] Fleet management
-- [ ] Research tree
-- [ ] Factions
-- [ ] Endgame content
-
-## Save Data
-
-Game saves automatically to localStorage. Save data structure is designed to support future cloud save integration.
-
-Current save includes:
-- Resources
-- Ship designs
-- Fleet (ship instances)
-- Colonies
-- Research progress
-- Exploration data
-
-## Contributing
-
-This is a personal project but the architecture is designed to be extensible. Key extension points:
-
-- Add room types in `gameData.js`
-- Add systems in `gameData.js`
-- Add new windows by creating component + registering in store
-- Add new game systems by extending the store
+- **Scan Tab:** Orbital and ground scanning
+- **Trade Tab:** Coming soon (placeholder)
+- **Mine Tab:** Coming soon (placeholder)
+- Survey status indicators (✓ Complete)
+- Hazard warnings for dangerous planets
+- Quality tier previews with color coding

@@ -12,6 +12,9 @@ dotenv.config();
 import pool from './db/index.js';
 import authRoutes from './api/auth.js';
 import shipsRoutes from './api/ships.js';
+import resourcesRoutes from './api/resources.js';
+import harvesterRoutes from './api/harvesters.js';
+import fittingRoutes from './api/fitting.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -35,7 +38,7 @@ app.use(cors({
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 1000, // Limit each IP to 1000 requests per windowMs
   message: { error: 'Too many requests, please try again later' },
 });
 app.use('/api/', limiter);
@@ -55,6 +58,9 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/ships', shipsRoutes);
+app.use('/api/resources', resourcesRoutes);
+app.use('/api/harvesters', harvesterRoutes);
+app.use('/api/fitting', fittingRoutes);
 
 // 404 handler
 app.use('/api/*', (req, res) => {

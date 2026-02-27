@@ -2,17 +2,20 @@ import React from 'react';
 import { useGameStore } from '@/stores/gameStore';
 
 export const Toolbar = () => {
-  const openWindow = useGameStore(state => state.openWindow);
+  const toggleWindow = useGameStore(state => state.toggleWindow);
+  const windows = useGameStore(state => state.windows);
   const gamePaused = useGameStore(state => state.gamePaused);
   const togglePause = useGameStore(state => state.togglePause);
   const gameSpeed = useGameStore(state => state.gameSpeed);
   const setGameSpeed = useGameStore(state => state.setGameSpeed);
 
   const buttons = [
-    { id: 'shipBuilder', label: 'Ship Builder', icon: '🚀' },
-    { id: 'fleetManager', label: 'Fleet', icon: '⚓' },
-    { id: 'planetView', label: 'Colonies', icon: '🌍' },
-    { id: 'inventory', label: 'Inventory', icon: '📦' },
+    { id: 'fleet', label: 'Fleet', icon: '🚀' },
+    { id: 'shipBuilder', label: 'Ship Fitting', icon: '🔧' },
+    { id: 'navigation', label: 'Navigation', icon: '🧭' },
+    { id: 'galaxyMap', label: 'Galaxy Map', icon: '🌌' },
+    { id: 'crafting', label: 'Crafting', icon: '🔨' },
+    { id: 'inventory', label: 'Cargo', icon: '📦' },
     { id: 'research', label: 'Research', icon: '🔬' },
   ];
 
@@ -49,17 +52,24 @@ export const Toolbar = () => {
 
       {/* Main buttons */}
       <div className="flex flex-col gap-1 px-2 py-2 rounded-lg bg-slate-900/80 border border-cyan-500/20 backdrop-blur-sm">
-        {buttons.map(btn => (
-          <button
-            key={btn.id}
-            onClick={() => openWindow(btn.id)}
-            className="flex items-center gap-2 px-3 py-2 rounded bg-slate-700/30 hover:bg-cyan-500/20 border border-transparent hover:border-cyan-400/30 text-slate-300 hover:text-cyan-100 transition-all text-sm"
-            title={btn.label}
-          >
-            <span className="text-lg">{btn.icon}</span>
-            <span className="hidden lg:inline">{btn.label}</span>
-          </button>
-        ))}
+        {buttons.map(btn => {
+          const isOpen = windows[btn.id]?.open && !windows[btn.id]?.minimized;
+          return (
+            <button
+              key={btn.id}
+              onClick={() => toggleWindow(btn.id)}
+              className={`flex items-center gap-2 px-3 py-2 rounded border transition-all text-sm ${
+                isOpen
+                  ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-100'
+                  : 'bg-slate-700/30 border-transparent hover:bg-cyan-500/20 hover:border-cyan-400/30 text-slate-300 hover:text-cyan-100'
+              }`}
+              title={btn.label}
+            >
+              <span className="text-lg">{btn.icon}</span>
+              <span className="hidden lg:inline">{btn.label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

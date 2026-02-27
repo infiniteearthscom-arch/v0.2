@@ -141,9 +141,12 @@ router.delete('/designs/:id', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const ships = await queryAll(
-      `SELECT s.*, d.name as design_name
+      `SELECT s.*, d.name as design_name,
+              ht.name as hull_name, ht.class as hull_class,
+              ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors
        FROM ships s
        JOIN ship_designs d ON s.design_id = d.id
+       LEFT JOIN hull_types ht ON s.hull_type_id = ht.id
        WHERE s.user_id = $1
        ORDER BY s.created_at DESC`,
       [req.user.id]

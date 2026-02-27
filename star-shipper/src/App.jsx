@@ -4,6 +4,13 @@ import { ResourceBar } from '@/components/ui/ResourceBar';
 import { Toolbar } from '@/components/ui/Toolbar';
 import { WindowDock } from '@/components/ui/DraggableWindow';
 import { ShipBuilderWindow } from '@/components/ship/ShipBuilderWindow';
+import { FleetWindow } from '@/components/ship/FleetWindow';
+import { InventoryWindow } from '@/components/ui/InventoryWindow';
+import { NavigationWindow } from '@/components/ui/NavigationWindow';
+import { CraftingWindow } from '@/components/ui/CraftingWindow';
+import { GalaxyMapWindow } from '@/components/ui/GalaxyMapWindow';
+import { GalaxyFlightView } from '@/components/galaxy/GalaxyFlightView';
+import { SystemView } from '@/components/system/SystemView';
 import { AuthScreen } from '@/components/ui/AuthScreen';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -13,13 +20,24 @@ function App() {
   const gameStarted = useGameStore(state => state.gameStarted);
   const startGame = useGameStore(state => state.startGame);
   const openWindow = useGameStore(state => state.openWindow);
+  const fetchShips = useGameStore(state => state.fetchShips);
+  const setResources = useGameStore(state => state.setResources);
+  const viewMode = useGameStore(state => state.viewMode);
 
-  const { isLoggedIn, isLoading, user, checkSession, logout } = useAuthStore();
+  const { isLoggedIn, isLoading, user, resources, checkSession, logout } = useAuthStore();
 
   // Check for existing session on load
   useEffect(() => {
     checkSession();
   }, [checkSession]);
+
+  // Sync resources and fetch data when logged in
+  useEffect(() => {
+    if (isLoggedIn && resources) {
+      setResources(resources);
+      fetchShips();
+    }
+  }, [isLoggedIn, resources, setResources, fetchShips]);
 
   // Loading screen
   if (isLoading) {
@@ -135,8 +153,17 @@ function App() {
       <ResourceBar />
       <Toolbar />
 
+      {/* Main game views — always active based on mode */}
+      {viewMode === 'system' && <SystemView />}
+      {viewMode === 'galaxy' && <GalaxyFlightView />}
+
       {/* Windows */}
-      {windows.shipBuilder.open && <ShipBuilderWindow />}
+      {windows.shipBuilder?.open && <ShipBuilderWindow />}
+      {windows.fleet?.open && <FleetWindow />}
+      {windows.inventory?.open && <InventoryWindow />}
+      {windows.navigation?.open && viewMode === 'system' && <NavigationWindow />}
+      {windows.crafting?.open && <CraftingWindow />}
+      {windows.galaxyMap?.open && <GalaxyMapWindow />}
 
       {/* Minimized windows dock */}
       <WindowDock />

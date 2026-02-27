@@ -1,15 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { ROOM_TYPES, SYSTEMS, RESOURCES } from '@/systems/gameData';
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
-
-const getCellKey = (x, y) => `${x},${y}`;
+import { shipsAPI } from '@/utils/api';
 
 // ============================================
 // INITIAL STATE
@@ -22,7 +14,7 @@ const initialState = {
   gameSpeed: 1,
   currentTime: 0,
 
-  // Player resources
+  // Player resources (synced from server)
   resources: {
     credits: 1000,
     metals: 500,
@@ -35,18 +27,15 @@ const initialState = {
     components: 20,
   },
 
-  // Ships
-  ships: {},
-  activeShipId: null,
+  // Ship designs (legacy — kept for FK compatibility)
+  shipDesigns: [],
+  shipDesignsLoaded: false,
 
-  // Ship Builder state
-  shipBuilder: {
-    isOpen: false,
-    editingShipId: null, // null = new ship
-    hullCells: new Set(),
-    rooms: [],
-    shipName: 'New Ship',
-  },
+  // Built ships (from database)
+  ships: [],
+  shipsLoaded: false,
+
+  activeShipId: null,
 
   // Fleet
   fleet: [],
@@ -56,7 +45,8 @@ const initialState = {
 
   // Current location
   currentSystem: 'sol',
-  currentLocation: null, // planet, station, or space coordinates
+  currentLocation: null,
+  pendingJump: null, // { targetSystemId } — set when player clicks Jump, autopilots to gate first
 
   // Exploration
   discoveredSystems: ['sol'],
@@ -70,13 +60,33 @@ const initialState = {
   // UI state
   windows: {
     shipBuilder: { open: false, x: 60, y: 100, minimized: false },
-    fleetManager: { open: false, x: 600, y: 150, minimized: false },
+    fleet: { open: false, x: 100, y: 100, minimized: false },
+    systemView: { open: false, x: 50, y: 50, minimized: false },
     planetView: { open: false, x: 100, y: 100, minimized: false },
     inventory: { open: false, x: 400, y: 200, minimized: false },
+    navigation: { open: false, x: 50, y: 50, minimized: false },
+    crafting: { open: false, x: 300, y: 100, minimized: false },
     research: { open: false, x: 200, y: 150, minimized: false },
+    planetInteraction: { open: false, x: 300, y: 100, minimized: false },
+    galaxyMap: { open: false, x: 80, y: 60, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
+
+  // Navigation / autopilot (shared between SystemView and NavigationWindow)
+  autopilotTarget: null, // { id, name, type } or null
+  shipPosition: { x: 900, y: 0 }, // updated by SystemView game loop
+  shipSpeed: 0,
+  gameTime: 0, // shared time for planet position sync
+
+  // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
+  viewMode: 'system',
+  arrivalType: 'warp', // 'warp' or 'jump_gate' — where to spawn in system
+  
+  // Galaxy flight state
+  galaxyShipPosition: { x: 0, y: 0 }, // position in galaxy coordinates
+  galaxyShipSpeed: 0,
+  galaxyAutopilotTarget: null, // { id, name } — target system for galaxy autopilot
 };
 
 // ============================================
@@ -104,6 +114,16 @@ export const useGameStore = create(
         state.gameSpeed = Math.max(0, Math.min(3, speed));
       }),
 
+      // Galaxy / system navigation
+      setCurrentSystemId: (systemId) => set(state => {
+        state.currentSystem = systemId;
+        state.autopilotTarget = null; // Clear autopilot when switching systems
+        state.pendingJump = null; // Clear any pending jump
+        if (!state.discoveredSystems.includes(systemId)) {
+          state.discoveredSystems.push(systemId);
+        }
+      }),
+
       tick: (deltaTime) => set(state => {
         if (state.gamePaused) return;
         state.currentTime += deltaTime * state.gameSpeed;
@@ -112,6 +132,10 @@ export const useGameStore = create(
       // ==========================================
       // RESOURCE ACTIONS
       // ==========================================
+
+      setResources: (resources) => set(state => {
+        state.resources = resources;
+      }),
 
       addResource: (resourceId, amount) => set(state => {
         if (state.resources[resourceId] !== undefined) {
@@ -133,197 +157,52 @@ export const useGameStore = create(
       },
 
       // ==========================================
-      // SHIP BUILDER ACTIONS
+      // BUILT SHIPS (Database)
       // ==========================================
 
-      openShipBuilder: (shipId = null) => set(state => {
-        state.shipBuilder.isOpen = true;
-        state.shipBuilder.editingShipId = shipId;
-        
-        if (shipId && state.ships[shipId]) {
-          // Load existing ship
-          const ship = state.ships[shipId];
-          state.shipBuilder.hullCells = new Set(ship.hullCells);
-          state.shipBuilder.rooms = [...ship.rooms];
-          state.shipBuilder.shipName = ship.name;
-        } else {
-          // New ship
-          state.shipBuilder.hullCells = new Set();
-          state.shipBuilder.rooms = [];
-          state.shipBuilder.shipName = 'New Ship';
-        }
-
-        state.windows.shipBuilder.open = true;
-      }),
-
-      closeShipBuilder: () => set(state => {
-        state.shipBuilder.isOpen = false;
-        state.windows.shipBuilder.open = false;
-      }),
-
-      setShipName: (name) => set(state => {
-        state.shipBuilder.shipName = name;
-      }),
-
-      // Hull cell management
-      addHullCell: (x, y) => set(state => {
-        state.shipBuilder.hullCells.add(getCellKey(x, y));
-      }),
-
-      removeHullCell: (x, y) => set(state => {
-        const key = getCellKey(x, y);
-        state.shipBuilder.hullCells.delete(key);
-        // Remove any rooms that overlap this cell
-        state.shipBuilder.rooms = state.shipBuilder.rooms.filter(room => {
-          for (let rx = room.x; rx < room.x + room.width; rx++) {
-            for (let ry = room.y; ry < room.y + room.height; ry++) {
-              if (getCellKey(rx, ry) === key) return false;
-            }
-          }
-          return true;
-        });
-      }),
-
-      toggleHullCell: (x, y) => set(state => {
-        const key = getCellKey(x, y);
-        if (state.shipBuilder.hullCells.has(key)) {
-          state.shipBuilder.hullCells.delete(key);
-          // Remove overlapping rooms
-          state.shipBuilder.rooms = state.shipBuilder.rooms.filter(room => {
-            for (let rx = room.x; rx < room.x + room.width; rx++) {
-              for (let ry = room.y; ry < room.y + room.height; ry++) {
-                if (getCellKey(rx, ry) === key) return false;
-              }
-            }
-            return true;
+      fetchShips: async () => {
+        try {
+          const data = await shipsAPI.getShips();
+          set(state => {
+            state.ships = data.ships || [];
+            state.shipsLoaded = true;
           });
-        } else {
-          state.shipBuilder.hullCells.add(key);
+          // Also fetch active ship id and credits
+          try {
+            const { fittingAPI } = await import('@/utils/api');
+            const [fleetData, creditsData] = await Promise.all([
+              fittingAPI.getFleet(),
+              fittingAPI.getCredits(),
+            ]);
+            set(state => {
+              state.activeShipId = fleetData.activeShipId || (fleetData.ships?.[0]?.id) || null;
+              state.resources.credits = creditsData.credits ?? state.resources.credits;
+            });
+          } catch (e) { /* fleet/credits endpoint may not be available yet */ }
+        } catch (error) {
+          console.error('Failed to fetch ships:', error);
         }
-      }),
+      },
 
-      loadHullTemplate: (cells) => set(state => {
-        state.shipBuilder.hullCells = new Set(cells.map(([x, y]) => getCellKey(x + 4, y + 4)));
-        state.shipBuilder.rooms = [];
-      }),
-
-      clearHull: () => set(state => {
-        state.shipBuilder.hullCells = new Set();
-        state.shipBuilder.rooms = [];
-      }),
-
-      // Room management
-      addRoom: (room) => set(state => {
-        const roomType = ROOM_TYPES[room.type];
-        const newRoom = {
-          id: generateId(),
-          type: room.type,
-          x: room.x,
-          y: room.y,
-          width: room.width,
-          height: room.height,
-          systems: [],
-          ...roomType,
-        };
-        state.shipBuilder.rooms.push(newRoom);
-      }),
-
-      removeRoom: (roomId) => set(state => {
-        state.shipBuilder.rooms = state.shipBuilder.rooms.filter(r => r.id !== roomId);
-      }),
-
-      // System management within rooms
-      addSystemToRoom: (roomId, systemId) => set(state => {
-        const room = state.shipBuilder.rooms.find(r => r.id === roomId);
-        if (room && SYSTEMS[systemId]) {
-          room.systems.push({
-            id: generateId(),
-            systemId,
-            ...SYSTEMS[systemId],
+      fetchCredits: async () => {
+        try {
+          const { fittingAPI } = await import('@/utils/api');
+          const data = await fittingAPI.getCredits();
+          set(state => {
+            state.resources.credits = data.credits ?? state.resources.credits;
           });
+        } catch (e) { /* ignore */ }
+      },
+
+      scrapShip: async (shipId) => {
+        try {
+          const result = await shipsAPI.scrapShip(shipId);
+          await get().fetchShips();
+          return { success: true, scrapValue: result.scrapValue };
+        } catch (error) {
+          return { success: false, error: error.message };
         }
-      }),
-
-      removeSystemFromRoom: (roomId, systemInstanceId) => set(state => {
-        const room = state.shipBuilder.rooms.find(r => r.id === roomId);
-        if (room) {
-          room.systems = room.systems.filter(s => s.id !== systemInstanceId);
-        }
-      }),
-
-      // Save ship design
-      saveShip: () => set(state => {
-        const { shipBuilder, ships } = state;
-        const shipId = shipBuilder.editingShipId || generateId();
-
-        const ship = {
-          id: shipId,
-          name: shipBuilder.shipName,
-          hullCells: Array.from(shipBuilder.hullCells),
-          rooms: shipBuilder.rooms.map(room => ({
-            ...room,
-            systems: room.systems.map(s => ({ ...s })),
-          })),
-          createdAt: shipBuilder.editingShipId ? ships[shipId]?.createdAt : Date.now(),
-          updatedAt: Date.now(),
-        };
-
-        state.ships[shipId] = ship;
-        state.shipBuilder.editingShipId = shipId;
-
-        return shipId;
-      }),
-
-      // Build ship (create instance from design)
-      buildShip: (designId) => set(state => {
-        const design = state.ships[designId];
-        if (!design) return null;
-
-        // Calculate build cost based on hull size and rooms
-        const hullCost = design.hullCells.length * 10;
-        const roomCost = design.rooms.reduce((sum, room) => {
-          const size = room.width * room.height;
-          return sum + size * 20;
-        }, 0);
-        const systemCost = design.rooms.reduce((sum, room) => {
-          return sum + room.systems.length * 50;
-        }, 0);
-
-        const totalCost = {
-          credits: hullCost + roomCost + systemCost,
-          metals: Math.floor((hullCost + roomCost) / 2),
-          components: design.rooms.length * 5,
-        };
-
-        // Check if can afford
-        if (!get().canAfford(totalCost)) {
-          return { error: 'insufficient_resources', required: totalCost };
-        }
-
-        // Deduct resources
-        Object.entries(totalCost).forEach(([resource, amount]) => {
-          state.resources[resource] -= amount;
-        });
-
-        // Create ship instance
-        const instanceId = generateId();
-        const shipInstance = {
-          id: instanceId,
-          designId,
-          name: `${design.name} #${Object.keys(state.ships).length}`,
-          status: 'docked',
-          health: 100,
-          fuel: 100,
-          crew: [],
-          cargo: {},
-          position: { system: state.currentSystem, x: 0, y: 0 },
-          createdAt: Date.now(),
-        };
-
-        state.fleet.push(shipInstance);
-
-        return { success: true, shipId: instanceId };
-      }),
+      },
 
       // ==========================================
       // WINDOW MANAGEMENT
@@ -335,6 +214,19 @@ export const useGameStore = create(
           state.windows[windowId].minimized = false;
           state.topZIndex += 1;
           state.windowZIndex[windowId] = state.topZIndex;
+        }
+      }),
+
+      toggleWindow: (windowId) => set(state => {
+        if (state.windows[windowId]) {
+          if (state.windows[windowId].open && !state.windows[windowId].minimized) {
+            state.windows[windowId].open = false;
+          } else {
+            state.windows[windowId].open = true;
+            state.windows[windowId].minimized = false;
+            state.topZIndex += 1;
+            state.windowZIndex[windowId] = state.topZIndex;
+          }
         }
       }),
 
@@ -371,27 +263,90 @@ export const useGameStore = create(
       }),
 
       // ==========================================
+      // NAVIGATION / AUTOPILOT
+      // ==========================================
+
+      setAutopilotTarget: (target) => set(state => {
+        state.autopilotTarget = target; // { id, name, type } or null
+      }),
+
+      setPendingJump: (targetSystemId) => set(state => {
+        state.pendingJump = targetSystemId ? { targetSystemId } : null;
+      }),
+
+      // Galaxy flight actions
+      setViewMode: (mode) => set(state => {
+        state.viewMode = mode;
+      }),
+      
+      updateGalaxyShipPosition: (x, y, speed) => set(state => {
+        state.galaxyShipPosition = { x, y };
+        state.galaxyShipSpeed = speed;
+      }),
+      
+      setGalaxyAutopilotTarget: (target) => set(state => {
+        state.galaxyAutopilotTarget = target; // { id, name } or null
+      }),
+      
+      enterGalaxyFlight: (systemX, systemY) => set(state => {
+        state.viewMode = 'galaxy';
+        state.galaxyShipPosition = { x: systemX, y: systemY };
+        state.galaxyAutopilotTarget = null;
+        state.autopilotTarget = null;
+        // Auto-open galaxy map for navigation
+        if (state.windows.galaxyMap) {
+          state.windows.galaxyMap.open = true;
+          state.windows.galaxyMap.minimized = false;
+        }
+      }),
+      
+      enterSystem: (systemId, arrivalType = 'warp') => set(state => {
+        state.viewMode = 'system';
+        state.currentSystem = systemId;
+        state.arrivalType = arrivalType; // 'warp' or 'jump_gate'
+        state.galaxyAutopilotTarget = null;
+        state.autopilotTarget = null;
+        state.pendingJump = null;
+        if (!state.discoveredSystems.includes(systemId)) {
+          state.discoveredSystems.push(systemId);
+        }
+      }),
+
+      clearAutopilot: () => set(state => {
+        state.autopilotTarget = null;
+      }),
+
+      updateShipPosition: (x, y, speed, time) => set(state => {
+        state.shipPosition = { x, y };
+        state.shipSpeed = speed;
+        state.gameTime = time;
+      }),
+
+      // ==========================================
       // RESET
       // ==========================================
 
       resetGame: () => set(initialState),
     })),
     {
-      name: 'star-shipper-save',
+      name: 'star-shipper-local',
       partialize: (state) => ({
-        // Only persist these fields
-        resources: state.resources,
-        ships: state.ships,
-        fleet: state.fleet,
-        colonies: state.colonies,
-        currentSystem: state.currentSystem,
-        discoveredSystems: state.discoveredSystems,
-        exploredLocations: state.exploredLocations,
-        researchPoints: state.researchPoints,
-        unlockedTech: state.unlockedTech,
+        // Only persist UI state locally
+        windows: state.windows,
         gameStarted: state.gameStarted,
-        currentTime: state.currentTime,
       }),
+      // Merge persisted state with initial state to handle new windows
+      merge: (persistedState, currentState) => {
+        return {
+          ...currentState,
+          ...persistedState,
+          // Merge windows - keep persisted positions but add any new windows
+          windows: {
+            ...currentState.windows,  // Start with all initial windows (includes new ones)
+            ...persistedState?.windows, // Override with persisted state
+          },
+        };
+      },
       // Handle Set serialization
       serialize: (state) => JSON.stringify(state, (key, value) => {
         if (value instanceof Set) {
@@ -410,56 +365,22 @@ export const useGameStore = create(
 );
 
 // ============================================
+// HELPER: Compute ship stats from builder state
+// ============================================
 // SELECTORS
 // ============================================
 
 export const useResources = () => useGameStore(state => state.resources);
 export const useShips = () => useGameStore(state => state.ships);
-export const useFleet = () => useGameStore(state => state.fleet);
-export const useShipBuilder = () => useGameStore(state => state.shipBuilder);
+export const useActiveShipId = () => useGameStore(state => state.activeShipId);
+export const useActiveShip = () => useGameStore(state => {
+  const id = state.activeShipId;
+  return id ? state.ships.find(s => s.id === id) || state.ships[0] || null : state.ships[0] || null;
+});
 export const useWindows = () => useGameStore(state => state.windows);
 export const useWindowZIndex = () => useGameStore(state => state.windowZIndex);
 
-// Ship builder computed values
-export const useShipBuilderStats = () => {
-  const { hullCells, rooms } = useGameStore(state => state.shipBuilder);
-  
-  const hullSize = hullCells instanceof Set ? hullCells.size : 0;
-  
-  const totalPower = rooms.reduce((sum, room) => {
-    const roomPower = room.basePower || 0;
-    const systemPower = room.systems?.reduce((s, sys) => s + (sys.power || 0), 0) || 0;
-    return sum + roomPower + systemPower;
-  }, 0);
-
-  const totalCrew = rooms.reduce((sum, room) => sum + (room.baseCrewSlots || 0), 0);
-  
-  const totalCargo = rooms
-    .filter(r => r.type === 'cargo')
-    .reduce((sum, room) => sum + (room.width * room.height * 50), 0);
-
-  const hasEssentials = {
-    cockpit: rooms.some(r => r.type === 'cockpit'),
-    engine: rooms.some(r => r.type === 'engine'),
-    reactor: rooms.some(r => r.type === 'reactor'),
-    crew: rooms.some(r => r.type === 'crew'),
-  };
-
-  const warnings = [];
-  if (!hasEssentials.cockpit) warnings.push('No cockpit - ship cannot be piloted');
-  if (!hasEssentials.engine) warnings.push('No engine - ship cannot move');
-  if (!hasEssentials.reactor) warnings.push('No reactor - ship has no power');
-  if (!hasEssentials.crew) warnings.push('No crew quarters - ship cannot have crew');
-  if (totalPower > 0) warnings.push(`Power deficit: ${totalPower} - add reactors or remove systems`);
-
-  return {
-    hullSize,
-    roomCount: rooms.length,
-    totalPower,
-    totalCrew,
-    totalCargo,
-    hasEssentials,
-    warnings,
-    isValid: warnings.length === 0 && hullSize >= 15,
-  };
-};
+// Debug: expose store on window for console inspection
+if (typeof window !== 'undefined') {
+  window.__STORE__ = useGameStore;
+}

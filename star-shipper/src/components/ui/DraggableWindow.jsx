@@ -28,6 +28,14 @@ export const DraggableWindow = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const windowRef = useRef(null);
 
+  // Update size when initial dimensions change (e.g. cargo slots change)
+  useEffect(() => {
+    setSize(prev => ({
+      width: Math.max(prev.width, initialWidth),
+      height: Math.max(minHeight, initialHeight),
+    }));
+  }, [initialWidth, initialHeight, minHeight]);
+
   // Sync position with store
   useEffect(() => {
     if (windowState) {
@@ -176,11 +184,14 @@ export const WindowDock = () => {
 
   const getWindowTitle = (id) => {
     const titles = {
-      shipBuilder: 'Ship Builder',
-      fleetManager: 'Fleet Manager',
+      shipBuilder: 'Ship Fitting',
+      fleet: 'Fleet',
+      systemView: 'System View',
       planetView: 'Planet View',
       inventory: 'Inventory',
       research: 'Research',
+      crafting: 'Crafting',
+      navigation: 'Navigation',
     };
     return titles[id] || id;
   };
