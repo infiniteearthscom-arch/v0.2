@@ -3,8 +3,8 @@
 // Handles all HTTP communication with the backend
 // ============================================
 
-const API_URL = 'http://localhost:3001/api';
-const SERVER_URL = 'http://localhost:3001';
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
+const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Get stored auth token
 const getToken = () => localStorage.getItem('star-shipper-token');
@@ -284,7 +284,7 @@ export const fittingAPI = {
 
 export const checkServerHealth = async () => {
   try {
-    const response = await fetch('http://localhost:3001/health');
+    const response = await fetch(`${SERVER_URL}/health`);
     const data = await response.json();
     return data.status === 'ok';
   } catch {
