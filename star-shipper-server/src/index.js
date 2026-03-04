@@ -54,6 +54,9 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
 
 // API routes
 app.use('/api/auth', authRoutes);

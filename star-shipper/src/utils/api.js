@@ -284,7 +284,7 @@ export const fittingAPI = {
 
 export const checkServerHealth = async () => {
   try {
-    const response = await fetch(`${SERVER_URL}/health`);
+    const response = await fetch(`${SERVER_URL}/api/health`);
     const data = await response.json();
     return data.status === 'ok';
   } catch {
