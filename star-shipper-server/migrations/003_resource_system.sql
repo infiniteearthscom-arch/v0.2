@@ -39,7 +39,7 @@ CREATE INDEX idx_affinities_planet_type ON planet_resource_affinities(planet_typ
 -- RESOURCE DEPOSITS (spawned on celestial bodies)
 -- ============================================
 CREATE TABLE resource_deposits (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     celestial_body_id UUID NOT NULL REFERENCES celestial_bodies(id) ON DELETE CASCADE,
     resource_type_id INTEGER NOT NULL REFERENCES resource_types(id),
     slot_number INTEGER NOT NULL,
@@ -72,7 +72,7 @@ CREATE INDEX idx_deposits_depleted ON resource_deposits(depleted_at) WHERE deple
 -- Note: This replaces/supplements the old player_resources table
 -- Resources with different stats are stored separately, identical stats stack
 CREATE TABLE player_resource_inventory (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     resource_type_id INTEGER NOT NULL REFERENCES resource_types(id),
     
@@ -98,7 +98,7 @@ CREATE INDEX idx_inventory_resource ON player_resource_inventory(resource_type_i
 -- PLAYER SURVEYS (what players have scanned)
 -- ============================================
 CREATE TABLE player_surveys (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     celestial_body_id UUID NOT NULL REFERENCES celestial_bodies(id) ON DELETE CASCADE,
     
@@ -117,7 +117,7 @@ CREATE INDEX idx_surveys_body ON player_surveys(celestial_body_id);
 -- HARVEST SESSIONS (manual harvesting)
 -- ============================================
 CREATE TABLE harvest_sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     ship_id UUID NOT NULL REFERENCES ships(id) ON DELETE CASCADE,
     deposit_id UUID NOT NULL REFERENCES resource_deposits(id) ON DELETE CASCADE,
@@ -140,7 +140,7 @@ CREATE INDEX idx_harvest_active ON harvest_sessions(is_active) WHERE is_active =
 -- HARVESTERS (deployable automated)
 -- ============================================
 CREATE TABLE deployed_harvesters (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     deposit_id UUID NOT NULL REFERENCES resource_deposits(id) ON DELETE CASCADE,
     

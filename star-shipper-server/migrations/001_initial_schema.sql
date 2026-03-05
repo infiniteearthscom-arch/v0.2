@@ -4,14 +4,14 @@
 -- ============================================
 -- EXTENSIONS
 -- ============================================
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================
 -- USERS & AUTH
 -- ============================================
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(32) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -37,7 +37,7 @@ CREATE INDEX idx_users_online ON users(is_online) WHERE is_online = TRUE;
 -- PLAYER RESOURCES
 -- ============================================
 CREATE TABLE player_resources (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
     credits BIGINT DEFAULT 1000,
@@ -59,7 +59,7 @@ CREATE TABLE player_resources (
 -- SHIP DESIGNS (blueprints)
 -- ============================================
 CREATE TABLE ship_designs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
     name VARCHAR(64) NOT NULL,
@@ -86,7 +86,7 @@ CREATE INDEX idx_ship_designs_public ON ship_designs(is_public) WHERE is_public 
 -- SHIPS (actual instances)
 -- ============================================
 CREATE TABLE ships (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     design_id UUID NOT NULL REFERENCES ship_designs(id),
     
@@ -124,7 +124,7 @@ CREATE INDEX idx_ships_location ON ships(location_type, location_id);
 -- CREW MEMBERS
 -- ============================================
 CREATE TABLE crew_members (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     ship_id UUID REFERENCES ships(id) ON DELETE SET NULL,
     
@@ -158,7 +158,7 @@ CREATE INDEX idx_crew_ship ON crew_members(ship_id);
 
 -- Star Systems (persistent, shared)
 CREATE TABLE star_systems (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(64) NOT NULL,
     
     -- Position in galaxy
@@ -184,7 +184,7 @@ CREATE INDEX idx_systems_position ON star_systems(galaxy_x, galaxy_y);
 
 -- Celestial Bodies (planets, stations, asteroid belts)
 CREATE TABLE celestial_bodies (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     system_id UUID NOT NULL REFERENCES star_systems(id) ON DELETE CASCADE,
     
     name VARCHAR(64) NOT NULL,
@@ -213,7 +213,7 @@ CREATE INDEX idx_bodies_system ON celestial_bodies(system_id);
 -- HUB INSTANCES (social areas)
 -- ============================================
 CREATE TABLE hub_instances (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     system_id UUID NOT NULL REFERENCES star_systems(id),
     
     -- Capacity
@@ -233,7 +233,7 @@ CREATE INDEX idx_hubs_active ON hub_instances(is_active, current_players);
 -- MISSION INSTANCES (instanced content)
 -- ============================================
 CREATE TABLE mission_instances (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     mission_type VARCHAR(64) NOT NULL,  -- mining, combat, exploration, trade, story
     difficulty INTEGER DEFAULT 1,
@@ -286,7 +286,7 @@ CREATE INDEX idx_presence_location ON player_presence(location_type, location_id
 -- CHAT & SOCIAL
 -- ============================================
 CREATE TABLE chat_messages (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     channel_type VARCHAR(32) NOT NULL,  -- global, system, hub, mission, whisper
     channel_id UUID,  -- hub_id, mission_id, or target_user_id for whispers
@@ -303,7 +303,7 @@ CREATE INDEX idx_chat_channel ON chat_messages(channel_type, channel_id, created
 
 -- Friends list
 CREATE TABLE friendships (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
@@ -320,7 +320,7 @@ CREATE INDEX idx_friends_user ON friendships(user_id, status);
 -- RESEARCH & PROGRESSION
 -- ============================================
 CREATE TABLE player_research (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
     tech_id VARCHAR(64) NOT NULL,  -- Matches tech IDs in game data
@@ -334,7 +334,7 @@ CREATE INDEX idx_research_user ON player_research(user_id);
 
 -- Current research in progress
 CREATE TABLE research_queue (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
     tech_id VARCHAR(64) NOT NULL,
