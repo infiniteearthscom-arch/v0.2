@@ -1008,6 +1008,7 @@ const VendorTab = ({ body }) => {
   const [credits, setCredits] = useState(0);
   const [sellQuantities, setSellQuantities] = useState({}); // id → quantity to sell
   const fetchCredits = useGameStore(state => state.fetchCredits);
+  const openWindow = useGameStore(state => state.openWindow);
 
   const refreshCredits = async () => {
     try {
@@ -1088,7 +1089,7 @@ const VendorTab = ({ body }) => {
   const buyHull = async (hullId) => {
     try {
       const result = await fittingAPI.buyHull(hullId);
-      if (result.success) { flash('success', `Purchased ${result.hull.name}!`); refreshCredits(); }
+      if (result.success) { flash('success', `Purchased ${result.hull.name}!`); refreshCredits(); openWindow('shipBuilder'); }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
     }

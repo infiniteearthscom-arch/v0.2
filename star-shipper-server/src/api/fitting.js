@@ -729,4 +729,43 @@ router.post('/repair-cost', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================
+// DEV: RESET ACCOUNT (wipe all player data)
+// ============================================
+
+router.post('/reset-account', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await transaction(async (client) => {
+      // 1. Null FKs that reference ships before we delete them
+      await client.query(`UPDATE users SET active_ship_id = NULL, credits = 1000 WHERE id = $1`, [userId]);
+      await client.query(`UPDATE player_presence SET active_ship_id = NULL WHERE user_id = $1`, [userId]);
+
+      // 2. Wipe active harvest sessions
+      await client.query(`DELETE FROM harvest_sessions WHERE user_id = $1`, [userId]);
+
+      // 3. Wipe deployed harvesters
+      await client.query(`DELETE FROM deployed_harvesters WHERE user_id = $1`, [userId]);
+
+      // 4. Wipe all cargo / inventory (resources, modules, probes)
+      await client.query(`DELETE FROM player_resource_inventory WHERE user_id = $1`, [userId]);
+
+      // 5. Wipe scan history
+      await client.query(`DELETE FROM player_surveys WHERE user_id = $1`, [userId]);
+
+      // 6. Delete ships (must come after nulling active_ship_id FKs)
+      await client.query(`DELETE FROM ships WHERE user_id = $1`, [userId]);
+
+      // 7. Delete ship designs (ships referenced these, so ships must be gone first)
+      await client.query(`DELETE FROM ship_designs WHERE user_id = $1`, [userId]);
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Reset account error:', error);
+    res.status(500).json({ error: 'Failed to reset account' });
+  }
+});
+
 export default router;

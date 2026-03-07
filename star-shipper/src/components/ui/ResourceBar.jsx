@@ -1,10 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
+import { fittingAPI } from '@/utils/api';
 
 export const ResourceBar = () => {
   const credits = useGameStore(state => state.resources.credits);
   const fetchCredits = useGameStore(state => state.fetchCredits);
+  const resetGame = useGameStore(state => state.resetGame);
   const activeShip = useActiveShip();
+  const [resetting, setResetting] = useState(false);
 
   // Fetch credits on mount and periodically
   useEffect(() => {
@@ -12,6 +15,19 @@ export const ResourceBar = () => {
     const interval = setInterval(fetchCredits, 15000);
     return () => clearInterval(interval);
   }, [fetchCredits]);
+
+  const handleReset = async () => {
+    if (!window.confirm('DEV: Wipe all ships, cargo, credits, and scan data? This cannot be undone.')) return;
+    setResetting(true);
+    try {
+      await fittingAPI.resetAccount();
+      resetGame();
+    } catch (err) {
+      alert('Reset failed: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   return (
     <div className="fixed top-3 left-3 flex items-center gap-3 z-40">
@@ -32,8 +48,16 @@ export const ResourceBar = () => {
           )}
         </div>
       )}
+
+      {/* DEV: Reset button */}
+      <button
+        onClick={handleReset}
+        disabled={resetting}
+        className="px-2 py-1 rounded text-[10px] font-medium bg-red-900/40 border border-red-700/40 text-red-400 hover:bg-red-900/70 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="DEV: Reset account to fresh state"
+      >
+        {resetting ? '...' : '⚠ DEV RESET'}
+      </button>
     </div>
   );
 };
-
-export default ResourceBar;

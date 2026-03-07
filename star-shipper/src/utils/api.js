@@ -276,6 +276,7 @@ export const fittingAPI = {
     method: 'POST',
     body: JSON.stringify({ inventory_id: inventoryId, quantity: quantity || 1 }),
   }),
+  resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
 };
 
 // ============================================
