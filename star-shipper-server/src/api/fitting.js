@@ -281,7 +281,6 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
       await recalcShipStats(client, ship_id, userId);
 
       // Quest 4 auto-complete: if all hull slots are now filled, complete tutorial_fit_modules
-      const hullSlots = ship.hull_slots || [];
       const allFilled = hullSlots.length > 0 && hullSlots.every(s => fitted[s.id]);
       if (allFilled) {
         const questRow = await client.query(
