@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { shipsAPI } from '@/utils/api';
+import { shipsAPI, questsAPI } from '@/utils/api';
 
 // ============================================
 // INITIAL STATE
@@ -57,6 +57,10 @@ const initialState = {
   unlockedTech: [],
   currentResearch: null,
 
+  // Quests
+  quests: [],
+  questsLoaded: false,
+
   // UI state
   windows: {
     shipBuilder: { open: false, x: 60, y: 100, minimized: false },
@@ -69,6 +73,7 @@ const initialState = {
     research: { open: false, x: 200, y: 150, minimized: false },
     planetInteraction: { open: false, x: 300, y: 100, minimized: false },
     galaxyMap: { open: false, x: 80, y: 60, minimized: false },
+    questLog: { open: false, x: 250, y: 80, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
@@ -192,6 +197,33 @@ export const useGameStore = create(
             state.resources.credits = data.credits ?? state.resources.credits;
           });
         } catch (e) { /* ignore */ }
+      },
+
+      fetchQuests: async () => {
+        try {
+          const data = await questsAPI.getQuests();
+          set(state => {
+            state.quests = data.quests || [];
+            state.questsLoaded = true;
+          });
+        } catch (error) {
+          console.error('Failed to fetch quests:', error);
+        }
+      },
+
+      completeQuest: async (questId) => {
+        try {
+          const data = await questsAPI.completeQuest(questId);
+          if (data.success && !data.already_complete) {
+            // Refresh quests and credits after completion
+            get().fetchQuests();
+            if (data.credits !== undefined) {
+              set(state => { state.resources.credits = data.credits; });
+            }
+          }
+        } catch (error) {
+          console.error('Failed to complete quest:', error);
+        }
       },
 
       scrapShip: async (shipId) => {

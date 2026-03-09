@@ -136,6 +136,19 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
       if (!hull.rows[0]) throw Object.assign(new Error('Hull not found'), { statusCode: 404 });
       const hullType = hull.rows[0];
 
+      // Starter Scout: only available to players with no existing ships
+      if (hull_type_id === 'starter_scout') {
+        const shipCount = await client.query(
+          `SELECT COUNT(*) as count FROM ships WHERE user_id = $1`, [userId]
+        );
+        if (parseInt(shipCount.rows[0].count) > 0) {
+          throw Object.assign(
+            new Error('The Starter Scout is only available to new captains with no ships.'),
+            { statusCode: 400 }
+          );
+        }
+      }
+
       // Check and deduct credits
       if (hullType.price > 0) {
         const userRow = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
@@ -145,6 +158,14 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
         }
         await client.query(`UPDATE users SET credits = credits - $1 WHERE id = $2`, [hullType.price, userId]);
       }
+
+      // Starter Scout comes pre-fitted with engine and reactor (no cargo items consumed)
+      const initialFittedModules = hull_type_id === 'starter_scout'
+        ? JSON.stringify({
+            eng1: { module_type_id: 'engine_basic', cargo_item_id: null, quality: { purity: 50, stability: 50, potency: 50, density: 50 } },
+            rct1: { module_type_id: 'reactor_basic', cargo_item_id: null, quality: { purity: 50, stability: 50, potency: 50, density: 50 } },
+          })
+        : '{}';
 
       // Create a ship design for this hull
       const designResult = await client.query(`
@@ -156,11 +177,19 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
       // Create the ship
       const shipResult = await client.query(`
         INSERT INTO ships (user_id, design_id, name, hull_type_id, fitted_modules, location_type)
-        VALUES ($1, $2, $3, $4, '{}', 'hub')
+        VALUES ($1, $2, $3, $4, $5, 'hub')
         RETURNING *
-      `, [userId, designResult.rows[0].id, ship_name || hullType.name, hull_type_id]);
+      `, [userId, designResult.rows[0].id, ship_name || hullType.name, hull_type_id, initialFittedModules]);
 
-      return { ship: shipResult.rows[0], hull: hullType };
+      const ship = shipResult.rows[0];
+
+      // Auto-set as active ship if player has no active ship yet
+      await client.query(
+        `UPDATE users SET active_ship_id = $1 WHERE id = $2 AND active_ship_id IS NULL`,
+        [ship.id, userId]
+      );
+
+      return { ship, hull: hullType };
     });
 
     res.json({ success: true, ...result });
@@ -251,7 +280,28 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
       // Recalculate ship stats based on all fitted modules
       await recalcShipStats(client, ship_id, userId);
 
-      return { fitted_slot: slot_id, module: mod.name };
+      // Quest 4 auto-complete: if all hull slots are now filled, complete tutorial_fit_modules
+      const hullSlots = ship.hull_slots || [];
+      const allFilled = hullSlots.length > 0 && hullSlots.every(s => fitted[s.id]);
+      if (allFilled) {
+        const questRow = await client.query(
+          `SELECT id FROM player_quests WHERE user_id = $1 AND quest_id = 'tutorial_fit_modules' AND status = 'active'`,
+          [userId]
+        );
+        if (questRow.rows[0]) {
+          await client.query(
+            `UPDATE player_quests SET status = 'completed', completed_at = NOW()
+             WHERE user_id = $1 AND quest_id = 'tutorial_fit_modules'`,
+            [userId]
+          );
+          await client.query(
+            `UPDATE users SET credits = credits + 500 WHERE id = $1`,
+            [userId]
+          );
+        }
+      }
+
+      return { fitted_slot: slot_id, module: mod.name, all_slots_filled: allFilled };
     });
 
     res.json({ success: true, ...result });
@@ -389,6 +439,57 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
     const { module_type_id } = req.body;
 
     if (!module_type_id) return res.status(400).json({ error: 'module_type_id required' });
+
+    // Starter Kit: special bundle purchase
+    if (module_type_id === 'starter_kit') {
+      const STARTER_KIT_PRICE = 500;
+      const STARTER_KIT_ITEMS = [
+        { id: 'engine_basic',      slot_type: 'engine'  },
+        { id: 'reactor_basic',     slot_type: 'reactor' },
+        { id: 'cargo_basic',       slot_type: 'cargo'   },
+        { id: 'weapon_laser',      slot_type: 'weapon'  },
+        { id: 'utility_scanner',   slot_type: 'utility' },
+        { id: 'utility_autopilot', slot_type: 'utility' },
+      ];
+
+      const kitResult = await transaction(async (client) => {
+        const userRow = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+        const credits = parseInt(userRow.rows[0]?.credits || 0);
+        if (credits < STARTER_KIT_PRICE) {
+          throw Object.assign(
+            new Error(`Not enough credits (need ${STARTER_KIT_PRICE}, have ${credits})`),
+            { statusCode: 400 }
+          );
+        }
+        await client.query(`UPDATE users SET credits = credits - $1 WHERE id = $2`, [STARTER_KIT_PRICE, userId]);
+
+        for (const item of STARTER_KIT_ITEMS) {
+          const slotResult = await client.query(`
+            SELECT s.slot FROM generate_series(0,
+              COALESCE((SELECT MAX(slot_index) + 1 FROM player_resource_inventory WHERE user_id = $1), 0)
+            ) s(slot)
+            WHERE s.slot NOT IN (
+              SELECT slot_index FROM player_resource_inventory WHERE user_id = $1 AND slot_index IS NOT NULL
+            )
+            ORDER BY s.slot ASC LIMIT 1
+          `, [userId]);
+          const nextSlot = parseInt(slotResult.rows[0]?.slot) || 0;
+
+          const itemData = {
+            slot_type: item.slot_type,
+            quality: { purity: 50, stability: 50, potency: 50, density: 50 },
+          };
+          await client.query(`
+            INSERT INTO player_resource_inventory (user_id, item_type, item_id, quantity, slot_index, item_data)
+            VALUES ($1, 'item', $2, 1, $3, $4)
+          `, [userId, item.id, nextSlot, JSON.stringify(itemData)]);
+        }
+
+        return { module: 'Starter Kit', price: STARTER_KIT_PRICE };
+      });
+
+      return res.json({ success: true, ...kitResult });
+    }
 
     const result = await transaction(async (client) => {
       const modResult = await client.query(

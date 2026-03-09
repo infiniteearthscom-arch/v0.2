@@ -17,6 +17,7 @@ export const Toolbar = () => {
     { id: 'crafting', label: 'Crafting', icon: '🔨' },
     { id: 'inventory', label: 'Cargo', icon: '📦' },
     { id: 'research', label: 'Research', icon: '🔬' },
+    { id: 'questLog', label: 'Quest Log', icon: '📜' },
   ];
 
   return (

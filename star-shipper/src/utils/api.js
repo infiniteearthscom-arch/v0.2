@@ -280,6 +280,18 @@ export const fittingAPI = {
 };
 
 // ============================================
+// QUESTS API
+// ============================================
+
+export const questsAPI = {
+  getQuests: () => request('/quests'),
+  completeQuest: (questId) => request('/quests/complete', {
+    method: 'POST',
+    body: JSON.stringify({ quest_id: questId }),
+  }),
+};
+
+// ============================================
 // HEALTH CHECK
 // ============================================
 

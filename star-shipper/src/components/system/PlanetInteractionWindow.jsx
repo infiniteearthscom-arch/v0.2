@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { DraggableWindow } from '@/components/ui/DraggableWindow';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
-import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
+import { resourcesAPI, harvesterAPI, fittingAPI, questsAPI } from '@/utils/api';
 
 // ============================================
 // SUB-COMPONENTS (Scan Tab - unchanged)
@@ -1074,6 +1074,7 @@ const VendorTab = ({ body }) => {
       // Supplies are non-module purchasable items — fuel, probes etc
       // For now these come from a static list since they use the crafting system
       setSupplies([
+        { id: 'starter_kit', name: 'Starter Kit', icon: '🎒', price: 500, desc: 'Full basic loadout for a Scout: engine, reactor, cargo pod, laser, sensor suite, nav computer.' },
         { id: 'fuel_cell', name: 'Fuel Cell', icon: '🔋', price: 100, desc: 'Powers a harvester for 6 hours.' },
         { id: 'scanner_probe', name: 'Scanner Probe', icon: '📡', price: 50, desc: 'Basic orbital scanner.' },
         { id: 'advanced_scanner_probe', name: 'Adv. Scanner Probe', icon: '🛰️', price: 150, desc: 'Ground-penetrating scanner.' },
@@ -1089,7 +1090,14 @@ const VendorTab = ({ body }) => {
   const buyHull = async (hullId) => {
     try {
       const result = await fittingAPI.buyHull(hullId);
-      if (result.success) { flash('success', `Purchased ${result.hull.name}!`); refreshCredits(); openWindow('shipBuilder'); }
+      if (result.success) {
+        flash('success', `Purchased ${result.hull.name}!`);
+        refreshCredits();
+        openWindow('shipBuilder');
+        if (hullId === 'starter_scout') {
+          questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
+        }
+      }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
     }
@@ -1107,7 +1115,13 @@ const VendorTab = ({ body }) => {
   const buySupply = async (itemId) => {
     try {
       const result = await fittingAPI.buyModule(itemId);
-      if (result.success) { flash('success', `Bought ${result.module}`); refreshCredits(); }
+      if (result.success) {
+        flash('success', `Bought ${result.module}`);
+        refreshCredits();
+        if (itemId === 'starter_kit') {
+          questsAPI.completeQuest('tutorial_buy_starter_kit').catch(() => {});
+        }
+      }
     } catch (err) {
       flash('error', err.message || 'Failed to buy supply');
     }
@@ -1433,6 +1447,13 @@ export const PlanetInteractionWindow = ({ body }) => {
     setSurveyStatus({ orbital_scanned: false, ground_scanned: false });
     setError(null);
   }, [body?.id]);
+
+  // Quest trigger: fly to Luna Station
+  useEffect(() => {
+    if (isOpen && body?.id === 'luna_station') {
+      questsAPI.completeQuest('tutorial_fly_to_luna').catch(() => {});
+    }
+  }, [isOpen, body?.id]);
   
   const fetchProbes = async () => {
     try {

@@ -15,6 +15,7 @@ import shipsRoutes from './api/ships.js';
 import resourcesRoutes from './api/resources.js';
 import harvesterRoutes from './api/harvesters.js';
 import fittingRoutes from './api/fitting.js';
+import questRoutes from './api/quests.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -64,6 +65,7 @@ app.use('/api/ships', shipsRoutes);
 app.use('/api/resources', resourcesRoutes);
 app.use('/api/harvesters', harvesterRoutes);
 app.use('/api/fitting', fittingRoutes);
+app.use('/api/quests', questRoutes);
 
 // 404 handler
 app.use('/api/*', (req, res) => {

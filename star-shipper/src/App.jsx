@@ -14,6 +14,7 @@ import { SystemView } from '@/components/system/SystemView';
 import { AuthScreen } from '@/components/ui/AuthScreen';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
+import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
 
 function App() {
   const windows = useGameStore(state => state.windows);
@@ -21,6 +22,7 @@ function App() {
   const startGame = useGameStore(state => state.startGame);
   const openWindow = useGameStore(state => state.openWindow);
   const fetchShips = useGameStore(state => state.fetchShips);
+  const fetchQuests = useGameStore(state => state.fetchQuests);
   const setResources = useGameStore(state => state.setResources);
   const viewMode = useGameStore(state => state.viewMode);
 
@@ -36,8 +38,9 @@ function App() {
     if (isLoggedIn && resources) {
       setResources(resources);
       fetchShips();
+      fetchQuests();
     }
-  }, [isLoggedIn, resources, setResources, fetchShips]);
+  }, [isLoggedIn, resources, setResources, fetchShips, fetchQuests]);
 
   // Loading screen
   if (isLoading) {
@@ -164,6 +167,7 @@ function App() {
       {windows.navigation?.open && viewMode === 'system' && <NavigationWindow />}
       {windows.crafting?.open && <CraftingWindow />}
       {windows.galaxyMap?.open && <GalaxyMapWindow />}
+      {windows.questLog?.open && <QuestLogWindow />}
 
       {/* Minimized windows dock */}
       <WindowDock />
