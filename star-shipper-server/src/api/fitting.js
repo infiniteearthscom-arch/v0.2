@@ -859,6 +859,9 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
 
       // 7. Delete ship designs (ships referenced these, so ships must be gone first)
       await client.query(`DELETE FROM ship_designs WHERE user_id = $1`, [userId]);
+
+      // 8. Wipe quest progress (so tutorial restarts from scratch)
+      await client.query(`DELETE FROM player_quests WHERE user_id = $1`, [userId]);
     });
 
     res.json({ success: true });

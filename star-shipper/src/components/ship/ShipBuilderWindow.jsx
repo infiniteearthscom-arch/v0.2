@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DraggableWindow } from '@/components/ui/DraggableWindow';
 import { fittingAPI, questsAPI } from '@/utils/api';
+import { useGameStore } from '@/stores/gameStore';
 
 // ============================================
 // SEEDED RANDOM (for consistent ship details)
@@ -624,6 +625,9 @@ export const ShipBuilderWindow = () => {
   const [moduleDetails, setModuleDetails] = useState({});
   const [hoveredSlot, setHoveredSlot] = useState(null);
   const [message, setMessage] = useState(null);
+  const [launching, setLaunching] = useState(false);
+  const fetchQuests = useGameStore(state => state.fetchQuests);
+  const closeWindow = useGameStore(state => state.closeWindow);
   const [tab, setTab] = useState('fit'); // fitting only now
 
   // Load initial data
@@ -671,11 +675,25 @@ export const ShipBuilderWindow = () => {
         await loadData();
         selectShip(result.ship.id);
         if (hullTypeId === 'starter_scout') {
-          questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
+          await questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
+          fetchQuests();
         }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!selectedShipId || launching) return;
+    setLaunching(true);
+    try {
+      await fittingAPI.setActiveShip(selectedShipId);
+      closeWindow('shipBuilder');
+    } catch (err) {
+      flash('error', err.message || 'Failed to launch ship');
+    } finally {
+      setLaunching(false);
     }
   };
 
@@ -738,9 +756,9 @@ export const ShipBuilderWindow = () => {
       windowId="shipBuilder"
       title="Ship Fitting"
       initialWidth={960}
-      initialHeight={850}
+      initialHeight={920}
       minWidth={750}
-      minHeight={600}
+      minHeight={650}
     >
       <div className="h-full flex flex-col gap-2 text-cyan-100">
         {/* Message bar */}
@@ -756,34 +774,37 @@ export const ShipBuilderWindow = () => {
             <ShipSelector ships={ships} selectedId={selectedShipId} onSelect={selectShip} hulls={hulls} onBuyHull={handleBuyHull} />
           </div>
 
-          {/* Center: Ship canvas */}
-          <div className="flex-1 flex flex-col items-center overflow-auto"
-            style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}
-          >
-            {hullType && HULL_SHAPES[hullType] ? (
-              <>
-                <div className="text-xs text-slate-400 mt-2 mb-1">
-                  {shipDetail?.name || 'Ship'} — <span className="text-cyan-400">{shipDetail?.hull_name} {shipDetail?.hull_class}</span>
+          {/* Center: Ship canvas + slot tooltip below */}
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col items-center overflow-auto"
+              style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}
+            >
+              {hullType && HULL_SHAPES[hullType] ? (
+                <>
+                  <div className="text-xs text-slate-400 mt-2 mb-1">
+                    {shipDetail?.name || 'Ship'} — <span className="text-cyan-400">{shipDetail?.hull_name} {shipDetail?.hull_class}</span>
+                  </div>
+                  <ShipCanvas
+                    hullId={hullType}
+                    scale={shipScale}
+                    showSlots={true}
+                    slots={hullSlots}
+                    modules={moduleDetails}
+                    onSlotHover={setHoveredSlot}
+                    onSlotClick={handleSlotClick}
+                    onSlotDrop={handleSlotDrop}
+                  />
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
+                  {ships.length === 0 ? 'Buy a hull to get started' : 'Select a ship'}
                 </div>
-                <ShipCanvas
-                  hullId={hullType}
-                  scale={shipScale}
-                  showSlots={true}
-                  slots={hullSlots}
-                  modules={moduleDetails}
-                  onSlotHover={setHoveredSlot}
-                  onSlotClick={handleSlotClick}
-                  onSlotDrop={handleSlotDrop}
-                />
-                <div className="w-full max-w-[280px] mt-1 mb-2 px-2">
-                  <SlotInfo slot={hoveredSlot} module={hoveredSlot ? moduleDetails[hoveredSlot.id] : null} />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
-                {ships.length === 0 ? 'Buy a hull to get started' : 'Select a ship'}
-              </div>
-            )}
+              )}
+            </div>
+            {/* Slot tooltip — outside scroll container so it never causes overflow */}
+            <div className="flex-shrink-0 mt-1 px-2" style={{ minHeight: 48 }}>
+              <SlotInfo slot={hoveredSlot} module={hoveredSlot ? moduleDetails[hoveredSlot.id] : null} />
+            </div>
           </div>
 
           {/* Right: Stats */}
@@ -804,8 +825,19 @@ export const ShipBuilderWindow = () => {
         </div>
 
         {/* Footer */}
-        <div className="text-center text-[10px] text-slate-500 border-t border-slate-700/30 pt-1">
-          Drag modules from cargo onto slots • Click fitted module to remove
+        <div className="flex items-center justify-between border-t border-slate-700/30 pt-2">
+          <span className="text-[10px] text-slate-500">
+            Drag modules from cargo onto slots • Click fitted module to remove
+          </span>
+          {selectedShipId && (
+            <button
+              onClick={handleLaunch}
+              disabled={launching}
+              className="flex items-center gap-2 px-4 py-1.5 rounded bg-cyan-600/20 border border-cyan-500/40 text-cyan-300 text-xs font-medium hover:bg-cyan-600/30 hover:border-cyan-400/60 transition-all disabled:opacity-50"
+            >
+              🚀 {launching ? 'Launching...' : 'Launch Ship'}
+            </button>
+          )}
         </div>
       </div>
     </DraggableWindow>
