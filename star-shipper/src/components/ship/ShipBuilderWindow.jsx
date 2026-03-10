@@ -630,6 +630,7 @@ export const ShipBuilderWindow = () => {
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const fetchShips = useGameStore(state => state.fetchShips);
   const closeWindow = useGameStore(state => state.closeWindow);
+  const openWindow = useGameStore(state => state.openWindow);
   const [tab, setTab] = useState('fit'); // fitting only now
 
   // Load initial data
@@ -693,6 +694,7 @@ export const ShipBuilderWindow = () => {
       await fittingAPI.setActiveShip(selectedShipId);
       await fetchShips(); // updates activeShipId in store so SystemView picks up the ship
       closeWindow('shipBuilder');
+      openWindow('systemView');
     } catch (err) {
       flash('error', err.message || 'Failed to launch ship');
     } finally {
