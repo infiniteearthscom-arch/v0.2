@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DraggableWindow } from '@/components/ui/DraggableWindow';
 import { fittingAPI, questsAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
+import { useTooltip } from '@/components/ui/TooltipProvider';
 
 // ============================================
 // SEEDED RANDOM (for consistent ship details)
@@ -391,7 +392,7 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
     return slots.find(s => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h) || null;
   }, [hull, scale, slots]);
 
-  const handleMouseMove = (e) => { const s = getSlotAt(e); if (s?.id !== hovered) { setHovered(s?.id || null); onSlotHover?.(s); } };
+  const handleMouseMove = (e) => { const s = getSlotAt(e); if (s?.id !== hovered) { setHovered(s?.id || null); onSlotHover?.(s, e); } };
   const handleDragOver = (e) => { e.preventDefault(); setDragOver(getSlotAt(e)?.id || null); };
   const handleDrop = (e) => {
     e.preventDefault();
@@ -406,7 +407,7 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
   return (
     <canvas ref={canvasRef}
       onMouseMove={handleMouseMove}
-      onMouseLeave={() => { setHovered(null); setDragOver(null); onSlotHover?.(null); }}
+      onMouseLeave={() => { setHovered(null); setDragOver(null); onSlotHover?.(null, null); }}
       onClick={(e) => { const s = getSlotAt(e); if (s) onSlotClick?.(s); }}
       onDragOver={handleDragOver} onDragLeave={() => setDragOver(null)} onDrop={handleDrop}
       style={{ cursor: 'pointer' }}
@@ -623,10 +624,11 @@ export const ShipBuilderWindow = () => {
   const [selectedShipId, setSelectedShipId] = useState(null);
   const [shipDetail, setShipDetail] = useState(null);
   const [moduleDetails, setModuleDetails] = useState({});
-  const [hoveredSlot, setHoveredSlot] = useState(null);
   const [message, setMessage] = useState(null);
+  const { showTooltip, hideTooltip } = useTooltip();
   const [launching, setLaunching] = useState(false);
   const fetchQuests = useGameStore(state => state.fetchQuests);
+  const fetchShips = useGameStore(state => state.fetchShips);
   const closeWindow = useGameStore(state => state.closeWindow);
   const [tab, setTab] = useState('fit'); // fitting only now
 
@@ -689,6 +691,7 @@ export const ShipBuilderWindow = () => {
     setLaunching(true);
     try {
       await fittingAPI.setActiveShip(selectedShipId);
+      await fetchShips(); // updates activeShipId in store so SystemView picks up the ship
       closeWindow('shipBuilder');
     } catch (err) {
       flash('error', err.message || 'Failed to launch ship');
@@ -740,6 +743,12 @@ export const ShipBuilderWindow = () => {
     }
   };
 
+  const handleSlotHover = (slot, e) => {
+    if (!slot) { hideTooltip(); return; }
+    const mod = moduleDetails[slot.id] || null;
+    showTooltip(<SlotInfo slot={slot} module={mod} />);
+  };
+
   const hullType = shipDetail?.hull_type_id;
   const hullSlots = shipDetail?.hull_slots || [];
 
@@ -775,36 +784,30 @@ export const ShipBuilderWindow = () => {
           </div>
 
           {/* Center: Ship canvas + slot tooltip below */}
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 flex flex-col items-center overflow-auto"
-              style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}
-            >
-              {hullType && HULL_SHAPES[hullType] ? (
-                <>
-                  <div className="text-xs text-slate-400 mt-2 mb-1">
-                    {shipDetail?.name || 'Ship'} — <span className="text-cyan-400">{shipDetail?.hull_name} {shipDetail?.hull_class}</span>
-                  </div>
-                  <ShipCanvas
-                    hullId={hullType}
-                    scale={shipScale}
-                    showSlots={true}
-                    slots={hullSlots}
-                    modules={moduleDetails}
-                    onSlotHover={setHoveredSlot}
-                    onSlotClick={handleSlotClick}
-                    onSlotDrop={handleSlotDrop}
-                  />
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
-                  {ships.length === 0 ? 'Buy a hull to get started' : 'Select a ship'}
+          <div className="flex-1 flex flex-col items-center overflow-auto"
+            style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}
+          >
+            {hullType && HULL_SHAPES[hullType] ? (
+              <>
+                <div className="text-xs text-slate-400 mt-2 mb-1">
+                  {shipDetail?.name || 'Ship'} — <span className="text-cyan-400">{shipDetail?.hull_name} {shipDetail?.hull_class}</span>
                 </div>
-              )}
-            </div>
-            {/* Slot tooltip — fixed height so it NEVER causes scrollbar regardless of content */}
-            <div className="flex-shrink-0 mt-1 px-2" style={{ height: 148, overflow: 'hidden' }}>
-              <SlotInfo slot={hoveredSlot} module={hoveredSlot ? moduleDetails[hoveredSlot.id] : null} />
-            </div>
+                <ShipCanvas
+                  hullId={hullType}
+                  scale={shipScale}
+                  showSlots={true}
+                  slots={hullSlots}
+                  modules={moduleDetails}
+                  onSlotHover={handleSlotHover}
+                  onSlotClick={handleSlotClick}
+                  onSlotDrop={handleSlotDrop}
+                />
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
+                {ships.length === 0 ? 'Buy a hull to get started' : 'Select a ship'}
+              </div>
+            )}
           </div>
 
           {/* Right: Stats */}

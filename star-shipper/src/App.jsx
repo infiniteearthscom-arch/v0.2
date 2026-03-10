@@ -15,6 +15,7 @@ import { AuthScreen } from '@/components/ui/AuthScreen';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
+import { TooltipProvider } from '@/components/ui/TooltipProvider';
 
 function App() {
   const windows = useGameStore(state => state.windows);
@@ -134,6 +135,7 @@ function App() {
 
   // Main game
   return (
+    <TooltipProvider>
     <div className="relative w-full h-screen overflow-hidden bg-slate-950 font-display">
       {/* Background */}
       <Starfield />
@@ -178,6 +180,7 @@ function App() {
         STAR SHIPPER v0.2
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
