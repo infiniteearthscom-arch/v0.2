@@ -69,6 +69,9 @@ export const HULL_SHAPES = {
   },
 };
 
+// starter_scout uses the same shape as scout
+HULL_SHAPES.starter_scout = HULL_SHAPES.scout;
+
 // ============================================
 // FACTION DATA
 // ============================================
