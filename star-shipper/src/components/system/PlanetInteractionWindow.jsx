@@ -1094,9 +1094,6 @@ const VendorTab = ({ body }) => {
         flash('success', `Purchased ${result.hull.name}!`);
         refreshCredits();
         openWindow('shipBuilder');
-        if (hullId === 'starter_scout') {
-          questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
-        }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');

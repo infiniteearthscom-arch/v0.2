@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DraggableWindow } from '@/components/ui/DraggableWindow';
-import { fittingAPI } from '@/utils/api';
+import { fittingAPI, questsAPI } from '@/utils/api';
 
 // ============================================
 // SEEDED RANDOM (for consistent ship details)
@@ -31,6 +31,8 @@ const SLOT_TYPES = {
 // HULL SHAPES (client-side rendering data)
 // ============================================
 const HULL_SHAPES = {
+  // starter_scout uses the same shape as scout
+  starter_scout: null, // populated below after scout is defined
   fighter: {
     gridW: 5, gridH: 9,
     shape: [
@@ -122,6 +124,9 @@ const HULL_SHAPES = {
     palette: { hull: [0x50,0x52,0x5a], armor: [0x3a,0x3c,0x44], accent: '#7788aa', engine: '#6699ff', viewport: '#aaccff', stripe: '#667799', detail: [0x42,0x44,0x4c] },
   },
 };
+
+// Starter Scout uses Scout hull shape
+HULL_SHAPES.starter_scout = HULL_SHAPES.scout;
 
 // ============================================
 // SHIP CANVAS RENDERER (from ShipArtDemo)
@@ -665,6 +670,9 @@ export const ShipBuilderWindow = () => {
         flash('success', `Purchased ${result.hull.name}!`);
         await loadData();
         selectShip(result.ship.id);
+        if (hullTypeId === 'starter_scout') {
+          questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
+        }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
