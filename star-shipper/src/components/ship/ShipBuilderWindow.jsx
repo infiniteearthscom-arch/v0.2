@@ -801,8 +801,8 @@ export const ShipBuilderWindow = () => {
                 </div>
               )}
             </div>
-            {/* Slot tooltip — outside scroll container so it never causes overflow */}
-            <div className="flex-shrink-0 mt-1 px-2" style={{ minHeight: 48 }}>
+            {/* Slot tooltip — fixed height so it NEVER causes scrollbar regardless of content */}
+            <div className="flex-shrink-0 mt-1 px-2" style={{ height: 148, overflow: 'hidden' }}>
               <SlotInfo slot={hoveredSlot} module={hoveredSlot ? moduleDetails[hoveredSlot.id] : null} />
             </div>
           </div>
