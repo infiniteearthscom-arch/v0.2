@@ -1331,10 +1331,17 @@ export const SystemView = () => {
           // Docking range - ship touches the planet/station
           const dockingRange = targetBody.type === 'station' ? 15 : (targetBody.size || 20) + 5;
           
-          if (currentDistance < dockingRange + 50 && currentSpeed < 40) {
+          // Wider capture zone — scales with ship speed so fast ships don't overshoot
+          const captureRange = dockingRange + 80;
+          const captureSpeed = Math.max(50, SHIP_MAX_SPEED * 0.3);
+          
+          if (currentDistance < captureRange && currentSpeed < captureSpeed) {
             // Close and slow - final approach, snap to docked position
             isBraking = true;
             thrustInput = 0;
+            // Kill remaining velocity quickly
+            shipVelRef.current.x *= 0.85;
+            shipVelRef.current.y *= 0.85;
             
             // Snap ship to docked position (on the surface/at the station)
             if (currentDistance > dockingRange) {
@@ -1403,32 +1410,34 @@ export const SystemView = () => {
               rotationInput = (angleDiff > 0 ? 1 : -1) * rotationStrength;
             }
             
-            // APPROACH SPEED CONTROL — start slowing closer, maintain higher minimum speed
-            const slowdownStartDistance = 200;
+            // APPROACH SPEED CONTROL — scale slowdown distance with max speed
+            // Faster ships need to start braking much earlier
+            const slowdownStartDistance = Math.max(250, SHIP_MAX_SPEED * 1.5);
             
             if (Math.abs(angleDiff) < 25) {
               if (currentDistance < slowdownStartDistance) {
-                // Desired speed proportional to distance, but keep a decent minimum
-                const desiredSpeed = Math.max(20, (currentDistance / slowdownStartDistance) * SHIP_MAX_SPEED * 0.6);
+                // Desired speed: drops steeply near target using squared falloff
+                const t = currentDistance / slowdownStartDistance;
+                const desiredSpeed = Math.max(10, t * t * SHIP_MAX_SPEED * 0.7);
                 
-                if (currentSpeed > desiredSpeed * 1.3) {
-                  // Going too fast for this distance - brake
+                if (currentSpeed > desiredSpeed * 1.1) {
+                  // Going too fast for this distance - brake hard
                   isBraking = true;
                   thrustInput = 0;
-                } else if (currentSpeed < desiredSpeed * 0.5 && currentDistance > dockingRange * 1.5) {
+                } else if (currentSpeed < desiredSpeed * 0.5 && currentDistance > dockingRange * 2) {
                   // Going too slow - speed up
-                  thrustInput = 0.6;
+                  thrustInput = 0.5;
                 } else {
-                  // Coast or gentle thrust
-                  if (currentDistance > dockingRange * 2 && currentSpeed < 30) {
-                    thrustInput = 0.4;
+                  // Coast or gentle thrust — only if far enough and very slow
+                  if (currentDistance > dockingRange * 3 && currentSpeed < 20) {
+                    thrustInput = 0.3;
                   }
                 }
               } else {
                 // Far from target - full thrust
                 thrustInput = 1;
               }
-            } else if (Math.abs(angleDiff) > 45 && currentSpeed > 20) {
+            } else if (Math.abs(angleDiff) > 45 && currentSpeed > 15) {
               // Facing wrong way - brake first, then turn
               isBraking = true;
             }

@@ -695,6 +695,7 @@ export const ShipBuilderWindow = () => {
       await fetchShips(); // updates activeShipId in store so SystemView picks up the ship
       closeWindow('shipBuilder');
       openWindow('systemView');
+      openWindow('navigation');
     } catch (err) {
       flash('error', err.message || 'Failed to launch ship');
     } finally {
