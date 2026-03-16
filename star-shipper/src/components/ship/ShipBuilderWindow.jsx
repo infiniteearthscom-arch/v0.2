@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DraggableWindow } from '@/components/ui/DraggableWindow';
-import { fittingAPI, questsAPI } from '@/utils/api';
+import { fittingAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 
@@ -627,7 +627,6 @@ export const ShipBuilderWindow = () => {
   const [message, setMessage] = useState(null);
   const { showTooltip, hideTooltip } = useTooltip();
   const [launching, setLaunching] = useState(false);
-  const fetchQuests = useGameStore(state => state.fetchQuests);
   const fetchShips = useGameStore(state => state.fetchShips);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
@@ -678,8 +677,7 @@ export const ShipBuilderWindow = () => {
         await loadData();
         selectShip(result.ship.id);
         if (hullTypeId === 'starter_scout') {
-          await questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
-          fetchQuests();
+          await useGameStore.getState().completeQuest('tutorial_buy_starter_scout');
         }
       }
     } catch (err) {

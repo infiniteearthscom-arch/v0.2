@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { DraggableWindow } from '@/components/ui/DraggableWindow';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
-import { resourcesAPI, harvesterAPI, fittingAPI, questsAPI } from '@/utils/api';
+import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
 
 // ============================================
 // SUB-COMPONENTS (Scan Tab - unchanged)
@@ -1116,7 +1116,7 @@ const VendorTab = ({ body }) => {
         flash('success', `Bought ${result.module}`);
         refreshCredits();
         if (itemId === 'starter_kit') {
-          questsAPI.completeQuest('tutorial_buy_starter_kit').catch(() => {});
+          useGameStore.getState().completeQuest('tutorial_buy_starter_kit');
         }
       }
     } catch (err) {
@@ -1448,7 +1448,7 @@ export const PlanetInteractionWindow = ({ body }) => {
   // Quest trigger: fly to Luna Station
   useEffect(() => {
     if (isOpen && body?.id === 'luna_station') {
-      questsAPI.completeQuest('tutorial_fly_to_luna').catch(() => {});
+      useGameStore.getState().completeQuest('tutorial_fly_to_luna');
     }
   }, [isOpen, body?.id]);
   
