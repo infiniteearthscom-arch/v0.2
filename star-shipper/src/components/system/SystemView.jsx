@@ -40,11 +40,12 @@ const LOOT_CREDITS_MIN = 20;
 const LOOT_CREDITS_MAX = 80;
 
 // Pirate spawn zones — defined by center point + radius
+// All zones are in the outer system (past Jupiter orbit 2200) so new players aren't ambushed
 const PIRATE_SPAWN_ZONES = [
-  { name: 'Belt Raiders', cx: 1500, cy: 0, radius: 400, count: 3, types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_marauder'] },
-  { name: 'Outer Patrol', cx: -2500, cy: 1500, radius: 500, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
-  { name: 'Jupiter Ambush', cx: 2200, cy: -800, radius: 350, count: 3, types: ['pirate_interceptor', 'pirate_marauder', 'pirate_interceptor'] },
-  { name: 'Saturn Corsairs', cx: -1000, cy: -3000, radius: 400, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
+  { name: 'Jupiter Corsairs', cx: 2600, cy: -900, radius: 400, count: 3, types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_marauder'] },
+  { name: 'Saturn Raiders', cx: -1200, cy: -2800, radius: 450, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
+  { name: 'Outer Rim Patrol', cx: -3200, cy: 2000, radius: 500, count: 3, types: ['pirate_interceptor', 'pirate_marauder', 'pirate_interceptor'] },
+  { name: 'Deep Space Ambush', cx: 3600, cy: 2400, radius: 400, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
 ];
 
 // Galaxy singleton (same seed as GalaxyMapWindow)
