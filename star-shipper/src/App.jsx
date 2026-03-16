@@ -114,6 +114,7 @@ function App() {
               startGame();
               openWindow('shipBuilder');
               openWindow('questLog');
+              openWindow('navigation');
             }}
             className="px-8 py-4 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 text-xl font-medium hover:bg-cyan-500/30 hover:border-cyan-400/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-cyan-500/20"
           >

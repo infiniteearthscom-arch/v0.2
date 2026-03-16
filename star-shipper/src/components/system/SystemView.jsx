@@ -955,6 +955,36 @@ export const SystemView = () => {
   const shipPhysicsRef = useRef({ SHIP_MAX_SPEED, SHIP_ACCELERATION, SHIP_ROTATION_SPEED });
   shipPhysicsRef.current = { SHIP_MAX_SPEED, SHIP_ACCELERATION, SHIP_ROTATION_SPEED };
   
+  // Derive weapon stats from fitted modules
+  // No weapon module = no shooting
+  const weaponStats = useMemo(() => {
+    const fitted = playerShip?.fitted_modules || {};
+    const weapons = Object.values(fitted).filter(m => m.module_type_id?.startsWith('weapon_'));
+    if (weapons.length === 0) return null; // No weapons equipped
+    
+    // Each weapon adds damage; best quality determines fire rate bonus
+    let totalDamage = 0;
+    let bestQualityMult = 1.0;
+    for (const w of weapons) {
+      let qMult = 1.0;
+      if (w.quality) {
+        const avg = ((w.quality.purity || 50) + (w.quality.stability || 50) +
+                     (w.quality.potency || 50) + (w.quality.density || 50)) / 4;
+        qMult = avg / 50;
+      }
+      totalDamage += PLAYER_BASE_DAMAGE * qMult;
+      if (qMult > bestQualityMult) bestQualityMult = qMult;
+    }
+    return {
+      damage: Math.round(totalDamage),
+      fireRate: PLAYER_BASE_FIRE_RATE / Math.min(bestQualityMult, 2), // Better quality = faster fire
+      count: weapons.length,
+    };
+  }, [playerShip?.fitted_modules]);
+  
+  const weaponStatsRef = useRef(weaponStats);
+  weaponStatsRef.current = weaponStats;
+  
   // Current system — Sol is hardcoded, everything else is procedurally generated
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
   const setCurrentSystemId = useGameStore(state => state.setCurrentSystemId);
@@ -1658,26 +1688,29 @@ export const SystemView = () => {
         }
       }
       
-      // --- Player auto-fire ---
-      playerFireCooldownRef.current -= delta;
-      if (playerFireCooldownRef.current <= 0) {
-        // Find nearest alive enemy in range
-        let nearest = null, nearestDist = PLAYER_FIRE_RANGE;
-        for (const e of enemies) {
-          if (e.hull <= 0) continue;
-          const d = Math.sqrt((e.x - playerPos.x) ** 2 + (e.y - playerPos.y) ** 2);
-          if (d < nearestDist) { nearest = e; nearestDist = d; }
-        }
-        if (nearest) {
-          playerFireCooldownRef.current = PLAYER_BASE_FIRE_RATE;
-          const pAngle = Math.atan2(nearest.y - playerPos.y, nearest.x - playerPos.x);
-          projectiles.push({
-            x: playerPos.x, y: playerPos.y,
-            vx: Math.cos(pAngle) * PROJECTILE_SPEED,
-            vy: Math.sin(pAngle) * PROJECTILE_SPEED,
-            age: 0, fromPlayer: true, damage: PLAYER_BASE_DAMAGE,
-            color: '#22ddee',
-          });
+      // --- Player auto-fire (only if weapons are equipped) ---
+      const wStats = weaponStatsRef.current;
+      if (wStats) {
+        playerFireCooldownRef.current -= delta;
+        if (playerFireCooldownRef.current <= 0) {
+          // Find nearest alive enemy in range
+          let nearest = null, nearestDist = PLAYER_FIRE_RANGE;
+          for (const e of enemies) {
+            if (e.hull <= 0) continue;
+            const d = Math.sqrt((e.x - playerPos.x) ** 2 + (e.y - playerPos.y) ** 2);
+            if (d < nearestDist) { nearest = e; nearestDist = d; }
+          }
+          if (nearest) {
+            playerFireCooldownRef.current = wStats.fireRate;
+            const pAngle = Math.atan2(nearest.y - playerPos.y, nearest.x - playerPos.x);
+            projectiles.push({
+              x: playerPos.x, y: playerPos.y,
+              vx: Math.cos(pAngle) * PROJECTILE_SPEED,
+              vy: Math.sin(pAngle) * PROJECTILE_SPEED,
+              age: 0, fromPlayer: true, damage: wStats.damage,
+              color: '#22ddee',
+            });
+          }
         }
       }
       
