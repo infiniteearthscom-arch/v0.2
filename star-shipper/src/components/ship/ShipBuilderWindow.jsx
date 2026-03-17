@@ -724,6 +724,10 @@ export const ShipBuilderWindow = () => {
       if (result.success) {
         flash('success', `Fitted ${result.module} → ${slot.id}`);
         selectShip(selectedShipId);
+        // All slots filled → complete the fitting quest
+        if (result.all_slots_filled) {
+          useGameStore.getState().completeQuest('tutorial_fit_modules');
+        }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to fit module');

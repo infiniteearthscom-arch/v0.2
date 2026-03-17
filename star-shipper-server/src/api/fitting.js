@@ -280,25 +280,8 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
       // Recalculate ship stats based on all fitted modules
       await recalcShipStats(client, ship_id, userId);
 
-      // Quest 4 auto-complete: if all hull slots are now filled, complete tutorial_fit_modules
+      // Check if all hull slots are now filled (client uses this to trigger quest completion)
       const allFilled = hullSlots.length > 0 && hullSlots.every(s => fitted[s.id]);
-      if (allFilled) {
-        const questRow = await client.query(
-          `SELECT id FROM player_quests WHERE user_id = $1 AND quest_id = 'tutorial_fit_modules' AND status = 'active'`,
-          [userId]
-        );
-        if (questRow.rows[0]) {
-          await client.query(
-            `UPDATE player_quests SET status = 'completed', completed_at = NOW()
-             WHERE user_id = $1 AND quest_id = 'tutorial_fit_modules'`,
-            [userId]
-          );
-          await client.query(
-            `UPDATE users SET credits = credits + 500 WHERE id = $1`,
-            [userId]
-          );
-        }
-      }
 
       return { fitted_slot: slot_id, module: mod.name, all_slots_filled: allFilled };
     });
