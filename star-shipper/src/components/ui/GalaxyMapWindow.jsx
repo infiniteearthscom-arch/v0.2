@@ -4,7 +4,7 @@
 // Click a system to set autopilot in galaxy flight mode.
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
+import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, FACTIONS } from '@/utils/galaxyGenerator';
 
@@ -169,12 +169,7 @@ export const GalaxyMapWindow = () => {
     currentSys?.hasJumpGate && currentSys?.jumpConnections?.includes(selectedSys.id);
 
   return (
-    <DraggableWindow
-      windowId="galaxyMap"
-      title="🌌 Galaxy Map"
-      initialWidth={Math.max(1200, Math.round(window.innerWidth * 0.65))}
-      initialHeight={Math.max(800, Math.round(window.innerHeight * 0.7))}
-    >
+    <ModalOverlay windowId="galaxyMap" title="Galaxy Map" icon="🌌" accent="#8844ff">
       <div className="flex h-full gap-0">
         {/* Map area */}
         <div className="flex-1 relative overflow-hidden">
@@ -497,6 +492,6 @@ export const GalaxyMapWindow = () => {
           )}
         </div>
       </div>
-    </DraggableWindow>
+    </ModalOverlay>
   );
 };

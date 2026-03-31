@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
+import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { RESOURCE_TYPES } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
@@ -461,14 +461,7 @@ export const CraftingWindow = () => {
   const toggleSub = (key) => setSubCollapsed(p => ({ ...p, [key]: !p[key] }));
 
   return (
-    <DraggableWindow
-      windowId="crafting"
-      title="Crafting"
-      initialWidth={520}
-      initialHeight={520}
-      minWidth={460}
-      minHeight={380}
-    >
+    <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent="#aa66ff" width={420}>
       <div className="flex h-full gap-2">
         {/* Recipe sidebar */}
         <div className="w-[180px] flex-shrink-0 overflow-y-auto border-r border-slate-700/50 pr-2">
@@ -655,7 +648,7 @@ export const CraftingWindow = () => {
           )}
         </div>
       </div>
-    </DraggableWindow>
+    </ContextPanel>
   );
 };
 

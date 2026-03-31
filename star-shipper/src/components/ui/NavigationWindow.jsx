@@ -3,7 +3,7 @@
 // Click a body to set autopilot destination
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
+import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, generateSystemContent } from '@/utils/galaxyGenerator';
 
@@ -189,14 +189,7 @@ export const NavigationWindow = () => {
   const shipScreenY = shipPosition.y * mapScale;
 
   return (
-    <DraggableWindow
-      windowId="navigation"
-      title={`Navigation — ${system.name} System`}
-      initialWidth={400}
-      initialHeight={480}
-      minWidth={350}
-      minHeight={420}
-    >
+    <ContextPanel windowId="navigation" title="Navigation" icon="🧭" accent="#60a5fa" width={400}>
       <div className="flex flex-col h-full">
         {/* Map */}
         <div className="relative flex-1 flex items-center justify-center">
@@ -419,7 +412,7 @@ export const NavigationWindow = () => {
           )}
         </div>
       </div>
-    </DraggableWindow>
+    </ContextPanel>
   );
 };
 

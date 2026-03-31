@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
+import { ContextPanel } from '@/components/ui/ContextPanel';
 import { fittingAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { getShipImage, MAX_FLEET_SIZE } from '@/utils/shipRenderer';
@@ -75,7 +75,7 @@ export const FleetWindow = () => {
   };
 
   return (
-    <DraggableWindow windowId="fleet" title="Fleet Management" initialWidth={680} initialHeight={520} minWidth={500} minHeight={350}>
+    <ContextPanel windowId="fleet" title="Fleet" icon="🚀" accent="#60a5fa" width={420}>
       <div className="h-full flex flex-col gap-2 text-cyan-100">
         {message && (
           <div className={`text-xs px-3 py-1 rounded ${message.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -220,7 +220,7 @@ export const FleetWindow = () => {
           })}
         </div>
       </div>
-    </DraggableWindow>
+    </ContextPanel>
   );
 };
 

@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
+import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO, RESOURCE_TYPES } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
@@ -455,14 +455,7 @@ export const InventoryWindow = () => {
   const windowWidth = GRID_COLS * (SLOT_SIZE + SLOT_GAP) + SLOT_GAP + 2 + 32; // grid + padding
 
   return (
-    <DraggableWindow
-      windowId="inventory"
-      title="Cargo"
-      initialWidth={windowWidth}
-      initialHeight={Math.min(windowHeight, 900)}
-      minWidth={windowWidth}
-      minHeight={250}
-    >
+    <ContextPanel windowId="inventory" title="Cargo" icon="📦" accent="#f59e0b" width={420}>
       <div className="flex flex-col h-full relative" ref={containerRef}>
         {cargo && (
           <CargoBar
@@ -720,7 +713,7 @@ export const InventoryWindow = () => {
           document.body
         )}
       </div>
-    </DraggableWindow>
+    </ContextPanel>
   );
 };
 
