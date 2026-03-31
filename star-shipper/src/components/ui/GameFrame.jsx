@@ -15,7 +15,7 @@ const TOOLBAR_BUTTONS = [
   { id: 'shipBuilder', icon: '🔧', label: 'Fitting', color: '#ff6622' },
   { id: 'fleet', icon: '🚀', label: 'Fleet', color: '#60a5fa' },
   { id: 'navigation', icon: '🧭', label: 'Nav', color: '#60a5fa' },
-  { id: 'cargo', icon: '📦', label: 'Cargo', color: '#f59e0b' },
+  { id: 'inventory', icon: '📦', label: 'Cargo', color: '#f59e0b' },
   { id: 'crafting', icon: '🔨', label: 'Craft', color: '#aa66ff' },
   { id: 'questLog', icon: '📋', label: 'Missions', color: '#22d3ee' },
   { id: 'galaxyMap', icon: '🌌', label: 'Galaxy', color: '#8844ff' },
@@ -149,9 +149,33 @@ const TopBar = () => {
 // LEFT TOOLBAR
 // ============================================
 
+const CONTEXT_PANELS = ['fleet', 'inventory', 'crafting', 'questLog', 'navigation'];
+const MODALS = ['shipBuilder', 'galaxyMap'];
+
 const LeftToolbar = () => {
   const windows = useGameStore(state => state.windows);
   const toggleWindow = useGameStore(state => state.toggleWindow);
+  const closeWindow = useGameStore(state => state.closeWindow);
+  const openWindow = useGameStore(state => state.openWindow);
+
+  const handleClick = (id) => {
+    const isCurrentlyOpen = windows[id]?.open && !windows[id]?.minimized;
+
+    if (isCurrentlyOpen) {
+      // Just close it
+      closeWindow(id);
+    } else {
+      // If it's a context panel, close any other open context panels first
+      if (CONTEXT_PANELS.includes(id)) {
+        CONTEXT_PANELS.forEach(panelId => {
+          if (panelId !== id && windows[panelId]?.open) {
+            closeWindow(panelId);
+          }
+        });
+      }
+      openWindow(id);
+    }
+  };
 
   return (
     <div className="fixed left-1.5 z-40 flex flex-col gap-0.5" style={{ top: 46 }}>
@@ -160,7 +184,7 @@ const LeftToolbar = () => {
         return (
           <button
             key={btn.id}
-            onClick={() => toggleWindow(btn.id)}
+            onClick={() => handleClick(btn.id)}
             title={btn.label}
             className="flex items-center justify-center transition-all"
             style={{

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
-import { fittingAPI } from '@/utils/api';
+import { ModalOverlay } from '@/components/ui/ModalOverlay';
+import { fittingAPI, questsAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 
@@ -526,7 +526,7 @@ const SlotInfo = ({ slot, module }) => {
               })}
             </div>
           )}
-          <div className="text-[9px] text-slate-600 mt-1">Click to select</div>
+          <div className="text-[9px] text-slate-600 mt-1">Click to unfit</div>
         </div>
       ) : (
         <div className="mt-1 text-slate-500">Empty — drag a module from cargo</div>
@@ -625,9 +625,9 @@ export const ShipBuilderWindow = () => {
   const [shipDetail, setShipDetail] = useState(null);
   const [moduleDetails, setModuleDetails] = useState({});
   const [message, setMessage] = useState(null);
-  const [selectedSlot, setSelectedSlot] = useState(null);
   const { showTooltip, hideTooltip } = useTooltip();
   const [launching, setLaunching] = useState(false);
+  const fetchQuests = useGameStore(state => state.fetchQuests);
   const fetchShips = useGameStore(state => state.fetchShips);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
@@ -659,7 +659,6 @@ export const ShipBuilderWindow = () => {
 
   const selectShip = async (shipId) => {
     setSelectedShipId(shipId);
-    setSelectedSlot(null);
     try {
       const data = await fittingAPI.getShipDetail(shipId);
       setShipDetail(data.ship);
@@ -679,7 +678,8 @@ export const ShipBuilderWindow = () => {
         await loadData();
         selectShip(result.ship.id);
         if (hullTypeId === 'starter_scout') {
-          await useGameStore.getState().completeQuest('tutorial_buy_starter_scout');
+          await questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
+          fetchQuests();
         }
       }
     } catch (err) {
@@ -695,7 +695,6 @@ export const ShipBuilderWindow = () => {
       await fetchShips(); // updates activeShipId in store so SystemView picks up the ship
       closeWindow('shipBuilder');
       openWindow('systemView');
-      openWindow('navigation');
     } catch (err) {
       flash('error', err.message || 'Failed to launch ship');
     } finally {
@@ -724,10 +723,6 @@ export const ShipBuilderWindow = () => {
       if (result.success) {
         flash('success', `Fitted ${result.module} → ${slot.id}`);
         selectShip(selectedShipId);
-        // All slots filled → complete the fitting quest
-        if (result.all_slots_filled) {
-          useGameStore.getState().completeQuest('tutorial_fit_modules');
-        }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to fit module');
@@ -736,18 +731,13 @@ export const ShipBuilderWindow = () => {
 
   const handleSlotClick = async (slot) => {
     if (!selectedShipId) return;
-    setSelectedSlot(slot);
-  };
-
-  const handleUnfitSlot = async (slot) => {
-    if (!selectedShipId || !slot) return;
+    // If slot has a module, unfit it
     if (moduleDetails[slot.id]) {
       try {
         const result = await fittingAPI.unfitModule(selectedShipId, slot.id);
         if (result.success) {
           flash('success', `Removed ${result.removed_module} → cargo`);
           selectShip(selectedShipId);
-          setSelectedSlot(null);
         }
       } catch (err) {
         flash('error', err.message || 'Failed to unfit module');
@@ -773,21 +763,17 @@ export const ShipBuilderWindow = () => {
   }
 
   return (
-    <DraggableWindow
+    <ModalOverlay
       windowId="shipBuilder"
-      title="Ship Fitting"
-      initialWidth={960}
-      initialHeight={920}
-      minWidth={750}
-      minHeight={650}
+      title="Ship Designer"
+      icon="🔧"
+      accent="#ff6622"
     >
-      <div className="h-full flex flex-col gap-2 text-cyan-100 relative">
-        {/* Message overlay — doesn't push content */}
+      <div className="h-full flex flex-col gap-2 text-cyan-100">
+        {/* Message bar */}
         {message && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
-            <div className={`text-xs px-4 py-1.5 rounded-lg shadow-lg border ${message.type === 'success' ? 'bg-green-900/90 text-green-400 border-green-600/40' : 'bg-red-900/90 text-red-400 border-red-600/40'}`}>
-              {message.text}
-            </div>
+          <div className={`text-xs px-3 py-1 rounded ${message.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+            {message.text}
           </div>
         )}
 
@@ -797,7 +783,7 @@ export const ShipBuilderWindow = () => {
             <ShipSelector ships={ships} selectedId={selectedShipId} onSelect={selectShip} hulls={hulls} onBuyHull={handleBuyHull} />
           </div>
 
-          {/* Center: Ship canvas + slot info below */}
+          {/* Center: Ship canvas + slot tooltip below */}
           <div className="flex-1 flex flex-col items-center overflow-auto"
             style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}
           >
@@ -816,44 +802,6 @@ export const ShipBuilderWindow = () => {
                   onSlotClick={handleSlotClick}
                   onSlotDrop={handleSlotDrop}
                 />
-                {/* Slot info bar — shows selected slot with unfit button */}
-                {selectedSlot ? (() => {
-                  const st = SLOT_TYPES[selectedSlot.type] || { color: '#888', name: selectedSlot.type };
-                  const mod = moduleDetails[selectedSlot.id];
-                  let avgQ = null, qColor = '#888';
-                  if (mod?.quality) {
-                    const q = mod.quality;
-                    avgQ = Math.round((q.purity + q.stability + q.potency + q.density) / 4);
-                    qColor = avgQ >= 80 ? '#aa44ff' : avgQ >= 60 ? '#4488ff' : avgQ >= 40 ? '#44cc44' : '#888888';
-                  }
-                  return (
-                    <div className="w-full px-3 py-2 border-t" style={{ borderColor: st.color + '33', background: st.color + '08' }}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: st.color }} />
-                          <span className="text-[11px] font-medium" style={{ color: st.color }}>{st.name}</span>
-                          {mod ? (
-                            <span className="text-[11px] text-cyan-300">{mod.name}{mod.tier ? ` T${mod.tier}` : ''}{avgQ !== null ? <span className="ml-1.5" style={{color: qColor}}>Q{avgQ}</span> : ''}</span>
-                          ) : (
-                            <span className="text-[11px] text-slate-500">Empty — drag module from cargo</span>
-                          )}
-                        </div>
-                        {mod && (
-                          <button
-                            onClick={() => handleUnfitSlot(selectedSlot)}
-                            className="px-2.5 py-1 rounded text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-700/40 hover:bg-red-900/50 hover:border-red-600/50 transition-colors flex-shrink-0 ml-2"
-                          >
-                            ✕ Unfit
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })() : (
-                  <div className="w-full px-3 py-2 border-t border-slate-800/50">
-                    <span className="text-[10px] text-slate-600">Click a slot to select it</span>
-                  </div>
-                )}
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
@@ -882,7 +830,7 @@ export const ShipBuilderWindow = () => {
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-700/30 pt-2">
           <span className="text-[10px] text-slate-500">
-            Drag modules from cargo onto slots • Click slot to select • Unfit to remove
+            Drag modules from cargo onto slots • Click fitted module to remove
           </span>
           {selectedShipId && (
             <button
@@ -895,7 +843,7 @@ export const ShipBuilderWindow = () => {
           )}
         </div>
       </div>
-    </DraggableWindow>
+    </ModalOverlay>
   );
 };
 
