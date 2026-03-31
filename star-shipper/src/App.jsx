@@ -1,8 +1,6 @@
 import React, { useEffect } from 'react';
 import { Starfield } from '@/components/ui/Starfield';
-import { ResourceBar } from '@/components/ui/ResourceBar';
-import { Toolbar } from '@/components/ui/Toolbar';
-import { WindowDock } from '@/components/ui/DraggableWindow';
+import { GameFrame } from '@/components/ui/GameFrame';
 import { ShipBuilderWindow } from '@/components/ship/ShipBuilderWindow';
 import { FleetWindow } from '@/components/ship/FleetWindow';
 import { InventoryWindow } from '@/components/ui/InventoryWindow';
@@ -17,6 +15,74 @@ import { useAuthStore } from '@/stores/authStore';
 import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
 import { TooltipProvider } from '@/components/ui/TooltipProvider';
 
+// ============================================
+// QUEST COMPLETION TOAST
+// ============================================
+const QuestToast = () => {
+  const notification = useGameStore(state => state.questNotification);
+  const [visible, setVisible] = React.useState(false);
+  const [data, setData] = React.useState(null);
+
+  React.useEffect(() => {
+    if (notification) {
+      setData(notification);
+      requestAnimationFrame(() => setVisible(true));
+    } else {
+      setVisible(false);
+      const t = setTimeout(() => setData(null), 500);
+      return () => clearTimeout(t);
+    }
+  }, [notification]);
+
+  if (!data) return null;
+
+  return (
+    <div
+      className="fixed top-12 left-1/2 -translate-x-1/2 z-[100] pointer-events-none"
+      style={{
+        transition: 'opacity 0.4s ease, transform 0.4s ease',
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(-20px)',
+      }}
+    >
+      <div className="px-5 py-3 rounded-xl border shadow-2xl backdrop-blur-md"
+        style={{
+          background: 'linear-gradient(135deg, rgba(16, 40, 28, 0.95), rgba(10, 25, 40, 0.95))',
+          borderColor: 'rgba(74, 222, 128, 0.4)',
+          boxShadow: '0 0 30px rgba(74, 222, 128, 0.15), 0 8px 32px rgba(0,0,0,0.4)',
+          minWidth: 260,
+        }}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-green-400 text-sm">✓</span>
+          <span className="text-green-400 text-xs font-bold uppercase tracking-wider">Quest Complete</span>
+        </div>
+        <div className="text-sm font-medium text-slate-100">{data.title}</div>
+        {data.rewards && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {data.rewards.credits > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-900/40 border border-yellow-600/30 text-yellow-400">
+                +{data.rewards.credits.toLocaleString()} cr
+              </span>
+            )}
+            {data.rewards.items?.map((item, i) => (
+              <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/40 border border-cyan-600/30 text-cyan-400">
+                +{item.quantity}x {item.item_id?.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+        )}
+        {data.triggeredQuests?.length > 0 && (
+          <div className="text-[10px] text-cyan-400/60 mt-1.5">New quest unlocked!</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// APP
+// ============================================
 function App() {
   const windows = useGameStore(state => state.windows);
   const gameStarted = useGameStore(state => state.gameStarted);
@@ -29,12 +95,8 @@ function App() {
 
   const { isLoggedIn, isLoading, user, resources, checkSession, logout } = useAuthStore();
 
-  // Check for existing session on load
-  useEffect(() => {
-    checkSession();
-  }, [checkSession]);
+  useEffect(() => { checkSession(); }, [checkSession]);
 
-  // Sync resources and fetch data when logged in
   useEffect(() => {
     if (isLoggedIn && resources) {
       setResources(resources);
@@ -61,7 +123,7 @@ function App() {
     );
   }
 
-  // Auth screen (not logged in)
+  // Auth screen
   if (!isLoggedIn) {
     return (
       <div className="relative w-full h-screen overflow-hidden bg-slate-950 font-display">
@@ -71,116 +133,61 @@ function App() {
     );
   }
 
-  // Start screen (logged in, game not started)
+  // Start screen
   if (!gameStarted) {
     return (
       <div className="relative w-full h-screen overflow-hidden bg-slate-950 font-display">
         <Starfield />
-        
         <div className="relative z-10 flex flex-col items-center justify-center h-full">
-          {/* Welcome message */}
           <div className="absolute top-6 right-6 flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/60 border border-cyan-500/20">
               <div className="w-2 h-2 rounded-full bg-green-400" />
               <span className="text-sm text-cyan-300">{user?.username}</span>
             </div>
-            <button
-              onClick={logout}
-              className="px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-600/30 text-slate-400 text-sm hover:text-red-400 hover:border-red-500/30 transition-colors"
-            >
+            <button onClick={logout} className="px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-600/30 text-slate-400 text-sm hover:text-red-400 hover:border-red-500/30 transition-colors">
               Sign Out
             </button>
           </div>
-
-          <h1
-            className="text-6xl font-bold tracking-wider mb-4"
-            style={{
-              background: 'linear-gradient(135deg, #00d4ff 0%, #0080ff 50%, #8040ff 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
+          <h1 className="text-6xl font-bold tracking-wider mb-4" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             STAR SHIPPER
           </h1>
-          <p className="text-xl text-cyan-400/70 mb-3">
-            Build ships. Explore systems. Build an empire.
-          </p>
-          <p className="text-sm text-cyan-400/40 mb-12">
-            Welcome back, Commander {user?.displayName || user?.username}
-          </p>
-          
+          <p className="text-xl text-blue-400/70 mb-3">Build ships. Explore systems. Build an empire.</p>
+          <p className="text-sm text-blue-400/40 mb-12">Welcome back, Commander {user?.displayName || user?.username}</p>
           <button
-            onClick={() => {
-              startGame();
-              openWindow('shipBuilder');
-              openWindow('questLog');
-              openWindow('navigation');
-            }}
-            className="px-8 py-4 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 text-xl font-medium hover:bg-cyan-500/30 hover:border-cyan-400/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-cyan-500/20"
+            onClick={() => { startGame(); openWindow('shipBuilder'); openWindow('questLog'); openWindow('navigation'); }}
+            className="px-8 py-4 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-100 text-xl font-medium hover:bg-blue-500/30 hover:border-blue-400/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-blue-500/20"
           >
             Launch Game
           </button>
-
-          <p className="mt-8 text-sm text-slate-500">
-            Version 0.2.0 - Multiplayer Preview
-          </p>
-        </div>
-
-        {/* Corner branding */}
-        <div className="absolute bottom-4 right-4 text-cyan-500/30 text-sm font-medium tracking-widest">
-          STAR SHIPPER
+          <p className="mt-8 text-sm text-slate-500">Version 0.2.0</p>
         </div>
       </div>
     );
   }
 
-  // Main game
+  // ============================================
+  // MAIN GAME
+  // ============================================
   return (
     <TooltipProvider>
-    <div className="relative w-full h-screen overflow-hidden bg-slate-950 font-display">
-      {/* Background */}
-      <Starfield />
+      <GameFrame>
+        {/* Game views — render full-screen between top bar and bottom bar */}
+        {viewMode === 'system' && <SystemView />}
+        {viewMode === 'galaxy' && <GalaxyFlightView />}
 
-      {/* User info */}
-      <div className="fixed top-4 right-4 flex items-center gap-2 z-40">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-cyan-500/20 backdrop-blur-sm">
-          <div className="w-2 h-2 rounded-full bg-green-400" />
-          <span className="text-xs text-cyan-300">{user?.username}</span>
-        </div>
-        <button
-          onClick={logout}
-          className="px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-600/30 text-slate-500 text-xs hover:text-red-400 hover:border-red-500/30 transition-colors backdrop-blur-sm"
-          title="Sign Out"
-        >
-          ✕
-        </button>
-      </div>
+        {/* Floating windows — still using DraggableWindow temporarily */}
+        {/* These will be converted to overlay panels in a future session */}
+        {windows.shipBuilder?.open && <ShipBuilderWindow />}
+        {windows.fleet?.open && <FleetWindow />}
+        {windows.inventory?.open && <InventoryWindow />}
+        {windows.navigation?.open && viewMode === 'system' && <NavigationWindow />}
+        {windows.crafting?.open && <CraftingWindow />}
+        {windows.galaxyMap?.open && <GalaxyMapWindow />}
+        {windows.questLog?.open && <QuestLogWindow />}
 
-      {/* HUD Elements */}
-      <ResourceBar />
-      <Toolbar />
-
-      {/* Main game views — always active based on mode */}
-      {viewMode === 'system' && <SystemView />}
-      {viewMode === 'galaxy' && <GalaxyFlightView />}
-
-      {/* Windows */}
-      {windows.shipBuilder?.open && <ShipBuilderWindow />}
-      {windows.fleet?.open && <FleetWindow />}
-      {windows.inventory?.open && <InventoryWindow />}
-      {windows.navigation?.open && viewMode === 'system' && <NavigationWindow />}
-      {windows.crafting?.open && <CraftingWindow />}
-      {windows.galaxyMap?.open && <GalaxyMapWindow />}
-      {windows.questLog?.open && <QuestLogWindow />}
-
-      {/* Minimized windows dock */}
-      <WindowDock />
-
-      {/* Corner branding */}
-      <div className="absolute bottom-4 left-4 text-cyan-500/30 text-sm font-medium tracking-widest z-10">
-        STAR SHIPPER v0.2
-      </div>
-    </div>
+        {/* Quest completion toast */}
+        <QuestToast />
+      </GameFrame>
     </TooltipProvider>
   );
 }

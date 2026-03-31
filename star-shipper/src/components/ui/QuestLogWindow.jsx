@@ -33,7 +33,7 @@ const RewardBadge = ({ rewards }) => {
 // QUEST CARD
 // ============================================
 
-const QuestCard = ({ quest, isActive }) => {
+const QuestCard = ({ quest, isActive, isRecentlyCompleted }) => {
   const category = quest.category || 'main';
   const categoryColors = {
     tutorial: { border: '#22d3ee', glow: '#22d3ee22', badge: 'bg-cyan-900/40 text-cyan-400 border-cyan-600/40' },
@@ -47,9 +47,11 @@ const QuestCard = ({ quest, isActive }) => {
     <div
       className="rounded-lg p-3 border transition-all"
       style={{
-        borderColor: isActive ? colors.border + '88' : '#334155',
-        background: isActive ? colors.glow : '#0f172a44',
-        opacity: isActive ? 1 : 0.55,
+        borderColor: isRecentlyCompleted ? '#4ade80' : isActive ? colors.border + '88' : '#334155',
+        background: isRecentlyCompleted ? 'rgba(74, 222, 128, 0.12)' : isActive ? colors.glow : '#0f172a44',
+        opacity: isActive || isRecentlyCompleted ? 1 : 0.55,
+        boxShadow: isRecentlyCompleted ? '0 0 16px rgba(74, 222, 128, 0.25), inset 0 0 16px rgba(74, 222, 128, 0.06)' : 'none',
+        animation: isRecentlyCompleted ? 'questComplete 2s ease-in-out' : 'none',
       }}
     >
       <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -60,13 +62,16 @@ const QuestCard = ({ quest, isActive }) => {
           </span>
         </div>
         {!isActive && (
-          <span className="text-green-400 text-xs flex-shrink-0">✓ Done</span>
+          <span className={`text-xs flex-shrink-0 ${isRecentlyCompleted ? 'text-green-300 font-bold' : 'text-green-400'}`}>
+            {isRecentlyCompleted ? '★ Complete!' : '✓ Done'}
+          </span>
         )}
       </div>
 
       <p className="text-xs text-slate-400 leading-relaxed">{quest.description}</p>
 
       {isActive && <RewardBadge rewards={quest.rewards} />}
+      {isRecentlyCompleted && quest.rewards && <RewardBadge rewards={quest.rewards} />}
     </div>
   );
 };
@@ -77,6 +82,7 @@ const QuestCard = ({ quest, isActive }) => {
 
 export const QuestLogWindow = () => {
   const quests = useGameStore(state => state.quests);
+  const recentlyCompletedQuests = useGameStore(state => state.recentlyCompletedQuests);
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const [tab, setTab] = useState('active');
 
@@ -84,6 +90,13 @@ export const QuestLogWindow = () => {
   useEffect(() => {
     fetchQuests();
   }, [fetchQuests]);
+
+  // Auto-switch to completed tab when a quest just completed
+  useEffect(() => {
+    if (recentlyCompletedQuests.length > 0) {
+      setTab('completed');
+    }
+  }, [recentlyCompletedQuests]);
 
   const active = quests.filter(q => q.status === 'active');
   const completed = quests.filter(q => q.status === 'completed');
@@ -99,6 +112,14 @@ export const QuestLogWindow = () => {
       minWidth={360}
       minHeight={300}
     >
+      {/* Keyframe animation for quest completion glow */}
+      <style>{`
+        @keyframes questComplete {
+          0% { box-shadow: 0 0 0 rgba(74, 222, 128, 0); }
+          30% { box-shadow: 0 0 24px rgba(74, 222, 128, 0.4), inset 0 0 20px rgba(74, 222, 128, 0.1); }
+          100% { box-shadow: 0 0 16px rgba(74, 222, 128, 0.25), inset 0 0 16px rgba(74, 222, 128, 0.06); }
+        }
+      `}</style>
       <div className="flex flex-col h-full">
 
         {/* Tabs */}
@@ -143,7 +164,12 @@ export const QuestLogWindow = () => {
             </div>
           ) : (
             displayed.map(quest => (
-              <QuestCard key={quest.quest_id} quest={quest} isActive={tab === 'active'} />
+              <QuestCard
+                key={quest.quest_id}
+                quest={quest}
+                isActive={tab === 'active'}
+                isRecentlyCompleted={recentlyCompletedQuests.includes(quest.quest_id)}
+              />
             ))
           )}
         </div>

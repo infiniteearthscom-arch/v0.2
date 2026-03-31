@@ -60,6 +60,8 @@ const initialState = {
   // Quests
   quests: [],
   questsLoaded: false,
+  questNotification: null, // { questId, title, rewards, triggeredQuests } — shown as toast
+  recentlyCompletedQuests: [], // quest IDs that just completed — for glow animation
 
   // UI state
   windows: {
@@ -220,11 +222,50 @@ export const useGameStore = create(
             if (data.credits !== undefined) {
               set(state => { state.resources.credits = data.credits; });
             }
+            // Show toast notification
+            set(state => {
+              state.questNotification = {
+                questId,
+                title: data.title || questId,
+                rewards: data.rewards || {},
+                triggeredQuests: data.triggered_quests || [],
+              };
+              // Track for glow animation in quest log
+              if (!state.recentlyCompletedQuests.includes(questId)) {
+                state.recentlyCompletedQuests.push(questId);
+              }
+            });
+            // Auto-clear notification after 4 seconds
+            setTimeout(() => {
+              set(state => { state.questNotification = null; });
+            }, 4000);
+            // Auto-clear glow after 6 seconds
+            setTimeout(() => {
+              set(state => {
+                state.recentlyCompletedQuests = state.recentlyCompletedQuests.filter(id => id !== questId);
+              });
+            }, 6000);
+            // Pop quest log to front if new quests were triggered
+            if (data.triggered_quests?.length > 0) {
+              const s = get();
+              if (s.windows.questLog) {
+                set(state => {
+                  state.windows.questLog.open = true;
+                  state.windows.questLog.minimized = false;
+                  state.topZIndex += 1;
+                  state.windowZIndex.questLog = state.topZIndex;
+                });
+              }
+            }
           }
         } catch (error) {
           console.error('Failed to complete quest:', error);
         }
       },
+
+      clearQuestNotification: () => set(state => {
+        state.questNotification = null;
+      }),
 
       scrapShip: async (shipId) => {
         try {

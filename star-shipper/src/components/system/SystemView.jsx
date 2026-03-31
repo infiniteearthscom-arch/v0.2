@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { DraggableWindow } from '@/components/ui/DraggableWindow';
+// DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
@@ -40,12 +40,11 @@ const LOOT_CREDITS_MIN = 20;
 const LOOT_CREDITS_MAX = 80;
 
 // Pirate spawn zones — defined by center point + radius
-// All zones are in the outer system (past Jupiter orbit 2200) so new players aren't ambushed
 const PIRATE_SPAWN_ZONES = [
-  { name: 'Jupiter Corsairs', cx: 2600, cy: -900, radius: 400, count: 3, types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_marauder'] },
-  { name: 'Saturn Raiders', cx: -1200, cy: -2800, radius: 450, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
-  { name: 'Outer Rim Patrol', cx: -3200, cy: 2000, radius: 500, count: 3, types: ['pirate_interceptor', 'pirate_marauder', 'pirate_interceptor'] },
-  { name: 'Deep Space Ambush', cx: 3600, cy: 2400, radius: 400, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
+  { name: 'Belt Raiders', cx: 1500, cy: 0, radius: 400, count: 3, types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_marauder'] },
+  { name: 'Outer Patrol', cx: -2500, cy: 1500, radius: 500, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
+  { name: 'Jupiter Ambush', cx: 2200, cy: -800, radius: 350, count: 3, types: ['pirate_interceptor', 'pirate_marauder', 'pirate_interceptor'] },
+  { name: 'Saturn Corsairs', cx: -1000, cy: -3000, radius: 400, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
 ];
 
 // Galaxy singleton (same seed as GalaxyMapWindow)
@@ -956,36 +955,6 @@ export const SystemView = () => {
   const shipPhysicsRef = useRef({ SHIP_MAX_SPEED, SHIP_ACCELERATION, SHIP_ROTATION_SPEED });
   shipPhysicsRef.current = { SHIP_MAX_SPEED, SHIP_ACCELERATION, SHIP_ROTATION_SPEED };
   
-  // Derive weapon stats from fitted modules
-  // No weapon module = no shooting
-  const weaponStats = useMemo(() => {
-    const fitted = playerShip?.fitted_modules || {};
-    const weapons = Object.values(fitted).filter(m => m.module_type_id?.startsWith('weapon_'));
-    if (weapons.length === 0) return null; // No weapons equipped
-    
-    // Each weapon adds damage; best quality determines fire rate bonus
-    let totalDamage = 0;
-    let bestQualityMult = 1.0;
-    for (const w of weapons) {
-      let qMult = 1.0;
-      if (w.quality) {
-        const avg = ((w.quality.purity || 50) + (w.quality.stability || 50) +
-                     (w.quality.potency || 50) + (w.quality.density || 50)) / 4;
-        qMult = avg / 50;
-      }
-      totalDamage += PLAYER_BASE_DAMAGE * qMult;
-      if (qMult > bestQualityMult) bestQualityMult = qMult;
-    }
-    return {
-      damage: Math.round(totalDamage),
-      fireRate: PLAYER_BASE_FIRE_RATE / Math.min(bestQualityMult, 2), // Better quality = faster fire
-      count: weapons.length,
-    };
-  }, [playerShip?.fitted_modules]);
-  
-  const weaponStatsRef = useRef(weaponStats);
-  weaponStatsRef.current = weaponStats;
-  
   // Current system — Sol is hardcoded, everything else is procedurally generated
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
   const setCurrentSystemId = useGameStore(state => state.setCurrentSystemId);
@@ -1362,17 +1331,10 @@ export const SystemView = () => {
           // Docking range - ship touches the planet/station
           const dockingRange = targetBody.type === 'station' ? 15 : (targetBody.size || 20) + 5;
           
-          // Wider capture zone — scales with ship speed so fast ships don't overshoot
-          const captureRange = dockingRange + 80;
-          const captureSpeed = Math.max(50, SHIP_MAX_SPEED * 0.3);
-          
-          if (currentDistance < captureRange && currentSpeed < captureSpeed) {
+          if (currentDistance < dockingRange + 50 && currentSpeed < 40) {
             // Close and slow - final approach, snap to docked position
             isBraking = true;
             thrustInput = 0;
-            // Kill remaining velocity quickly
-            shipVelRef.current.x *= 0.85;
-            shipVelRef.current.y *= 0.85;
             
             // Snap ship to docked position (on the surface/at the station)
             if (currentDistance > dockingRange) {
@@ -1441,34 +1403,32 @@ export const SystemView = () => {
               rotationInput = (angleDiff > 0 ? 1 : -1) * rotationStrength;
             }
             
-            // APPROACH SPEED CONTROL — scale slowdown distance with max speed
-            // Faster ships need to start braking much earlier
-            const slowdownStartDistance = Math.max(250, SHIP_MAX_SPEED * 1.5);
+            // APPROACH SPEED CONTROL — start slowing closer, maintain higher minimum speed
+            const slowdownStartDistance = 200;
             
             if (Math.abs(angleDiff) < 25) {
               if (currentDistance < slowdownStartDistance) {
-                // Desired speed: drops steeply near target using squared falloff
-                const t = currentDistance / slowdownStartDistance;
-                const desiredSpeed = Math.max(10, t * t * SHIP_MAX_SPEED * 0.7);
+                // Desired speed proportional to distance, but keep a decent minimum
+                const desiredSpeed = Math.max(20, (currentDistance / slowdownStartDistance) * SHIP_MAX_SPEED * 0.6);
                 
-                if (currentSpeed > desiredSpeed * 1.1) {
-                  // Going too fast for this distance - brake hard
+                if (currentSpeed > desiredSpeed * 1.3) {
+                  // Going too fast for this distance - brake
                   isBraking = true;
                   thrustInput = 0;
-                } else if (currentSpeed < desiredSpeed * 0.5 && currentDistance > dockingRange * 2) {
+                } else if (currentSpeed < desiredSpeed * 0.5 && currentDistance > dockingRange * 1.5) {
                   // Going too slow - speed up
-                  thrustInput = 0.5;
+                  thrustInput = 0.6;
                 } else {
-                  // Coast or gentle thrust — only if far enough and very slow
-                  if (currentDistance > dockingRange * 3 && currentSpeed < 20) {
-                    thrustInput = 0.3;
+                  // Coast or gentle thrust
+                  if (currentDistance > dockingRange * 2 && currentSpeed < 30) {
+                    thrustInput = 0.4;
                   }
                 }
               } else {
                 // Far from target - full thrust
                 thrustInput = 1;
               }
-            } else if (Math.abs(angleDiff) > 45 && currentSpeed > 15) {
+            } else if (Math.abs(angleDiff) > 45 && currentSpeed > 20) {
               // Facing wrong way - brake first, then turn
               isBraking = true;
             }
@@ -1689,29 +1649,26 @@ export const SystemView = () => {
         }
       }
       
-      // --- Player auto-fire (only if weapons are equipped) ---
-      const wStats = weaponStatsRef.current;
-      if (wStats) {
-        playerFireCooldownRef.current -= delta;
-        if (playerFireCooldownRef.current <= 0) {
-          // Find nearest alive enemy in range
-          let nearest = null, nearestDist = PLAYER_FIRE_RANGE;
-          for (const e of enemies) {
-            if (e.hull <= 0) continue;
-            const d = Math.sqrt((e.x - playerPos.x) ** 2 + (e.y - playerPos.y) ** 2);
-            if (d < nearestDist) { nearest = e; nearestDist = d; }
-          }
-          if (nearest) {
-            playerFireCooldownRef.current = wStats.fireRate;
-            const pAngle = Math.atan2(nearest.y - playerPos.y, nearest.x - playerPos.x);
-            projectiles.push({
-              x: playerPos.x, y: playerPos.y,
-              vx: Math.cos(pAngle) * PROJECTILE_SPEED,
-              vy: Math.sin(pAngle) * PROJECTILE_SPEED,
-              age: 0, fromPlayer: true, damage: wStats.damage,
-              color: '#22ddee',
-            });
-          }
+      // --- Player auto-fire ---
+      playerFireCooldownRef.current -= delta;
+      if (playerFireCooldownRef.current <= 0) {
+        // Find nearest alive enemy in range
+        let nearest = null, nearestDist = PLAYER_FIRE_RANGE;
+        for (const e of enemies) {
+          if (e.hull <= 0) continue;
+          const d = Math.sqrt((e.x - playerPos.x) ** 2 + (e.y - playerPos.y) ** 2);
+          if (d < nearestDist) { nearest = e; nearestDist = d; }
+        }
+        if (nearest) {
+          playerFireCooldownRef.current = PLAYER_BASE_FIRE_RATE;
+          const pAngle = Math.atan2(nearest.y - playerPos.y, nearest.x - playerPos.x);
+          projectiles.push({
+            x: playerPos.x, y: playerPos.y,
+            vx: Math.cos(pAngle) * PROJECTILE_SPEED,
+            vy: Math.sin(pAngle) * PROJECTILE_SPEED,
+            age: 0, fromPlayer: true, damage: PLAYER_BASE_DAMAGE,
+            color: '#22ddee',
+          });
         }
       }
       
@@ -1986,53 +1943,9 @@ export const SystemView = () => {
 
   return (
     <>
-    <DraggableWindow
-      windowId="systemView"
-      title={`${currentSystem.name} System`}
-      initialWidth={1000}
-      initialHeight={700}
-      minWidth={600}
-      minHeight={400}
-    >
-      <div className="h-full flex flex-col">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/20 bg-slate-900/50">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div 
-                className="w-3 h-3 rounded-full" 
-                style={{ backgroundColor: starConfig?.colors.mid }}
-              />
-              <span className="text-sm text-cyan-300">{starConfig?.name}</span>
-            </div>
-            <div className="text-xs text-slate-400">
-              Zoom: {(zoom * 100).toFixed(0)}%
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setZoom(z => Math.min(MAX_ZOOM, z * 1.5))}
-              className="w-6 h-6 rounded bg-slate-700/50 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm"
-            >
-              +
-            </button>
-            <button
-              onClick={() => setZoom(z => Math.max(MIN_ZOOM, z / 1.5))}
-              className="w-6 h-6 rounded bg-slate-700/50 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-sm"
-            >
-              −
-            </button>
-            <button
-              onClick={() => { setCamera({ x: 0, y: 0 }); setZoom(1.0); }}
-              className="px-2 h-6 rounded bg-slate-700/50 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-xs"
-            >
-              Reset
-            </button>
-          </div>
-        </div>
-
-        {/* SVG Viewport */}
-        <div className="flex-1 relative overflow-hidden bg-slate-950">
+    <div className="absolute inset-0" style={{ zIndex: 1 }}>
+      {/* Full-screen game canvas */}
+      <div className="w-full h-full relative overflow-hidden" style={{ background: '#030308' }}>
           <svg
             ref={svgRef}
             className="w-full h-full"
@@ -2415,12 +2328,8 @@ export const SystemView = () => {
               : 'W: Thrust | A/D: Turn | S: Brake | Click: Autopilot'
             }
           </div>
-        </div>
       </div>
-      
-    </DraggableWindow>
-    
-    {/* Planet Interaction Window - rendered as sibling, not child */}
+    </div>
     <PlanetInteractionWindow body={dockedBody} />
     </>
   );
