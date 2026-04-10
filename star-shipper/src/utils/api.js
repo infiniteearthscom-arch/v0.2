@@ -276,6 +276,10 @@ export const fittingAPI = {
     method: 'POST',
     body: JSON.stringify({ inventory_id: inventoryId, quantity: quantity || 1 }),
   }),
+  awardLoot: (credits) => request('/fitting/award-loot', {
+    method: 'POST',
+    body: JSON.stringify({ credits }),
+  }),
   resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
 };
 

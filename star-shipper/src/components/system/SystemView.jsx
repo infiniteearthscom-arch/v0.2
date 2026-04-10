@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
+import { fittingAPI } from '@/utils/api';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 
@@ -1874,18 +1875,14 @@ export const SystemView = () => {
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
                 // Award credits via store
                 const loot = e.lootCredits || 50;
-                // We'll update credits display via combat log
                 setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! +${loot} cr`]);
-                // Award credits — call server endpoint
-                fetch('http://localhost:3001/api/fitting/award-loot', {
-                  method: 'POST',
-                  credentials: 'include',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ credits: loot }),
-                }).then(() => {
-                  const fc = useGameStore.getState().fetchCredits;
-                  if (fc) fc();
-                }).catch(() => {});
+                // Award credits server-side, then refresh the global credit display
+                fittingAPI.awardLoot(loot)
+                  .then(() => {
+                    const fc = useGameStore.getState().fetchCredits;
+                    if (fc) fc();
+                  })
+                  .catch(err => console.warn('awardLoot failed:', err));
               }
               break;
             }

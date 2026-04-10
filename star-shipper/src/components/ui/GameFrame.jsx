@@ -58,7 +58,9 @@ const TopBar = () => {
 
   useEffect(() => {
     fetchCredits();
-    const interval = setInterval(fetchCredits, 15000);
+    // Poll every 3s as a safety net so the top-bar credits stay in sync
+    // even if a downstream refresh chain (vendor, combat) fails to fire.
+    const interval = setInterval(fetchCredits, 3000);
     return () => clearInterval(interval);
   }, [fetchCredits]);
 

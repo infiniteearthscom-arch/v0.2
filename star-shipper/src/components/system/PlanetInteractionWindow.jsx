@@ -1817,20 +1817,23 @@ const VendorTab = ({ body }) => {
       const result = await fittingAPI.buyHull(hullId);
       if (result.success) {
         flash('success', `Purchased ${result.hull.name}!`);
-        refreshCredits();
         openWindow('shipBuilder');
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
+    } finally {
+      refreshCredits();
     }
   };
 
   const buyModule = async (moduleId) => {
     try {
       const result = await fittingAPI.buyModule(moduleId);
-      if (result.success) { flash('success', `Bought ${result.module} for ${result.price} cr`); refreshCredits(); }
+      if (result.success) { flash('success', `Bought ${result.module} for ${result.price} cr`); }
     } catch (err) {
       flash('error', err.message || 'Failed to buy module');
+    } finally {
+      refreshCredits();
     }
   };
 
@@ -1839,13 +1842,14 @@ const VendorTab = ({ body }) => {
       const result = await fittingAPI.buyModule(itemId);
       if (result.success) {
         flash('success', `Bought ${result.module}`);
-        refreshCredits();
         if (itemId === 'starter_kit') {
           questsAPI.completeQuest('tutorial_buy_starter_kit').catch(() => {});
         }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy supply');
+    } finally {
+      refreshCredits();
     }
   };
 
@@ -1854,11 +1858,12 @@ const VendorTab = ({ body }) => {
       const result = await fittingAPI.sellResource(inventoryId, quantity);
       if (result.success) {
         flash('success', `Sold ${result.sold} ${result.resource_name} for ${result.total_earned} cr`);
-        refreshCredits();
         loadSellInventory();
       }
     } catch (err) {
       flash('error', err.message || 'Failed to sell');
+    } finally {
+      refreshCredits();
     }
   };
 
@@ -1867,11 +1872,12 @@ const VendorTab = ({ body }) => {
       const result = await fittingAPI.sellItem(inventoryId, quantity);
       if (result.success) {
         flash('success', `Sold ${result.item_name} for ${result.total_earned} cr`);
-        refreshCredits();
         loadSellInventory();
       }
     } catch (err) {
       flash('error', err.message || 'Failed to sell');
+    } finally {
+      refreshCredits();
     }
   };
 
