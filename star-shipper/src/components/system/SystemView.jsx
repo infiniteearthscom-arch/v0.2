@@ -1582,10 +1582,22 @@ export const SystemView = () => {
         const dy = playerPos.y - enemy.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const angleToPlayer = Math.atan2(dy, dx) * 180 / Math.PI;
-        
+
+        // Distance to home (patrol center) — used for 'returning' state
+        const hdx = enemy.patrolCenter.x - enemy.x;
+        const hdy = enemy.patrolCenter.y - enemy.y;
+        const homeDist = Math.sqrt(hdx * hdx + hdy * hdy);
+
+        // If player just docked, disengage any hostile enemies. They'll fly
+        // home and resume patrol. Once in patrol, normal aggro rules apply,
+        // so undocking next to a pirate's patrol zone will re-aggro normally.
+        if (dockedBodyRef.current && (enemy.state === 'chase' || enemy.state === 'attack' || enemy.state === 'flee')) {
+          enemy.state = 'returning';
+        }
+
         // State transitions
         if (enemy.state === 'patrol') {
-          if (dist < PIRATE_AGGRO_RANGE) enemy.state = 'chase';
+          if (!dockedBodyRef.current && dist < PIRATE_AGGRO_RANGE) enemy.state = 'chase';
         } else if (enemy.state === 'chase') {
           if (dist < PIRATE_ATTACK_RANGE) enemy.state = 'attack';
           if (dist > PIRATE_DEAGGRO_RANGE) enemy.state = 'patrol';
@@ -1595,8 +1607,11 @@ export const SystemView = () => {
           if (enemy.hull < enemy.maxHull * 0.2) enemy.state = 'flee';
         } else if (enemy.state === 'flee') {
           if (dist > PIRATE_DEAGGRO_RANGE * 1.5) enemy.state = 'patrol';
+        } else if (enemy.state === 'returning') {
+          // Switch back to patrol once close enough to home
+          if (homeDist < enemy.patrolRadius * 1.2) enemy.state = 'patrol';
         }
-        
+
         // Movement based on state
         let targetAngle, desiredSpeed;
         if (enemy.state === 'patrol') {
@@ -1605,6 +1620,11 @@ export const SystemView = () => {
           const py = enemy.patrolCenter.y + Math.sin(enemy.patrolAngle) * enemy.patrolRadius;
           targetAngle = Math.atan2(py - enemy.y, px - enemy.x) * 180 / Math.PI;
           desiredSpeed = enemy.speed * 0.3;
+        } else if (enemy.state === 'returning') {
+          // Fly straight back to patrol center; ease off as we get close
+          targetAngle = Math.atan2(hdy, hdx) * 180 / Math.PI;
+          const closeFactor = Math.min(1, homeDist / (enemy.patrolRadius * 2));
+          desiredSpeed = enemy.speed * (0.4 + 0.5 * closeFactor);
         } else if (enemy.state === 'chase') {
           targetAngle = angleToPlayer;
           desiredSpeed = enemy.speed;
@@ -1647,8 +1667,8 @@ export const SystemView = () => {
         enemy.x += enemy.vx * delta;
         enemy.y += enemy.vy * delta;
         
-        // Fire at player
-        if (enemy.state === 'attack' && dist < enemy.range) {
+        // Fire at player (skip when docked)
+        if (!dockedBodyRef.current && enemy.state === 'attack' && dist < enemy.range) {
           enemy.fireCooldown -= delta;
           if (enemy.fireCooldown <= 0) {
             enemy.fireCooldown = enemy.fireRate;
@@ -1673,6 +1693,8 @@ export const SystemView = () => {
       // --- Per-ship weapon firing (each ship fires its own weapons) ---
       // Each fleet ship has its own weapons array. Cooldowns are tracked
       // per weapon in fleetWeaponCooldownsRef keyed by `${shipId}:${weaponIdx}`.
+      // Skip entirely when docked — combat is paused at port.
+      if (!dockedBodyRef.current) {
       const fleetData = fleetShipsRef.current || [];
       const cooldowns = fleetWeaponCooldownsRef.current;
       const theta = shipRotationRef.current * Math.PI / 180;
@@ -1794,6 +1816,7 @@ export const SystemView = () => {
           if (!liveKeys.has(k)) cooldowns.delete(k);
         }
       }
+      } // end if (!dockedBodyRef.current)
       
       // --- Update projectiles & collisions ---
       for (let i = projectiles.length - 1; i >= 0; i--) {
