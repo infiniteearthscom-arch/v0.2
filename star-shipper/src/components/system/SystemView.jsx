@@ -987,6 +987,7 @@ export const SystemView = () => {
   const autopilotTarget = useGameStore(state => state.autopilotTarget);
   const setAutopilotTarget = useGameStore(state => state.setAutopilotTarget);
   const updateShipPosition = useGameStore(state => state.updateShipPosition);
+  const updateHud = useGameStore(state => state.updateHud);
   const autopilotTargetRef = useRef(null);
   
   // Docked state - which body we're currently docked at
@@ -1775,9 +1776,21 @@ export const SystemView = () => {
       
       // --- Sync combat state to React (every 5 frames for perf) ---
       if (frameNum % 5 === 0) {
-        setPlayerHullDisplay(Math.round(playerHullRef.current));
-        setPlayerShieldDisplay(Math.round(playerShieldRef.current));
-        setEnemyCount(enemies.filter(e => e.hull > 0).length);
+        const hullNow = Math.round(playerHullRef.current);
+        const shieldNow = Math.round(playerShieldRef.current);
+        const enemiesAlive = enemies.filter(e => e.hull > 0).length;
+        setPlayerHullDisplay(hullNow);
+        setPlayerShieldDisplay(shieldNow);
+        setEnemyCount(enemiesAlive);
+        // Push to GameFrame top bar via store
+        updateHud({
+          playerHull: hullNow,
+          playerMaxHull: playerMaxHullRef.current,
+          playerShield: shieldNow,
+          playerMaxShield: playerMaxShieldRef.current,
+          enemyCount: enemiesAlive,
+          followMode: followModeRef.current,
+        });
       }
       
       // Trigger React re-render by incrementing frame counter
@@ -2244,73 +2257,7 @@ export const SystemView = () => {
 
           {/* Navigation moved to NavigationWindow */}
 
-          {/* Ship info + Autopilot HUD */}
-          <div className="absolute top-3 left-3 bg-slate-900/80 border border-cyan-500/30 rounded-lg px-3 py-2">
-            <div className="text-xs text-slate-400 mb-1">
-              {playerShip?.name || 'No Ship'}
-              {playerShip?.hull_name && <span className="text-slate-600 ml-1.5">({playerShip.hull_name})</span>}
-              {fleetShips.length > 1 && <span className="text-slate-600 ml-1.5">• Fleet: {fleetShips.length}/{MAX_FLEET_SIZE}</span>}
-              {enemyCount > 0 && <span className="text-red-400 ml-1.5">• ☠ {enemyCount} hostiles</span>}
-            </div>
-            
-            {/* Hull & Shield bars */}
-            <div className="flex gap-2 mb-1">
-              <div className="flex-1">
-                <div className="flex items-center justify-between text-[9px] mb-0.5">
-                  <span className="text-slate-500">HULL</span>
-                  <span className="text-slate-400">{playerHullDisplay}/{playerMaxHullRef.current}</span>
-                </div>
-                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-200"
-                    style={{
-                      width: `${(playerHullDisplay / playerMaxHullRef.current) * 100}%`,
-                      backgroundColor: playerHullDisplay > 60 ? '#44aa44' : playerHullDisplay > 30 ? '#aaaa44' : '#ff4444',
-                    }} />
-                </div>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between text-[9px] mb-0.5">
-                  <span className="text-slate-500">SHIELD</span>
-                  <span className="text-slate-400">{playerShieldDisplay}/{playerMaxShieldRef.current}</span>
-                </div>
-                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-200 bg-blue-500"
-                    style={{ width: `${(playerShieldDisplay / playerMaxShieldRef.current) * 100}%` }} />
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-cyan-400">
-                Speed: {Math.round(Math.sqrt(shipVelRef.current.x * shipVelRef.current.x + shipVelRef.current.y * shipVelRef.current.y))}
-              </span>
-              <span className={`${followMode ? 'text-green-400' : 'text-slate-500'}`}>
-                {followMode ? '● Follow' : '○ Free Cam'}
-              </span>
-            </div>
-            {/* Autopilot info */}
-            {autopilotTarget && (() => {
-              const targetBody = currentSystem.bodies.find(b => b.id === autopilotTarget.id);
-              if (!targetBody) return null;
-              const targetPos = getBodyPosition(autopilotTarget.id);
-              const dx = targetPos.x - shipPosRef.current.x;
-              const dy = targetPos.y - shipPosRef.current.y;
-              const distance = Math.round(Math.sqrt(dx * dx + dy * dy));
-              return (
-                <div className="mt-2 pt-2 border-t border-cyan-500/20">
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-400 animate-pulse">◈ AUTOPILOT</span>
-                  </div>
-                  <div className="text-xs text-slate-300 mt-1">
-                    → {autopilotTarget.name}
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    Distance: {distance}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          {/* HUD moved to GameFrame top bar (ship name, hull/shield, hostiles, autopilot) */}
 
           {/* Combat Log */}
           {combatLog.length > 0 && (

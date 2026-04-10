@@ -34,9 +34,21 @@ const TopBar = () => {
   const credits = useGameStore(state => state.resources?.credits ?? 0);
   const fetchCredits = useGameStore(state => state.fetchCredits);
   const activeShip = useActiveShip();
+  const ships = useGameStore(state => state.ships);
   const { user, logout } = useAuthStore();
   const [resetting, setResetting] = useState(false);
   const resetGame = useGameStore(state => state.resetGame);
+
+  // HUD data (updated by SystemView game loop every 5 frames)
+  const playerHull = useGameStore(state => state.playerHull);
+  const playerMaxHull = useGameStore(state => state.playerMaxHull);
+  const playerShield = useGameStore(state => state.playerShield);
+  const playerMaxShield = useGameStore(state => state.playerMaxShield);
+  const enemyCount = useGameStore(state => state.enemyCount);
+  const autopilotTarget = useGameStore(state => state.autopilotTarget);
+
+  const MAX_FLEET = 3;
+  const fleetSize = ships?.length || 0;
 
   useEffect(() => {
     fetchCredits();
@@ -57,6 +69,18 @@ const TopBar = () => {
     }
   };
 
+  // Hull bar color by percentage
+  const hullPct = playerMaxHull > 0 ? playerHull / playerMaxHull : 0;
+  const hullColor = hullPct > 0.6 ? '#22c55e' : hullPct > 0.3 ? '#fbbf24' : '#ef4444';
+  const hullGradient = hullPct > 0.6
+    ? 'linear-gradient(90deg, #166534, #22c55e)'
+    : hullPct > 0.3
+    ? 'linear-gradient(90deg, #854d0e, #fbbf24)'
+    : 'linear-gradient(90deg, #7f1d1d, #ef4444)';
+
+  const shieldPct = playerMaxShield > 0 ? playerShield / playerMaxShield : 0;
+  const hasShield = playerMaxShield > 0;
+
   return (
     <div
       className="fixed top-0 left-0 right-0 z-50 flex items-center"
@@ -76,39 +100,84 @@ const TopBar = () => {
         <span className="text-xs font-extrabold tracking-widest" style={{ color: BLUE.light }}>STAR SHIPPER</span>
       </div>
 
-      {/* Resources */}
-      <div className="flex items-center gap-0.5 flex-1" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>
+      {/* Credits + Fleet count */}
+      <div className="flex items-center gap-0.5" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>
         <div className="flex items-center gap-1 px-2 h-5" style={{ borderRight: `1px solid ${EDGE}` }} title="Credits">
           <span style={{ fontSize: 11 }}>⬡</span>
           <span className="font-bold" style={{ color: GOLD.light }}>{credits.toLocaleString()}</span>
           <span style={{ color: '#3a4a5a', fontSize: 8 }}>CR</span>
         </div>
-        <div className="flex items-center gap-1 px-2 h-5" style={{ borderRight: `1px solid ${EDGE}` }} title="Fleet">
+        <div className="flex items-center gap-1 px-2 h-5" style={{ borderRight: `1px solid ${EDGE}` }} title="Fleet size">
           <span style={{ fontSize: 11 }}>🚀</span>
-          <span className="font-bold" style={{ color: BLUE.light }}>1</span>
-          <span style={{ color: '#3a4a5a' }}>/8</span>
+          <span className="font-bold" style={{ color: BLUE.light }}>{fleetSize}</span>
+          <span style={{ color: '#3a4a5a' }}>/{MAX_FLEET}</span>
         </div>
       </div>
 
-      {/* Ship + hull/shield */}
-      <div className="flex items-center gap-2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9 }}>
+      {/* Hull + Shield bars (from live combat data) */}
+      <div className="flex items-center gap-3 ml-3" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9 }}>
         {/* Hull bar */}
-        <div className="flex items-center gap-1">
-          <span style={{ color: '#22c55e', fontSize: 7 }}>■</span>
-          <div className="overflow-hidden" style={{ width: 50, height: 4, background: '#0a1528', borderRadius: 2, border: `1px solid ${EDGE}` }}>
-            <div className="h-full" style={{ width: '100%', background: 'linear-gradient(90deg, #166534, #22c55e)', borderRadius: 1 }} />
+        <div className="flex items-center gap-1.5" title={`Hull: ${playerHull}/${playerMaxHull}`}>
+          <span style={{ color: hullColor, fontSize: 8 }}>■</span>
+          <span style={{ color: '#3a4a5a', fontSize: 8 }}>HULL</span>
+          <div className="overflow-hidden" style={{ width: 60, height: 5, background: '#0a1528', borderRadius: 2, border: `1px solid ${EDGE}` }}>
+            <div className="h-full transition-all duration-200" style={{
+              width: `${Math.max(0, Math.min(100, hullPct * 100))}%`,
+              background: hullGradient,
+            }} />
           </div>
-          <span className="font-bold" style={{ color: '#22c55e' }}>
-            {activeShip?.base_hull || '—'}
+          <span className="font-bold" style={{ color: hullColor, minWidth: 24, textAlign: 'right' }}>
+            {playerHull}
           </span>
         </div>
-        {/* Shield bar */}
-        <div className="flex items-center gap-1">
-          <span style={{ color: '#818cf8', fontSize: 7 }}>◆</span>
-          <div style={{ width: 35, height: 4, background: '#0a1528', borderRadius: 2, border: `1px solid ${EDGE}` }} />
-          <span style={{ color: '#3a4a5a' }}>—</span>
-        </div>
 
+        {/* Shield bar */}
+        <div className="flex items-center gap-1.5" title={hasShield ? `Shield: ${playerShield}/${playerMaxShield}` : 'No shield fitted'}>
+          <span style={{ color: hasShield ? '#818cf8' : '#3a4a5a', fontSize: 8 }}>◆</span>
+          <span style={{ color: '#3a4a5a', fontSize: 8 }}>SHLD</span>
+          <div className="overflow-hidden" style={{ width: 45, height: 5, background: '#0a1528', borderRadius: 2, border: `1px solid ${EDGE}` }}>
+            {hasShield && (
+              <div className="h-full transition-all duration-200" style={{
+                width: `${Math.max(0, Math.min(100, shieldPct * 100))}%`,
+                background: 'linear-gradient(90deg, #3730a3, #818cf8)',
+              }} />
+            )}
+          </div>
+          <span className="font-bold" style={{ color: hasShield ? '#818cf8' : '#3a4a5a', minWidth: 20, textAlign: 'right' }}>
+            {hasShield ? playerShield : '—'}
+          </span>
+        </div>
+      </div>
+
+      {/* Status indicators (conditional) — fills any remaining space */}
+      <div className="flex items-center gap-3 flex-1 ml-3" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9 }}>
+        {enemyCount > 0 && (
+          <div className="flex items-center gap-1 px-2 py-0.5" style={{
+            background: 'rgba(127,29,29,0.35)',
+            border: '1px solid rgba(239,68,68,0.5)',
+            borderRadius: 2,
+            color: '#fca5a5',
+            animation: 'pulse 2s ease-in-out infinite',
+          }}>
+            <span>☠</span>
+            <span className="font-bold">{enemyCount} HOSTILE{enemyCount !== 1 ? 'S' : ''}</span>
+          </div>
+        )}
+        {autopilotTarget && (
+          <div className="flex items-center gap-1 px-2 py-0.5" style={{
+            background: `${BLUE.pri}15`,
+            border: `1px solid ${BLUE.pri}44`,
+            borderRadius: 2,
+            color: BLUE.light,
+          }}>
+            <span style={{ color: BLUE.light }}>◈</span>
+            <span className="font-bold">AP → {autopilotTarget.name}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Right cluster: ship name, user, reset */}
+      <div className="flex items-center gap-2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9 }}>
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
         {/* Ship name */}

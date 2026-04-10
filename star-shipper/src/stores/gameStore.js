@@ -60,8 +60,6 @@ const initialState = {
   // Quests
   quests: [],
   questsLoaded: false,
-  questNotification: null, // { questId, title, rewards, triggeredQuests } — shown as toast
-  recentlyCompletedQuests: [], // quest IDs that just completed — for glow animation
 
   // UI state
   windows: {
@@ -70,12 +68,12 @@ const initialState = {
     systemView: { open: false, x: 50, y: 50, minimized: false },
     planetView: { open: false, x: 100, y: 100, minimized: false },
     inventory: { open: false, x: 400, y: 200, minimized: false },
-    navigation: { open: false, x: 1040, y: 50, minimized: false },
+    navigation: { open: false, x: 50, y: 50, minimized: false },
     crafting: { open: false, x: 300, y: 100, minimized: false },
     research: { open: false, x: 200, y: 150, minimized: false },
     planetInteraction: { open: false, x: 300, y: 100, minimized: false },
     galaxyMap: { open: false, x: 80, y: 60, minimized: false },
-    questLog: { open: false, x: 1060, y: 340, minimized: false },
+    questLog: { open: false, x: 250, y: 80, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
@@ -85,6 +83,14 @@ const initialState = {
   shipPosition: { x: 900, y: 0 }, // updated by SystemView game loop
   shipSpeed: 0,
   gameTime: 0, // shared time for planet position sync
+
+  // HUD state (updated by SystemView combat loop, displayed in GameFrame top bar)
+  playerHull: 0,
+  playerMaxHull: 100,
+  playerShield: 0,
+  playerMaxShield: 0,
+  enemyCount: 0,
+  followMode: true,
 
   // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
   viewMode: 'system',
@@ -222,50 +228,11 @@ export const useGameStore = create(
             if (data.credits !== undefined) {
               set(state => { state.resources.credits = data.credits; });
             }
-            // Show toast notification
-            set(state => {
-              state.questNotification = {
-                questId,
-                title: data.title || questId,
-                rewards: data.rewards || {},
-                triggeredQuests: data.triggered_quests || [],
-              };
-              // Track for glow animation in quest log
-              if (!state.recentlyCompletedQuests.includes(questId)) {
-                state.recentlyCompletedQuests.push(questId);
-              }
-            });
-            // Auto-clear notification after 4 seconds
-            setTimeout(() => {
-              set(state => { state.questNotification = null; });
-            }, 4000);
-            // Auto-clear glow after 6 seconds
-            setTimeout(() => {
-              set(state => {
-                state.recentlyCompletedQuests = state.recentlyCompletedQuests.filter(id => id !== questId);
-              });
-            }, 6000);
-            // Pop quest log to front if new quests were triggered
-            if (data.triggered_quests?.length > 0) {
-              const s = get();
-              if (s.windows.questLog) {
-                set(state => {
-                  state.windows.questLog.open = true;
-                  state.windows.questLog.minimized = false;
-                  state.topZIndex += 1;
-                  state.windowZIndex.questLog = state.topZIndex;
-                });
-              }
-            }
           }
         } catch (error) {
           console.error('Failed to complete quest:', error);
         }
       },
-
-      clearQuestNotification: () => set(state => {
-        state.questNotification = null;
-      }),
 
       scrapShip: async (shipId) => {
         try {
@@ -393,6 +360,16 @@ export const useGameStore = create(
         state.shipPosition = { x, y };
         state.shipSpeed = speed;
         state.gameTime = time;
+      }),
+
+      // Called by SystemView combat loop to push HUD data to the top bar
+      updateHud: (data) => set(state => {
+        if (data.playerHull !== undefined) state.playerHull = data.playerHull;
+        if (data.playerMaxHull !== undefined) state.playerMaxHull = data.playerMaxHull;
+        if (data.playerShield !== undefined) state.playerShield = data.playerShield;
+        if (data.playerMaxShield !== undefined) state.playerMaxShield = data.playerMaxShield;
+        if (data.enemyCount !== undefined) state.enemyCount = data.enemyCount;
+        if (data.followMode !== undefined) state.followMode = data.followMode;
       }),
 
       // ==========================================
