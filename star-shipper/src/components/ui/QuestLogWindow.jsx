@@ -1,32 +1,70 @@
 import React, { useState, useEffect } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
+import { COLORS, FONT, SectionHead, Pill, glow } from '@/components/ui/panelStyles';
+
+// Category → accent color mapping
+const CATEGORY_COLORS = {
+  tutorial: COLORS.CYAN.light,
+  main:     COLORS.GOLD.light,
+  side:     COLORS.PURPLE.light,
+  faction:  COLORS.GREEN.light,
+};
 
 // ============================================
-// REWARD DISPLAY
+// REWARD BADGES
 // ============================================
 
-const RewardBadge = ({ rewards }) => {
+const RewardBadges = ({ rewards }) => {
   if (!rewards) return null;
-  const items = [];
+  const badges = [];
+
   if (rewards.credits) {
-    items.push(
-      <span key="credits" className="flex items-center gap-1 px-2 py-0.5 rounded bg-yellow-900/30 border border-yellow-600/30 text-yellow-400 text-[10px]">
-        💰 {rewards.credits.toLocaleString()} cr
+    badges.push(
+      <span key="credits" style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '2px 7px',
+        background: `${COLORS.GOLD.pri}1a`,
+        border: `1px solid ${COLORS.GOLD.pri}55`,
+        borderRadius: 2,
+        color: COLORS.GOLD.light,
+        fontSize: 9,
+        fontFamily: FONT.mono,
+        fontWeight: 700,
+        letterSpacing: 0.5,
+      }}>
+        ⬡ {rewards.credits.toLocaleString()} CR
       </span>
     );
   }
+
   if (rewards.items) {
     rewards.items.forEach((item, i) => {
-      items.push(
-        <span key={`item-${i}`} className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-900/30 border border-cyan-600/30 text-cyan-400 text-[10px]">
-          📦 {item.quantity}x {item.item_id.replace(/_/g, ' ')}
+      badges.push(
+        <span key={`item-${i}`} style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 7px',
+          background: `${COLORS.BLUE.pri}1a`,
+          border: `1px solid ${COLORS.BLUE.pri}55`,
+          borderRadius: 2,
+          color: COLORS.BLUE.light,
+          fontSize: 9,
+          fontFamily: FONT.mono,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+        }}>
+          📦 {item.quantity}× {item.item_id.replace(/_/g, ' ')}
         </span>
       );
     });
   }
-  if (items.length === 0) return null;
-  return <div className="flex flex-wrap gap-1.5 mt-2">{items}</div>;
+
+  if (badges.length === 0) return null;
+  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>{badges}</div>;
 };
 
 // ============================================
@@ -35,38 +73,60 @@ const RewardBadge = ({ rewards }) => {
 
 const QuestCard = ({ quest, isActive }) => {
   const category = quest.category || 'main';
-  const categoryColors = {
-    tutorial: { border: '#22d3ee', glow: '#22d3ee22', badge: 'bg-cyan-900/40 text-cyan-400 border-cyan-600/40' },
-    main:     { border: '#f59e0b', glow: '#f59e0b22', badge: 'bg-yellow-900/40 text-yellow-400 border-yellow-600/40' },
-    side:     { border: '#8b5cf6', glow: '#8b5cf622', badge: 'bg-purple-900/40 text-purple-400 border-purple-600/40' },
-    faction:  { border: '#22c55e', glow: '#22c55e22', badge: 'bg-green-900/40 text-green-400 border-green-600/40' },
-  };
-  const colors = categoryColors[category] || categoryColors.main;
+  const accent = CATEGORY_COLORS[category] || COLORS.GOLD.light;
 
   return (
-    <div
-      className="rounded-lg p-3 border transition-all"
-      style={{
-        borderColor: isActive ? colors.border + '88' : '#334155',
-        background: isActive ? colors.glow : '#0f172a44',
-        opacity: isActive ? 1 : 0.55,
-      }}
-    >
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-slate-100">{quest.title}</span>
-          <span className={`text-[9px] px-1.5 py-0.5 rounded border capitalize ${colors.badge}`}>
-            {category}
-          </span>
+    <div style={{
+      background: isActive
+        ? `linear-gradient(135deg, ${accent}10, transparent)`
+        : COLORS.ROW_BG,
+      border: `1px solid ${COLORS.EDGE}`,
+      borderLeft: `2px solid ${isActive ? accent : COLORS.EDGE}`,
+      borderRadius: 3,
+      padding: 10,
+      marginBottom: 8,
+      opacity: isActive ? 1 : 0.6,
+      transition: 'all 0.15s',
+      boxShadow: isActive ? glow(accent, 0.12) : 'none',
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        marginBottom: 5,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+          <span style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: COLORS.TEXT.primary,
+            fontFamily: FONT.ui,
+            letterSpacing: 0.3,
+          }}>{quest.title}</span>
+          <Pill color={accent}>{category}</Pill>
         </div>
         {!isActive && (
-          <span className="text-green-400 text-xs flex-shrink-0">✓ Done</span>
+          <span style={{
+            color: COLORS.GREEN.light,
+            fontSize: 10,
+            fontFamily: FONT.ui,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            flexShrink: 0,
+          }}>✓ DONE</span>
         )}
       </div>
 
-      <p className="text-xs text-slate-400 leading-relaxed">{quest.description}</p>
+      <p style={{
+        fontSize: 11,
+        color: COLORS.TEXT.secondary,
+        lineHeight: 1.5,
+        fontFamily: FONT.ui,
+        margin: 0,
+      }}>{quest.description}</p>
 
-      {isActive && <RewardBadge rewards={quest.rewards} />}
+      {isActive && <RewardBadges rewards={quest.rewards} />}
     </div>
   );
 };
@@ -80,65 +140,92 @@ export const QuestLogWindow = () => {
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const [tab, setTab] = useState('active');
 
-  // Refresh quests when window opens
-  useEffect(() => {
-    fetchQuests();
-  }, [fetchQuests]);
+  useEffect(() => { fetchQuests(); }, [fetchQuests]);
 
   const active = quests.filter(q => q.status === 'active');
   const completed = quests.filter(q => q.status === 'completed');
-
   const displayed = tab === 'active' ? active : completed;
+
+  // Tab button factory
+  const TabButton = ({ id, label, icon, count, accent }) => {
+    const isActive = tab === id;
+    return (
+      <button
+        onClick={() => setTab(id)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 14px',
+          background: isActive
+            ? `linear-gradient(180deg, ${accent}22, ${accent}08)`
+            : 'rgba(4,8,16,0.5)',
+          border: `1px solid ${isActive ? `${accent}66` : COLORS.EDGE}`,
+          borderLeft: isActive ? `2px solid ${accent}` : `1px solid ${COLORS.EDGE}`,
+          borderRadius: 3,
+          color: isActive ? accent : COLORS.TEXT.muted,
+          fontSize: 10,
+          fontWeight: 800,
+          fontFamily: FONT.ui,
+          cursor: 'pointer',
+          letterSpacing: 1,
+          textTransform: 'uppercase',
+          transition: 'all 0.15s',
+          boxShadow: isActive ? glow(accent, 0.15) : 'none',
+        }}
+      >
+        <span>{icon}</span>
+        <span>{label}</span>
+        {count > 0 && (
+          <span style={{
+            background: isActive ? accent : `${accent}33`,
+            color: isActive ? '#0a0e18' : accent,
+            borderRadius: 8,
+            padding: '0 6px',
+            fontSize: 9,
+            fontWeight: 800,
+            fontFamily: FONT.mono,
+            minWidth: 14,
+            textAlign: 'center',
+          }}>{count}</span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <ContextPanel
       windowId="questLog"
       title="Missions"
       icon="📋"
-      accent="#22d3ee"
+      accent={COLORS.CYAN.light}
       width={380}
     >
-      <div className="flex flex-col" style={{ height: '100%' }}>
-
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Tabs */}
-        <div className="flex gap-1.5 mb-3">
-          <button
-            onClick={() => setTab('active')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === 'active'
-                ? 'bg-cyan-700/30 text-cyan-300 border border-cyan-600/40'
-                : 'bg-slate-800/40 text-slate-400 border border-slate-700/30 hover:border-slate-600/50'
-            }`}
-          >
-            📋 Active
-            {active.length > 0 && (
-              <span className="bg-cyan-500/30 text-cyan-300 rounded-full px-1.5 py-0.5 text-[9px] font-bold">
-                {active.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab('completed')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === 'completed'
-                ? 'bg-green-700/30 text-green-300 border border-green-600/40'
-                : 'bg-slate-800/40 text-slate-400 border border-slate-700/30 hover:border-slate-600/50'
-            }`}
-          >
-            ✓ Completed
-            {completed.length > 0 && (
-              <span className="bg-green-500/20 text-green-400 rounded-full px-1.5 py-0.5 text-[9px]">
-                {completed.length}
-              </span>
-            )}
-          </button>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          <TabButton id="active" label="Active" icon="📋" count={active.length} accent={COLORS.CYAN.light} />
+          <TabButton id="completed" label="Completed" icon="✓" count={completed.length} accent={COLORS.GREEN.light} />
         </div>
 
-        {/* Quest list */}
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+        <SectionHead
+          title={tab === 'active' ? 'Current Objectives' : 'Mission History'}
+          accent={tab === 'active' ? COLORS.CYAN.light : COLORS.GREEN.light}
+          icon={tab === 'active' ? '◆' : '✓'}
+          marginTop={0}
+          right={`${displayed.length} TOTAL`}
+        />
+
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
           {displayed.length === 0 ? (
-            <div className="text-center py-10 text-slate-500 text-sm">
-              {tab === 'active' ? 'No active quests.' : 'No completed quests yet.'}
+            <div style={{
+              textAlign: 'center',
+              padding: '32px 0',
+              color: COLORS.TEXT.muted,
+              fontSize: 11,
+              fontFamily: FONT.ui,
+            }}>
+              {tab === 'active' ? 'No active missions.' : 'No completed missions yet.'}
             </div>
           ) : (
             displayed.map(quest => (
@@ -146,7 +233,6 @@ export const QuestLogWindow = () => {
             ))
           )}
         </div>
-
       </div>
     </ContextPanel>
   );

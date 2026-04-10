@@ -7,6 +7,7 @@ import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { RESOURCE_TYPES } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
+import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
 
 // ============================================
 // CONSTANTS
@@ -55,27 +56,60 @@ Object.values(RESOURCE_TYPES).forEach(r => {
 
 const RecipeCard = ({ recipe, isSelected, onClick }) => {
   const canCraft = recipe.can_craft;
-  
+
   return (
     <div
       onClick={onClick}
-      className={`
-        p-2 rounded cursor-pointer transition-all border text-left w-full
-        ${isSelected
-          ? 'border-cyan-400/60 bg-cyan-900/20'
+      style={{
+        padding: '6px 8px',
+        borderRadius: 3,
+        cursor: 'pointer',
+        textAlign: 'left',
+        width: '100%',
+        background: isSelected
+          ? `linear-gradient(135deg, ${COLORS.PURPLE.pri}18, transparent)`
           : canCraft
-            ? 'border-slate-600/50 bg-slate-800/30 hover:border-slate-500'
-            : 'border-slate-700/30 bg-slate-900/20 opacity-50 hover:opacity-70'
-        }
-      `}
+            ? COLORS.ROW_BG
+            : 'rgba(4,8,16,0.3)',
+        border: `1px solid ${COLORS.EDGE}`,
+        borderLeft: isSelected
+          ? `2px solid ${COLORS.PURPLE.light}`
+          : `2px solid ${canCraft ? COLORS.EDGE : '#0a1020'}`,
+        opacity: canCraft ? 1 : 0.5,
+        transition: 'all 0.15s',
+        boxShadow: isSelected ? glow(COLORS.PURPLE.light, 0.15) : 'none',
+        marginBottom: 2,
+      }}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-lg">{recipe.icon}</span>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-slate-200 truncate">{recipe.name}</div>
-          <div className="text-[10px] text-slate-500">{recipe.category}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 14 }}>{recipe.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: isSelected ? COLORS.TEXT.primary : COLORS.TEXT.secondary,
+            fontFamily: FONT.ui,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>{recipe.name}</div>
+          <div style={{
+            fontSize: 8,
+            color: COLORS.TEXT.dim,
+            fontFamily: FONT.mono,
+            letterSpacing: 0.3,
+          }}>{recipe.category}</div>
         </div>
-        {canCraft && <div className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />}
+        {canCraft && (
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            background: COLORS.GREEN.light,
+            boxShadow: glow(COLORS.GREEN.light, 0.5),
+            flexShrink: 0,
+          }} />
+        )}
       </div>
     </div>
   );
@@ -127,75 +161,143 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
   
   return (
     <div
-      className="relative rounded-lg p-2 transition-all"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       style={{
+        position: 'relative',
+        borderRadius: 3,
+        padding: 8,
+        transition: 'all 0.15s',
         border: dragOver
-          ? '2px dashed #00ccff'
+          ? `1px dashed ${COLORS.BLUE.light}`
           : isFilled
-            ? `2px solid ${color}88`
+            ? `1px solid ${color}88`
             : isPartial
-              ? '2px solid #eab30888'
-              : '2px dashed #334155',
-        background: dragOver
-          ? '#00ccff08'
+              ? `1px solid ${COLORS.GOLD.pri}88`
+              : `1px dashed ${COLORS.EDGE}`,
+        borderLeft: dragOver
+          ? `2px dashed ${COLORS.BLUE.light}`
           : isFilled
-            ? `${color}08`
-            : '#0f172a44',
-        boxShadow: dragOver ? '0 0 8px #00ccff22' : 'none',
+            ? `2px solid ${color}`
+            : isPartial
+              ? `2px solid ${COLORS.GOLD.pri}`
+              : `2px dashed ${COLORS.EDGE}`,
+        background: dragOver
+          ? `${COLORS.BLUE.pri}10`
+          : isFilled
+            ? `${color}10`
+            : COLORS.ROW_BG,
+        boxShadow: dragOver ? glow(COLORS.BLUE.light, 0.2) : 'none',
       }}
     >
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium" style={{ color }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 5,
+      }}>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color,
+          fontFamily: FONT.ui,
+          letterSpacing: 0.3,
+          textTransform: 'capitalize',
+        }}>
           {resourceName}
         </span>
-        <span className="text-[10px] text-slate-500">
-          {available} available
+        <span style={{
+          fontSize: 9,
+          color: COLORS.TEXT.dim,
+          fontFamily: FONT.mono,
+          letterSpacing: 0.3,
+        }}>
+          {available} AVAIL
         </span>
       </div>
-      
-      <div className="flex items-center gap-2">
-        {/* Progress */}
-        <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          flex: 1,
+          height: 5,
+          background: '#0a1528',
+          border: `1px solid ${COLORS.EDGE}`,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}>
           <div
-            className="h-full rounded-full transition-all duration-300"
             style={{
+              height: '100%',
               width: `${Math.min(100, ((assigned?.quantity || 0) / needed) * 100)}%`,
-              backgroundColor: isFilled ? '#44ff44' : isPartial ? '#eab308' : '#334155',
+              background: isFilled
+                ? `linear-gradient(90deg, ${COLORS.GREEN.dim}, ${COLORS.GREEN.light})`
+                : isPartial
+                  ? `linear-gradient(90deg, ${COLORS.GOLD.dim}, ${COLORS.GOLD.light})`
+                  : COLORS.EDGE,
+              transition: 'width 0.3s',
             }}
           />
         </div>
-        
-        <span className={`text-xs font-mono ${isFilled ? 'text-green-400' : isPartial ? 'text-yellow-400' : 'text-slate-500'}`}>
+
+        <span style={{
+          fontSize: 9,
+          fontFamily: FONT.mono,
+          fontWeight: 700,
+          color: isFilled ? COLORS.GREEN.light : isPartial ? COLORS.GOLD.light : COLORS.TEXT.dim,
+          minWidth: 36,
+          textAlign: 'right',
+        }}>
           {assigned?.quantity || 0}/{needed}
         </span>
       </div>
-      
+
       {/* Assigned stacks */}
       {assigned && assigned.stacks.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div style={{
+          marginTop: 6,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 4,
+        }}>
           {assigned.stacks.map((s, i) => (
             <div
               key={i}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] cursor-pointer hover:brightness-125"
-              style={{ backgroundColor: `${color}22`, border: `1px solid ${color}44` }}
               onClick={() => onRemove(i)}
               title="Click to remove"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 6px',
+                borderRadius: 2,
+                fontSize: 9,
+                fontFamily: FONT.mono,
+                cursor: 'pointer',
+                background: `${color}22`,
+                border: `1px solid ${color}55`,
+              }}
             >
               <span style={{ color }}>{s.quantity}×</span>
-              <span className="text-slate-400">
+              <span style={{ color: COLORS.TEXT.muted }}>
                 Q{s.stats ? Math.round((s.stats.purity + s.stats.stability + s.stats.potency + s.stats.density) / 4) : '?'}
               </span>
-              <span className="text-red-400 ml-0.5">✕</span>
+              <span style={{ color: COLORS.RED.light, marginLeft: 2 }}>✕</span>
             </div>
           ))}
         </div>
       )}
-      
+
       {!assigned && (
-        <div className="mt-1 text-[10px] text-slate-600 text-center">
+        <div style={{
+          marginTop: 5,
+          fontSize: 9,
+          color: COLORS.TEXT.dim,
+          textAlign: 'center',
+          fontFamily: FONT.ui,
+          letterSpacing: 0.5,
+          textTransform: 'uppercase',
+        }}>
           Drag from cargo
         </div>
       )}
@@ -239,36 +341,95 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
   if (baseData.fuel_hours) previewStats['Duration'] = `${(Math.round(baseData.fuel_hours * Math.max(0.5, qualityMultiplier) * 10) / 10)}h`;
   
   return (
-    <div className="border border-slate-700/50 rounded-lg p-3 bg-slate-900/50">
-      <div className="text-xs text-slate-500 mb-2">Output</div>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xl">{recipe.icon}</span>
+    <div style={{
+      background: COLORS.ROW_BG,
+      border: `1px solid ${COLORS.EDGE}`,
+      borderLeft: `2px solid ${COLORS.GOLD.pri}`,
+      borderRadius: 3,
+      padding: 10,
+    }}>
+      <div style={{
+        fontSize: 9,
+        color: COLORS.GOLD.light,
+        fontFamily: FONT.mono,
+        letterSpacing: 1,
+        marginBottom: 6,
+        textTransform: 'uppercase',
+        fontWeight: 700,
+      }}>◆ Output</div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 18 }}>{recipe.icon}</span>
         <div>
-          <div className="text-sm font-medium text-amber-300">{recipe.name}</div>
-          <div className="text-[10px] text-slate-400">×{recipe.output_quantity}</div>
+          <div style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: COLORS.GOLD.light,
+            fontFamily: FONT.ui,
+          }}>{recipe.name}</div>
+          <div style={{
+            fontSize: 9,
+            color: COLORS.TEXT.dim,
+            fontFamily: FONT.mono,
+          }}>×{recipe.output_quantity}</div>
         </div>
       </div>
-      
+
       {totalWeight > 0 && (
         <>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] text-slate-500">Input Quality:</span>
-            <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 6,
+          }}>
+            <span style={{
+              fontSize: 9,
+              color: COLORS.TEXT.muted,
+              fontFamily: FONT.mono,
+              letterSpacing: 0.5,
+            }}>QUALITY</span>
+            <div style={{
+              flex: 1,
+              height: 5,
+              background: '#0a1528',
+              border: `1px solid ${COLORS.EDGE}`,
+              borderRadius: 2,
+              overflow: 'hidden',
+            }}>
               <div
-                className="h-full rounded-full"
                 style={{
+                  height: '100%',
                   width: `${avgQuality}%`,
-                  backgroundColor: avgQuality >= 80 ? '#aa44ff' : avgQuality >= 60 ? '#4488ff' : avgQuality >= 40 ? '#44ff44' : '#888',
+                  background: avgQuality >= 80 ? COLORS.PURPLE.light
+                    : avgQuality >= 60 ? COLORS.BLUE.light
+                    : avgQuality >= 40 ? COLORS.GREEN.light
+                    : COLORS.TEXT.dim,
+                  transition: 'width 0.3s',
                 }}
               />
             </div>
-            <span className="text-[10px] text-slate-300">{avgQuality}</span>
+            <span style={{
+              fontSize: 9,
+              fontFamily: FONT.mono,
+              fontWeight: 700,
+              color: COLORS.TEXT.primary,
+              minWidth: 18,
+              textAlign: 'right',
+            }}>{avgQuality}</span>
           </div>
-          
+
           {Object.entries(previewStats).map(([key, val]) => (
-            <div key={key} className="flex justify-between text-xs mb-0.5">
-              <span className="text-slate-400">{key}</span>
-              <span className="text-cyan-300">{val}</span>
+            <div key={key} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: 10,
+              fontFamily: FONT.mono,
+              padding: '2px 0',
+              borderBottom: '1px solid rgba(26,48,80,0.3)',
+            }}>
+              <span style={{ color: COLORS.TEXT.muted, letterSpacing: 0.5 }}>{key.toUpperCase()}</span>
+              <span style={{ color: COLORS.BLUE.light, fontWeight: 700 }}>{val}</span>
             </div>
           ))}
         </>
@@ -461,12 +622,23 @@ export const CraftingWindow = () => {
   const toggleSub = (key) => setSubCollapsed(p => ({ ...p, [key]: !p[key] }));
 
   return (
-    <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent="#aa66ff" width={420}>
-      <div className="flex h-full gap-2">
+    <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent={COLORS.PURPLE.light} width={460}>
+      <div style={{ display: 'flex', height: '100%', gap: 8 }}>
         {/* Recipe sidebar */}
-        <div className="w-[180px] flex-shrink-0 overflow-y-auto border-r border-slate-700/50 pr-2">
+        <div style={{
+          width: 180,
+          flexShrink: 0,
+          overflowY: 'auto',
+          borderRight: `1px solid ${COLORS.EDGE}`,
+          paddingRight: 6,
+        }}>
           {loading && recipes.length === 0 ? (
-            <div className="text-xs text-slate-500 animate-pulse p-2">Loading...</div>
+            <div style={{
+              fontSize: 10,
+              color: COLORS.TEXT.muted,
+              padding: 8,
+              fontFamily: FONT.ui,
+            }}>Loading...</div>
           ) : (
             CATEGORY_ORDER.map(cat => {
               const catRecipes = grouped[cat];
@@ -482,19 +654,53 @@ export const CraftingWindow = () => {
                 : (catRecipes?.filter(r => r.can_craft).length || 0);
 
               return (
-                <div key={cat} className="mb-1">
+                <div key={cat} style={{ marginBottom: 4 }}>
                   {/* Category header — clickable to collapse */}
                   <button
                     onClick={() => toggleCat(cat)}
-                    className="w-full flex items-center gap-1.5 py-1.5 px-1 rounded hover:bg-slate-800/40 transition-colors"
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '5px 6px',
+                      borderRadius: 2,
+                      background: 'rgba(4,8,16,0.4)',
+                      border: `1px solid ${COLORS.EDGE}`,
+                      borderLeft: `2px solid ${COLORS.PURPLE.light}55`,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      fontFamily: FONT.ui,
+                    }}
                   >
-                    <span className="text-[10px] text-slate-600 w-3">{isCollapsed ? '▸' : '▾'}</span>
-                    <span className="text-sm">{CATEGORY_ICONS[cat]}</span>
-                    <span className="text-[11px] text-slate-300 font-medium flex-1 text-left">{CATEGORY_LABELS[cat] || cat}</span>
+                    <span style={{ fontSize: 9, color: COLORS.TEXT.dim, width: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
+                    <span style={{ fontSize: 12 }}>{CATEGORY_ICONS[cat]}</span>
+                    <span style={{
+                      fontSize: 10,
+                      color: COLORS.TEXT.secondary,
+                      fontWeight: 700,
+                      flex: 1,
+                      textAlign: 'left',
+                      letterSpacing: 0.5,
+                      textTransform: 'uppercase',
+                    }}>{CATEGORY_LABELS[cat] || cat}</span>
                     {craftableInCat > 0 && (
-                      <span className="text-[9px] bg-green-900/30 text-green-400 px-1 rounded">{craftableInCat}</span>
+                      <span style={{
+                        fontSize: 8,
+                        background: `${COLORS.GREEN.pri}22`,
+                        color: COLORS.GREEN.light,
+                        padding: '1px 5px',
+                        borderRadius: 2,
+                        fontFamily: FONT.mono,
+                        fontWeight: 700,
+                        border: `1px solid ${COLORS.GREEN.pri}55`,
+                      }}>{craftableInCat}</span>
                     )}
-                    <span className="text-[9px] text-slate-600">{totalInCat}</span>
+                    <span style={{
+                      fontSize: 8,
+                      color: COLORS.TEXT.dim,
+                      fontFamily: FONT.mono,
+                    }}>{totalInCat}</span>
                   </button>
 
                   {/* Category contents */}
@@ -508,23 +714,57 @@ export const CraftingWindow = () => {
                         const craftableSub = subRecipes.filter(r => r.can_craft).length;
 
                         return (
-                          <div key={sub} className="mb-0.5">
+                          <div key={sub} style={{ marginBottom: 2 }}>
                             {/* Subcategory header */}
                             <button
                               onClick={() => toggleSub(sub)}
-                              className="w-full flex items-center gap-1 py-1 px-1 rounded hover:bg-slate-800/30 transition-colors"
+                              style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '3px 4px',
+                                marginTop: 2,
+                                marginLeft: 4,
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s',
+                                fontFamily: FONT.ui,
+                              }}
                             >
-                              <span className="text-[9px] text-slate-600 w-2.5">{isSubCollapsed ? '▸' : '▾'}</span>
-                              <span className="w-1.5 h-1.5 rounded-sm flex-shrink-0" style={{ backgroundColor: subInfo.color }} />
-                              <span className="text-[10px] text-slate-400 flex-1 text-left">{subInfo.label}</span>
+                              <span style={{ fontSize: 8, color: COLORS.TEXT.dim, width: 8 }}>{isSubCollapsed ? '▸' : '▾'}</span>
+                              <span style={{
+                                width: 6,
+                                height: 6,
+                                background: subInfo.color,
+                                boxShadow: `0 0 4px ${subInfo.color}88`,
+                                flexShrink: 0,
+                              }} />
+                              <span style={{
+                                fontSize: 9,
+                                color: COLORS.TEXT.muted,
+                                flex: 1,
+                                textAlign: 'left',
+                                letterSpacing: 0.5,
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                              }}>{subInfo.label}</span>
                               {craftableSub > 0 && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+                                <span style={{
+                                  width: 5,
+                                  height: 5,
+                                  borderRadius: 3,
+                                  background: COLORS.GREEN.light,
+                                  boxShadow: glow(COLORS.GREEN.light, 0.5),
+                                  flexShrink: 0,
+                                }} />
                               )}
                             </button>
 
                             {/* Subcategory recipes */}
                             {!isSubCollapsed && (
-                              <div className="space-y-0.5 ml-3 mb-1">
+                              <div style={{ marginLeft: 12, marginBottom: 4 }}>
                                 {subRecipes.map(r => (
                                   <RecipeCard
                                     key={r.id}
@@ -542,7 +782,7 @@ export const CraftingWindow = () => {
                   )}
 
                   {!isCollapsed && cat !== 'module' && catRecipes && (
-                    <div className="space-y-0.5 ml-4 mb-1">
+                    <div style={{ marginLeft: 16, marginBottom: 4, marginTop: 4 }}>
                       {catRecipes.map(r => (
                         <RecipeCard
                           key={r.id}
@@ -560,25 +800,59 @@ export const CraftingWindow = () => {
         </div>
         
         {/* Recipe detail / crafting area */}
-        <div className="flex-1 flex flex-col overflow-y-auto">
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', paddingLeft: 4 }}>
           {!selectedRecipe ? (
-            <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: COLORS.TEXT.muted,
+              fontSize: 11,
+              fontFamily: FONT.ui,
+              letterSpacing: 0.5,
+            }}>
               Select a recipe
             </div>
           ) : (
             <>
               {/* Recipe header */}
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-2xl">{selectedRecipe.icon}</span>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 12,
+                padding: '8px 10px',
+                background: `linear-gradient(135deg, ${COLORS.PURPLE.pri}10, transparent)`,
+                border: `1px solid ${COLORS.EDGE}`,
+                borderLeft: `2px solid ${COLORS.PURPLE.light}`,
+                borderRadius: 3,
+              }}>
+                <span style={{ fontSize: 22 }}>{selectedRecipe.icon}</span>
                 <div>
-                  <div className="text-sm font-medium text-slate-200">{selectedRecipe.name}</div>
-                  <div className="text-[10px] text-slate-400">{selectedRecipe.description}</div>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: COLORS.TEXT.primary,
+                    fontFamily: FONT.ui,
+                    letterSpacing: 0.3,
+                  }}>{selectedRecipe.name}</div>
+                  <div style={{
+                    fontSize: 10,
+                    color: COLORS.TEXT.dim,
+                    fontFamily: FONT.ui,
+                  }}>{selectedRecipe.description}</div>
                 </div>
               </div>
-              
+
               {/* Ingredients */}
-              <div className="text-xs text-slate-500 mb-1.5">Ingredients</div>
-              <div className="space-y-2 mb-3">
+              <SectionHead
+                title="Ingredients"
+                accent={COLORS.PURPLE.light}
+                icon="◆"
+                marginTop={0}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
                 {selectedRecipe.ingredients.map((ing, i) => (
                   <IngredientSlot
                     key={i}
@@ -590,40 +864,53 @@ export const CraftingWindow = () => {
                   />
                 ))}
               </div>
-              
+
               {/* Output preview */}
               <OutputPreview
                 recipe={selectedRecipe}
                 assignedIngredients={assignedIngredients}
               />
-              
+
               {/* Status messages */}
               {error && (
-                <div className="mt-2 p-2 rounded text-xs bg-red-900/30 border border-red-500/40 text-red-400">
-                  {error}
+                <div style={{ marginTop: 8 }}>
+                  <MessageBar type="error">{error}</MessageBar>
                 </div>
               )}
               {success && (
-                <div className="mt-2 p-2 rounded text-xs bg-green-900/30 border border-green-500/40 text-green-400">
-                  {success}
+                <div style={{ marginTop: 8 }}>
+                  <MessageBar type="success">{success}</MessageBar>
                 </div>
               )}
-              
+
               {/* Craft button */}
               <button
                 onClick={handleCraft}
                 disabled={!canCraftNow || crafting}
-                className={`
-                  mt-3 py-2 px-4 rounded-lg font-medium text-sm transition-all w-full
-                  ${canCraftNow && !crafting
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white cursor-pointer shadow-lg shadow-amber-900/30'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  }
-                `}
+                style={{
+                  marginTop: 12,
+                  padding: '10px 18px',
+                  width: '100%',
+                  borderRadius: 3,
+                  fontFamily: FONT.ui,
+                  fontWeight: 800,
+                  fontSize: 12,
+                  letterSpacing: 1.5,
+                  textTransform: 'uppercase',
+                  cursor: (canCraftNow && !crafting) ? 'pointer' : 'not-allowed',
+                  background: (canCraftNow && !crafting)
+                    ? `linear-gradient(180deg, ${COLORS.GOLD.pri}33, ${COLORS.GOLD.pri}0a)`
+                    : 'rgba(30,41,59,0.5)',
+                  border: `1px solid ${(canCraftNow && !crafting) ? `${COLORS.GOLD.pri}88` : '#1e293b'}`,
+                  borderLeft: `3px solid ${(canCraftNow && !crafting) ? COLORS.GOLD.pri : '#1e293b'}`,
+                  color: (canCraftNow && !crafting) ? COLORS.GOLD.light : '#475569',
+                  transition: 'all 0.15s',
+                  boxShadow: (canCraftNow && !crafting) ? glow(COLORS.GOLD.pri, 0.2) : 'none',
+                }}
               >
-                {crafting ? 'Crafting...' : `Craft ${selectedRecipe.name}`}
+                {crafting ? 'Crafting...' : `⚒ Craft ${selectedRecipe.name}`}
               </button>
-              
+
               {/* DEV CHEAT: Craft without resources */}
               <button
                 onClick={async () => {
@@ -640,9 +927,21 @@ export const CraftingWindow = () => {
                   }
                 }}
                 disabled={crafting}
-                className="mt-1 py-1 px-3 rounded text-[10px] w-full bg-red-900/30 border border-red-500/30 text-red-400 hover:bg-red-900/50 transition-all"
+                style={{
+                  marginTop: 4,
+                  padding: '4px 12px',
+                  width: '100%',
+                  fontSize: 9,
+                  borderRadius: 2,
+                  background: 'rgba(127,29,29,0.25)',
+                  border: '1px solid rgba(239,68,68,0.4)',
+                  color: COLORS.RED.light,
+                  fontFamily: FONT.mono,
+                  cursor: 'pointer',
+                  letterSpacing: 0.5,
+                }}
               >
-                🐛 Cheat Craft (no resources)
+                🐛 DEV: Cheat Craft
               </button>
             </>
           )}

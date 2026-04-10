@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
 import { resourcesAPI, harvesterAPI, fittingAPI, questsAPI } from '@/utils/api';
+import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -218,32 +219,60 @@ const SurveyStatus = ({ status }) => {
 
 const OrbitalScanResults = ({ resources }) => {
   if (!resources || resources.length === 0) {
-    return <p className="text-slate-400 text-sm">No resources detected</p>;
+    return <p style={{ color: '#4a6580', fontSize: 11, fontFamily: F }}>No resources detected</p>;
   }
-  
+
   return (
-    <div className="space-y-2">
+    <div>
       {resources.map((resource, idx) => (
-        <div 
+        <div
           key={idx}
-          className="flex items-center justify-between bg-slate-800/50 rounded px-3 py-2"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(4,8,16,0.5)',
+            border: `1px solid ${EDGE}`,
+            borderRadius: 2,
+            padding: '6px 10px',
+            marginBottom: 4,
+          }}
         >
-          <div className="flex items-center gap-2">
-            <span className="text-lg">{CATEGORY_INFO[resource.category]?.icon || '📦'}</span>
-            <span 
-              className="font-medium"
-              style={{ color: RARITY_INFO[resource.rarity]?.color || '#fff' }}
-            >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14 }}>{CATEGORY_INFO[resource.category]?.icon || '📦'}</span>
+            <span style={{
+              fontWeight: 700,
+              fontSize: 11,
+              fontFamily: F,
+              color: RARITY_INFO[resource.rarity]?.color || '#e2e8f0',
+            }}>
               {resource.name}
             </span>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-slate-400">{resource.deposit_count}x</span>
-            <span className={`px-2 py-0.5 rounded text-xs ${
-              resource.abundance === 'Abundant' ? 'bg-green-900/50 text-green-400' :
-              resource.abundance === 'Moderate' ? 'bg-yellow-900/50 text-yellow-400' :
-              'bg-red-900/50 text-red-400'
-            }`}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, fontFamily: FM }}>
+            <span style={{ color: '#4a6580' }}>{resource.deposit_count}×</span>
+            <span style={{
+              padding: '1px 6px',
+              borderRadius: 2,
+              fontSize: 8,
+              fontWeight: 800,
+              fontFamily: F,
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+              ...(resource.abundance === 'Abundant' ? {
+                background: 'rgba(22,101,52,0.4)',
+                color: '#4ade80',
+                border: '1px solid rgba(34,197,94,0.5)',
+              } : resource.abundance === 'Moderate' ? {
+                background: 'rgba(133,77,14,0.4)',
+                color: '#fbbf24',
+                border: '1px solid rgba(251,191,36,0.5)',
+              } : {
+                background: 'rgba(127,29,29,0.4)',
+                color: '#fca5a5',
+                border: '1px solid rgba(239,68,68,0.5)',
+              }),
+            }}>
               {resource.abundance}
             </span>
           </div>
@@ -255,46 +284,86 @@ const OrbitalScanResults = ({ resources }) => {
 
 const GroundScanResults = ({ deposits }) => {
   if (!deposits || deposits.length === 0) {
-    return <p className="text-slate-400 text-sm">No deposit data available</p>;
+    return <p style={{ color: '#4a6580', fontSize: 11, fontFamily: F }}>No deposit data available</p>;
   }
-  
+
   return (
-    <div className="space-y-3">
+    <div>
       {deposits.map((deposit) => (
-        <div 
+        <div
           key={deposit.id}
-          className="bg-slate-800/50 rounded p-3"
+          style={{
+            background: 'rgba(4,8,16,0.5)',
+            border: `1px solid ${EDGE}`,
+            borderLeft: `2px solid ${EDGE}`,
+            borderRadius: 3,
+            padding: 10,
+            marginBottom: 6,
+          }}
         >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-sm">#{deposit.slot_number}</span>
-              <span 
-                className="font-medium"
-                style={{ color: RARITY_INFO[deposit.rarity]?.color || '#fff' }}
-              >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 9, color: '#3a5a6a', fontFamily: FM, letterSpacing: 0.5 }}>#{deposit.slot_number}</span>
+              <span style={{
+                fontWeight: 700,
+                fontSize: 11,
+                fontFamily: F,
+                color: RARITY_INFO[deposit.rarity]?.color || '#e2e8f0',
+              }}>
                 {deposit.resource_name}
               </span>
             </div>
-            <span 
-              className="text-sm px-2 py-0.5 rounded"
-              style={{ 
-                backgroundColor: deposit.estimated_tier.color + '22',
-                color: deposit.estimated_tier.color 
-              }}
-            >
+            <span style={{
+              fontSize: 9,
+              padding: '2px 7px',
+              borderRadius: 2,
+              fontWeight: 800,
+              fontFamily: F,
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+              background: `${deposit.estimated_tier.color}22`,
+              color: deposit.estimated_tier.color,
+              border: `1px solid ${deposit.estimated_tier.color}55`,
+            }}>
               {deposit.estimated_tier.name}
             </span>
           </div>
-          
-          <div className="text-sm text-slate-400 mb-2">
-            Quantity: ~{deposit.quantity_range.min}-{deposit.quantity_range.max} units
+
+          <div style={{
+            fontSize: 10,
+            color: '#4a6580',
+            fontFamily: FM,
+            marginBottom: 6,
+            letterSpacing: 0.3,
+          }}>
+            QTY ~{deposit.quantity_range.min}-{deposit.quantity_range.max} UNITS
           </div>
-          
-          <div className="grid grid-cols-2 gap-2 text-xs">
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 4,
+          }}>
             {Object.entries(deposit.stat_ranges).map(([stat, range]) => (
-              <div key={stat} className="flex items-center justify-between bg-slate-900/50 rounded px-2 py-1">
-                <span className="text-slate-500 capitalize">{stat}</span>
-                <span className="text-slate-300">{range.min}-{range.max}</span>
+              <div key={stat} style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(2,4,10,0.6)',
+                border: `1px solid ${EDGE}`,
+                borderRadius: 2,
+                padding: '3px 7px',
+                fontSize: 9,
+                fontFamily: FM,
+                letterSpacing: 0.3,
+              }}>
+                <span style={{ color: '#4a6580', textTransform: 'uppercase' }}>{stat}</span>
+                <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{range.min}-{range.max}</span>
               </div>
             ))}
           </div>
@@ -306,16 +375,41 @@ const GroundScanResults = ({ deposits }) => {
 
 const HazardWarning = ({ hazards }) => {
   if (!hazards || hazards.length === 0) return null;
-  
+
   return (
-    <div className="bg-red-900/30 border border-red-500/50 rounded p-3 mt-3">
-      <div className="flex items-center gap-2 text-red-400 font-medium mb-1">
+    <div style={{
+      background: 'rgba(127,29,29,0.25)',
+      border: '1px solid rgba(239,68,68,0.5)',
+      borderLeft: '2px solid #ef4444',
+      borderRadius: 3,
+      padding: 10,
+      marginTop: 10,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        color: '#fca5a5',
+        fontWeight: 800,
+        marginBottom: 5,
+        fontSize: 10,
+        fontFamily: F,
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+      }}>
         <span>⚠️</span>
         <span>Hazards Detected</span>
       </div>
-      <ul className="text-sm text-red-300 space-y-1">
+      <ul style={{
+        fontSize: 10,
+        color: '#fca5a5',
+        listStyle: 'none',
+        padding: 0,
+        margin: 0,
+        fontFamily: F,
+      }}>
         {hazards.map((hazard, idx) => (
-          <li key={idx}>• {hazard}</li>
+          <li key={idx} style={{ marginBottom: 2 }}>• {hazard}</li>
         ))}
       </ul>
     </div>
@@ -328,31 +422,85 @@ const HazardWarning = ({ hazards }) => {
 
 const StatBar = ({ label, value, max = 100 }) => {
   const pct = Math.round((value / max) * 100);
-  const color = pct >= 80 ? '#aa44ff' : pct >= 60 ? '#4488ff' : pct >= 40 ? '#44ff44' : pct >= 20 ? '#ffffff' : '#888888';
-  
+  const color = pct >= 80 ? '#a855f7' : pct >= 60 ? '#60a5fa' : pct >= 40 ? '#22c55e' : pct >= 20 ? '#e2e8f0' : '#4a6580';
+
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="text-slate-500 capitalize w-16">{label}</span>
-      <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      fontSize: 10,
+      fontFamily: FM,
+      padding: '2px 0',
+    }}>
+      <span style={{
+        color: '#4a6580',
+        textTransform: 'uppercase',
+        width: 56,
+        letterSpacing: 0.5,
+      }}>{label}</span>
+      <div style={{
+        flex: 1,
+        height: 5,
+        background: '#0a1528',
+        border: `1px solid ${EDGE}`,
+        borderRadius: 2,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          height: '100%',
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${color}99, ${color})`,
+          transition: 'width 0.2s',
+        }} />
       </div>
-      <span className="text-slate-400 w-7 text-right">{value}</span>
+      <span style={{
+        color: '#a0b0c0',
+        width: 24,
+        textAlign: 'right',
+        fontWeight: 700,
+      }}>{value}</span>
     </div>
   );
 };
 
 const CargoBar = ({ capacity, used }) => {
   const pct = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
-  const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#eab308' : '#22d3ee';
-  
+  const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#fbbf24' : '#f59e0b';
+
   return (
-    <div className="bg-slate-800/40 rounded p-2 mb-3">
-      <div className="flex justify-between text-xs text-slate-400 mb-1">
-        <span>📦 Cargo</span>
-        <span style={{ color }}>{used} / {capacity}</span>
+    <div style={{
+      background: 'rgba(4,8,16,0.5)',
+      border: `1px solid ${EDGE}`,
+      borderLeft: `2px solid ${color}`,
+      borderRadius: 3,
+      padding: '7px 10px',
+      marginBottom: 10,
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: 9,
+        fontFamily: FM,
+        marginBottom: 4,
+        letterSpacing: 0.5,
+      }}>
+        <span style={{ color: '#4a6580' }}>📦 CARGO</span>
+        <span style={{ color, fontWeight: 700 }}>{used} / {capacity}</span>
       </div>
-      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      <div style={{
+        height: 4,
+        background: '#0a1528',
+        border: `1px solid ${EDGE}`,
+        borderRadius: 2,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          height: '100%',
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${color}99, ${color})`,
+          transition: 'width 0.3s',
+        }} />
       </div>
     </div>
   );
@@ -366,88 +514,172 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
   const isOccupiedByOther = deposit.is_occupied && !deposit.occupied_by_me;
   const isDepleted = deposit.quantity_remaining != null && deposit.quantity_remaining <= 0;
   const canHarvest = !isDepleted && !isOccupiedByOther && !hasActiveSession && deposit.stats;
-  
-  const tier = deposit.stats 
+
+  const tier = deposit.stats
     ? getQualityTier(deposit.stats.purity, deposit.stats.stability, deposit.stats.potency, deposit.stats.density)
     : null;
-  
+
+  // Card accent color
+  const accent = isMyActiveDeposit ? GOLD.pri
+    : isDepleted ? '#3a4a5a'
+    : isOccupiedByOther ? '#ef4444'
+    : EDGE;
+
   return (
-    <div className={`rounded-lg p-3 border transition-colors ${
-      isMyActiveDeposit ? 'bg-amber-900/20 border-amber-500/50' :
-      isDepleted ? 'bg-slate-800/20 border-slate-700/30 opacity-50' :
-      isOccupiedByOther ? 'bg-slate-800/20 border-red-500/30' :
-      'bg-slate-800/40 border-slate-700/50'
-    }`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-500 text-xs font-mono">#{deposit.slot_number}</span>
-          <span className="text-lg">{CATEGORY_INFO[deposit.category]?.icon || '📦'}</span>
-          <span 
-            className="font-medium text-sm"
-            style={{ color: RARITY_INFO[deposit.rarity]?.color || '#fff' }}
-          >
+    <div style={{
+      background: isMyActiveDeposit
+        ? `linear-gradient(135deg, ${GOLD.pri}10, transparent)`
+        : 'rgba(4,8,16,0.5)',
+      border: `1px solid ${EDGE}`,
+      borderLeft: `2px solid ${accent}`,
+      borderRadius: 3,
+      padding: 10,
+      marginBottom: 8,
+      opacity: isDepleted ? 0.5 : 1,
+      transition: 'all 0.15s',
+      boxShadow: isMyActiveDeposit ? `0 0 8px ${GOLD.pri}33` : 'none',
+    }}>
+      {/* Header row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            color: '#3a5a6a',
+            fontSize: 9,
+            fontFamily: FM,
+            letterSpacing: 0.5,
+          }}>#{deposit.slot_number}</span>
+          <span style={{ fontSize: 14 }}>{CATEGORY_INFO[deposit.category]?.icon || '📦'}</span>
+          <span style={{
+            fontWeight: 700,
+            fontSize: 12,
+            fontFamily: F,
+            color: RARITY_INFO[deposit.rarity]?.color || '#e2e8f0',
+            letterSpacing: 0.3,
+          }}>
             {deposit.resource_name}
           </span>
         </div>
         {tier && (
-          <span 
-            className="text-xs px-2 py-0.5 rounded"
-            style={{ backgroundColor: tier.color + '22', color: tier.color }}
-          >
+          <span style={{
+            fontSize: 9,
+            padding: '2px 7px',
+            borderRadius: 2,
+            background: `${tier.color}22`,
+            border: `1px solid ${tier.color}55`,
+            color: tier.color,
+            fontFamily: F,
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+          }}>
             {tier.name}
           </span>
         )}
       </div>
-      
+
+      {/* Quantity progress */}
       {deposit.quantity_remaining != null && (
-        <div className="mb-2">
-          <div className="flex justify-between text-xs text-slate-400 mb-1">
-            <span>Remaining</span>
-            <span>{deposit.quantity_remaining} / {deposit.quantity_total}</span>
+        <div style={{ marginBottom: 8 }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: 9,
+            fontFamily: FM,
+            color: '#4a6580',
+            marginBottom: 3,
+            letterSpacing: 0.5,
+          }}>
+            <span>REMAINING</span>
+            <span style={{ color: '#a0b0c0' }}>{deposit.quantity_remaining} / {deposit.quantity_total}</span>
           </div>
-          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-cyan-500 rounded-full transition-all"
-              style={{ width: `${(deposit.quantity_remaining / deposit.quantity_total) * 100}%` }}
-            />
+          <div style={{
+            height: 4,
+            background: '#0a1528',
+            border: `1px solid ${EDGE}`,
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${(deposit.quantity_remaining / deposit.quantity_total) * 100}%`,
+              background: 'linear-gradient(90deg, #155e75, #22d3ee)',
+              transition: 'width 0.3s',
+            }} />
           </div>
         </div>
       )}
-      
+
+      {/* Stat bars */}
       {deposit.stats && (
-        <div className="space-y-1 mb-3">
+        <div style={{ marginBottom: 10 }}>
           <StatBar label="Purity" value={deposit.stats.purity} />
           <StatBar label="Stability" value={deposit.stats.stability} />
           <StatBar label="Potency" value={deposit.stats.potency} />
           <StatBar label="Density" value={deposit.stats.density} />
         </div>
       )}
-      
+
+      {/* Status / action */}
       {isMyActiveDeposit ? (
-        <div className="text-amber-400 text-xs font-medium flex items-center gap-1">
-          <span className="animate-pulse">⛏️</span>
-          <span>Currently mining this deposit</span>
+        <div style={{
+          color: GOLD.light,
+          fontSize: 10,
+          fontWeight: 700,
+          fontFamily: F,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 8px',
+          background: `${GOLD.pri}10`,
+          border: `1px solid ${GOLD.pri}44`,
+          borderRadius: 2,
+          letterSpacing: 0.5,
+        }}>
+          <span style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>⛏️</span>
+          <span>CURRENTLY MINING</span>
         </div>
       ) : isDepleted ? (
-        <div className="text-slate-500 text-xs">Depleted — respawns in ~24h</div>
+        <div style={{
+          color: '#3a5a6a',
+          fontSize: 10,
+          fontFamily: FM,
+          letterSpacing: 0.5,
+        }}>DEPLETED — RESPAWNS IN ~24H</div>
       ) : isOccupiedByOther ? (
-        <div className="text-red-400 text-xs">Occupied by another player</div>
+        <div style={{
+          color: '#ef4444',
+          fontSize: 10,
+          fontFamily: FM,
+          letterSpacing: 0.5,
+        }}>OCCUPIED BY ANOTHER PLAYER</div>
       ) : !deposit.stats ? (
-        <div className="text-slate-500 text-xs">Ground scan required</div>
+        <div style={{
+          color: '#3a5a6a',
+          fontSize: 10,
+          fontFamily: FM,
+          letterSpacing: 0.5,
+        }}>GROUND SCAN REQUIRED</div>
       ) : hasActiveSession ? (
-        <div className="text-slate-500 text-xs">Stop current session to mine here</div>
+        <div style={{
+          color: '#3a5a6a',
+          fontSize: 10,
+          fontFamily: FM,
+          letterSpacing: 0.5,
+        }}>STOP CURRENT SESSION TO MINE HERE</div>
       ) : (
-        <button
-          onClick={() => onStartHarvest(deposit.id)}
+        <PanelButton
+          accent={GOLD.pri}
           disabled={!canHarvest || loading}
-          className={`w-full py-1.5 rounded text-xs font-medium transition-colors ${
-            canHarvest && !loading
-              ? 'bg-amber-600 hover:bg-amber-500 text-white cursor-pointer'
-              : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-          }`}
+          onClick={() => onStartHarvest(deposit.id)}
+          style={{ width: '100%' }}
         >
           {loading ? 'Starting...' : '⛏️ Start Mining (50/hr)'}
-        </button>
+        </PanelButton>
       )}
     </div>
   );
@@ -491,97 +723,169 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
   const tier = session.quality_tier;
   
   return (
-    <div className="bg-amber-900/15 border border-amber-500/30 rounded-lg p-4 mb-3">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="animate-pulse text-lg">⛏️</span>
-          <span className="font-medium text-amber-400">Mining Active</span>
+    <div style={{
+      background: `linear-gradient(135deg, ${GOLD.pri}10, transparent)`,
+      border: `1px solid ${EDGE}`,
+      borderLeft: `2px solid ${GOLD.pri}`,
+      borderRadius: 3,
+      padding: 12,
+      marginBottom: 10,
+      boxShadow: `0 0 12px ${GOLD.pri}22`,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14, animation: 'pulse 1.5s ease-in-out infinite' }}>⛏️</span>
+          <span style={{
+            fontWeight: 800,
+            color: GOLD.light,
+            fontSize: 11,
+            fontFamily: F,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+          }}>Mining Active</span>
         </div>
-        <span className="text-xs text-slate-400">{session.body_name}</span>
+        <span style={{
+          fontSize: 9,
+          color: '#4a6580',
+          fontFamily: FM,
+          letterSpacing: 0.5,
+        }}>{session.body_name}</span>
       </div>
-      
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">{CATEGORY_INFO[session.category]?.icon || '📦'}</span>
-        <span 
-          className="font-medium"
-          style={{ color: RARITY_INFO[session.rarity]?.color || '#fff' }}
-        >
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 10,
+      }}>
+        <span style={{ fontSize: 14 }}>{CATEGORY_INFO[session.category]?.icon || '📦'}</span>
+        <span style={{
+          fontWeight: 700,
+          fontSize: 12,
+          fontFamily: F,
+          color: RARITY_INFO[session.rarity]?.color || '#e2e8f0',
+          letterSpacing: 0.3,
+        }}>
           {session.resource_name}
         </span>
         {tier && (
-          <span 
-            className="text-xs px-2 py-0.5 rounded ml-auto"
-            style={{ backgroundColor: tier.color + '22', color: tier.color }}
-          >
+          <span style={{
+            fontSize: 9,
+            padding: '2px 7px',
+            borderRadius: 2,
+            background: `${tier.color}22`,
+            border: `1px solid ${tier.color}55`,
+            color: tier.color,
+            marginLeft: 'auto',
+            fontFamily: F,
+            fontWeight: 800,
+            letterSpacing: 0.5,
+            textTransform: 'uppercase',
+          }}>
             {tier.name}
           </span>
         )}
       </div>
-      
+
       {session.stats && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          columnGap: 14,
+          rowGap: 2,
+          marginBottom: 10,
+        }}>
           <StatBar label="Purity" value={session.stats.purity} />
           <StatBar label="Stability" value={session.stats.stability} />
           <StatBar label="Potency" value={session.stats.potency} />
           <StatBar label="Density" value={session.stats.density} />
         </div>
       )}
-      
-      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-        <div className="bg-slate-800/50 rounded px-2 py-1.5">
-          <div className="text-slate-500">Elapsed</div>
-          <div className="text-slate-200 font-mono">{elapsed}</div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 5,
+        marginBottom: 10,
+      }}>
+        {[
+          { label: 'ELAPSED', value: elapsed, color: '#a0b0c0' },
+          { label: 'RATE', value: `${session.harvest_rate}/HR`, color: '#a0b0c0' },
+          { label: 'TOTAL MINED', value: session.units_harvested, color: '#a0b0c0' },
+          { label: 'READY', value: `~${estimatedPending}`, color: GOLD.light, accent: true },
+        ].map((stat, i) => (
+          <div key={i} style={{
+            background: stat.accent ? `${GOLD.pri}15` : 'rgba(4,8,16,0.6)',
+            border: `1px solid ${stat.accent ? `${GOLD.pri}44` : EDGE}`,
+            borderRadius: 2,
+            padding: '4px 7px',
+          }}>
+            <div style={{
+              fontSize: 8,
+              color: stat.accent ? GOLD.light : '#3a5a6a',
+              fontFamily: FM,
+              letterSpacing: 1,
+            }}>{stat.label}</div>
+            <div style={{
+              fontSize: 11,
+              color: stat.color,
+              fontFamily: FM,
+              fontWeight: 700,
+              marginTop: 1,
+            }}>{stat.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 9,
+          fontFamily: FM,
+          color: '#4a6580',
+          marginBottom: 3,
+          letterSpacing: 0.5,
+        }}>
+          <span>DEPOSIT</span>
+          <span style={{ color: '#a0b0c0' }}>{session.deposit_remaining} LEFT</span>
         </div>
-        <div className="bg-slate-800/50 rounded px-2 py-1.5">
-          <div className="text-slate-500">Rate</div>
-          <div className="text-slate-200">{session.harvest_rate}/hr</div>
-        </div>
-        <div className="bg-slate-800/50 rounded px-2 py-1.5">
-          <div className="text-slate-500">Total Mined</div>
-          <div className="text-slate-200">{session.units_harvested}</div>
-        </div>
-        <div className="bg-amber-900/30 rounded px-2 py-1.5">
-          <div className="text-amber-500">Ready</div>
-          <div className="text-amber-300 font-medium">~{estimatedPending}</div>
+        <div style={{
+          height: 4,
+          background: '#0a1528',
+          border: `1px solid ${EDGE}`,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%',
+            width: `${(session.deposit_remaining / session.deposit_total) * 100}%`,
+            background: 'linear-gradient(90deg, #155e75, #22d3ee)',
+          }} />
         </div>
       </div>
-      
-      <div className="mb-3">
-        <div className="flex justify-between text-xs text-slate-400 mb-1">
-          <span>Deposit</span>
-          <span>{session.deposit_remaining} left</span>
-        </div>
-        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-cyan-500 rounded-full"
-            style={{ width: `${(session.deposit_remaining / session.deposit_total) * 100}%` }}
-          />
-        </div>
-      </div>
-      
-      <div className="flex gap-2">
-        <button
-          onClick={onCollect}
+
+      <div style={{ display: 'flex', gap: 6 }}>
+        <PanelButton
+          accent="#22c55e"
           disabled={collecting || estimatedPending <= 0}
-          className={`flex-1 py-2 rounded text-sm font-medium transition-colors ${
-            !collecting && estimatedPending > 0
-              ? 'bg-green-600 hover:bg-green-500 text-white'
-              : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-          }`}
+          onClick={onCollect}
+          style={{ flex: 1 }}
         >
           {collecting ? 'Collecting...' : `📦 Collect (~${estimatedPending})`}
-        </button>
-        <button
-          onClick={onStop}
+        </PanelButton>
+        <PanelButton
+          accent="#ef4444"
           disabled={stopping}
-          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
-            !stopping
-              ? 'bg-red-700 hover:bg-red-600 text-white'
-              : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-          }`}
+          onClick={onStop}
         >
           {stopping ? '...' : '⏹ Stop'}
-        </button>
+        </PanelButton>
       </div>
     </div>
   );
@@ -639,20 +943,37 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
     // Empty slot
     return (
       <div
-        className="rounded-lg p-3 transition-all"
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         style={{
-          border: dragOver ? '2px dashed #ffaa00' : '2px dashed #334155',
-          background: dragOver ? '#ffaa0008' : '#0f172a33',
-          minHeight: 80,
+          padding: 12,
+          marginBottom: 6,
+          borderRadius: 3,
+          border: dragOver ? `1px dashed ${GOLD.pri}` : `1px dashed ${EDGE}`,
+          borderLeft: dragOver ? `2px dashed ${GOLD.pri}` : `2px dashed ${EDGE}`,
+          background: dragOver ? `${GOLD.pri}10` : 'rgba(4,8,16,0.4)',
+          minHeight: 70,
+          transition: 'all 0.15s',
+          boxShadow: dragOver ? glow(GOLD.pri, 0.15) : 'none',
         }}
       >
-        <div className="flex items-center justify-center h-full text-slate-600 text-xs">
-          <div className="text-center">
-            <div className="text-lg mb-1">📭</div>
-            <div>Slot {slot + 1} — Drag harvester here</div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          color: '#3a5a6a',
+          fontSize: 10,
+          fontFamily: F,
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 16, marginBottom: 4 }}>📭</div>
+            <div style={{
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+              fontWeight: 700,
+            }}>Slot {slot + 1} — Drag harvester here</div>
           </div>
         </div>
       </div>
@@ -677,76 +998,173 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
     : 'Idle';
 
   return (
-    <div
-      className="rounded-lg p-3 border transition-all"
-      style={{ borderColor: `${color}44`, background: `${color}08` }}
-    >
+    <div style={{
+      background: `linear-gradient(135deg, ${color}10, transparent)`,
+      border: `1px solid ${EDGE}`,
+      borderLeft: `2px solid ${color}`,
+      borderRadius: 3,
+      padding: 10,
+      marginBottom: 6,
+      transition: 'all 0.15s',
+    }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{icon}</span>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>{icon}</span>
           <div>
-            <div className="text-xs font-medium text-slate-200">
+            <div style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#e2e8f0',
+              fontFamily: F,
+              letterSpacing: 0.3,
+            }}>
               {harvester.harvester_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
             </div>
-            <div className="text-[10px] text-slate-500">
-              Slot {slot + 1} • {harvester.harvest_rate}/hr • {harvester.storage_capacity} cap
+            <div style={{
+              fontSize: 9,
+              color: '#3a5a6a',
+              fontFamily: FM,
+              letterSpacing: 0.3,
+            }}>
+              SLOT {slot + 1} • {harvester.harvest_rate}/HR • {harvester.storage_capacity} CAP
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: statusColor }} />
-          <span className="text-[10px]" style={{ color: statusColor }}>{statusLabel}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            background: statusColor,
+            boxShadow: `0 0 4px ${statusColor}`,
+            animation: harvester.status === 'active' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+          }} />
+          <span style={{
+            fontSize: 9,
+            color: statusColor,
+            fontFamily: F,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            textTransform: 'uppercase',
+          }}>{statusLabel}</span>
         </div>
       </div>
 
       {/* Deposit assignment */}
-      <div className="mb-2">
+      <div style={{ marginBottom: 6 }}>
         {harvester.deposit_id ? (
-          <div className="flex items-center justify-between bg-slate-800/50 rounded px-2 py-1">
-            <div className="text-xs">
-              <span className="text-slate-400">Mining: </span>
-              <span className="text-cyan-300">{harvester.resource_name}</span>
-              <span className="text-slate-500"> (Slot {harvester.deposit_slot})</span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(4,8,16,0.6)',
+            border: `1px solid ${EDGE}`,
+            borderRadius: 2,
+            padding: '5px 8px',
+          }}>
+            <div style={{ fontSize: 10, fontFamily: F }}>
+              <span style={{ color: '#4a6580' }}>Mining: </span>
+              <span style={{ color: '#22d3ee', fontWeight: 700 }}>{harvester.resource_name}</span>
+              <span style={{ color: '#3a5a6a', fontFamily: FM, fontSize: 9 }}> (slot {harvester.deposit_slot})</span>
             </div>
             <button
               onClick={() => setShowDepositPicker(true)}
-              className="text-[10px] text-slate-500 hover:text-slate-300"
+              style={{
+                fontSize: 9,
+                color: '#4a6580',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: F,
+                fontWeight: 700,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+              }}
             >
               Change
             </button>
           </div>
         ) : (
-          <button
+          <PanelButton
+            size="sm"
+            accent="#22d3ee"
             onClick={() => setShowDepositPicker(true)}
-            className="w-full py-1.5 rounded text-xs bg-cyan-900/30 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-900/50"
+            style={{ width: '100%' }}
           >
             Assign Deposit
-          </button>
+          </PanelButton>
         )}
       </div>
 
       {/* Deposit picker */}
       {showDepositPicker && (
-        <div className="mb-2 bg-slate-900/80 border border-slate-600 rounded p-2 space-y-1">
-          <div className="text-[10px] text-slate-500 mb-1">Available Deposits:</div>
+        <div style={{
+          marginBottom: 6,
+          background: 'rgba(2,4,10,0.85)',
+          border: `1px solid ${EDGE}`,
+          borderLeft: `2px solid #22d3ee`,
+          borderRadius: 3,
+          padding: 8,
+        }}>
+          <div style={{
+            fontSize: 9,
+            color: '#4a6580',
+            fontFamily: FM,
+            letterSpacing: 1,
+            marginBottom: 5,
+            textTransform: 'uppercase',
+          }}>Available Deposits:</div>
           {availableDeposits.length === 0 ? (
-            <div className="text-[10px] text-slate-600">No available deposits</div>
+            <div style={{
+              fontSize: 9,
+              color: '#3a5a6a',
+              fontFamily: F,
+            }}>No available deposits</div>
           ) : (
             availableDeposits.map(d => (
               <button
                 key={d.id}
                 onClick={() => { onAssignDeposit(harvester.id, d.id); setShowDepositPicker(false); }}
-                className="w-full text-left px-2 py-1 rounded text-xs bg-slate-800/50 hover:bg-slate-700/50 flex justify-between"
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '4px 7px',
+                  marginBottom: 2,
+                  borderRadius: 2,
+                  background: 'rgba(4,8,16,0.6)',
+                  border: `1px solid ${EDGE}`,
+                  fontSize: 10,
+                  fontFamily: F,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                }}
               >
-                <span className="text-slate-300">{d.resource_name} (Slot {d.slot_number})</span>
-                <span className="text-slate-500">{d.quantity_remaining} left</span>
+                <span style={{ color: '#a0b0c0' }}>{d.resource_name} (slot {d.slot_number})</span>
+                <span style={{ color: '#3a5a6a', fontFamily: FM }}>{d.quantity_remaining}</span>
               </button>
             ))
           )}
           <button
             onClick={() => setShowDepositPicker(false)}
-            className="text-[10px] text-slate-500 hover:text-slate-300 mt-1"
+            style={{
+              fontSize: 9,
+              color: '#4a6580',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              marginTop: 4,
+              fontFamily: F,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+            }}
           >
             Cancel
           </button>
@@ -755,70 +1173,118 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
 
       {/* Fuel bar */}
       <div
-        className="mb-2 rounded px-2 py-1.5"
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setFuelDragOver(true); }}
         onDragLeave={() => setFuelDragOver(false)}
         onDrop={handleFuelDrop}
         style={{
-          border: fuelDragOver ? '1px solid #eab308' : '1px solid #1e293b',
-          background: fuelDragOver ? '#eab30808' : '#0f172a44',
+          marginBottom: 5,
+          padding: '5px 8px',
+          borderRadius: 2,
+          border: `1px solid ${fuelDragOver ? '#fbbf24' : EDGE}`,
+          borderLeft: `2px solid ${fuelDragOver ? '#fbbf24' : (fuelPct > 30 ? '#fbbf24' : '#ef4444')}`,
+          background: fuelDragOver ? 'rgba(251,191,36,0.08)' : 'rgba(4,8,16,0.6)',
+          transition: 'all 0.15s',
         }}
       >
-        <div className="flex justify-between text-[10px] mb-0.5">
-          <span className="text-slate-500">🔋 Fuel</span>
-          <span className={harvester.fuel_remaining_hours > 0 ? 'text-yellow-400' : 'text-red-400'}>
-            {harvester.fuel_remaining_hours > 0 ? `${harvester.fuel_remaining_hours.toFixed(1)}h` : 'Empty — drag fuel cell'}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 9,
+          fontFamily: FM,
+          marginBottom: 3,
+          letterSpacing: 0.5,
+        }}>
+          <span style={{ color: '#4a6580' }}>🔋 FUEL</span>
+          <span style={{
+            color: harvester.fuel_remaining_hours > 0 ? '#fbbf24' : '#ef4444',
+            fontWeight: 700,
+          }}>
+            {harvester.fuel_remaining_hours > 0 ? `${harvester.fuel_remaining_hours.toFixed(1)}H` : 'EMPTY — DRAG FUEL CELL'}
           </span>
         </div>
-        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{
+        <div style={{
+          height: 4,
+          background: '#0a1528',
+          border: `1px solid ${EDGE}`,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%',
             width: `${fuelPct}%`,
-            backgroundColor: fuelPct > 30 ? '#eab308' : '#ef4444',
+            background: fuelPct > 30
+              ? 'linear-gradient(90deg, #854d0e, #fbbf24)'
+              : 'linear-gradient(90deg, #7f1d1d, #ef4444)',
+            transition: 'width 0.3s',
           }} />
         </div>
       </div>
 
       {/* Hopper bar */}
-      <div className="mb-2 rounded px-2 py-1.5 border border-slate-700/50 bg-slate-900/30">
-        <div className="flex justify-between text-[10px] mb-0.5">
-          <span className="text-slate-500">📦 Hopper</span>
-          <span className={hopperPct >= 100 ? 'text-red-400' : 'text-cyan-400'}>
+      <div style={{
+        marginBottom: 8,
+        padding: '5px 8px',
+        borderRadius: 2,
+        border: `1px solid ${EDGE}`,
+        borderLeft: `2px solid ${hopperPct >= 90 ? '#ef4444' : hopperPct >= 70 ? '#fbbf24' : '#22d3ee'}`,
+        background: 'rgba(4,8,16,0.6)',
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 9,
+          fontFamily: FM,
+          marginBottom: 3,
+          letterSpacing: 0.5,
+        }}>
+          <span style={{ color: '#4a6580' }}>📦 HOPPER</span>
+          <span style={{
+            color: hopperPct >= 100 ? '#ef4444' : '#22d3ee',
+            fontWeight: 700,
+          }}>
             {harvester.hopper_quantity}/{harvester.storage_capacity}
           </span>
         </div>
-        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{
+        <div style={{
+          height: 4,
+          background: '#0a1528',
+          border: `1px solid ${EDGE}`,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%',
             width: `${hopperPct}%`,
-            backgroundColor: hopperPct >= 90 ? '#ef4444' : hopperPct >= 70 ? '#eab308' : '#22d3ee',
+            background: hopperPct >= 90
+              ? 'linear-gradient(90deg, #7f1d1d, #ef4444)'
+              : hopperPct >= 70
+                ? 'linear-gradient(90deg, #854d0e, #fbbf24)'
+                : 'linear-gradient(90deg, #155e75, #22d3ee)',
+            transition: 'width 0.3s',
           }} />
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => onCollect(harvester.id)}
+      <div style={{ display: 'flex', gap: 5 }}>
+        <PanelButton
+          size="sm"
+          accent="#22c55e"
           disabled={harvester.hopper_quantity <= 0}
-          className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
-            harvester.hopper_quantity > 0
-              ? 'bg-green-700 hover:bg-green-600 text-white'
-              : 'bg-slate-800 text-slate-600 cursor-not-allowed'
-          }`}
+          onClick={() => onCollect(harvester.id)}
+          style={{ flex: 1 }}
         >
           Collect ({harvester.hopper_quantity})
-        </button>
-        <button
-          onClick={() => onRemove(harvester.id)}
+        </PanelButton>
+        <PanelButton
+          size="sm"
+          accent="#ef4444"
           disabled={harvester.hopper_quantity > 0}
-          className={`px-2 py-1.5 rounded text-xs transition-colors ${
-            harvester.hopper_quantity <= 0
-              ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-500/30'
-              : 'bg-slate-800 text-slate-600 cursor-not-allowed'
-          }`}
+          onClick={() => onRemove(harvester.id)}
           title={harvester.hopper_quantity > 0 ? 'Collect hopper first' : 'Remove harvester'}
         >
           ✕
-        </button>
+        </PanelButton>
       </div>
     </div>
   );
@@ -911,7 +1377,15 @@ const HarvestersTab = ({ body }) => {
   };
 
   if (loading && !data) {
-    return <div className="text-center py-8 text-slate-400 text-sm animate-pulse">Loading harvesters...</div>;
+    return (
+      <div style={{
+        textAlign: 'center',
+        padding: '32px 0',
+        color: '#4a6580',
+        fontSize: 11,
+        fontFamily: F,
+      }}>Loading harvesters...</div>
+    );
   }
 
   if (!data) return null;
@@ -924,37 +1398,73 @@ const HarvestersTab = ({ body }) => {
   return (
     <div>
       {/* Planet surface header */}
-      <div className="rounded-lg p-3 mb-3 relative overflow-hidden" style={{
-        background: 'linear-gradient(180deg, #1a1a2e 0%, #2d1b0e 60%, #4a3520 100%)',
-        border: '1px solid #4a352044',
+      <div style={{
+        background: `linear-gradient(135deg, #ff662215, transparent)`,
+        border: `1px solid ${EDGE}`,
+        borderLeft: '2px solid #ff6622',
+        borderRadius: 3,
+        padding: '8px 12px',
+        marginBottom: 10,
       }}>
-        <div className="absolute inset-0 opacity-10" style={{
-          backgroundImage: 'radial-gradient(circle at 30% 80%, #ffaa0022 0%, transparent 50%), radial-gradient(circle at 70% 60%, #44ff4411 0%, transparent 40%)',
-        }} />
-        <div className="relative flex items-center justify-between">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
           <div>
-            <div className="text-sm font-medium text-amber-300">{data.planet_name} Surface</div>
-            <div className="text-[10px] text-slate-400">{totalSlots} harvester slots available</div>
+            <div style={{
+              fontSize: 12,
+              fontWeight: 800,
+              color: '#ff8a44',
+              fontFamily: F,
+              letterSpacing: 0.5,
+            }}>{data.planet_name} Surface</div>
+            <div style={{
+              fontSize: 9,
+              color: '#4a6580',
+              fontFamily: FM,
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+            }}>{totalSlots} harvester slots available</div>
           </div>
-          <div className="text-xs text-slate-500">
-            {harvesters.length}/{totalSlots} deployed
+          <div style={{
+            fontSize: 10,
+            color: '#a0b0c0',
+            fontFamily: FM,
+            fontWeight: 700,
+            background: 'rgba(4,8,16,0.6)',
+            border: `1px solid ${EDGE}`,
+            borderRadius: 2,
+            padding: '3px 7px',
+          }}>
+            {harvesters.length}/{totalSlots}
           </div>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-500/40 rounded p-2 text-red-400 text-xs mb-2">{error}</div>
+        <div style={{ marginBottom: 8 }}>
+          <MessageBar type="error">{error}</MessageBar>
+        </div>
       )}
       {message && (
-        <div className="bg-green-900/30 border border-green-500/40 rounded p-2 text-green-400 text-xs mb-2">{message}</div>
+        <div style={{ marginBottom: 8 }}>
+          <MessageBar type="success">{message}</MessageBar>
+        </div>
       )}
 
       {totalSlots === 0 ? (
-        <div className="text-center py-8 text-slate-500 text-sm">
+        <div style={{
+          textAlign: 'center',
+          padding: '32px 16px',
+          color: '#3a5a6a',
+          fontSize: 11,
+          fontFamily: F,
+        }}>
           This body does not support automated harvesters.
         </div>
       ) : (
-        <div className="space-y-2">
+        <div>
           {Array.from({ length: totalSlots }).map((_, i) => (
             <HarvesterSlotCard
               key={i}
@@ -1110,41 +1620,60 @@ const MineTab = ({ body, surveyStatus }) => {
   
   if (!surveyStatus.ground_scanned) {
     return (
-      <div className="text-center py-8">
-        <div className="text-3xl mb-3">🔍</div>
-        <p className="text-slate-400 text-sm mb-1">Ground scan required</p>
-        <p className="text-slate-500 text-xs">
+      <div style={{
+        textAlign: 'center',
+        padding: '32px 16px',
+      }}>
+        <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
+        <p style={{
+          color: '#a0b0c0',
+          fontSize: 12,
+          marginBottom: 4,
+          fontFamily: F,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+        }}>Ground scan required</p>
+        <p style={{
+          color: '#4a6580',
+          fontSize: 10,
+          fontFamily: F,
+          lineHeight: 1.5,
+        }}>
           Complete both scans in the Scan tab to reveal minable deposits.
         </p>
       </div>
     );
   }
-  
+
   if (loading && deposits.length === 0) {
     return (
-      <div className="text-center py-8">
-        <div className="text-slate-400 text-sm animate-pulse">Loading deposits...</div>
+      <div style={{ textAlign: 'center', padding: '32px 0' }}>
+        <div style={{
+          color: '#4a6580',
+          fontSize: 11,
+          fontFamily: F,
+        }}>Loading deposits...</div>
       </div>
     );
   }
-  
+
   return (
-    <div className="space-y-3">
+    <div>
       {error && (
-        <div className="bg-red-900/30 border border-red-500/50 rounded p-2 text-red-400 text-xs">
-          {error}
+        <div style={{ marginBottom: 8 }}>
+          <MessageBar type="error">{error}</MessageBar>
         </div>
       )}
       {message && (
-        <div className="bg-green-900/30 border border-green-500/50 rounded p-2 text-green-400 text-xs">
-          {message}
+        <div style={{ marginBottom: 8 }}>
+          <MessageBar type="success">{message}</MessageBar>
         </div>
       )}
-      
+
       {cargo && <CargoBar capacity={cargo.capacity} used={cargo.used} />}
-      
+
       {activeSession && (
-        <ActiveHarvestPanel 
+        <ActiveHarvestPanel
           session={activeSession}
           cargo={cargo}
           onCollect={handleCollect}
@@ -1153,10 +1682,16 @@ const MineTab = ({ body, surveyStatus }) => {
           stopping={actionLoading}
         />
       )}
-      
-      <div className="space-y-2">
+
+      <div>
         {deposits.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center py-4">No deposits found</p>
+          <p style={{
+            color: '#3a5a6a',
+            fontSize: 11,
+            textAlign: 'center',
+            padding: '16px 0',
+            fontFamily: F,
+          }}>No deposits found</p>
         ) : (
           deposits.map(deposit => (
             <DepositCard
@@ -1347,64 +1882,146 @@ const VendorTab = ({ body }) => {
     modsByType[m.slot_type].push(m);
   }
 
-  if (loading) return <div className="text-xs text-slate-500 animate-pulse py-4 text-center">Loading vendor...</div>;
+  if (loading) return (
+    <div style={{
+      textAlign: 'center',
+      padding: '32px 0',
+      color: '#4a6580',
+      fontSize: 11,
+      fontFamily: F,
+    }}>Loading vendor...</div>
+  );
 
   return (
-    <div className="space-y-3">
+    <div>
       {message && (
-        <div className={`text-xs px-3 py-1.5 rounded ${message.type === 'success' ? 'bg-green-900/30 text-green-400 border border-green-700/30' : 'bg-red-900/30 text-red-400 border border-red-700/30'}`}>
-          {message.text}
+        <div style={{ marginBottom: 8 }}>
+          <MessageBar type={message.type === 'success' ? 'success' : 'error'}>{message.text}</MessageBar>
         </div>
       )}
 
       {/* Credits balance */}
-      <div className="flex items-center justify-between bg-slate-800/40 rounded px-3 py-1.5 border border-slate-700/30">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Balance</span>
-        <span className="text-sm font-medium text-yellow-400">{credits.toLocaleString()} cr</span>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: 'rgba(4,8,16,0.6)',
+        border: `1px solid ${EDGE}`,
+        borderLeft: `2px solid ${GOLD.pri}`,
+        borderRadius: 3,
+        padding: '6px 10px',
+        marginBottom: 10,
+      }}>
+        <span style={{
+          fontSize: 9,
+          color: '#4a6580',
+          fontFamily: FM,
+          letterSpacing: 1,
+          textTransform: 'uppercase',
+        }}>BALANCE</span>
+        <span style={{
+          fontSize: 13,
+          fontWeight: 800,
+          color: GOLD.light,
+          fontFamily: FM,
+        }}>⬡ {credits.toLocaleString()} CR</span>
       </div>
 
       {/* Section tabs */}
-      <div className="flex gap-1.5">
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
         {[
-          { id: 'hulls', label: '🚀 Hulls', count: hulls.length },
-          { id: 'modules', label: '⚙️ Modules', count: modules.length },
-          { id: 'supplies', label: '📦 Supplies', count: supplies.length },
-          { id: 'sell', label: '💰 Sell', count: sellInventory.resources.length + sellInventory.items.length },
-        ].map(s => (
-          <button key={s.id} onClick={() => setSection(s.id)}
-            className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${
-              section === s.id
-                ? 'bg-yellow-700/30 text-yellow-300 border border-yellow-600/40'
-                : 'bg-slate-800/40 text-slate-400 border border-slate-700/30 hover:border-slate-600/50'
-            }`}
-          >
-            {s.label} <span className="text-slate-500 ml-1">{s.count}</span>
-          </button>
-        ))}
+          { id: 'hulls',    label: 'Hulls',    icon: '🚀', count: hulls.length },
+          { id: 'modules',  label: 'Modules',  icon: '⚙️', count: modules.length },
+          { id: 'supplies', label: 'Supplies', icon: '📦', count: supplies.length },
+          { id: 'sell',     label: 'Sell',     icon: '💰', count: sellInventory.resources.length + sellInventory.items.length },
+        ].map(s => {
+          const isActive = section === s.id;
+          return (
+            <button
+              key={s.id}
+              onClick={() => setSection(s.id)}
+              style={{
+                flex: 1,
+                padding: '5px 6px',
+                background: isActive
+                  ? `linear-gradient(180deg, ${GOLD.pri}22, ${GOLD.pri}08)`
+                  : 'rgba(4,8,16,0.5)',
+                border: `1px solid ${isActive ? `${GOLD.pri}66` : EDGE}`,
+                borderLeft: isActive ? `2px solid ${GOLD.pri}` : `1px solid ${EDGE}`,
+                borderRadius: 2,
+                color: isActive ? GOLD.light : '#4a6580',
+                fontSize: 9,
+                fontWeight: 800,
+                fontFamily: F,
+                cursor: 'pointer',
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                transition: 'all 0.15s',
+                boxShadow: isActive ? `0 0 6px ${GOLD.pri}33` : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+              }}
+            >
+              <span>{s.icon}</span>
+              <span>{s.label}</span>
+              <span style={{
+                fontSize: 8,
+                color: isActive ? GOLD.light : '#3a5a6a',
+                opacity: 0.8,
+              }}>{s.count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Hulls */}
       {section === 'hulls' && (
-        <div className="space-y-2">
+        <div>
           {hulls.map(h => (
-            <div key={h.id} className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30 flex items-center gap-3">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-slate-200">{h.name}</span>
-                  <span className="text-[10px] text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded">{h.class}</span>
+            <div key={h.id} style={{
+              background: 'rgba(4,8,16,0.5)',
+              border: `1px solid ${EDGE}`,
+              borderLeft: `2px solid ${EDGE}`,
+              borderRadius: 3,
+              padding: 10,
+              marginBottom: 6,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#e2e8f0',
+                    fontFamily: F,
+                  }}>{h.name}</span>
+                  <Pill color="#a0b0c0">{h.class}</Pill>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{h.description}</div>
-                <div className="flex gap-3 mt-1.5 text-[10px]">
-                  <span className="text-slate-400">Hull: <span className="text-slate-200">{h.base_hull}</span></span>
-                  <span className="text-slate-400">Speed: <span className="text-slate-200">{h.base_speed}</span></span>
-                  <span className="text-slate-400">Slots: <span className="text-slate-200">{(h.slots || []).length}</span></span>
+                <div style={{
+                  fontSize: 9,
+                  color: '#4a6580',
+                  marginTop: 2,
+                  fontFamily: F,
+                }}>{h.description}</div>
+                <div style={{
+                  display: 'flex',
+                  gap: 12,
+                  marginTop: 5,
+                  fontSize: 9,
+                  fontFamily: FM,
+                }}>
+                  <span style={{ color: '#4a6580' }}>HULL <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{h.base_hull}</span></span>
+                  <span style={{ color: '#4a6580' }}>SPD <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{h.base_speed}</span></span>
+                  <span style={{ color: '#4a6580' }}>SLOTS <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{(h.slots || []).length}</span></span>
                 </div>
               </div>
-              <button onClick={() => buyHull(h.id)}
-                className="px-3 py-1.5 rounded text-xs font-medium bg-yellow-700/30 text-yellow-300 border border-yellow-600/40 hover:bg-yellow-700/50 flex-shrink-0"
-              >
-                {h.price > 0 ? `${h.price.toLocaleString()} cr` : 'Free'}
-              </button>
+              <PanelButton accent={GOLD.pri} onClick={() => buyHull(h.id)}>
+                {h.price > 0 ? `${h.price.toLocaleString()} CR` : 'FREE'}
+              </PanelButton>
             </div>
           ))}
         </div>
@@ -1412,28 +2029,74 @@ const VendorTab = ({ body }) => {
 
       {/* Modules */}
       {section === 'modules' && (
-        <div className="space-y-3">
+        <div>
           {Object.entries(modsByType).map(([type, mods]) => {
             const color = VENDOR_SLOT_COLORS[type] || '#888';
             return (
-              <div key={type}>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: color }} />
-                  <span className="text-xs font-medium capitalize" style={{ color }}>{type}</span>
+              <div key={type} style={{ marginBottom: 10 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginBottom: 5,
+                  padding: '4px 8px',
+                  background: `linear-gradient(90deg, ${color}18, transparent)`,
+                  borderLeft: `2px solid ${color}`,
+                }}>
+                  <div style={{
+                    width: 7,
+                    height: 7,
+                    background: color,
+                    boxShadow: `0 0 4px ${color}88`,
+                  }} />
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color,
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                    fontFamily: F,
+                  }}>{type}</span>
                 </div>
-                <div className="space-y-1">
+                <div>
                   {mods.map(m => (
-                    <div key={m.id} className="bg-slate-800/30 rounded p-2.5 border border-slate-700/30 flex items-center gap-2">
-                      <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: color + '66' }} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-slate-200 font-medium">{m.name}</div>
-                        <div className="text-[10px] text-slate-500 truncate">T{m.tier} • {m.description}</div>
+                    <div key={m.id} style={{
+                      background: 'rgba(4,8,16,0.5)',
+                      border: `1px solid ${EDGE}`,
+                      borderRadius: 3,
+                      padding: 8,
+                      marginBottom: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}>
+                      <div style={{
+                        width: 3,
+                        height: 32,
+                        background: color,
+                        boxShadow: `0 0 4px ${color}66`,
+                        flexShrink: 0,
+                      }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 11,
+                          color: '#e2e8f0',
+                          fontWeight: 700,
+                          fontFamily: F,
+                        }}>{m.name}</div>
+                        <div style={{
+                          fontSize: 9,
+                          color: '#4a6580',
+                          fontFamily: FM,
+                          letterSpacing: 0.3,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>T{m.tier} • {m.description}</div>
                       </div>
-                      <button onClick={() => buyModule(m.id)}
-                        className="px-2 py-1 rounded text-[10px] font-medium bg-yellow-700/20 text-yellow-300 border border-yellow-600/30 hover:bg-yellow-700/40 flex-shrink-0"
-                      >
-                        {m.buy_price.toLocaleString()} cr
-                      </button>
+                      <PanelButton size="sm" accent={GOLD.pri} onClick={() => buyModule(m.id)}>
+                        {m.buy_price.toLocaleString()} CR
+                      </PanelButton>
                     </div>
                   ))}
                 </div>
@@ -1445,19 +2108,36 @@ const VendorTab = ({ body }) => {
 
       {/* Supplies */}
       {section === 'supplies' && (
-        <div className="space-y-1">
+        <div>
           {supplies.map(s => (
-            <div key={s.id} className="bg-slate-800/30 rounded p-2.5 border border-slate-700/30 flex items-center gap-2">
-              <span className="text-lg">{s.icon}</span>
-              <div className="flex-1">
-                <div className="text-xs text-slate-200 font-medium">{s.name}</div>
-                <div className="text-[10px] text-slate-500">{s.desc}</div>
+            <div key={s.id} style={{
+              background: 'rgba(4,8,16,0.5)',
+              border: `1px solid ${EDGE}`,
+              borderRadius: 3,
+              padding: 8,
+              marginBottom: 4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 16 }}>{s.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  fontSize: 11,
+                  color: '#e2e8f0',
+                  fontWeight: 700,
+                  fontFamily: F,
+                }}>{s.name}</div>
+                <div style={{
+                  fontSize: 9,
+                  color: '#4a6580',
+                  fontFamily: FM,
+                  letterSpacing: 0.3,
+                }}>{s.desc}</div>
               </div>
-              <button onClick={() => buySupply(s.id)}
-                className="px-2 py-1 rounded text-[10px] font-medium bg-yellow-700/20 text-yellow-300 border border-yellow-600/30 hover:bg-yellow-700/40 flex-shrink-0"
-              >
-                {s.price} cr
-              </button>
+              <PanelButton size="sm" accent={GOLD.pri} onClick={() => buySupply(s.id)}>
+                {s.price} CR
+              </PanelButton>
             </div>
           ))}
         </div>
@@ -1465,86 +2145,153 @@ const VendorTab = ({ body }) => {
 
       {/* Sell cargo */}
       {section === 'sell' && (
-        <div className="space-y-3">
+        <div>
           {sellInventory.resources.length === 0 && sellInventory.items.length === 0 ? (
-            <div className="text-center py-6 text-slate-500 text-xs">Nothing to sell — go mine some resources!</div>
+            <div style={{
+              textAlign: 'center',
+              padding: '24px 0',
+              color: '#3a5a6a',
+              fontSize: 11,
+              fontFamily: F,
+            }}>Nothing to sell — go mine some resources!</div>
           ) : (
             <>
               {/* Resources */}
               {sellInventory.resources.length > 0 && (
-                <div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Resources</div>
-                  <div className="space-y-1">
-                    {sellInventory.resources.map(r => {
-                      const qty = sellQuantities[r.id] ?? r.quantity;
-                      const total = r.sell_price * qty;
-                      return (
-                        <div key={r.id} className="bg-slate-800/30 rounded p-2.5 border border-slate-700/30">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-slate-200 font-medium">{r.resource_name}</span>
-                                <span className="text-[9px] text-slate-500">{r.category}</span>
-                                {r.quality_tier && (
-                                  <span className={`text-[9px] px-1 rounded ${
-                                    r.quality_tier === 'legendary' ? 'bg-yellow-900/30 text-yellow-400' :
-                                    r.quality_tier === 'excellent' ? 'bg-purple-900/30 text-purple-400' :
-                                    r.quality_tier === 'good' ? 'bg-blue-900/30 text-blue-400' :
-                                    r.quality_tier === 'fine' ? 'bg-green-900/30 text-green-400' :
-                                    'bg-slate-800/30 text-slate-500'
-                                  }`}>{r.quality_tier}</span>
-                                )}
-                              </div>
-                              <div className="text-[10px] text-slate-500">
-                                {r.sell_price} cr/unit • {r.quantity} available
-                              </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{
+                    fontSize: 9,
+                    color: '#4a6580',
+                    fontFamily: FM,
+                    letterSpacing: 1,
+                    marginBottom: 5,
+                    padding: '4px 8px',
+                    background: `linear-gradient(90deg, #22c55e18, transparent)`,
+                    borderLeft: `2px solid #22c55e`,
+                    textTransform: 'uppercase',
+                    fontWeight: 800,
+                    color: '#4ade80',
+                  }}>RESOURCES</div>
+                  {sellInventory.resources.map(r => {
+                    const qty = sellQuantities[r.id] ?? r.quantity;
+                    const total = r.sell_price * qty;
+                    return (
+                      <div key={r.id} style={{
+                        background: 'rgba(4,8,16,0.5)',
+                        border: `1px solid ${EDGE}`,
+                        borderRadius: 3,
+                        padding: 8,
+                        marginBottom: 4,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{
+                                fontSize: 11,
+                                color: '#e2e8f0',
+                                fontWeight: 700,
+                                fontFamily: F,
+                              }}>{r.resource_name}</span>
+                              <span style={{
+                                fontSize: 8,
+                                color: '#4a6580',
+                                fontFamily: FM,
+                                textTransform: 'uppercase',
+                              }}>{r.category}</span>
+                              {r.quality_tier && (
+                                <Pill color={
+                                  r.quality_tier === 'legendary' ? '#fbbf24' :
+                                  r.quality_tier === 'excellent' ? '#a855f7' :
+                                  r.quality_tier === 'good' ? '#60a5fa' :
+                                  r.quality_tier === 'fine' ? '#22c55e' :
+                                  '#4a6580'
+                                }>{r.quality_tier}</Pill>
+                              )}
+                            </div>
+                            <div style={{
+                              fontSize: 9,
+                              color: '#4a6580',
+                              fontFamily: FM,
+                              letterSpacing: 0.3,
+                              marginTop: 1,
+                            }}>
+                              {r.sell_price} CR/UNIT • {r.quantity} AVAILABLE
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <input
-                              type="range"
-                              min={1}
-                              max={r.quantity}
-                              value={qty}
-                              onChange={e => setSellQuantities(prev => ({ ...prev, [r.id]: parseInt(e.target.value) }))}
-                              className="flex-1 h-1 accent-green-500"
-                            />
-                            <span className="text-[10px] text-slate-400 w-8 text-right">{qty}</span>
-                            <button
-                              onClick={() => sellResource(r.id, qty)}
-                              className="px-2 py-1 rounded text-[10px] font-medium bg-green-700/25 text-green-400 border border-green-600/30 hover:bg-green-700/40 flex-shrink-0"
-                            >
-                              Sell {total} cr
-                            </button>
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="range"
+                            min={1}
+                            max={r.quantity}
+                            value={qty}
+                            onChange={e => setSellQuantities(prev => ({ ...prev, [r.id]: parseInt(e.target.value) }))}
+                            style={{ flex: 1, height: 4, accentColor: '#22c55e' }}
+                          />
+                          <span style={{
+                            fontSize: 9,
+                            color: '#a0b0c0',
+                            fontFamily: FM,
+                            fontWeight: 700,
+                            width: 32,
+                            textAlign: 'right',
+                          }}>{qty}</span>
+                          <PanelButton size="sm" accent="#22c55e" onClick={() => sellResource(r.id, qty)}>
+                            Sell {total} CR
+                          </PanelButton>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
               {/* Items & Modules */}
               {sellInventory.items.length > 0 && (
                 <div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Items & Modules</div>
-                  <div className="space-y-1">
-                    {sellInventory.items.map(item => (
-                      <div key={item.id} className="bg-slate-800/30 rounded p-2.5 border border-slate-700/30 flex items-center gap-2">
-                        <span className="text-lg">{item.item_icon || '📦'}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs text-slate-200 font-medium">{item.item_name}</div>
-                          <div className="text-[10px] text-slate-500">×{item.quantity} • {item.sell_price} cr each</div>
-                        </div>
-                        <button
-                          onClick={() => sellItem(item.id, item.quantity)}
-                          className="px-2 py-1 rounded text-[10px] font-medium bg-green-700/25 text-green-400 border border-green-600/30 hover:bg-green-700/40 flex-shrink-0"
-                        >
-                          Sell {item.sell_price * item.quantity} cr
-                        </button>
+                  <div style={{
+                    fontSize: 9,
+                    fontFamily: FM,
+                    letterSpacing: 1,
+                    marginBottom: 5,
+                    padding: '4px 8px',
+                    background: `linear-gradient(90deg, #22c55e18, transparent)`,
+                    borderLeft: `2px solid #22c55e`,
+                    textTransform: 'uppercase',
+                    fontWeight: 800,
+                    color: '#4ade80',
+                  }}>ITEMS & MODULES</div>
+                  {sellInventory.items.map(item => (
+                    <div key={item.id} style={{
+                      background: 'rgba(4,8,16,0.5)',
+                      border: `1px solid ${EDGE}`,
+                      borderRadius: 3,
+                      padding: 8,
+                      marginBottom: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}>
+                      <span style={{ fontSize: 16 }}>{item.item_icon || '📦'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 11,
+                          color: '#e2e8f0',
+                          fontWeight: 700,
+                          fontFamily: F,
+                        }}>{item.item_name}</div>
+                        <div style={{
+                          fontSize: 9,
+                          color: '#4a6580',
+                          fontFamily: FM,
+                          letterSpacing: 0.3,
+                        }}>×{item.quantity} • {item.sell_price} CR EACH</div>
                       </div>
-                    ))}
-                  </div>
+                      <PanelButton size="sm" accent="#22c55e" onClick={() => sellItem(item.id, item.quantity)}>
+                        Sell {item.sell_price * item.quantity} CR
+                      </PanelButton>
+                    </div>
+                  ))}
                 </div>
               )}
             </>

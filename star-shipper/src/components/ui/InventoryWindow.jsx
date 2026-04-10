@@ -7,6 +7,7 @@ import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO, RESOURCE_TYPES } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
+import { COLORS, FONT, SectionHead, PanelButton, MessageBar } from '@/components/ui/panelStyles';
 
 // ============================================
 // CONSTANTS
@@ -229,19 +230,53 @@ const ItemTooltip = ({ stack, screenX, screenY }) => {
 
 const CargoBar = ({ capacity, used, slotCount, usedSlots, shipCount }) => {
   const pct = capacity > 0 ? Math.min(100, Math.round((used / capacity) * 100)) : 0;
-  const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#eab308' : '#22d3ee';
+  const color = pct >= 90 ? COLORS.RED.pri : pct >= 70 ? COLORS.GOLD.light : COLORS.GOLD.pri;
   const displayUsed = Number.isInteger(used) ? used : used.toFixed(1);
 
   return (
-    <div className="mb-3">
-      <div className="flex justify-between text-xs mb-1">
-        <span className="text-slate-400">🚀 Fleet Cargo ({shipCount || 1} {shipCount === 1 ? 'ship' : 'ships'}) • {usedSlots}/{slotCount} slots</span>
-        <span style={{ color }}>{displayUsed}/{capacity} vol ({pct}%)</span>
+    <>
+      <SectionHead
+        title="Fleet Cargo"
+        accent={COLORS.GOLD.light}
+        icon="🚀"
+        marginTop={0}
+        right={`${shipCount || 1} SHIP${(shipCount || 1) !== 1 ? 'S' : ''}`}
+      />
+      <div style={{
+        background: COLORS.ROW_BG,
+        border: `1px solid ${COLORS.EDGE}`,
+        borderLeft: `2px solid ${color}`,
+        borderRadius: 3,
+        padding: '8px 10px',
+        marginBottom: 12,
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 9,
+          fontFamily: FONT.mono,
+          marginBottom: 5,
+          letterSpacing: 0.5,
+        }}>
+          <span style={{ color: COLORS.TEXT.muted }}>SLOTS <span style={{ color: COLORS.TEXT.primary, fontWeight: 700 }}>{usedSlots}/{slotCount}</span></span>
+          <span style={{ color }}>{displayUsed}/{capacity} VOL ({pct}%)</span>
+        </div>
+        <div style={{
+          height: 5,
+          background: '#0a1528',
+          border: `1px solid ${COLORS.EDGE}`,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%',
+            width: `${pct}%`,
+            background: `linear-gradient(90deg, ${color}99, ${color})`,
+            transition: 'width 0.5s',
+          }} />
+        </div>
       </div>
-      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
-      </div>
-    </div>
+    </>
   );
 };
 
@@ -468,15 +503,31 @@ export const InventoryWindow = () => {
         )}
 
         {error && (
-          <div className="bg-red-900/30 border border-red-500/50 rounded p-2 text-red-400 text-xs mb-2">
-            {error}
-            <button onClick={() => setError(null)} className="ml-2 text-red-300">✕</button>
+          <div style={{ marginBottom: 8 }}>
+            <MessageBar type="error">
+              {error}
+              <button onClick={() => setError(null)} style={{
+                marginLeft: 8,
+                background: 'none',
+                border: 'none',
+                color: '#fca5a5',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontFamily: FONT.ui,
+              }}>✕</button>
+            </MessageBar>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto">
           {loading && inventory.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 text-sm animate-pulse">Loading cargo...</div>
+            <div style={{
+              textAlign: 'center',
+              padding: '32px 0',
+              color: COLORS.TEXT.muted,
+              fontSize: 11,
+              fontFamily: FONT.ui,
+            }}>Loading cargo...</div>
           ) : (
             <div
               className="inline-grid p-1 rounded-lg"
@@ -637,7 +688,6 @@ export const InventoryWindow = () => {
         {/* Trash zone - visible when dragging */}
         {dragItem && (
           <div
-            className="mt-2 py-2 rounded-lg flex items-center justify-center gap-2 transition-all"
             onDragOver={(e) => { e.preventDefault(); setTrashDragOver(true); }}
             onDragLeave={() => setTrashDragOver(false)}
             onDrop={() => {
@@ -648,13 +698,29 @@ export const InventoryWindow = () => {
               setDragItem(null);
             }}
             style={{
-              border: trashDragOver ? '2px solid #ef4444' : '2px dashed #44444488',
-              background: trashDragOver ? '#ef444418' : '#1a0000',
-              boxShadow: trashDragOver ? '0 0 12px #ef444433' : 'none',
+              marginTop: 8,
+              padding: '8px 0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              border: trashDragOver ? `1px solid ${COLORS.RED.pri}` : `1px dashed ${COLORS.RED.dim}`,
+              borderLeft: trashDragOver ? `2px solid ${COLORS.RED.pri}` : `2px dashed ${COLORS.RED.dim}`,
+              background: trashDragOver ? `${COLORS.RED.pri}18` : 'rgba(40,8,8,0.4)',
+              borderRadius: 3,
+              boxShadow: trashDragOver ? `0 0 12px ${COLORS.RED.pri}33` : 'none',
+              transition: 'all 0.15s',
             }}
           >
-            <span className="text-sm">🗑️</span>
-            <span className={`text-xs ${trashDragOver ? 'text-red-400' : 'text-slate-600'}`}>
+            <span style={{ fontSize: 13 }}>🗑️</span>
+            <span style={{
+              fontSize: 10,
+              color: trashDragOver ? COLORS.RED.light : COLORS.TEXT.dim,
+              fontFamily: FONT.ui,
+              fontWeight: 700,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}>
               Drop to trash
             </span>
           </div>
@@ -662,22 +728,61 @@ export const InventoryWindow = () => {
 
         {/* Trash confirmation */}
         {trashConfirm && createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
-            <div className="bg-slate-900 border border-slate-600 rounded-lg p-4 shadow-2xl max-w-[280px]">
-              <div className="text-sm text-slate-200 mb-3">
-                Trash <span className="text-red-400 font-medium">
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(2px)',
+          }}>
+            <div style={{
+              background: COLORS.PANEL_BG,
+              border: `1px solid ${COLORS.EDGE}`,
+              borderLeft: `2px solid ${COLORS.RED.pri}`,
+              borderRadius: 3,
+              padding: 16,
+              maxWidth: 300,
+              boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px ${COLORS.RED.dim}`,
+              fontFamily: FONT.ui,
+            }}>
+              <div style={{
+                fontSize: 9,
+                color: COLORS.RED.light,
+                fontFamily: FONT.mono,
+                letterSpacing: 1.5,
+                marginBottom: 6,
+                textTransform: 'uppercase',
+              }}>⚠ Confirm Destruction</div>
+              <div style={{
+                fontSize: 12,
+                color: COLORS.TEXT.primary,
+                marginBottom: 8,
+                lineHeight: 1.5,
+              }}>
+                Trash <span style={{ color: COLORS.RED.light, fontWeight: 700 }}>
                   {trashConfirm.quantity}× {trashConfirm.item_type === 'item' ? (trashConfirm.item_name || trashConfirm.item_id) : trashConfirm.resource_name}
                 </span>?
               </div>
-              <div className="text-xs text-slate-500 mb-4">This cannot be undone.</div>
-              <div className="flex gap-2">
-                <button
+              <div style={{
+                fontSize: 10,
+                color: COLORS.TEXT.muted,
+                fontFamily: FONT.mono,
+                marginBottom: 16,
+                letterSpacing: 0.3,
+              }}>This cannot be undone.</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <PanelButton
+                  size="sm"
+                  accent={COLORS.TEXT.muted}
                   onClick={() => setTrashConfirm(null)}
-                  className="flex-1 py-1.5 rounded text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
+                  style={{ flex: 1 }}
+                >Cancel</PanelButton>
+                <PanelButton
+                  size="sm"
+                  accent={COLORS.RED.pri}
                   onClick={async () => {
                     try {
                       await resourcesAPI.trashItem(trashConfirm.id);
@@ -687,21 +792,39 @@ export const InventoryWindow = () => {
                     }
                     setTrashConfirm(null);
                   }}
-                  className="flex-1 py-1.5 rounded text-xs bg-red-700 hover:bg-red-600 text-white transition-colors"
-                >
-                  Trash
-                </button>
+                  style={{ flex: 1 }}
+                >Trash</PanelButton>
               </div>
             </div>
           </div>,
           document.body
         )}
 
-        <div className="border-t border-slate-700/50 pt-2 mt-2 flex justify-between text-xs text-slate-500">
-          <span>{usedSlots > 0 ? `${usedSlots} item${usedSlots !== 1 ? 's' : ''}` : 'Empty'}</span>
-          <button onClick={fetchInventory} className="text-cyan-400/60 hover:text-cyan-400 transition-colors">
-            ↻ Refresh
-          </button>
+        <div style={{
+          borderTop: `1px solid ${COLORS.EDGE}`,
+          paddingTop: 8,
+          marginTop: 8,
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 9,
+          fontFamily: FONT.mono,
+          color: COLORS.TEXT.muted,
+          letterSpacing: 0.5,
+        }}>
+          <span>{usedSlots > 0 ? `${usedSlots} ITEM${usedSlots !== 1 ? 'S' : ''}` : 'EMPTY'}</span>
+          <button
+            onClick={fetchInventory}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: COLORS.BLUE.light,
+              cursor: 'pointer',
+              fontSize: 9,
+              fontFamily: FONT.mono,
+              letterSpacing: 0.5,
+              padding: 0,
+            }}
+          >↻ REFRESH</button>
         </div>
 
         {hoveredStack && !dragItem && createPortal(
