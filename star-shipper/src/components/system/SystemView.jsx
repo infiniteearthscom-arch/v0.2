@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 // DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
+import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 
@@ -1046,6 +1047,8 @@ export const SystemView = () => {
   const projectilesRef = useRef([]); // Active projectiles {x, y, vx, vy, age, fromPlayer, damage}
   const combatEffectsRef = useRef([]); // Visual effects: explosions, hit sparks
   const playerFireCooldownRef = useRef(0);
+  // Per-ship weapon cooldowns. Map keyed by `${shipId}:${weaponIndex}` → seconds remaining.
+  const fleetWeaponCooldownsRef = useRef(new Map());
   const playerHullRef = useRef(100);
   const playerShieldRef = useRef(50);
   const playerMaxHullRef = useRef(100);
@@ -1083,12 +1086,14 @@ export const SystemView = () => {
       const isActive = ship.id === playerShip?.id;
       const icon = getShipIcon(hullId);
       const hullData = HULL_SHAPES[hullId];
+      const weapons = getShipWeapons(ship);
       return {
         ...ship,
         isActive,
         icon,
         engineColor: hullData?.palette?.engine || '#4488ff',
         formationOffset: FORMATION_OFFSETS[i] || { x: 0, y: 0 },
+        weapons, // [{ type, damage, fire_rate, range, color, ... }]
       };
     });
   }, [ships, playerShip?.id]);
@@ -1665,32 +1670,154 @@ export const SystemView = () => {
         }
       }
       
-      // --- Player auto-fire ---
-      playerFireCooldownRef.current -= delta;
-      if (playerFireCooldownRef.current <= 0) {
-        // Find nearest alive enemy in range
-        let nearest = null, nearestDist = PLAYER_FIRE_RANGE;
-        for (const e of enemies) {
-          if (e.hull <= 0) continue;
-          const d = Math.sqrt((e.x - playerPos.x) ** 2 + (e.y - playerPos.y) ** 2);
-          if (d < nearestDist) { nearest = e; nearestDist = d; }
+      // --- Per-ship weapon firing (each ship fires its own weapons) ---
+      // Each fleet ship has its own weapons array. Cooldowns are tracked
+      // per weapon in fleetWeaponCooldownsRef keyed by `${shipId}:${weaponIdx}`.
+      const fleetData = fleetShipsRef.current || [];
+      const cooldowns = fleetWeaponCooldownsRef.current;
+      const theta = shipRotationRef.current * Math.PI / 180;
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+      // Right & behind vectors in world coords (matches render-side math)
+      const rightX = -sinT, rightY = cosT;
+      const behindX = -cosT, behindY = -sinT;
+
+      for (const fs of fleetData) {
+        if (!fs.weapons || fs.weapons.length === 0) continue;
+
+        // Compute this ship's world position
+        let sx, sy;
+        if (fs.isActive) {
+          sx = playerPos.x;
+          sy = playerPos.y;
+        } else {
+          const off = fs.formationOffset;
+          sx = playerPos.x + rightX * off.x + behindX * off.y;
+          sy = playerPos.y + rightY * off.x + behindY * off.y;
         }
-        if (nearest) {
-          playerFireCooldownRef.current = PLAYER_BASE_FIRE_RATE;
-          const pAngle = Math.atan2(nearest.y - playerPos.y, nearest.x - playerPos.x);
-          projectiles.push({
-            x: playerPos.x, y: playerPos.y,
-            vx: Math.cos(pAngle) * PROJECTILE_SPEED,
-            vy: Math.sin(pAngle) * PROJECTILE_SPEED,
-            age: 0, fromPlayer: true, damage: PLAYER_BASE_DAMAGE,
-            color: '#22ddee',
-          });
+
+        // Fire each weapon independently
+        for (let wi = 0; wi < fs.weapons.length; wi++) {
+          const w = fs.weapons[wi];
+          const cooldownKey = `${fs.id}:${wi}`;
+          let cd = cooldowns.get(cooldownKey) || 0;
+          cd -= delta;
+          if (cd > 0) {
+            cooldowns.set(cooldownKey, cd);
+            continue;
+          }
+
+          // Find nearest enemy in range
+          let nearest = null, nearestDist = w.range;
+          for (const e of enemies) {
+            if (e.hull <= 0) continue;
+            const d = Math.sqrt((e.x - sx) ** 2 + (e.y - sy) ** 2);
+            if (d < nearestDist) { nearest = e; nearestDist = d; }
+          }
+          if (!nearest) {
+            cooldowns.set(cooldownKey, 0); // ready to fire next frame
+            continue;
+          }
+
+          // Fire!
+          cooldowns.set(cooldownKey, w.fire_rate);
+          const aimAngle = Math.atan2(nearest.y - sy, nearest.x - sx);
+
+          if (w.type === 'laser') {
+            // Instant beam — apply damage immediately, push a beam visual.
+            let dmg = w.damage;
+            if (nearest.shield > 0) {
+              const shieldDmg = Math.min(nearest.shield, dmg);
+              nearest.shield -= shieldDmg;
+              dmg -= shieldDmg;
+              nearest.shieldRegenTimer = SHIELD_REGEN_DELAY;
+            }
+            nearest.hull -= dmg;
+            effects.push({
+              type: 'laser_beam',
+              x1: sx, y1: sy,
+              x2: nearest.x, y2: nearest.y,
+              age: 0,
+              lifetime: 0.15,
+              color: w.color,
+              fromPlayer: true,
+            });
+            // Hit spark at impact point
+            effects.push({
+              x: nearest.x, y: nearest.y,
+              type: 'hit', age: 0,
+              color: nearest.shield > 0 ? '#4488ff' : w.color,
+            });
+          } else if (w.type === 'kinetic') {
+            // Bullet with slight aim spread
+            const spread = (Math.random() - 0.5) * (w.spread || 0.08) * 2;
+            const fireAngle = aimAngle + spread;
+            const speed = w.projectile_speed || 320;
+            projectiles.push({
+              x: sx, y: sy,
+              vx: Math.cos(fireAngle) * speed,
+              vy: Math.sin(fireAngle) * speed,
+              age: 0, fromPlayer: true,
+              damage: w.damage,
+              color: w.color,
+              weapon_type: 'kinetic',
+            });
+          } else if (w.type === 'missile') {
+            // Tracking projectile — re-aims toward target each frame
+            const speed = w.projectile_speed || 180;
+            projectiles.push({
+              x: sx, y: sy,
+              vx: Math.cos(aimAngle) * speed,
+              vy: Math.sin(aimAngle) * speed,
+              age: 0, fromPlayer: true,
+              damage: w.damage,
+              color: w.color,
+              weapon_type: 'missile',
+              target_id: nearest.id,
+              speed,
+              turn_rate: w.turn_rate || 4.0,
+            });
+          }
+        }
+      }
+
+      // Clean up cooldowns for ships that no longer exist (ship sold, etc.)
+      // Cheap pass: only do it occasionally.
+      if (frameNum % 600 === 0) {
+        const liveKeys = new Set();
+        for (const fs of fleetData) {
+          for (let wi = 0; wi < (fs.weapons?.length || 0); wi++) {
+            liveKeys.add(`${fs.id}:${wi}`);
+          }
+        }
+        for (const k of cooldowns.keys()) {
+          if (!liveKeys.has(k)) cooldowns.delete(k);
         }
       }
       
       // --- Update projectiles & collisions ---
       for (let i = projectiles.length - 1; i >= 0; i--) {
         const p = projectiles[i];
+
+        // Missile homing — re-aim toward target each frame
+        if (p.weapon_type === 'missile' && p.target_id != null) {
+          const target = enemies.find(e => e.id === p.target_id && e.hull > 0);
+          if (target) {
+            const desiredAngle = Math.atan2(target.y - p.y, target.x - p.x);
+            const currentAngle = Math.atan2(p.vy, p.vx);
+            // Shortest angular delta
+            let delta_a = desiredAngle - currentAngle;
+            while (delta_a > Math.PI) delta_a -= 2 * Math.PI;
+            while (delta_a < -Math.PI) delta_a += 2 * Math.PI;
+            // Cap by turn rate
+            const maxTurn = (p.turn_rate || 4.0) * delta;
+            const turn = Math.max(-maxTurn, Math.min(maxTurn, delta_a));
+            const newAngle = currentAngle + turn;
+            p.vx = Math.cos(newAngle) * p.speed;
+            p.vy = Math.sin(newAngle) * p.speed;
+          }
+        }
+
         p.x += p.vx * delta;
         p.y += p.vy * delta;
         p.age += delta;
@@ -1786,7 +1913,8 @@ export const SystemView = () => {
       // --- Update effects ---
       for (let i = effects.length - 1; i >= 0; i--) {
         effects[i].age += delta;
-        if (effects[i].age > 0.5) effects.splice(i, 1);
+        const lifetime = effects[i].lifetime || 0.5;
+        if (effects[i].age > lifetime) effects.splice(i, 1);
       }
       
       // --- Sync combat state to React (every 5 frames for perf) ---
@@ -2235,17 +2363,50 @@ export const SystemView = () => {
             ))}
             
             {/* Projectiles */}
-            {projectilesRef.current.map((p, i) => (
-              <circle key={`proj-${i}`} cx={p.x} cy={p.y}
-                r={p.fromPlayer ? 1.5 : 1.2}
-                fill={p.color}
-                opacity={1 - p.age / PROJECTILE_LIFETIME}
-              />
-            ))}
-            
+            {projectilesRef.current.map((p, i) => {
+              const opacity = 1 - p.age / PROJECTILE_LIFETIME;
+              if (p.weapon_type === 'missile') {
+                // Triangle oriented to velocity direction
+                const angle = Math.atan2(p.vy, p.vx) * 180 / Math.PI;
+                return (
+                  <g key={`proj-${i}`} transform={`translate(${p.x}, ${p.y}) rotate(${angle})`} opacity={opacity}>
+                    {/* Trail */}
+                    <line x1={-6} y1={0} x2={-1} y2={0} stroke={p.color} strokeWidth={1.2} opacity={0.4} />
+                    {/* Body — small triangle */}
+                    <polygon points="3,0 -2,1.5 -2,-1.5" fill={p.color} stroke="#ffffff" strokeWidth={0.2} />
+                  </g>
+                );
+              }
+              // Default kinetic / enemy bullet rendering
+              return (
+                <circle key={`proj-${i}`} cx={p.x} cy={p.y}
+                  r={p.fromPlayer ? 1.5 : 1.2}
+                  fill={p.color}
+                  opacity={opacity}
+                />
+              );
+            })}
+
             {/* Combat Effects */}
             {combatEffectsRef.current.map((fx, i) => {
-              const t = fx.age / 0.5; // 0→1 over lifetime
+              const lifetime = fx.lifetime || 0.5;
+              const t = fx.age / lifetime; // 0→1 over lifetime
+              if (fx.type === 'laser_beam') {
+                // Beam fades over its short lifetime
+                return (
+                  <g key={`fx-${i}`}>
+                    {/* Outer glow */}
+                    <line x1={fx.x1} y1={fx.y1} x2={fx.x2} y2={fx.y2}
+                      stroke={fx.color} strokeWidth={3} opacity={(1 - t) * 0.35} strokeLinecap="round" />
+                    {/* Core beam */}
+                    <line x1={fx.x1} y1={fx.y1} x2={fx.x2} y2={fx.y2}
+                      stroke={fx.color} strokeWidth={1.4} opacity={1 - t} strokeLinecap="round" />
+                    {/* Bright center */}
+                    <line x1={fx.x1} y1={fx.y1} x2={fx.x2} y2={fx.y2}
+                      stroke="#ffffff" strokeWidth={0.5} opacity={(1 - t) * 0.8} strokeLinecap="round" />
+                  </g>
+                );
+              }
               if (fx.type === 'hit') {
                 return (
                   <circle key={`fx-${i}`} cx={fx.x} cy={fx.y}
