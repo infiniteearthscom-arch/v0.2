@@ -958,6 +958,7 @@ export const SystemView = () => {
   // Current system — Sol is hardcoded, everything else is procedurally generated
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
   const setCurrentSystemId = useGameStore(state => state.setCurrentSystemId);
+  const setSystemBodies = useGameStore(state => state.setSystemBodies);
   const arrivalType = useGameStore(state => state.arrivalType) || 'warp';
   const prevSystemIdRef = useRef(currentSystemId);
   
@@ -974,6 +975,20 @@ export const SystemView = () => {
     
     return content;
   }, [currentSystemId]);
+
+  // Push static body list to the store for the right outliner panel
+  useEffect(() => {
+    const bodies = (currentSystem?.bodies || []).map(b => ({
+      id: b.id,
+      name: b.name,
+      type: b.type,
+      planetType: b.planetType,
+      color: b.color,
+      parentBody: b.parentBody,
+    }));
+    setSystemBodies(bodies);
+    return () => setSystemBodies([]);
+  }, [currentSystem, setSystemBodies]);
   
   const starConfig = STAR_TYPES[currentSystem.starType] || STAR_TYPES.yellow_star;
   

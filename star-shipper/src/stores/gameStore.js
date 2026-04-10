@@ -93,6 +93,10 @@ const initialState = {
   enemyCount: 0,
   followMode: true,
 
+  // Outliner state
+  systemBodies: [], // [{ id, name, type, planetType, color, parentBody }] — pushed by SystemView
+  outlinerVisible: true, // toggleable from top bar
+
   // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
   viewMode: 'system',
   arrivalType: 'warp', // 'warp' or 'jump_gate' — where to spawn in system
@@ -373,6 +377,15 @@ export const useGameStore = create(
         if (data.followMode !== undefined) state.followMode = data.followMode;
       }),
 
+      // Outliner: SystemView pushes the static body list when a system loads
+      setSystemBodies: (bodies) => set(state => {
+        state.systemBodies = bodies || [];
+      }),
+
+      toggleOutliner: () => set(state => {
+        state.outlinerVisible = !state.outlinerVisible;
+      }),
+
       // ==========================================
       // RESET
       // ==========================================
@@ -385,6 +398,7 @@ export const useGameStore = create(
         // Only persist UI state locally
         windows: state.windows,
         gameStarted: state.gameStarted,
+        outlinerVisible: state.outlinerVisible,
       }),
       // Merge persisted state with initial state to handle new windows
       merge: (persistedState, currentState) => {

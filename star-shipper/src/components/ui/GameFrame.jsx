@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI } from '@/utils/api';
+import { Outliner } from '@/components/ui/Outliner';
 
 // ============================================
 // CONSTANTS
@@ -47,6 +48,10 @@ const TopBar = () => {
   const playerMaxShield = useGameStore(state => state.playerMaxShield);
   const enemyCount = useGameStore(state => state.enemyCount);
   const autopilotTarget = useGameStore(state => state.autopilotTarget);
+
+  // Outliner toggle
+  const outlinerVisible = useGameStore(state => state.outlinerVisible);
+  const toggleOutliner = useGameStore(state => state.toggleOutliner);
 
   const MAX_FLEET = 3;
   const fleetSize = ships?.length || 0;
@@ -197,6 +202,20 @@ const TopBar = () => {
           style={{ color: '#3a4a5a', border: `1px solid ${EDGE}` }}
           title="Sign Out"
         >✕</button>
+
+        <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
+
+        {/* Outliner toggle */}
+        <button
+          onClick={toggleOutliner}
+          className="text-[10px] px-1.5 py-0.5 rounded transition-colors"
+          style={{
+            color: outlinerVisible ? BLUE.light : '#3a4a5a',
+            border: `1px solid ${outlinerVisible ? `${BLUE.pri}55` : EDGE}`,
+            background: outlinerVisible ? `${BLUE.pri}10` : 'transparent',
+          }}
+          title={outlinerVisible ? 'Hide outliner' : 'Show outliner'}
+        >☰</button>
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
@@ -371,6 +390,7 @@ export const GameFrame = ({ children }) => {
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#030610' }}>
       <TopBar />
       <LeftToolbar />
+      <Outliner />
       <BottomBar />
 
       {/* Game content area — fills space between top and bottom bars */}
