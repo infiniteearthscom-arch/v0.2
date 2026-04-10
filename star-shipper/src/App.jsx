@@ -13,6 +13,7 @@ import { AuthScreen } from '@/components/ui/AuthScreen';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
+import { CharacterPanel } from '@/components/ui/CharacterPanel';
 import { TooltipProvider } from '@/components/ui/TooltipProvider';
 
 // ============================================
@@ -178,6 +179,7 @@ function App() {
         {/* Floating windows — still using DraggableWindow temporarily */}
         {/* These will be converted to overlay panels in a future session */}
         {windows.shipBuilder?.open && <ShipBuilderWindow />}
+        {windows.character?.open && <CharacterPanel />}
         {windows.fleet?.open && <FleetWindow />}
         {windows.inventory?.open && <InventoryWindow />}
         {windows.navigation?.open && viewMode === 'system' && <NavigationWindow />}

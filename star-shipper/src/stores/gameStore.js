@@ -63,6 +63,7 @@ const initialState = {
 
   // UI state
   windows: {
+    character: { open: false, x: 50, y: 50, minimized: false },
     shipBuilder: { open: false, x: 60, y: 100, minimized: false },
     fleet: { open: false, x: 100, y: 100, minimized: false },
     systemView: { open: false, x: 50, y: 50, minimized: false },

@@ -12,6 +12,7 @@ import { fittingAPI } from '@/utils/api';
 // ============================================
 
 const TOOLBAR_BUTTONS = [
+  { id: 'character', icon: '👤', label: 'Character', color: '#60a5fa' },
   { id: 'shipBuilder', icon: '🔧', label: 'Fitting', color: '#ff6622' },
   { id: 'fleet', icon: '🚀', label: 'Fleet', color: '#60a5fa' },
   { id: 'navigation', icon: '🧭', label: 'Nav', color: '#60a5fa' },
@@ -218,7 +219,7 @@ const TopBar = () => {
 // LEFT TOOLBAR
 // ============================================
 
-const CONTEXT_PANELS = ['fleet', 'inventory', 'crafting', 'questLog', 'navigation'];
+const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'navigation'];
 const MODALS = ['shipBuilder', 'galaxyMap'];
 
 const LeftToolbar = () => {
