@@ -99,11 +99,22 @@ function App() {
 
   useEffect(() => { checkSession(); }, [checkSession]);
 
+  // Seed gameStore with server-provided initial resources ONCE after login.
+  // After that, fetchCredits (called by vendor / combat / top-bar polling)
+  // is the source of truth — we do NOT keep writing authStore.resources
+  // back in on every effect re-run, because authStore.resources is stale
+  // relative to the live balance after any server-side transaction.
+  const seededResourcesRef = React.useRef(false);
   useEffect(() => {
-    if (isLoggedIn && resources) {
+    if (isLoggedIn && resources && !seededResourcesRef.current) {
       setResources(resources);
       fetchShips();
       fetchQuests();
+      seededResourcesRef.current = true;
+    }
+    // Clear the flag on logout so a subsequent login re-seeds properly
+    if (!isLoggedIn) {
+      seededResourcesRef.current = false;
     }
   }, [isLoggedIn, resources, setResources, fetchShips, fetchQuests]);
 
