@@ -288,6 +288,24 @@ export const useGameStore = create(
         }
       }),
 
+      // Open a context panel, automatically closing any other open context
+      // panels. Mirrors the behavior of the left toolbar's handleClick, but
+      // callable from anywhere (e.g. SystemView's auto-open on dock).
+      openContextPanel: (windowId) => set(state => {
+        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'navigation', 'planetInteraction'];
+        for (const pid of CONTEXT_PANELS) {
+          if (pid !== windowId && state.windows[pid]?.open) {
+            state.windows[pid].open = false;
+          }
+        }
+        if (state.windows[windowId]) {
+          state.windows[windowId].open = true;
+          state.windows[windowId].minimized = false;
+          state.topZIndex += 1;
+          state.windowZIndex[windowId] = state.topZIndex;
+        }
+      }),
+
       minimizeWindow: (windowId) => set(state => {
         if (state.windows[windowId]) {
           state.windows[windowId].minimized = true;

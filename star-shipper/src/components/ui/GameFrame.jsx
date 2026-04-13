@@ -251,6 +251,7 @@ const LeftToolbar = () => {
   const toggleWindow = useGameStore(state => state.toggleWindow);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
+  const openContextPanel = useGameStore(state => state.openContextPanel);
   const dockedBody = useGameStore(state => state.dockedBody);
 
   const handleClick = (id) => {
@@ -259,15 +260,11 @@ const LeftToolbar = () => {
     if (isCurrentlyOpen) {
       // Just close it
       closeWindow(id);
+    } else if (CONTEXT_PANELS.includes(id)) {
+      // Use the store action — it closes other context panels atomically
+      openContextPanel(id);
     } else {
-      // If it's a context panel, close any other open context panels first
-      if (CONTEXT_PANELS.includes(id)) {
-        CONTEXT_PANELS.forEach(panelId => {
-          if (panelId !== id && windows[panelId]?.open) {
-            closeWindow(panelId);
-          }
-        });
-      }
+      // Modals (shipBuilder, galaxyMap) don't participate in the one-at-a-time rule
       openWindow(id);
     }
   };

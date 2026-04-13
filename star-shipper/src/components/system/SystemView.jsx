@@ -941,6 +941,7 @@ const Minimap = ({ system, camera, zoom, viewportSize, shipPos, time, onClickBod
 export const SystemView = () => {
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
+  const openContextPanel = useGameStore(state => state.openContextPanel);
   const ships = useShips();
   const playerShip = useActiveShip();
   const shipHullSize = playerShip?.hull_size || 30;
@@ -1450,7 +1451,7 @@ export const SystemView = () => {
                       }
                     }
                   } else {
-                    openWindow('planetInteraction');
+                    openContextPanel('planetInteraction');
                   }
                 }, 0);
               }
