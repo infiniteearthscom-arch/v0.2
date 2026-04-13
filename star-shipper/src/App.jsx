@@ -89,6 +89,7 @@ function App() {
   const gameStarted = useGameStore(state => state.gameStarted);
   const startGame = useGameStore(state => state.startGame);
   const openWindow = useGameStore(state => state.openWindow);
+  const openContextPanel = useGameStore(state => state.openContextPanel);
   const fetchShips = useGameStore(state => state.fetchShips);
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const setResources = useGameStore(state => state.setResources);
@@ -155,7 +156,7 @@ function App() {
           <p className="text-xl text-blue-400/70 mb-3">Build ships. Explore systems. Build an empire.</p>
           <p className="text-sm text-blue-400/40 mb-12">Welcome back, Commander {user?.displayName || user?.username}</p>
           <button
-            onClick={() => { startGame(); openWindow('shipBuilder'); openWindow('questLog'); openWindow('navigation'); }}
+            onClick={() => { startGame(); openWindow('shipBuilder'); openContextPanel('questLog'); }}
             className="px-8 py-4 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-100 text-xl font-medium hover:bg-blue-500/30 hover:border-blue-400/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-blue-500/20"
           >
             Launch Game
