@@ -331,6 +331,21 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
   const animRef = useRef(null);
   const hull = HULL_SHAPES[hullId];
 
+  // Mirror changing inputs into refs so the animation loop can read them
+  // each frame without the effect needing to restart (which cancels &
+  // recreates the requestAnimationFrame chain — expensive if it happens
+  // on every mouse move over a slot).
+  const hoveredRef = useRef(null);
+  const dragOverRef = useRef(null);
+  const modulesRef = useRef(modules);
+  const slotsRef = useRef(slots);
+  const showSlotsRef = useRef(showSlots);
+  useEffect(() => { hoveredRef.current  = hovered;  }, [hovered]);
+  useEffect(() => { dragOverRef.current = dragOver; }, [dragOver]);
+  useEffect(() => { modulesRef.current  = modules;  }, [modules]);
+  useEffect(() => { slotsRef.current    = slots;    }, [slots]);
+  useEffect(() => { showSlotsRef.current = showSlots; }, [showSlots]);
+
   useEffect(() => {
     if (!hull) return;
     const canvas = canvasRef.current;
@@ -343,13 +358,19 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
       frame++;
       ctx.clearRect(0,0,canvas.width,canvas.height);
       ctx.save(); ctx.translate(10,5);
-      drawShip(ctx, hull, scale, frame/60, { showSlots, slots, modules, hovered, dragOver });
+      drawShip(ctx, hull, scale, frame/60, {
+        showSlots: showSlotsRef.current,
+        slots:     slotsRef.current,
+        modules:   modulesRef.current,
+        hovered:   hoveredRef.current,
+        dragOver:  dragOverRef.current,
+      });
       ctx.restore();
       animRef.current = requestAnimationFrame(animate);
     };
     animate();
     return () => cancelAnimationFrame(animRef.current);
-  }, [hull, scale, showSlots, slots, modules, hovered, dragOver]);
+  }, [hull, scale]); // only restart on hull/scale change — everything else read from refs
 
   const getSlotAt = useCallback((e) => {
     if (!hull || !slots.length) return null;

@@ -206,7 +206,7 @@ export const ItemCell = ({
 
   return (
     <div
-      className={className}
+      className={(className ? className + ' ' : '') + 'ss-item-cell'}
       draggable={draggable}
       onDragStart={draggable ? (e) => {
         e.dataTransfer.setData('application/json', JSON.stringify(payload));
@@ -222,20 +222,25 @@ export const ItemCell = ({
       } : undefined}
       style={{
         cursor: draggable ? 'grab' : (onClick ? 'pointer' : 'default'),
-        transition: 'filter 0.12s ease, transform 0.12s ease',
-        ...(interactive ? {} : {}),
+        display: 'inline-block',
+        position: 'relative',
         ...style,
       }}
-      onMouseDown={draggable ? (e) => { e.currentTarget.style.cursor = 'grabbing'; } : undefined}
-      onMouseUp={draggable ? (e) => { e.currentTarget.style.cursor = 'grab'; } : undefined}
     >
-      <div style={{ position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseLeave={(e) => e.currentTarget.style.filter = ''}>
-        <ItemIcon item={item} size={size} dim={dim} {...iconProps} />
-        {extraOverlay}
-      </div>
+      <ItemIcon item={item} size={size} dim={dim} {...iconProps} />
+      {extraOverlay}
     </div>
   );
 };
+
+// CSS hover brightness — injected once so every ItemCell inherits it without
+// per-element JS handlers. Runs on the compositor, doesn't cause re-renders.
+if (typeof document !== 'undefined' && !document.getElementById('ss-item-cell-style')) {
+  const style = document.createElement('style');
+  style.id = 'ss-item-cell-style';
+  style.textContent = `.ss-item-cell{transition:filter .12s ease}.ss-item-cell:hover{filter:brightness(1.2)}`;
+  document.head.appendChild(style);
+}
 
 // ============================================
 // EMPTY SLOT CELL
