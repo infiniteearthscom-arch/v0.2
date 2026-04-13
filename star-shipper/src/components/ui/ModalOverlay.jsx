@@ -111,7 +111,7 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', childr
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 12 }}>
             {children}
           </div>
         </div>
