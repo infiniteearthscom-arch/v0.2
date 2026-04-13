@@ -104,6 +104,32 @@ const PlanetBanner = ({ body, onClose }) => {
         background: `linear-gradient(180deg, rgba(3,6,16,0.95) 0%, ${color}15 45%, ${color}25 70%, ${color}08 100%)`,
       }} />
 
+      {/* Close button — top-right, matches ContextPanel / ModalOverlay style */}
+      <button
+        onClick={onClose}
+        style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          background: 'rgba(15,25,45,0.8)',
+          border: `1px solid ${EDGE}`,
+          color: '#4a5a6a',
+          width: 26,
+          height: 26,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          borderRadius: 3,
+          fontSize: 12,
+          fontFamily: F,
+          zIndex: 5,
+        }}
+        title="Close"
+      >
+        ✕
+      </button>
+
       {/* Horizon glow line */}
       <div style={{
         position: 'absolute',
@@ -160,38 +186,21 @@ const PlanetBanner = ({ body, onClose }) => {
         padding: '8px 14px',
         background: 'linear-gradient(0deg, rgba(8,14,28,0.95), rgba(8,14,28,0.5), transparent)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: '#e2e8f0',
-              textShadow: '0 1px 4px rgba(0,0,0,0.5)',
-              fontFamily: F,
-              letterSpacing: 0.5,
-            }}>{body?.name || 'Unknown'}</div>
-            <div style={{
-              fontSize: 10,
-              color: '#6a8a9a',
-              fontFamily: FM,
-              textTransform: 'capitalize',
-            }}>{bodyType} · Sol System</div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'linear-gradient(180deg, #ef444418, #ef444806)',
-              border: '1px solid #ef444433',
-              color: '#ef4444',
-              padding: '4px 12px',
-              fontSize: 9,
-              cursor: 'pointer',
-              fontFamily: F,
-              fontWeight: 800,
-              borderRadius: 2,
-              letterSpacing: 1,
-            }}
-          >CLOSE</button>
+        <div>
+          <div style={{
+            fontSize: 18,
+            fontWeight: 800,
+            color: '#e2e8f0',
+            textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+            fontFamily: F,
+            letterSpacing: 0.5,
+          }}>{body?.name || 'Unknown'}</div>
+          <div style={{
+            fontSize: 10,
+            color: '#6a8a9a',
+            fontFamily: FM,
+            textTransform: 'capitalize',
+          }}>{bodyType} · Sol System</div>
         </div>
       </div>
     </div>
