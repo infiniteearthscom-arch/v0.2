@@ -3,6 +3,9 @@ import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { fittingAPI, questsAPI, resourcesAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useTooltip } from '@/components/ui/TooltipProvider';
+import { ItemCell, ItemIcon, EmptySlotCell } from '@/components/items';
+import { ItemTooltipContent } from '@/components/items/ItemTooltip';
+import { normalizeItem, normalizeFittedModule, SLOT_TYPE_META } from '@/utils/itemShape';
 
 // ============================================
 // SEEDED RANDOM (for consistent ship details)
@@ -268,84 +271,39 @@ const drawShip = (ctx, hull, scale, time, opts = {}) => {
     }
   }
 
-  // Pass 10: Module slot squares — small fixed-size drop targets drawn
-  // at the center of each slot's hull region. One square per slot.
-  // Size matches the Cargo window's SLOT_SIZE (40px) at scale=2, scaling
-  // with ship scale for consistent visual proportion. Empty slots show a
-  // dashed colored border so the ship art underneath is fully visible;
-  // filled slots show a subtle tinted square with the module's initial
-  // and a quality dot. Tooltips (via onSlotHover) handle the text info.
+  // Pass 10: Empty slot frames only — filled modules are drawn as DOM
+  // overlays outside the canvas so they can share the ItemIcon component
+  // with every other item display in the game. Each empty slot is a
+  // small dashed square at the center of its hull region.
   if (showSlots) {
-    const SLOT_BOX = CELL * scale; // one cell ≈ 40px at default scale
+    const SLOT_BOX = CELL * scale;
     for (const slot of (opts.slots || [])) {
-      // Center the square on the original slot region
+      if (modules[slot.id]) continue; // filled slots rendered in DOM layer
       const cx = (slot.x + slot.w / 2) * C;
       const cy = (slot.y + slot.h / 2) * C;
       const sx = cx - SLOT_BOX / 2;
       const sy = cy - SLOT_BOX / 2;
       const sw = SLOT_BOX, sh = SLOT_BOX;
-
-      const st = SLOT_TYPES[slot.type] || { color: '#888', name: slot.type };
+      const st = SLOT_TYPES[slot.type] || { color: '#888' };
       const isHov = hovered === slot.id;
       const isDrag = dragOver === slot.id;
-      const installed = modules[slot.id];
 
-      if (installed) {
-        // Filled slot — subtle gradient fill, solid border, module letter glyph,
-        // quality dot if available. Matches the Fittable Modules panel look.
-        ctx.fillStyle = st.color + '22';
-        ctx.fillRect(sx, sy, sw, sh);
-        ctx.fillStyle = st.color + '10';
-        ctx.fillRect(sx, sy, sw, sh * 0.5);
+      // Subtle fill
+      if (isDrag)      ctx.fillStyle = st.color + '33';
+      else if (isHov)  ctx.fillStyle = st.color + '18';
+      else             ctx.fillStyle = st.color + '08';
+      ctx.fillRect(sx, sy, sw, sh);
 
-        ctx.strokeStyle = isHov ? st.color + 'ee' : st.color + 'bb';
-        ctx.lineWidth = (isHov ? 2 : 1.5) * scale;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+      // Dashed border
+      ctx.save();
+      ctx.strokeStyle = isDrag ? st.color + 'ee' : isHov ? st.color + 'cc' : st.color + '88';
+      ctx.lineWidth = (isDrag ? 2 : 1.5) * scale;
+      ctx.setLineDash([4 * scale, 3 * scale]);
+      ctx.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+      ctx.restore();
 
-        // Module initial — single bold letter, matches slot type icon feel
-        const label = (installed.name || st.name || '?').trim().charAt(0).toUpperCase();
-        ctx.fillStyle = '#ffffffee';
-        ctx.font = `bold ${Math.round(sh * 0.45)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, sx + sw / 2, sy + sh / 2);
-
-        // Quality dot (top-right corner) if module has quality data
-        if (installed.quality) {
-          const q = installed.quality;
-          const avg = (q.purity + q.stability + q.potency + q.density) / 4;
-          const qColor = avg >= 80 ? '#aa44ff' : avg >= 60 ? '#4488ff' : avg >= 40 ? '#44cc44' : '#888888';
-          const dotR = 2 * scale;
-          ctx.fillStyle = qColor;
-          ctx.beginPath();
-          ctx.arc(sx + sw - dotR * 2, sy + dotR * 2, dotR, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else {
-        // Empty slot — dashed colored border, very subtle fill so the ship art
-        // underneath remains visible. Emphasized on hover/drag.
-        if (isDrag) {
-          ctx.fillStyle = st.color + '33';
-          ctx.fillRect(sx, sy, sw, sh);
-        } else if (isHov) {
-          ctx.fillStyle = st.color + '18';
-          ctx.fillRect(sx, sy, sw, sh);
-        } else {
-          ctx.fillStyle = st.color + '08';
-          ctx.fillRect(sx, sy, sw, sh);
-        }
-
-        ctx.save();
-        ctx.strokeStyle = isDrag ? st.color + 'ee' : isHov ? st.color + 'cc' : st.color + '88';
-        ctx.lineWidth = (isDrag ? 2 : 1.5) * scale;
-        // Dashed so it reads as "empty/drop here"
-        ctx.setLineDash([4 * scale, 3 * scale]);
-        ctx.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
-        ctx.restore();
-      }
-
-      // Required indicator — red dot in corner for unfilled required slots
-      if (slot.required && !installed) {
+      // Required indicator for unfilled required slots
+      if (slot.required) {
         const r = 3 * scale;
         ctx.fillStyle = '#ff4444dd';
         ctx.beginPath();
@@ -425,14 +383,58 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
   };
 
   if (!hull) return <div className="text-red-400 text-xs">Unknown hull: {hullId}</div>;
+
+  // Compute filled-slot overlay positions. Each filled slot renders a real
+  // <ItemIcon> at the slot's center, so fitted modules look identical to
+  // their representation in cargo / the fittable panel.
+  const C = CELL * scale;
+  const SLOT_BOX = C;
+  const filledOverlays = [];
+  for (const slot of slots) {
+    const mod = modules[slot.id];
+    if (!mod) continue;
+    const cx = (slot.x + slot.w / 2) * C + 10; // +10 for canvas left offset
+    const cy = (slot.y + slot.h / 2) * C + 5;  // +5 for canvas top offset
+    const normalized = normalizeFittedModule(mod, slot.id);
+    filledOverlays.push({ slot, normalized, cx, cy });
+  }
+
   return (
-    <canvas ref={canvasRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => { setHovered(null); setDragOver(null); onSlotHover?.(null, null); }}
-      onClick={(e) => { const s = getSlotAt(e); if (s) onSlotClick?.(s); }}
-      onDragOver={handleDragOver} onDragLeave={() => setDragOver(null)} onDrop={handleDrop}
-      style={{ cursor: 'pointer' }}
-    />
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <canvas ref={canvasRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => { setHovered(null); setDragOver(null); onSlotHover?.(null, null); }}
+        onClick={(e) => { const s = getSlotAt(e); if (s) onSlotClick?.(s); }}
+        onDragOver={handleDragOver} onDragLeave={() => setDragOver(null)} onDrop={handleDrop}
+        style={{ cursor: 'pointer', display: 'block' }}
+      />
+      {/* Filled-slot DOM overlay — pointer-events:none on wrapper so the
+          underlying canvas still receives hover/drag events. Each icon
+          itself re-enables pointer-events so it can show its tooltip. */}
+      <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+        {filledOverlays.map(({ slot, normalized, cx, cy }) => (
+          <div
+            key={slot.id}
+            style={{
+              position: 'absolute',
+              left: cx - SLOT_BOX / 2,
+              top:  cy - SLOT_BOX / 2,
+              width: SLOT_BOX,
+              height: SLOT_BOX,
+              pointerEvents: 'auto',
+            }}
+          >
+            <ItemCell
+              item={normalized}
+              size={SLOT_BOX}
+              onClick={() => onSlotClick?.(slot)}
+              iconProps={{ showEquippedMark: false }}
+              style={{ width: '100%', height: '100%' }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
 
@@ -637,13 +639,13 @@ const ModuleShop = ({ moduleTypes, onBuy }) => {
 
 // ============================================
 // FITTABLE MODULES PANEL
-// Inline cargo-like sidebar inside the Ship Designer. Shows only
-// cargo items that can be fitted as modules, grouped by slot type,
-// using the same 40x40 grid-square aesthetic as the main Cargo window
-// and the ship-canvas drop targets. Drag from here onto ship slots;
-// the existing slot drop handler already understands the payload shape.
+// Inline cargo-like sidebar inside the Ship Designer. Shows only items
+// from cargo that can be fitted as modules, grouped by slot type.
+// Uses the shared ItemCell so every item here is visually identical to
+// its representation in the main Cargo window, in fitted ship slots, and
+// in vendor listings — one source of truth for item rendering.
 // ============================================
-const FITTABLE_ICON_SIZE = 40; // matches Cargo's SLOT_SIZE and on-ship slot boxes
+const FITTABLE_ICON_SIZE = 40;
 
 const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
   // Pull module-type items out of the mixed inventory payload.
@@ -662,104 +664,6 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
   }
 
   const hasAny = modules.length > 0;
-
-  // Single square — mirrors the style of the on-ship slot boxes so a
-  // module from this panel looks like the thing it will become once fitted.
-  const ModuleIcon = ({ item, slotType }) => {
-    const st = SLOT_TYPES[slotType];
-    const q = item.item_data?.quality;
-    const avgQ = q ? (q.purity + q.stability + q.potency + q.density) / 4 : null;
-    let qColor = '#64748b';
-    if (avgQ !== null) {
-      if (avgQ >= 80) qColor = '#aa44ff';
-      else if (avgQ >= 60) qColor = '#4488ff';
-      else if (avgQ >= 40) qColor = '#44cc44';
-    }
-    const label = (item.item_name || item.item_id || '?').trim().charAt(0).toUpperCase();
-    const tooltip =
-      `${item.item_name || item.item_id?.replace(/_/g, ' ')}` +
-      (item.quantity > 1 ? ` (×${item.quantity})` : '') +
-      (avgQ !== null ? ` — Q${Math.round(avgQ)}` : '') +
-      ` — drag to a ${st.name.toLowerCase()} slot`;
-
-    return (
-      <div
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData('application/json', JSON.stringify({
-            stack_id: item.id,
-            item_type: item.item_type,
-            item_id: item.item_id,
-            item_name: item.item_name,
-            quantity: item.quantity,
-            item_data: item.item_data,
-          }));
-          e.dataTransfer.effectAllowed = 'move';
-        }}
-        title={tooltip}
-        className="cursor-grab active:cursor-grabbing hover:brightness-125 transition-all relative"
-        style={{
-          width: FITTABLE_ICON_SIZE,
-          height: FITTABLE_ICON_SIZE,
-          border: `1.5px solid ${st.color}bb`,
-          borderRadius: 3,
-          background: `linear-gradient(135deg, ${st.color}22 0%, ${st.color}0a 100%)`,
-          boxShadow: `inset 0 0 6px ${st.color}11`,
-          flexShrink: 0,
-        }}
-      >
-        {/* Letter glyph */}
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontFamily: 'monospace',
-            fontSize: 18,
-            fontWeight: 700,
-            color: '#ffffffdd',
-            textShadow: `0 0 4px ${st.color}88`,
-          }}
-        >
-          {label}
-        </div>
-        {/* Quality dot (top-right) */}
-        {avgQ !== null && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 2,
-              right: 2,
-              width: 5,
-              height: 5,
-              borderRadius: '50%',
-              background: qColor,
-              boxShadow: `0 0 3px ${qColor}`,
-            }}
-          />
-        )}
-        {/* Stack count (bottom-right) */}
-        {item.quantity > 1 && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 1,
-              right: 3,
-              fontSize: 9,
-              fontWeight: 700,
-              color: '#e2e8f0',
-              textShadow: '0 0 3px rgba(0,0,0,0.9)',
-              fontFamily: 'monospace',
-            }}
-          >
-            ×{item.quantity}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}>
@@ -802,10 +706,15 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
                 <span className="text-[9px] text-slate-600">({items.length})</span>
               </div>
 
-              {/* Grid of 40x40 module icons */}
+              {/* Grid of 40x40 module icons — each a shared ItemCell */}
               <div className="flex flex-wrap gap-1 px-1">
                 {items.map((item) => (
-                  <ModuleIcon key={item.id} item={item} slotType={slotKey} />
+                  <ItemCell
+                    key={item.id}
+                    item={normalizeItem(item)}
+                    size={FITTABLE_ICON_SIZE}
+                    draggable
+                  />
                 ))}
               </div>
             </div>
@@ -974,7 +883,11 @@ export const ShipBuilderWindow = () => {
   const handleSlotHover = (slot, e) => {
     if (!slot) { hideTooltip(); return; }
     const mod = moduleDetails[slot.id] || null;
-    showTooltip(<SlotInfo slot={slot} module={mod} />);
+    // Filled slots are covered by an absolute-positioned ItemCell that
+    // supplies its own ItemTooltipContent on hover. Avoid double-tooltips
+    // by only showing the slot-info tooltip when the slot is empty.
+    if (mod) { hideTooltip(); return; }
+    showTooltip(<SlotInfo slot={slot} module={null} />);
   };
 
   const hullType = shipDetail?.hull_type_id;
