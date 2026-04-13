@@ -93,6 +93,13 @@ const initialState = {
   enemyCount: 0,
   followMode: true,
 
+  // Fleet aggregated stats (computed by SystemView, consumed by Outliner)
+  fleetStats: null,
+
+  // Docked body (set by SystemView when player docks, cleared on undock)
+  // Shape: { id, name, type, ... } — or null when undocked
+  dockedBody: null,
+
   // Outliner state
   systemBodies: [], // [{ id, name, type, planetType, color, parentBody }] — pushed by SystemView
   outlinerVisible: true, // toggleable from top bar
@@ -380,6 +387,16 @@ export const useGameStore = create(
       // Outliner: SystemView pushes the static body list when a system loads
       setSystemBodies: (bodies) => set(state => {
         state.systemBodies = bodies || [];
+      }),
+
+      // Fleet stats: SystemView pushes aggregated stats when fleet changes
+      setFleetStats: (stats) => set(state => {
+        state.fleetStats = stats || null;
+      }),
+
+      // Dock status: SystemView pushes on dock / undock
+      setDockedBody: (body) => set(state => {
+        state.dockedBody = body || null;
       }),
 
       toggleOutliner: () => set(state => {

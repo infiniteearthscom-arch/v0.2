@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
+import { computeFleetStats } from '@/utils/fleetStats';
 import { fittingAPI } from '@/utils/api';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
@@ -33,9 +34,8 @@ const PIRATE_ORBIT_RANGE = 100; // Preferred combat distance
 const PIRATE_DEAGGRO_RANGE = 600; // Distance to give up chase
 const PROJECTILE_SPEED = 400;
 const PROJECTILE_LIFETIME = 0.8; // seconds
-const PLAYER_FIRE_RANGE = 160;
-const PLAYER_BASE_DAMAGE = 10;
-const PLAYER_BASE_FIRE_RATE = 0.6; // seconds between shots
+// (PLAYER_FIRE_RANGE / PLAYER_BASE_DAMAGE / PLAYER_BASE_FIRE_RATE removed —
+//  per-ship firing now reads weapon stats from each ship's fitted modules.)
 const SHIELD_REGEN_RATE = 2; // shield HP per second
 const SHIELD_REGEN_DELAY = 3; // seconds after last hit before regen starts
 const LOOT_CREDITS_MIN = 20;
@@ -1101,7 +1101,54 @@ export const SystemView = () => {
   
   // Keep fleetShips accessible from game loop closure
   fleetShipsRef.current = fleetShips;
-  
+
+  // === Fleet stat aggregation (Tier 2 #2) ===
+  // Compute the fleet's collective combat stats from all ships' base
+  // hulls + fitted modules. Per the locked design, fleet HP/shield/armor
+  // are POOLS shared by the whole fleet rather than per-ship.
+  const fleetStats = useMemo(() => computeFleetStats(fleetShips), [fleetShips]);
+
+  // Push fleet stats to the global store so the Outliner can display them.
+  const setFleetStats = useGameStore(state => state.setFleetStats);
+  useEffect(() => {
+    if (setFleetStats) setFleetStats(fleetStats);
+  }, [fleetStats, setFleetStats]);
+
+  // Update the playerMaxHull/Shield refs when the fleet composition or
+  // module loadout changes. We preserve the player's CURRENT ratio of
+  // hull/shield so that swapping to a tougher ship at full health doesn't
+  // suddenly make the bar look half-empty (and vice versa).
+  useEffect(() => {
+    const oldMaxHull   = playerMaxHullRef.current   || 1;
+    const oldMaxShield = playerMaxShieldRef.current || 1;
+    const hullPct      = playerHullRef.current   / oldMaxHull;
+    const shieldPct    = playerShieldRef.current / oldMaxShield;
+    playerMaxHullRef.current   = Math.max(1, fleetStats.totalHull);
+    playerMaxShieldRef.current = Math.max(0, fleetStats.totalShield);
+    playerHullRef.current   = Math.min(playerMaxHullRef.current,   playerHullRef.current   > 0 ? hullPct   * playerMaxHullRef.current   : playerMaxHullRef.current);
+    playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current > 0 ? shieldPct * playerMaxShieldRef.current : playerMaxShieldRef.current);
+  }, [fleetStats.totalHull, fleetStats.totalShield]);
+
+  // Override the ship physics ref with fleet-derived speed/maneuver,
+  // which already include the fleet-mass penalty.  fleet_speed = 50 is
+  // the baseline (1.0×), the same convention used for individual ships.
+  useEffect(() => {
+    const fleetSpeedMult    = Math.max(0.3, Math.min(3, fleetStats.fleetSpeed    / 50));
+    const fleetManeuverMult = Math.max(0.3, Math.min(3, fleetStats.fleetManeuver / 50));
+    shipPhysicsRef.current = {
+      SHIP_MAX_SPEED:      BASE_SHIP_MAX_SPEED      * fleetSpeedMult,
+      SHIP_ACCELERATION:   BASE_SHIP_ACCELERATION   * fleetSpeedMult,
+      SHIP_ROTATION_SPEED: BASE_SHIP_ROTATION_SPEED * fleetManeuverMult,
+    };
+  }, [fleetStats.fleetSpeed, fleetStats.fleetManeuver]);
+
+  // Push local dock state to the global store so GameFrame can show a
+  // "Planet" toolbar button while docked.
+  const setDockedBodyStore = useGameStore(state => state.setDockedBody);
+  useEffect(() => {
+    if (setDockedBodyStore) setDockedBodyStore(dockedBody);
+  }, [dockedBody, setDockedBodyStore]);
+
   // Sync followMode state to ref
   useEffect(() => {
     followModeRef.current = followMode;

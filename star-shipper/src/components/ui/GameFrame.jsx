@@ -24,6 +24,9 @@ const TOOLBAR_BUTTONS = [
   { id: 'research', icon: '🔬', label: 'Research', color: '#22c55e' },
 ];
 
+// Planet button is appended dynamically when the player is docked.
+const PLANET_BUTTON = { id: 'planetInteraction', icon: '🪐', label: 'Planet', color: '#22c55e' };
+
 const EDGE = '#1a3050';
 const BLUE = { pri: '#3b82f6', light: '#60a5fa', dark: '#1d4ed8', dim: '#1e3a5f' };
 const GOLD = { pri: '#f59e0b', light: '#fbbf24' };
@@ -240,7 +243,7 @@ const TopBar = () => {
 // LEFT TOOLBAR
 // ============================================
 
-const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'navigation'];
+const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'navigation', 'planetInteraction'];
 const MODALS = ['shipBuilder', 'galaxyMap'];
 
 const LeftToolbar = () => {
@@ -248,6 +251,7 @@ const LeftToolbar = () => {
   const toggleWindow = useGameStore(state => state.toggleWindow);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
+  const dockedBody = useGameStore(state => state.dockedBody);
 
   const handleClick = (id) => {
     const isCurrentlyOpen = windows[id]?.open && !windows[id]?.minimized;
@@ -268,9 +272,12 @@ const LeftToolbar = () => {
     }
   };
 
+  // Build the button list — append the Planet button only while docked
+  const buttons = dockedBody ? [...TOOLBAR_BUTTONS, PLANET_BUTTON] : TOOLBAR_BUTTONS;
+
   return (
     <div className="fixed left-1.5 z-40 flex flex-col gap-0.5" style={{ top: 46 }}>
-      {TOOLBAR_BUTTONS.map(btn => {
+      {buttons.map(btn => {
         const isOpen = windows[btn.id]?.open && !windows[btn.id]?.minimized;
         return (
           <button
