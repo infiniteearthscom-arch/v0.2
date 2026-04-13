@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ModalOverlay } from '@/components/ui/ModalOverlay';
-import { fittingAPI, questsAPI } from '@/utils/api';
+import { fittingAPI, questsAPI, resourcesAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 
@@ -615,6 +615,140 @@ const ModuleShop = ({ moduleTypes, onBuy }) => {
 };
 
 // ============================================
+// FITTABLE MODULES PANEL
+// Inline cargo-like sidebar inside the Ship Designer. Shows only
+// cargo items that can be fitted as modules, grouped by slot type.
+// Drag from here onto ship slots; the existing slot drop handler
+// already understands the drag payload shape.
+// ============================================
+const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
+  // Pull module-type items out of the mixed inventory payload.
+  // Inventory payload shape (from resourcesAPI.getInventory):
+  //   { inventory: [ { resource_type_id, stacks: [...] }, ... ],
+  //     items:     [ { id, item_id, item_name, item_data, quantity, ... } ] }
+  // Modules live under `items` where item_data.slot_type is set.
+  const modules = (inventory?.items || []).filter(
+    (it) => it?.item_data?.slot_type && SLOT_TYPES[it.item_data.slot_type]
+  );
+
+  // Group by slot type, preserving SLOT_TYPES order for consistent UI.
+  const grouped = {};
+  for (const key of Object.keys(SLOT_TYPES)) grouped[key] = [];
+  for (const mod of modules) {
+    const t = mod.item_data.slot_type;
+    if (grouped[t]) grouped[t].push(mod);
+  }
+
+  const hasAny = modules.length > 0;
+
+  return (
+    <div className="flex flex-col h-full min-h-0" style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-700/40">
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: 12 }}>📦</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Fittable Modules</span>
+        </div>
+        <button
+          onClick={onRefresh}
+          title="Refresh from cargo"
+          className="text-[10px] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+        >
+          ↻
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-1.5" style={{ scrollbarWidth: 'thin' }}>
+        {loading && !hasAny && (
+          <div className="text-[10px] text-slate-600 text-center mt-3">Loading…</div>
+        )}
+        {!loading && !hasAny && (
+          <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
+            No fittable modules in cargo.
+            <div className="text-slate-600 mt-1">Buy modules from a station vendor, then drag them onto ship slots.</div>
+          </div>
+        )}
+
+        {Object.entries(grouped).map(([slotKey, items]) => {
+          if (items.length === 0) return null;
+          const st = SLOT_TYPES[slotKey];
+          return (
+            <div key={slotKey} className="mb-2">
+              {/* Group header */}
+              <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1">
+                <div className="w-1.5 h-1.5 rounded-sm" style={{ backgroundColor: st.color }} />
+                <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: st.color }}>{st.name}</span>
+                <span className="text-[9px] text-slate-600">({items.length})</span>
+              </div>
+
+              {/* Items */}
+              <div className="flex flex-col gap-1">
+                {items.map((item) => {
+                  const q = item.item_data?.quality;
+                  const avgQ = q ? (q.purity + q.stability + q.potency + q.density) / 4 : null;
+                  let qualityTint = '#64748b';
+                  if (avgQ !== null) {
+                    if (avgQ >= 80) qualityTint = '#aa44ff';
+                    else if (avgQ >= 60) qualityTint = '#4488ff';
+                    else if (avgQ >= 40) qualityTint = '#44ff44';
+                  }
+                  return (
+                    <div
+                      key={item.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('application/json', JSON.stringify({
+                          stack_id: item.id,
+                          item_type: item.item_type,
+                          item_id: item.item_id,
+                          item_name: item.item_name,
+                          quantity: item.quantity,
+                          item_data: item.item_data,
+                        }));
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      className="cursor-grab active:cursor-grabbing hover:brightness-125 transition-all"
+                      style={{
+                        padding: '4px 6px',
+                        borderRadius: 3,
+                        border: `1px solid ${st.color}44`,
+                        background: `linear-gradient(135deg, ${st.color}12, ${st.color}05)`,
+                      }}
+                      title={`Drag to a ${st.name.toLowerCase()} slot`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] font-medium text-slate-200 truncate" style={{ maxWidth: 140 }}>
+                          {item.item_name || item.item_id?.replace(/_/g, ' ')}
+                        </span>
+                        {item.quantity > 1 && (
+                          <span className="text-[9px] text-slate-400 flex-shrink-0">×{item.quantity}</span>
+                        )}
+                      </div>
+                      {avgQ !== null && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <div className="w-1 h-1 rounded-full" style={{ backgroundColor: qualityTint }} />
+                          <span className="text-[8px]" style={{ color: qualityTint }}>Q{Math.round(avgQ)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer hint */}
+      <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
+        Drag onto slot • Click fitted module to unfit
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // MAIN SHIP BUILDER WINDOW
 // ============================================
 export const ShipBuilderWindow = () => {
@@ -633,9 +767,26 @@ export const ShipBuilderWindow = () => {
   const openWindow = useGameStore(state => state.openWindow);
   const [tab, setTab] = useState('fit'); // fitting only now
 
+  // Fittable modules panel state — cargo inventory filtered to module-type items.
+  // Loaded on mount + after every fit/unfit so the panel stays in sync with cargo.
+  const [inventory, setInventory] = useState(null);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const loadInventory = useCallback(async () => {
+    setInventoryLoading(true);
+    try {
+      const data = await resourcesAPI.getInventory();
+      setInventory(data);
+    } catch (e) {
+      console.error('Failed to load inventory for fitting:', e);
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     loadData();
+    loadInventory();
   }, []);
 
   const loadData = async () => {
@@ -723,6 +874,7 @@ export const ShipBuilderWindow = () => {
       if (result.success) {
         flash('success', `Fitted ${result.module} → ${slot.id}`);
         selectShip(selectedShipId);
+        loadInventory();
       }
     } catch (err) {
       flash('error', err.message || 'Failed to fit module');
@@ -738,6 +890,7 @@ export const ShipBuilderWindow = () => {
         if (result.success) {
           flash('success', `Removed ${result.removed_module} → cargo`);
           selectShip(selectedShipId);
+          loadInventory();
         }
       } catch (err) {
         flash('error', err.message || 'Failed to unfit module');
@@ -810,6 +963,17 @@ export const ShipBuilderWindow = () => {
             )}
           </div>
 
+          {/* Fittable modules inline panel — replaces the need to open the
+              separate Cargo window while fitting. Only shows module-type
+              cargo items, grouped by slot type. */}
+          <div className="w-52 flex-shrink-0 min-h-0">
+            <FittableModulesPanel
+              inventory={inventory}
+              loading={inventoryLoading}
+              onRefresh={loadInventory}
+            />
+          </div>
+
           {/* Right: Stats */}
           <div className="w-44 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
             <StatsPanel ship={shipDetail} moduleDetails={moduleDetails} />
@@ -830,7 +994,7 @@ export const ShipBuilderWindow = () => {
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-700/30 pt-2">
           <span className="text-[10px] text-slate-500">
-            Drag modules from cargo onto slots • Click fitted module to remove
+            Fit modules from the panel on the right • Click a fitted module to remove it
           </span>
           {selectedShipId && (
             <button
