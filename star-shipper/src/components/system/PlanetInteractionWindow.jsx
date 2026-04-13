@@ -1739,16 +1739,20 @@ const VendorTab = ({ body }) => {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [section, setSection] = useState('hulls'); // 'hulls', 'modules', 'supplies', 'sell'
-  const [credits, setCredits] = useState(0);
   const [sellQuantities, setSellQuantities] = useState({}); // id → quantity to sell
+  // Credits are read directly from the global store so that ANY server-side
+  // change (vendor tx, combat loot, quest reward, future sources) reflects
+  // here the same way it does in the top bar. Never maintain a separate copy.
+  const credits = useGameStore(state => state.resources?.credits ?? 0);
   const fetchCredits = useGameStore(state => state.fetchCredits);
   const openWindow = useGameStore(state => state.openWindow);
 
+  // Call after any vendor tx to immediately pull the authoritative balance
+  // from the server (the 3s poll would catch it eventually, but we want it
+  // to feel instant).
   const refreshCredits = async () => {
     try {
-      const data = await fittingAPI.getCredits();
-      setCredits(data.credits || 0);
-      fetchCredits(); // also update global store
+      await fetchCredits();
     } catch (e) {}
   };
 
