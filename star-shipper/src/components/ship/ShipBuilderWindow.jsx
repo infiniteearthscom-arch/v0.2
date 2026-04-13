@@ -268,85 +268,95 @@ const drawShip = (ctx, hull, scale, time, opts = {}) => {
     }
   }
 
-  // Pass 10: Module slot overlay
+  // Pass 10: Module slot squares — small fixed-size drop targets drawn
+  // at the center of each slot's hull region. One square per slot.
+  // Size matches the Cargo window's SLOT_SIZE (40px) at scale=2, scaling
+  // with ship scale for consistent visual proportion. Empty slots show a
+  // dashed colored border so the ship art underneath is fully visible;
+  // filled slots show a subtle tinted square with the module's initial
+  // and a quality dot. Tooltips (via onSlotHover) handle the text info.
   if (showSlots) {
+    const SLOT_BOX = CELL * scale; // one cell ≈ 40px at default scale
     for (const slot of (opts.slots || [])) {
-      const sx=slot.x*C, sy=slot.y*C, sw=slot.w*C, sh=slot.h*C;
+      // Center the square on the original slot region
+      const cx = (slot.x + slot.w / 2) * C;
+      const cy = (slot.y + slot.h / 2) * C;
+      const sx = cx - SLOT_BOX / 2;
+      const sy = cy - SLOT_BOX / 2;
+      const sw = SLOT_BOX, sh = SLOT_BOX;
+
       const st = SLOT_TYPES[slot.type] || { color: '#888', name: slot.type };
       const isHov = hovered === slot.id;
       const isDrag = dragOver === slot.id;
       const installed = modules[slot.id];
 
       if (installed) {
-        // Installed module — solid color fill with strong border
-        ctx.fillStyle = st.color + '44';
-        ctx.fillRect(sx+1,sy+1,sw-2,sh-2);
-        ctx.strokeStyle = st.color + 'bb';
-        ctx.lineWidth = 2*scale;
-        ctx.strokeRect(sx+1,sy+1,sw-2,sh-2);
-        // Inner highlight
-        ctx.fillStyle = st.color + '15';
-        ctx.fillRect(sx+2,sy+2,sw-4,3*scale);
-        // Module name
-        ctx.fillStyle = '#ffffffdd';
-        ctx.font = `bold ${Math.min(9*scale,sh*0.28)}px monospace`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(installed.name || st.name, sx+sw/2, sy+sh/2 - 4*scale);
-        // Quality bar
+        // Filled slot — subtle gradient fill, solid border, module letter glyph,
+        // quality dot if available. Matches the Fittable Modules panel look.
+        ctx.fillStyle = st.color + '22';
+        ctx.fillRect(sx, sy, sw, sh);
+        ctx.fillStyle = st.color + '10';
+        ctx.fillRect(sx, sy, sw, sh * 0.5);
+
+        ctx.strokeStyle = isHov ? st.color + 'ee' : st.color + 'bb';
+        ctx.lineWidth = (isHov ? 2 : 1.5) * scale;
+        ctx.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+
+        // Module initial — single bold letter, matches slot type icon feel
+        const label = (installed.name || st.name || '?').trim().charAt(0).toUpperCase();
+        ctx.fillStyle = '#ffffffee';
+        ctx.font = `bold ${Math.round(sh * 0.45)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, sx + sw / 2, sy + sh / 2);
+
+        // Quality dot (top-right corner) if module has quality data
         if (installed.quality) {
           const q = installed.quality;
-          const avg = Math.round((q.purity + q.stability + q.potency + q.density) / 4);
-          const barW = sw * 0.6, barH = 3*scale;
-          const barX = sx + (sw-barW)/2, barY = sy + sh/2 + 5*scale;
-          // Background
-          ctx.fillStyle = 'rgba(0,0,0,0.4)';
-          ctx.fillRect(barX, barY, barW, barH);
-          // Fill — color based on quality
+          const avg = (q.purity + q.stability + q.potency + q.density) / 4;
           const qColor = avg >= 80 ? '#aa44ff' : avg >= 60 ? '#4488ff' : avg >= 40 ? '#44cc44' : '#888888';
-          ctx.fillStyle = qColor + 'cc';
-          ctx.fillRect(barX, barY, barW * Math.min(avg/100, 1), barH);
-          ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-          ctx.lineWidth = 0.5*scale;
-          ctx.strokeRect(barX, barY, barW, barH);
-          // Quality number
+          const dotR = 2 * scale;
           ctx.fillStyle = qColor;
-          ctx.font = `${6*scale}px monospace`;
-          ctx.fillText(`Q${avg}`, sx+sw/2, barY + barH + 5*scale);
+          ctx.beginPath();
+          ctx.arc(sx + sw - dotR * 2, sy + dotR * 2, dotR, 0, Math.PI * 2);
+          ctx.fill();
         }
       } else {
-        // Empty slot — always visible with colored tint + solid border
-        ctx.fillStyle = st.color + '18';
-        ctx.fillRect(sx+1,sy+1,sw-2,sh-2);
+        // Empty slot — dashed colored border, very subtle fill so the ship art
+        // underneath remains visible. Emphasized on hover/drag.
+        if (isDrag) {
+          ctx.fillStyle = st.color + '33';
+          ctx.fillRect(sx, sy, sw, sh);
+        } else if (isHov) {
+          ctx.fillStyle = st.color + '18';
+          ctx.fillRect(sx, sy, sw, sh);
+        } else {
+          ctx.fillStyle = st.color + '08';
+          ctx.fillRect(sx, sy, sw, sh);
+        }
 
-        // Solid border (brighter on hover/drag)
-        ctx.strokeStyle = isDrag ? st.color+'ee' : isHov ? st.color+'bb' : st.color+'66';
-        ctx.lineWidth = (isDrag ? 2.5 : isHov ? 2 : 1.5) * scale;
-        ctx.strokeRect(sx+1,sy+1,sw-2,sh-2);
-
-        // Hover/drag extra fill
-        if(isDrag){ctx.fillStyle=st.color+'33';ctx.fillRect(sx+2,sy+2,sw-4,sh-4);}
-        else if(isHov){ctx.fillStyle=st.color+'1a';ctx.fillRect(sx+2,sy+2,sw-4,sh-4);}
-
-        // Slot type label — always visible
-        ctx.fillStyle = isHov||isDrag ? st.color+'cc' : st.color+'88';
-        ctx.font = `bold ${Math.min(8*scale,sh*0.25)}px monospace`;
-        ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText(st.name, sx+sw/2, sy+sh/2);
-
-        // Size label
-        ctx.fillStyle=st.color+'44';ctx.font=`${6*scale}px monospace`;
-        ctx.fillText(`${slot.w}×${slot.h}`,sx+sw/2,sy+sh/2+9*scale);
-
-        // Corner markers (small colored squares at corners for extra visibility)
-        const cm = 3*scale;
-        ctx.fillStyle = st.color + '77';
-        ctx.fillRect(sx+1,sy+1,cm,cm);
-        ctx.fillRect(sx+sw-cm-1,sy+1,cm,cm);
-        ctx.fillRect(sx+1,sy+sh-cm-1,cm,cm);
-        ctx.fillRect(sx+sw-cm-1,sy+sh-cm-1,cm,cm);
+        ctx.save();
+        ctx.strokeStyle = isDrag ? st.color + 'ee' : isHov ? st.color + 'cc' : st.color + '88';
+        ctx.lineWidth = (isDrag ? 2 : 1.5) * scale;
+        // Dashed so it reads as "empty/drop here"
+        ctx.setLineDash([4 * scale, 3 * scale]);
+        ctx.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+        ctx.restore();
       }
-      // Required indicator
-      if(slot.required&&!installed){ctx.fillStyle='#ff4444aa';ctx.beginPath();ctx.arc(sx+sw-5*scale,sy+5*scale,3.5*scale,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font=`bold ${7*scale}px monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',sx+sw-5*scale,sy+5.5*scale);}
+
+      // Required indicator — red dot in corner for unfilled required slots
+      if (slot.required && !installed) {
+        const r = 3 * scale;
+        ctx.fillStyle = '#ff4444dd';
+        ctx.beginPath();
+        ctx.arc(sx + sw - r - 2, sy + r + 2, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(r * 2)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('!', sx + sw - r - 2, sy + r + 3);
+      }
     }
   }
 
@@ -387,9 +397,20 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
     if (!hull || !slots.length) return null;
     const rect = canvasRef.current.getBoundingClientRect();
     const C = CELL * scale;
-    const x = Math.floor((e.clientX - rect.left - 10) / C);
-    const y = Math.floor((e.clientY - rect.top - 5) / C);
-    return slots.find(s => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h) || null;
+    // Canvas has a 10px left offset + 5px top offset in drawShip.
+    const px = e.clientX - rect.left - 10;
+    const py = e.clientY - rect.top - 5;
+    // Slots are now rendered as fixed-size squares (one cell) centered on
+    // each slot's hull region — match that geometry for hit testing.
+    const SLOT_BOX = C;
+    for (const s of slots) {
+      const cx = (s.x + s.w / 2) * C;
+      const cy = (s.y + s.h / 2) * C;
+      const sx = cx - SLOT_BOX / 2;
+      const sy = cy - SLOT_BOX / 2;
+      if (px >= sx && px < sx + SLOT_BOX && py >= sy && py < sy + SLOT_BOX) return s;
+    }
+    return null;
   }, [hull, scale, slots]);
 
   const handleMouseMove = (e) => { const s = getSlotAt(e); if (s?.id !== hovered) { setHovered(s?.id || null); onSlotHover?.(s, e); } };
@@ -617,15 +638,16 @@ const ModuleShop = ({ moduleTypes, onBuy }) => {
 // ============================================
 // FITTABLE MODULES PANEL
 // Inline cargo-like sidebar inside the Ship Designer. Shows only
-// cargo items that can be fitted as modules, grouped by slot type.
-// Drag from here onto ship slots; the existing slot drop handler
-// already understands the drag payload shape.
+// cargo items that can be fitted as modules, grouped by slot type,
+// using the same 40x40 grid-square aesthetic as the main Cargo window
+// and the ship-canvas drop targets. Drag from here onto ship slots;
+// the existing slot drop handler already understands the payload shape.
 // ============================================
+const FITTABLE_ICON_SIZE = 40; // matches Cargo's SLOT_SIZE and on-ship slot boxes
+
 const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
   // Pull module-type items out of the mixed inventory payload.
-  // Inventory payload shape (from resourcesAPI.getInventory):
-  //   { inventory: [ { resource_type_id, stacks: [...] }, ... ],
-  //     items:     [ { id, item_id, item_name, item_data, quantity, ... } ] }
+  //   { inventory: [...], items: [ { id, item_id, item_name, item_data, quantity, ... } ] }
   // Modules live under `items` where item_data.slot_type is set.
   const modules = (inventory?.items || []).filter(
     (it) => it?.item_data?.slot_type && SLOT_TYPES[it.item_data.slot_type]
@@ -640,6 +662,104 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
   }
 
   const hasAny = modules.length > 0;
+
+  // Single square — mirrors the style of the on-ship slot boxes so a
+  // module from this panel looks like the thing it will become once fitted.
+  const ModuleIcon = ({ item, slotType }) => {
+    const st = SLOT_TYPES[slotType];
+    const q = item.item_data?.quality;
+    const avgQ = q ? (q.purity + q.stability + q.potency + q.density) / 4 : null;
+    let qColor = '#64748b';
+    if (avgQ !== null) {
+      if (avgQ >= 80) qColor = '#aa44ff';
+      else if (avgQ >= 60) qColor = '#4488ff';
+      else if (avgQ >= 40) qColor = '#44cc44';
+    }
+    const label = (item.item_name || item.item_id || '?').trim().charAt(0).toUpperCase();
+    const tooltip =
+      `${item.item_name || item.item_id?.replace(/_/g, ' ')}` +
+      (item.quantity > 1 ? ` (×${item.quantity})` : '') +
+      (avgQ !== null ? ` — Q${Math.round(avgQ)}` : '') +
+      ` — drag to a ${st.name.toLowerCase()} slot`;
+
+    return (
+      <div
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/json', JSON.stringify({
+            stack_id: item.id,
+            item_type: item.item_type,
+            item_id: item.item_id,
+            item_name: item.item_name,
+            quantity: item.quantity,
+            item_data: item.item_data,
+          }));
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        title={tooltip}
+        className="cursor-grab active:cursor-grabbing hover:brightness-125 transition-all relative"
+        style={{
+          width: FITTABLE_ICON_SIZE,
+          height: FITTABLE_ICON_SIZE,
+          border: `1.5px solid ${st.color}bb`,
+          borderRadius: 3,
+          background: `linear-gradient(135deg, ${st.color}22 0%, ${st.color}0a 100%)`,
+          boxShadow: `inset 0 0 6px ${st.color}11`,
+          flexShrink: 0,
+        }}
+      >
+        {/* Letter glyph */}
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'monospace',
+            fontSize: 18,
+            fontWeight: 700,
+            color: '#ffffffdd',
+            textShadow: `0 0 4px ${st.color}88`,
+          }}
+        >
+          {label}
+        </div>
+        {/* Quality dot (top-right) */}
+        {avgQ !== null && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 2,
+              right: 2,
+              width: 5,
+              height: 5,
+              borderRadius: '50%',
+              background: qColor,
+              boxShadow: `0 0 3px ${qColor}`,
+            }}
+          />
+        )}
+        {/* Stack count (bottom-right) */}
+        {item.quantity > 1 && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 1,
+              right: 3,
+              fontSize: 9,
+              fontWeight: 700,
+              color: '#e2e8f0',
+              textShadow: '0 0 3px rgba(0,0,0,0.9)',
+              fontFamily: 'monospace',
+            }}
+          >
+            ×{item.quantity}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: '#0c1018', borderRadius: 6, border: '1px solid #1e293b' }}>
@@ -682,58 +802,11 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
                 <span className="text-[9px] text-slate-600">({items.length})</span>
               </div>
 
-              {/* Items */}
-              <div className="flex flex-col gap-1">
-                {items.map((item) => {
-                  const q = item.item_data?.quality;
-                  const avgQ = q ? (q.purity + q.stability + q.potency + q.density) / 4 : null;
-                  let qualityTint = '#64748b';
-                  if (avgQ !== null) {
-                    if (avgQ >= 80) qualityTint = '#aa44ff';
-                    else if (avgQ >= 60) qualityTint = '#4488ff';
-                    else if (avgQ >= 40) qualityTint = '#44ff44';
-                  }
-                  return (
-                    <div
-                      key={item.id}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData('application/json', JSON.stringify({
-                          stack_id: item.id,
-                          item_type: item.item_type,
-                          item_id: item.item_id,
-                          item_name: item.item_name,
-                          quantity: item.quantity,
-                          item_data: item.item_data,
-                        }));
-                        e.dataTransfer.effectAllowed = 'move';
-                      }}
-                      className="cursor-grab active:cursor-grabbing hover:brightness-125 transition-all"
-                      style={{
-                        padding: '4px 6px',
-                        borderRadius: 3,
-                        border: `1px solid ${st.color}44`,
-                        background: `linear-gradient(135deg, ${st.color}12, ${st.color}05)`,
-                      }}
-                      title={`Drag to a ${st.name.toLowerCase()} slot`}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] font-medium text-slate-200 truncate" style={{ maxWidth: 140 }}>
-                          {item.item_name || item.item_id?.replace(/_/g, ' ')}
-                        </span>
-                        {item.quantity > 1 && (
-                          <span className="text-[9px] text-slate-400 flex-shrink-0">×{item.quantity}</span>
-                        )}
-                      </div>
-                      {avgQ !== null && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <div className="w-1 h-1 rounded-full" style={{ backgroundColor: qualityTint }} />
-                          <span className="text-[8px]" style={{ color: qualityTint }}>Q{Math.round(avgQ)}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              {/* Grid of 40x40 module icons */}
+              <div className="flex flex-wrap gap-1 px-1">
+                {items.map((item) => (
+                  <ModuleIcon key={item.id} item={item} slotType={slotKey} />
+                ))}
               </div>
             </div>
           );
