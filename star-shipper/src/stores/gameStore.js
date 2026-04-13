@@ -425,26 +425,43 @@ export const useGameStore = create(
       // RESET
       // ==========================================
 
-      resetGame: () => set(initialState),
+      // Full reset — wipes client state AND localStorage so nothing
+      // leaks between sessions. Called by the DEV reset button after
+      // the server side account wipe succeeds.
+      resetGame: () => {
+        // Purge the persisted slice BEFORE resetting in-memory state,
+        // so persist middleware doesn't immediately re-save the old
+        // windows object during the set() call.
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.removeItem('star-shipper-local');
+          }
+        } catch (e) { /* ignore */ }
+        set(state => {
+          Object.assign(state, initialState);
+          // Deep-replace windows explicitly — belt & suspenders in case
+          // immer/persist keeps a reference to the previous windows object.
+          state.windows = { ...initialState.windows };
+        });
+      },
     })),
     {
       name: 'star-shipper-local',
       partialize: (state) => ({
         // Only persist UI state locally
-        windows: state.windows,
         gameStarted: state.gameStarted,
         outlinerVisible: state.outlinerVisible,
       }),
-      // Merge persisted state with initial state to handle new windows
+      // Merge persisted state with initial state. Window open/minimized
+      // state is NOT persisted — we always start with all panels closed
+      // so a stale "open" flag from a prior session can't cause panels
+      // to appear behind other panels on page load.
       merge: (persistedState, currentState) => {
         return {
           ...currentState,
           ...persistedState,
-          // Merge windows - keep persisted positions but add any new windows
-          windows: {
-            ...currentState.windows,  // Start with all initial windows (includes new ones)
-            ...persistedState?.windows, // Override with persisted state
-          },
+          // Always use the initial (all-closed) windows state.
+          windows: currentState.windows,
         };
       },
       // Handle Set serialization
