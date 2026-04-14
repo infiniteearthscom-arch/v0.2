@@ -354,11 +354,20 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
     canvas.height = hull.gridH * C + C * 3;
     const ctx = canvas.getContext('2d');
     let frame = 0;
-    const animate = () => {
+    let lastDraw = 0;
+    // Throttle to ~15fps. The ship art's animations (engine flicker,
+    // running lights, bridge pulse) are subtle enough that 15fps is
+    // visually indistinguishable from 60fps but uses ~4× less main-thread
+    // time, freeing it up for input handling so the cursor stays snappy.
+    const FRAME_INTERVAL_MS = 66; // ≈15fps
+    const animate = (now) => {
+      animRef.current = requestAnimationFrame(animate);
+      if (now - lastDraw < FRAME_INTERVAL_MS) return;
+      lastDraw = now;
       frame++;
       ctx.clearRect(0,0,canvas.width,canvas.height);
       ctx.save(); ctx.translate(10,5);
-      drawShip(ctx, hull, scale, frame/60, {
+      drawShip(ctx, hull, scale, frame/15, {
         showSlots: showSlotsRef.current,
         slots:     slotsRef.current,
         modules:   modulesRef.current,
@@ -366,9 +375,8 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
         dragOver:  dragOverRef.current,
       });
       ctx.restore();
-      animRef.current = requestAnimationFrame(animate);
     };
-    animate();
+    animRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animRef.current);
   }, [hull, scale]); // only restart on hull/scale change — everything else read from refs
 

@@ -96,8 +96,16 @@ export const TooltipProvider = ({ children }) => {
     setState(prev => prev.visible ? { visible: false, content: null } : prev);
   }, []);
 
+  // Memoize the context value. CRITICAL: a fresh `{ showTooltip, hideTooltip }`
+  // object on every render forces every consumer of useTooltip() — i.e. every
+  // ItemCell in the entire game — to re-render whenever the tooltip itself
+  // changes visibility. Stable identity here means hover state changes only
+  // re-render this provider, not all its consumers.
+  const ctxValue = useRef(null);
+  if (!ctxValue.current) ctxValue.current = { showTooltip, hideTooltip };
+
   return (
-    <TooltipContext.Provider value={{ showTooltip, hideTooltip }}>
+    <TooltipContext.Provider value={ctxValue.current}>
       {children}
       {/* Always mounted. Visibility toggled via display so we skip the
           mount/unmount cost per hover. Initial transform places it offscreen
