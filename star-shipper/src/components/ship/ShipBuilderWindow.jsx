@@ -769,13 +769,13 @@ export const ShipBuilderWindow = () => {
   const [selectedShipId, setSelectedShipId] = useState(null);
   const [shipDetail, setShipDetail] = useState(null);
   const [moduleDetails, setModuleDetails] = useState({});
-  const [message, setMessage] = useState(null);
   const { showTooltip, hideTooltip } = useTooltip();
   const [launching, setLaunching] = useState(false);
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const fetchShips = useGameStore(state => state.fetchShips);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
+  const pushToast = useGameStore(state => state.pushToast);
   const [tab, setTab] = useState('fit'); // fitting only now
 
   // Fittable modules panel state — cargo inventory filtered to module-type items.
@@ -830,7 +830,7 @@ export const ShipBuilderWindow = () => {
     }
   };
 
-  const flash = (type, text) => { setMessage({ type, text }); setTimeout(() => setMessage(null), 3000); };
+  const flash = (kind, text) => pushToast({ kind, text });
 
   const handleBuyHull = async (hullTypeId) => {
     try {
@@ -938,13 +938,6 @@ export const ShipBuilderWindow = () => {
       accent="#ff6622"
     >
       <div className="h-full flex flex-col gap-2 text-cyan-100">
-        {/* Message bar */}
-        {message && (
-          <div className={`text-xs px-3 py-1 rounded ${message.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-            {message.text}
-          </div>
-        )}
-
         <div className="flex-1 flex gap-3 min-h-0">
           {/* Left: Ship selector */}
           <div className="w-44 flex-shrink-0 overflow-y-auto pr-1">

@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
 import { CharacterPanel } from '@/components/ui/CharacterPanel';
 import { TooltipProvider } from '@/components/ui/TooltipProvider';
+import { Toaster } from '@/components/ui/Toaster';
 
 // ============================================
 // QUEST COMPLETION TOAST
@@ -89,7 +90,6 @@ function App() {
   const gameStarted = useGameStore(state => state.gameStarted);
   const startGame = useGameStore(state => state.startGame);
   const openWindow = useGameStore(state => state.openWindow);
-  const openContextPanel = useGameStore(state => state.openContextPanel);
   const fetchShips = useGameStore(state => state.fetchShips);
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const setResources = useGameStore(state => state.setResources);
@@ -99,22 +99,11 @@ function App() {
 
   useEffect(() => { checkSession(); }, [checkSession]);
 
-  // Seed gameStore with server-provided initial resources ONCE after login.
-  // After that, fetchCredits (called by vendor / combat / top-bar polling)
-  // is the source of truth — we do NOT keep writing authStore.resources
-  // back in on every effect re-run, because authStore.resources is stale
-  // relative to the live balance after any server-side transaction.
-  const seededResourcesRef = React.useRef(false);
   useEffect(() => {
-    if (isLoggedIn && resources && !seededResourcesRef.current) {
+    if (isLoggedIn && resources) {
       setResources(resources);
       fetchShips();
       fetchQuests();
-      seededResourcesRef.current = true;
-    }
-    // Clear the flag on logout so a subsequent login re-seeds properly
-    if (!isLoggedIn) {
-      seededResourcesRef.current = false;
     }
   }, [isLoggedIn, resources, setResources, fetchShips, fetchQuests]);
 
@@ -167,7 +156,7 @@ function App() {
           <p className="text-xl text-blue-400/70 mb-3">Build ships. Explore systems. Build an empire.</p>
           <p className="text-sm text-blue-400/40 mb-12">Welcome back, Commander {user?.displayName || user?.username}</p>
           <button
-            onClick={() => { startGame(); openWindow('shipBuilder'); openContextPanel('questLog'); }}
+            onClick={() => { startGame(); openWindow('shipBuilder'); openWindow('questLog'); openWindow('navigation'); }}
             className="px-8 py-4 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-100 text-xl font-medium hover:bg-blue-500/30 hover:border-blue-400/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-blue-500/20"
           >
             Launch Game
@@ -201,6 +190,9 @@ function App() {
 
         {/* Quest completion toast */}
         <QuestToast />
+
+        {/* Global toast notifications — bottom-center stack */}
+        <Toaster />
       </GameFrame>
     </TooltipProvider>
   );

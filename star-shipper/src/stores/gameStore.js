@@ -104,6 +104,13 @@ const initialState = {
   systemBodies: [], // [{ id, name, type, planetType, color, parentBody }] — pushed by SystemView
   outlinerVisible: true, // toggleable from top bar
 
+  // Toast notifications — global, ephemeral, stack at the bottom of screen.
+  // Any component can call pushToast({ kind, text }) and the bottom-center
+  // <Toaster/> renders + auto-dismisses them. Avoids per-window message
+  // bars that cause layout shift.
+  // Shape: [{ id, kind: 'success'|'error'|'info', text, createdAt }]
+  toasts: [],
+
   // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
   viewMode: 'system',
   arrivalType: 'warp', // 'warp' or 'jump_gate' — where to spawn in system
@@ -421,6 +428,46 @@ export const useGameStore = create(
 
       toggleOutliner: () => set(state => {
         state.outlinerVisible = !state.outlinerVisible;
+      }),
+
+      // ==========================================
+      // TOAST NOTIFICATIONS
+      // ==========================================
+      // pushToast({ kind, text, duration? }) — adds a toast to the global
+      // queue. Any component can call this without prop-drilling. The
+      // <Toaster /> mounted in App.jsx renders + auto-dismisses them.
+      //
+      //   kind: 'success' | 'error' | 'info'   (defaults 'info')
+      //   text: string                          (the message body)
+      //   duration: ms before auto-dismiss      (default 3000)
+      pushToast: (toast) => {
+        const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const t = {
+          id,
+          kind: toast.kind || 'info',
+          text: toast.text || '',
+          duration: toast.duration ?? 3000,
+          createdAt: Date.now(),
+        };
+        set(state => {
+          state.toasts.push(t);
+          // Keep the queue bounded — drop oldest if more than 6 stack up.
+          if (state.toasts.length > 6) state.toasts.shift();
+        });
+        // Schedule auto-dismiss outside of the immer producer.
+        if (t.duration > 0) {
+          setTimeout(() => {
+            const cur = useGameStore.getState().toasts;
+            if (cur.find(x => x.id === id)) {
+              useGameStore.getState().dismissToast(id);
+            }
+          }, t.duration);
+        }
+        return id;
+      },
+
+      dismissToast: (id) => set(state => {
+        state.toasts = state.toasts.filter(t => t.id !== id);
       }),
 
       // ==========================================
