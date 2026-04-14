@@ -187,23 +187,25 @@ export const useGameStore = create(
 
       fetchShips: async () => {
         try {
-          const data = await shipsAPI.getShips();
+          // Use fittingAPI.getFleet() — it returns ships with hull_slots joined
+          // from hull_types and fitted_modules from the ships row, PLUS the
+          // activeShipId in a single response. That's everything combat needs
+          // (so ship.hull_slots and ship.fitted_modules are populated when the
+          // combat loop calls getShipWeapons / computeFleetStats), and it
+          // collapses the old two-call sequence (getShips + getFleet) into one.
+          const { fittingAPI } = await import('@/utils/api');
+          const [fleetData, creditsData] = await Promise.all([
+            fittingAPI.getFleet(),
+            fittingAPI.getCredits().catch(() => null),
+          ]);
           set(state => {
-            state.ships = data.ships || [];
+            state.ships = fleetData.ships || [];
             state.shipsLoaded = true;
+            state.activeShipId = fleetData.activeShipId || (fleetData.ships?.[0]?.id) || null;
+            if (creditsData?.credits != null) {
+              state.resources.credits = creditsData.credits;
+            }
           });
-          // Also fetch active ship id and credits
-          try {
-            const { fittingAPI } = await import('@/utils/api');
-            const [fleetData, creditsData] = await Promise.all([
-              fittingAPI.getFleet(),
-              fittingAPI.getCredits(),
-            ]);
-            set(state => {
-              state.activeShipId = fleetData.activeShipId || (fleetData.ships?.[0]?.id) || null;
-              state.resources.credits = creditsData.credits ?? state.resources.credits;
-            });
-          } catch (e) { /* fleet/credits endpoint may not be available yet */ }
         } catch (error) {
           console.error('Failed to fetch ships:', error);
         }
