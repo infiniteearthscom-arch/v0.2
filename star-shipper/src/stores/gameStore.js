@@ -241,14 +241,21 @@ export const useGameStore = create(
       },
 
       completeQuest: async (questId) => {
+        // Snapshot the quest title before the API call so we can name it in
+        // the completion toast (the local quests list gets refetched after).
+        const questTitle = get().quests.find(q => q.quest_id === questId)?.title;
         try {
           const data = await questsAPI.completeQuest(questId);
           if (data.success && !data.already_complete) {
-            // Refresh quests and credits after completion
             get().fetchQuests();
             if (data.credits !== undefined) {
               set(state => { state.resources.credits = data.credits; });
             }
+            get().pushToast({
+              kind: 'success',
+              text: `Quest Completed: ${questTitle || 'Unknown Quest'}`,
+              duration: 5000,
+            });
           }
         } catch (error) {
           console.error('Failed to complete quest:', error);

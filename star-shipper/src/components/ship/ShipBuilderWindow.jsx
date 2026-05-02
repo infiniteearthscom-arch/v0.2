@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ModalOverlay } from '@/components/ui/ModalOverlay';
-import { fittingAPI, questsAPI, resourcesAPI } from '@/utils/api';
+import { fittingAPI, resourcesAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 import { ItemCell, ItemIcon, EmptySlotCell } from '@/components/items';
@@ -771,7 +771,7 @@ export const ShipBuilderWindow = () => {
   const [moduleDetails, setModuleDetails] = useState({});
   const { showTooltip, hideTooltip } = useTooltip();
   const [launching, setLaunching] = useState(false);
-  const fetchQuests = useGameStore(state => state.fetchQuests);
+  const completeQuest = useGameStore(state => state.completeQuest);
   const fetchShips = useGameStore(state => state.fetchShips);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
@@ -840,8 +840,7 @@ export const ShipBuilderWindow = () => {
         await loadData();
         selectShip(result.ship.id);
         if (hullTypeId === 'starter_scout') {
-          await questsAPI.completeQuest('tutorial_buy_starter_scout').catch(() => {});
-          fetchQuests();
+          completeQuest('tutorial_buy_starter_scout');
         }
       }
     } catch (err) {

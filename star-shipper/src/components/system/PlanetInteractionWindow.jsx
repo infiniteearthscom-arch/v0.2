@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
-import { resourcesAPI, harvesterAPI, fittingAPI, questsAPI } from '@/utils/api';
+import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
 import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
 
 // ============================================
@@ -1746,6 +1746,7 @@ const VendorTab = ({ body }) => {
   const credits = useGameStore(state => state.resources?.credits ?? 0);
   const fetchCredits = useGameStore(state => state.fetchCredits);
   const openWindow = useGameStore(state => state.openWindow);
+  const completeQuest = useGameStore(state => state.completeQuest);
 
   // Call after any vendor tx to immediately pull the authoritative balance
   // from the server (the 3s poll would catch it eventually, but we want it
@@ -1856,7 +1857,7 @@ const VendorTab = ({ body }) => {
       if (result.success) {
         flash('success', `Bought ${result.module}`);
         if (itemId === 'starter_kit') {
-          questsAPI.completeQuest('tutorial_buy_starter_kit').catch(() => {});
+          completeQuest('tutorial_buy_starter_kit');
         }
       }
     } catch (err) {
@@ -2330,6 +2331,7 @@ export const PlanetInteractionWindow = ({ body }) => {
   const closeWindow = useGameStore(state => state.closeWindow);
   const isOpen = windows.planetInteraction?.open;
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
+  const completeQuest = useGameStore(state => state.completeQuest);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -2405,7 +2407,7 @@ export const PlanetInteractionWindow = ({ body }) => {
   // Quest trigger: fly to Luna Station
   useEffect(() => {
     if (isOpen && body?.id === 'luna_station') {
-      questsAPI.completeQuest('tutorial_fly_to_luna').catch(() => {});
+      completeQuest('tutorial_fly_to_luna');
     }
   }, [isOpen, body?.id]);
   
