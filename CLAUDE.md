@@ -2,7 +2,7 @@
 
 Browser-based 4X space game. Mine → craft → fit → fly → trade → fight → explore across a 200-system procedural galaxy. **Live in production** — every push to `main` auto-deploys.
 
-For deep architectural and operational context, see @HANDOFF.md.
+**Start each session by skimming @STATUS.md** — it tracks current state, in-flight work, and recent themes across chats. For deep architectural and operational context, see @HANDOFF.md.
 
 ---
 
