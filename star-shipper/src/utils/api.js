@@ -280,6 +280,14 @@ export const fittingAPI = {
     method: 'POST',
     body: JSON.stringify({ credits }),
   }),
+  // Podding (replaces /repair-cost respawn). Destroys active ship +
+  // mints an Escape Pod the player flies back to a station to disembark.
+  enterPod: () => request('/fitting/enter-pod', { method: 'POST' }),
+  // Exit pod by switching active ship to a non-pod fleet ship; deletes the pod.
+  exitPod: (shipId) => request('/fitting/exit-pod', {
+    method: 'POST',
+    body: JSON.stringify({ ship_id: shipId }),
+  }),
   resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
 };
 

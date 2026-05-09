@@ -13,15 +13,9 @@ Star Shipper is a browser-based 4X space game built with React+Vite (client) and
 
 ---
 
-## ⚠️ CRITICAL: LOCAL vs PRODUCTION
+## ⚠️ CRITICAL: PRODUCTION-ONLY DEPLOYMENT
 
-The game now runs in two environments. Understanding this is essential before making any changes.
-
-### Local Development
-- Client: `http://localhost:5173` (Vite dev server)
-- Server: `http://localhost:3001` (Express)
-- Database: Local PostgreSQL 18 instance
-- `api.js` uses `import.meta.env.VITE_API_URL || 'http://localhost:3001'` — falls back to localhost when no env var is set
+The game runs entirely on DigitalOcean App Platform. **There is no local dev environment** — no local PostgreSQL, no Vite/Express servers running on localhost. The repo on the user's machine is just a working copy for editing files; everything is tested on the live URL after deploy.
 
 ### Production (DigitalOcean App Platform)
 - **Live URL:** `https://star-shipper-fjrrq.ondigitalocean.app`
@@ -31,7 +25,10 @@ The game now runs in two environments. Understanding this is essential before ma
   - `/api` → Web Service (Node server)
   - `/` → Static Site (React client)
 - Database: DigitalOcean Dev Database (PostgreSQL 18, 512MB RAM, 1GB disk, free tier)
-- Database is only accessible from within the app (NOT from local machine)
+- Database is only accessible from within the app
+
+### Note on `api.js` localhost fallback
+`api.js` has `VITE_API_URL || 'http://localhost:3001'` for historical reasons. The localhost fallback is dead code in practice — `VITE_API_URL` is always set on the DO static site. Don't write code that relies on a local server being reachable.
 
 ### Environment Variables (Production)
 
@@ -53,20 +50,19 @@ The game now runs in two environments. Understanding this is essential before ma
 `VITE_API_URL` is embedded into the JS bundle during `npm run build`. If you change it in DigitalOcean, you MUST trigger a rebuild (push a commit or Force Rebuild). Simply redeploying won't update the client.
 
 ### How to Deploy Changes
-```bash
-# Make changes locally, test locally
-git add -A
-git commit -m "Description of changes"
-git push origin main
-# Auto-deploys in ~3-5 minutes
-```
+The user commits + pushes via **GitHub Desktop**, not the command line. The flow:
+
+1. Edit files on the user's machine (Claude does this).
+2. User commits + pushes via GitHub Desktop.
+3. DigitalOcean auto-deploys in ~3–5 minutes.
+4. Test on the live URL.
 
 ### How to Run New Migrations
-New migrations CANNOT be run from your local machine (dev DB blocks external connections). Use the DigitalOcean app console instead:
-1. Go to your app → **Console** tab → select **v0-2-star-shipper-server**
-2. Type: `npm run db:migrate`
+1. Push code containing the new migration file (e.g. `migrations/019_pod_hull.sql`).
+2. After auto-deploy completes, in DO dashboard → app → **Console** tab → select **v0-2-star-shipper-server**.
+3. Type: `npm run db:migrate`
 
-The migrate script (`src/db/migrate.js`) tracks which migrations have already run and skips them.
+The migrate script (`src/db/migrate.js`) tracks which migrations have already run and skips them, so re-running is safe.
 
 **Migration constraints for DigitalOcean Dev Database:**
 - `CREATE EXTENSION` is NOT allowed — the dev DB doesn't grant these privileges
@@ -100,8 +96,7 @@ After copying files, the user commits and pushes via GitHub Desktop to deploy.
 ### 2. Database Migrations
 Migrations live in `star-shipper-server/migrations/` numbered sequentially (`001_initial_schema.sql` through `016_procedural_systems.sql`). Each migration is idempotent-ish — uses `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, etc.
 
-**Locally:** The user runs them against their local PostgreSQL instance.
-**Production:** Run via DigitalOcean Console → `npm run db:migrate`. The migrate script tracks completed migrations and skips them.
+**Production (the only environment):** Run via DigitalOcean Console → `npm run db:migrate`. The migrate script tracks completed migrations and skips them.
 
 **When creating migrations:**
 - Always check existing schema first by reading the most recent migration files
@@ -165,11 +160,10 @@ The API returns ship objects with `hull_type_id` (from the `ships` table). Syste
 - **No TypeScript** — plain JavaScript throughout
 - **Deployment:** DigitalOcean App Platform, auto-deploy from GitHub
 
-### Local Paths (user's machine)
+### Repo Paths (user's machine — working copy only, no local servers)
 - Repo root: `C:\Dropbox\Star-shipper\v0.2\`
 - Server: `C:\Dropbox\Star-shipper\v0.2\star-shipper-server\`
 - Client: `C:\Dropbox\Star-shipper\v0.2\star-shipper\`
-- Client runs on `localhost:5173`, server on `localhost:3001`
 
 ### GitHub Repository
 - **Repo:** `infiniteearthscom-arch/v0.2`

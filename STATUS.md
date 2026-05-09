@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-08
+**Last updated:** 2026-05-09
 
 ---
 
@@ -22,11 +22,10 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
-_Nothing in flight._
-
-When you start something mid-session, jot it here so the next chat picks up cleanly. Format:
-
-- **\<feature/fix\>** — what's done, what's left, which files. (started YYYY-MM-DD)
+- **Podding — Phase 1 (pod state + flying back)** — code written, **needs commit + push + DO migrate + live-URL test**. (started 2026-05-09)
+  - Migration `019_pod_hull.sql` adds the `pod` hull. After push deploys (~3–5 min), run `npm run db:migrate` in DO Console → `v0-2-star-shipper-server` before the death flow works (otherwise `/enter-pod` 500s).
+  - Manual test on live URL: take active ship to 0 HP via pirates → expect ejection into orange capsule, no Luna teleport, pirates disengage; fly to any station/planet → auto-board next fleet ship (toast); if fleet empty → toast nudges player to vendor.
+  - Files: `migrations/019_pod_hull.sql` (new); `src/api/fitting.js` (filter `/hulls`, add `/enter-pod` + `/exit-pod`); `src/utils/api.js` (`fittingAPI.enterPod`/`.exitPod`); `src/utils/shipRenderer.js` (`HULL_SHAPES.pod`); `src/components/system/SystemView.jsx` (death handler swap, aggro skip, auto-disembark useEffect).
 
 ---
 
@@ -34,7 +33,9 @@ When you start something mid-session, jot it here so the next chat picks up clea
 
 Unranked queue. Pull from the top of the next session, or pick by interest.
 
-- _(empty — add ideas as they come up)_
+- **Podding — Phase 2: wreckage + cargo ejection.** Add `wrecks` table + spatial entity, eject ~50% of player inventory + destroyed ship's modules into a wreck on death, pod can salvage. Pirates contest wrecks (Phase 3 polish).
+- **CLAUDE.md migration counter is stale** — says "next migration is 017", but 017/018 exist. Bump pitfall #8 to "next is 020" once 019 ships.
+- **Hardcoded `localhost:3001` audit** — pitfall #9 violation existed in the old respawn code; sweep the rest of the client for similar stragglers.
 
 ---
 
@@ -42,13 +43,19 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 Bugs noticed but not fixed; rough edges to revisit.
 
-- _(empty)_
+- **Stranded-captain edge case (post-podding):** if a podded player has 0 reserves and <2000 cr, no purchasable hull is affordable (Scout = 2000, Fighter = 3000). `starter_scout` is gated to brand-new players (existing-ship check), so they can't fall back to it. Phase 2 may want a cheap "rescue hull" or insurance payout.
+- **`/repair-cost` server endpoint is now dead code** — kept for backward compat. Safe to remove once we confirm no client references remain after deploy.
 
 ---
 
 ## Recently shipped
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-09 — Podding Phase 1 (code only — not deployed)
+
+- Escape Pod hull + EVE-style death flow scaffolded; player ejects into untargetable pod on ship destruction, auto-boards next fleet ship on dock. Cargo ejection + wrecks deferred to Phase 2.
+- Files (uncommitted at write time): `star-shipper-server/migrations/019_pod_hull.sql` (new), `star-shipper-server/src/api/fitting.js`, `star-shipper/src/utils/api.js`, `star-shipper/src/utils/shipRenderer.js`, `star-shipper/src/components/system/SystemView.jsx`, `STATUS.md`.
 
 ### 2026-05-08 — Quests + UI polish
 

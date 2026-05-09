@@ -944,6 +944,11 @@ export const SystemView = () => {
   const openContextPanel = useGameStore(state => state.openContextPanel);
   const ships = useShips();
   const playerShip = useActiveShip();
+  const fetchShips = useGameStore(state => state.fetchShips);
+  const pushToast = useGameStore(state => state.pushToast);
+  // Pod state: when active ship is the 'pod' hull, pirates ignore us and
+  // we can't fight back. See migration 019 + /enter-pod endpoint.
+  const isPod = playerShip?.hull_type_id === 'pod';
   const shipHullSize = playerShip?.hull_size || 30;
 
   // Derive flight physics from active ship stats
@@ -1057,6 +1062,15 @@ export const SystemView = () => {
   const playerMaxShieldRef = useRef(50);
   const playerShieldRegenTimerRef = useRef(0);
   const combatInitializedRef = useRef(false);
+  // Mirror of `isPod` for game-loop closure access (combat AI runs in
+  // a refs-only loop and can't read React state directly).
+  const isPodRef = useRef(false);
+  // Re-entrancy guard: once /enter-pod is called for a death event,
+  // ignore further hull<=0 triggers until the pod ship is active.
+  const podEntryInFlightRef = useRef(false);
+  // Auto-disembark guard: only run once per dock cycle so we don't
+  // spam exit-pod / toast on every fleet refresh while docked.
+  const podExitInProgressRef = useRef(false);
   const [playerHullDisplay, setPlayerHullDisplay] = useState(100);
   const [playerShieldDisplay, setPlayerShieldDisplay] = useState(50);
   const [combatLog, setCombatLog] = useState([]); // Recent combat messages
@@ -1149,6 +1163,54 @@ export const SystemView = () => {
   useEffect(() => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
   }, [dockedBody, setDockedBodyStore]);
+
+  // Mirror isPod into a ref so the combat AI loop can branch on pod
+  // state without crossing the React/closure boundary.
+  useEffect(() => {
+    isPodRef.current = isPod;
+    // If we just entered a pod, wipe the in-flight guard so a future
+    // ship loss can fire enter-pod again.
+    if (isPod) podEntryInFlightRef.current = false;
+  }, [isPod]);
+
+  // Pod auto-disembark on dock. When a podded player docks at any
+  // station/body and has a non-pod ship in their fleet, automatically
+  // board the first one and retire the pod. If the fleet is empty,
+  // surface a toast nudging them to buy a hull from the vendor.
+  useEffect(() => {
+    if (!dockedBody) {
+      podExitInProgressRef.current = false;
+      return;
+    }
+    if (!isPod || podExitInProgressRef.current) return;
+
+    const reserve = ships.find(s => s.hull_type_id !== 'pod');
+    podExitInProgressRef.current = true;
+
+    if (!reserve) {
+      if (pushToast) pushToast({
+        kind: 'info',
+        text: 'No reserve hulls — purchase one from the vendor before undocking.',
+        duration: 6000,
+      });
+      return;
+    }
+
+    fittingAPI.exitPod(reserve.id)
+      .then(() => {
+        if (pushToast) pushToast({
+          kind: 'success',
+          text: `Boarded ${reserve.name}. Pod retired.`,
+          duration: 4000,
+        });
+        if (fetchShips) fetchShips();
+      })
+      .catch(err => {
+        console.warn('exit-pod failed:', err);
+        podExitInProgressRef.current = false;
+        if (pushToast) pushToast({ kind: 'error', text: 'Disembark failed.', duration: 4000 });
+      });
+  }, [dockedBody, isPod, ships, fetchShips, pushToast]);
 
   // Sync followMode state to ref
   useEffect(() => {
@@ -1637,16 +1699,19 @@ export const SystemView = () => {
         const hdy = enemy.patrolCenter.y - enemy.y;
         const homeDist = Math.sqrt(hdx * hdx + hdy * hdy);
 
-        // If player just docked, disengage any hostile enemies. They'll fly
-        // home and resume patrol. Once in patrol, normal aggro rules apply,
-        // so undocking next to a pirate's patrol zone will re-aggro normally.
-        if (dockedBodyRef.current && (enemy.state === 'chase' || enemy.state === 'attack' || enemy.state === 'flee')) {
+        // If player just docked OR ejected into a pod, disengage any
+        // hostile enemies. Pods are untargetable; pirates fly home and
+        // resume patrol. Once in patrol, normal aggro rules apply --
+        // undocking / disembarking near a patrol zone re-aggros.
+        if ((dockedBodyRef.current || isPodRef.current) &&
+            (enemy.state === 'chase' || enemy.state === 'attack' || enemy.state === 'flee')) {
           enemy.state = 'returning';
         }
 
         // State transitions
         if (enemy.state === 'patrol') {
-          if (!dockedBodyRef.current && dist < PIRATE_AGGRO_RANGE) enemy.state = 'chase';
+          // Pods are invisible to pirate aggro -- core podding rule.
+          if (!dockedBodyRef.current && !isPodRef.current && dist < PIRATE_AGGRO_RANGE) enemy.state = 'chase';
         } else if (enemy.state === 'chase') {
           if (dist < PIRATE_ATTACK_RANGE) enemy.state = 'attack';
           if (dist > PIRATE_DEAGGRO_RANGE) enemy.state = 'patrol';
@@ -1951,22 +2016,41 @@ export const SystemView = () => {
             effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: shield > 0 ? '#4488ff' : '#ff4444' });
             projectiles.splice(i, 1);
             
-            if (playerHullRef.current <= 0) {
+            if (playerHullRef.current <= 0 && !podEntryInFlightRef.current && !isPodRef.current) {
+              // Pod ejection: replace the old "respawn at Luna" with EVE-
+              // style podding. Active ship is destroyed server-side and
+              // an Escape Pod is created in its place. Player keeps their
+              // current position (no teleport) and flies the pod back to
+              // a station to disembark via the auto-disembark useEffect.
+              //
+              // Local hull/shield are restored so the loop doesn't fire
+              // this branch again before fetchShips repopulates the refs
+              // from the pod's stats. The in-flight guard is the primary
+              // dedup -- the hull reset is just defensive.
+              podEntryInFlightRef.current = true;
               playerHullRef.current = playerMaxHullRef.current;
               playerShieldRef.current = playerMaxShieldRef.current;
-              // Respawn at center (near sun) with a penalty message
-              shipPosRef.current = { x: 900, y: 0 };
-              shipVelRef.current = { x: 0, y: 0 };
-              setCombatLog(prev => [...prev.slice(-4), 'Ship destroyed! Respawned at Luna Station. -50 cr repair cost.']);
-              fetch('http://localhost:3001/api/fitting/repair-cost', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cost: 50 }),
-              }).then(() => {
-                const fc = useGameStore.getState().fetchCredits;
-                if (fc) fc();
-              }).catch(() => {});
+
+              // Disengage all aggro'd pirates immediately. They'll fly
+              // home; pod is untargetable so they won't re-aggro.
+              for (const e of enemiesRef.current) {
+                if (e.state === 'chase' || e.state === 'attack' || e.state === 'flee') {
+                  e.state = 'returning';
+                  e.targetId = null;
+                }
+              }
+
+              setCombatLog(prev => [...prev.slice(-4), 'Capsule ejected — fly to a station to disembark.']);
+
+              fittingAPI.enterPod()
+                .then(() => {
+                  if (fetchShips) fetchShips();
+                })
+                .catch(err => {
+                  console.warn('enter-pod failed:', err);
+                  podEntryInFlightRef.current = false;
+                  setCombatLog(prev => [...prev.slice(-4), 'Pod ejection failed — see console.']);
+                });
             }
           }
         }

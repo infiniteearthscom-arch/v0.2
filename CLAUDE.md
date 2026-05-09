@@ -12,22 +12,30 @@ Browser-based 4X space game. Mine → craft → fit → fly → trade → fight 
 - **GitHub:** `infiniteearthscom-arch/v0.2` (branch `main`)
 - **Host:** DigitalOcean App Platform — auto-deploys on every push (~3–5 min)
 - **DB:** PostgreSQL 18 dev database, only reachable from inside the app
-- **Run new migrations** via DO Console → `v0-2-star-shipper-server` → `npm run db:migrate`. **Not** from local — local can't reach the prod DB.
 
-The user does commits and pushes via **GitHub Desktop**, not the command line. When code changes ship to prod, write down what's in the diff so the user has a commit message to use.
+**There is no local dev environment.** No local PostgreSQL, no `npm run dev` servers — everything runs on DO. The first place to test a change is the live URL after deploy.
+
+The user commits and pushes via **GitHub Desktop**, not the command line. When code changes ship to prod, write down what's in the diff so the user has a commit message to use.
+
+### Deploy + migrate flow
+
+1. Edit files (Claude, locally — repo is just a working copy).
+2. User commits + pushes via GitHub Desktop.
+3. DigitalOcean auto-deploys in ~3–5 min.
+4. **If the change includes a new migration:** after deploy completes, run it from **DO Console → `v0-2-star-shipper-server`**:
+   ```
+   npm run db:migrate
+   ```
+   The migrate script tracks completed migrations and skips them.
+5. Test on the live URL.
 
 ---
 
 ## Tech stack
 
-- **Client** (`star-shipper/`): React 18 + Vite, Zustand (immer + persist), Tailwind CSS, no router, no TypeScript. Dev server: `localhost:5173`.
-- **Server** (`star-shipper-server/`): Node 22 + Express, raw SQL (no ORM, `pg` client), JWT auth (jsonwebtoken + bcrypt). Dev server: `localhost:3001`.
-- **DB:** PostgreSQL 18. **Not 16** — paths use `PostgreSQL\18\bin\psql`.
-
-Local migration command (Windows):
-```
-"C:\Program Files\PostgreSQL\18\bin\psql" -U postgres -d star_shipper -f migrations/XXX_name.sql
-```
+- **Client** (`star-shipper/`): React 18 + Vite, Zustand (immer + persist), Tailwind CSS, no router, no TypeScript.
+- **Server** (`star-shipper-server/`): Node 22 + Express, raw SQL (no ORM, `pg` client), JWT auth (jsonwebtoken + bcrypt).
+- **DB:** PostgreSQL 18 (DO managed dev DB).
 
 ---
 
@@ -51,7 +59,7 @@ These have all caused real bugs. Don't relearn them:
 
 8. **Migrations: no `CREATE EXTENSION`** — DO dev DB blocks it. Use `gen_random_uuid()` (built into PG 18), not `uuid_generate_v4()`. Highest existing migration is `016_procedural_systems.sql`. **Migration 009 was skipped** — next new migration should be `017`.
 
-9. **`api.js` must use `VITE_API_URL`** — never hardcode `localhost:3001`. The env var is baked into the bundle at build time, so changing it in DO requires a rebuild (push a commit or Force Rebuild — redeploy alone won't update the client).
+9. **`api.js` must use `VITE_API_URL`** — never hardcode `localhost:3001`. The localhost fallback in `api.js` is dead-code only (no local dev). The env var is baked into the bundle at build time, so changing it in DO requires a rebuild (push a commit or Force Rebuild — redeploy alone won't update the client).
 
 10. **Vite env vars bake at build time.** Same point, worth a second mention. `VITE_API_URL` change → must rebuild.
 
@@ -92,7 +100,7 @@ await query('INSERT INTO t (x) VALUES ($1)', [v]);
 ```
 
 ### Client API calls
-All calls go through `star-shipper/src/utils/api.js`. It reads `VITE_API_URL` and falls back to `http://localhost:3001`. Don't fetch the server from anywhere else.
+All calls go through `star-shipper/src/utils/api.js`, which reads `VITE_API_URL` (set on the DO static site). Don't fetch the server from anywhere else.
 
 ---
 

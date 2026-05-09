@@ -13,7 +13,9 @@ const router = express.Router();
 
 router.get('/hulls', authMiddleware, async (req, res) => {
   try {
-    const hulls = await queryAll(`SELECT * FROM hull_types ORDER BY price ASC`);
+    // Filter out hulls with NULL price -- those are non-purchasable
+    // system hulls (e.g. 'pod', minted only by /enter-pod on death).
+    const hulls = await queryAll(`SELECT * FROM hull_types WHERE price IS NOT NULL ORDER BY price ASC`);
     res.json({ hulls });
   } catch (error) {
     console.error('Error fetching hulls:', error);
@@ -800,6 +802,9 @@ router.post('/award-loot', authMiddleware, async (req, res) => {
 // ============================================
 // COMBAT: Deduct repair cost on death
 // ============================================
+// Legacy endpoint -- retained for backward compatibility but no longer
+// called by the death handler (replaced by /enter-pod). Safe to remove
+// once we confirm no client still references it.
 
 router.post('/repair-cost', authMiddleware, async (req, res) => {
   try {
@@ -809,6 +814,122 @@ router.post('/repair-cost', authMiddleware, async (req, res) => {
     res.json({ success: true, deducted: cost });
   } catch (error) {
     res.status(500).json({ error: 'Failed to deduct repair cost' });
+  }
+});
+
+// ============================================
+// COMBAT: Eject into escape pod (replaces respawn)
+// ============================================
+// Called when the player's active ship hull reaches 0. Destroys the
+// active ship + its fitted modules (Phase 2 will eject these into a
+// wreck instead), creates an Escape Pod, and sets it as active. The
+// pod is untargetable client-side and serves as a way to fly back to
+// a station to re-equip. Player inventory (cargo) is untouched in
+// Phase 1 -- destroying ships does not yet eject cargo.
+
+router.post('/enter-pod', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await transaction(async (client) => {
+      const userRow = await client.query(
+        `SELECT u.active_ship_id, s.hull_type_id, s.name AS ship_name
+         FROM users u LEFT JOIN ships s ON u.active_ship_id = s.id
+         WHERE u.id = $1 FOR UPDATE`,
+        [userId]
+      );
+      const row = userRow.rows[0];
+      if (!row?.active_ship_id) {
+        throw Object.assign(new Error('No active ship to destroy'), { statusCode: 400 });
+      }
+      if (row.hull_type_id === 'pod') {
+        throw Object.assign(new Error('Already in a pod'), { statusCode: 400 });
+      }
+      const destroyedShipName = row.ship_name;
+
+      // Destroy the active ship. The ON DELETE SET NULL on
+      // users.active_ship_id (migration 014) clears the FK for us.
+      await client.query(`DELETE FROM ships WHERE id = $1 AND user_id = $2`, [row.active_ship_id, userId]);
+
+      // Create the pod ship. Mirrors the buy-hull flow: a minimal
+      // ship_design row satisfies the ships.design_id NOT NULL FK.
+      const podHullResult = await client.query(`SELECT * FROM hull_types WHERE id = 'pod'`);
+      const podHull = podHullResult.rows[0];
+      if (!podHull) throw Object.assign(new Error('Pod hull missing -- run migration 019'), { statusCode: 500 });
+
+      const designResult = await client.query(`
+        INSERT INTO ship_designs (user_id, name, hull_cells, rooms, hull_size, total_power, total_crew, total_cargo, is_valid)
+        VALUES ($1, $2, '[]', '[]', $3, 0, 0, 0, true)
+        RETURNING id
+      `, [userId, 'Escape Pod', podHull.grid_w * podHull.grid_h]);
+
+      const shipResult = await client.query(`
+        INSERT INTO ships (user_id, design_id, name, hull_type_id, fitted_modules, location_type)
+        VALUES ($1, $2, 'Escape Pod', 'pod', '{}'::jsonb, 'space')
+        RETURNING *
+      `, [userId, designResult.rows[0].id]);
+      const pod = shipResult.rows[0];
+
+      await client.query(`UPDATE users SET active_ship_id = $1 WHERE id = $2`, [pod.id, userId]);
+
+      return { pod, destroyed_ship_name: destroyedShipName };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error entering pod:', error);
+    res.status(500).json({ error: 'Failed to enter pod' });
+  }
+});
+
+// ============================================
+// COMBAT: Disembark from escape pod
+// ============================================
+// Switches active ship to a non-pod fleet ship and deletes the pod.
+// Caller is expected to be docked, but we don't enforce that server-
+// side -- the client gates this behind dock state.
+
+router.post('/exit-pod', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ship_id } = req.body;
+    if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
+
+    const result = await transaction(async (client) => {
+      const userRow = await client.query(
+        `SELECT u.active_ship_id, s.hull_type_id
+         FROM users u LEFT JOIN ships s ON u.active_ship_id = s.id
+         WHERE u.id = $1 FOR UPDATE`,
+        [userId]
+      );
+      const row = userRow.rows[0];
+      if (row?.hull_type_id !== 'pod') {
+        throw Object.assign(new Error('Not currently in a pod'), { statusCode: 400 });
+      }
+      const podId = row.active_ship_id;
+
+      const target = await client.query(
+        `SELECT id, name, hull_type_id FROM ships WHERE id = $1 AND user_id = $2`,
+        [ship_id, userId]
+      );
+      const targetShip = target.rows[0];
+      if (!targetShip) throw Object.assign(new Error('Target ship not found'), { statusCode: 404 });
+      if (targetShip.hull_type_id === 'pod') {
+        throw Object.assign(new Error('Cannot disembark into another pod'), { statusCode: 400 });
+      }
+
+      await client.query(`UPDATE users SET active_ship_id = $1 WHERE id = $2`, [ship_id, userId]);
+      await client.query(`DELETE FROM ships WHERE id = $1 AND user_id = $2`, [podId, userId]);
+
+      return { boarded_ship: targetShip };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error exiting pod:', error);
+    res.status(500).json({ error: 'Failed to exit pod' });
   }
 });
 

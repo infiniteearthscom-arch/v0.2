@@ -72,6 +72,33 @@ export const HULL_SHAPES = {
 // starter_scout uses the same shape as scout
 HULL_SHAPES.starter_scout = HULL_SHAPES.scout;
 
+// Escape Pod -- tiny emergency capsule. Spawned by /enter-pod when the
+// player's active ship is destroyed. Untargetable by pirates (handled
+// in SystemView via isPodRef). Distinct orange palette signals "in
+// distress" so the player notices state at a glance.
+HULL_SHAPES.pod = {
+  gridW: 3, gridH: 5,
+  shape: [
+    [0,1,0],
+    [1,2,1],
+    [1,2,1],
+    [1,2,1],
+    [0,1,0],
+  ],
+  bridgeRow: 2, bridgeWidth: 1, bridgeX: 1,
+  engines: [{x:1,w:1}],
+  palette: {
+    hull:    [0xcc, 0xaa, 0x44],
+    armor:   [0xaa, 0x88, 0x33],
+    accent:  '#ffaa22',
+    engine:  '#ffcc44',
+    viewport:'#ffeeaa',
+    stripe:  '#ffaa22',
+    detail:  [0xbb, 0x99, 0x3a],
+  },
+  displaySize: 3,
+};
+
 // ============================================
 // FACTION DATA
 // ============================================
