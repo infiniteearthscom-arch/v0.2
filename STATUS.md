@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-10
 
 ---
 
@@ -22,10 +22,11 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
-- **Podding — Phase 1 (pod state + flying back)** — code written, **needs commit + push + DO migrate + live-URL test**. (started 2026-05-09)
-  - Migration `019_pod_hull.sql` adds the `pod` hull. After push deploys (~3–5 min), run `npm run db:migrate` in DO Console → `v0-2-star-shipper-server` before the death flow works (otherwise `/enter-pod` 500s).
+- **Podding — Phase 1 (pod state + flying back)** — first deploy 500'd on `/enter-pod` due to Postgres `FOR UPDATE` + `LEFT JOIN` bug; **fix written, awaiting redeploy + retest**. (started 2026-05-09, bug fix 2026-05-10)
+  - Bug was a Postgres restriction: `FOR UPDATE` is rejected on the nullable side of a `LEFT JOIN`. Both endpoints split into two queries (lock user row, then read ship). New pitfall #14 in `CLAUDE.md`.
+  - Migration `019_pod_hull.sql` still needs to run on prod if it hasn't. After redeploy, run `npm run db:migrate` in DO Console → `v0-2-star-shipper-server`. If `/enter-pod` now succeeds → migration was already applied; if it returns `"Pod hull missing -- run migration 019"` → migration step still pending.
   - Manual test on live URL: take active ship to 0 HP via pirates → expect ejection into orange capsule, no Luna teleport, pirates disengage; fly to any station/planet → auto-board next fleet ship (toast); if fleet empty → toast nudges player to vendor.
-  - Files: `migrations/019_pod_hull.sql` (new); `src/api/fitting.js` (filter `/hulls`, add `/enter-pod` + `/exit-pod`); `src/utils/api.js` (`fittingAPI.enterPod`/`.exitPod`); `src/utils/shipRenderer.js` (`HULL_SHAPES.pod`); `src/components/system/SystemView.jsx` (death handler swap, aggro skip, auto-disembark useEffect).
+  - Files this fix touches: `src/api/fitting.js` (split FOR UPDATE queries in `/enter-pod` + `/exit-pod`); `CLAUDE.md` (added pitfall #14); `STATUS.md`.
 
 ---
 

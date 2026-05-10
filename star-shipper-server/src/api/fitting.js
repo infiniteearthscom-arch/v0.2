@@ -832,24 +832,34 @@ router.post('/enter-pod', authMiddleware, async (req, res) => {
     const userId = req.user.id;
 
     const result = await transaction(async (client) => {
+      // Lock the user row first (single-table FOR UPDATE -- can't combine
+      // FOR UPDATE with a LEFT JOIN's nullable side in Postgres).
       const userRow = await client.query(
-        `SELECT u.active_ship_id, s.hull_type_id, s.name AS ship_name
-         FROM users u LEFT JOIN ships s ON u.active_ship_id = s.id
-         WHERE u.id = $1 FOR UPDATE`,
+        `SELECT active_ship_id FROM users WHERE id = $1 FOR UPDATE`,
         [userId]
       );
-      const row = userRow.rows[0];
-      if (!row?.active_ship_id) {
+      const activeShipId = userRow.rows[0]?.active_ship_id;
+      if (!activeShipId) {
         throw Object.assign(new Error('No active ship to destroy'), { statusCode: 400 });
       }
-      if (row.hull_type_id === 'pod') {
+
+      // Now read the ship's hull type + name to validate + log.
+      const shipRow = await client.query(
+        `SELECT hull_type_id, name FROM ships WHERE id = $1 AND user_id = $2`,
+        [activeShipId, userId]
+      );
+      const ship = shipRow.rows[0];
+      if (!ship) {
+        throw Object.assign(new Error('Active ship not found'), { statusCode: 400 });
+      }
+      if (ship.hull_type_id === 'pod') {
         throw Object.assign(new Error('Already in a pod'), { statusCode: 400 });
       }
-      const destroyedShipName = row.ship_name;
+      const destroyedShipName = ship.name;
 
       // Destroy the active ship. The ON DELETE SET NULL on
       // users.active_ship_id (migration 014) clears the FK for us.
-      await client.query(`DELETE FROM ships WHERE id = $1 AND user_id = $2`, [row.active_ship_id, userId]);
+      await client.query(`DELETE FROM ships WHERE id = $1 AND user_id = $2`, [activeShipId, userId]);
 
       // Create the pod ship. Mirrors the buy-hull flow: a minimal
       // ship_design row satisfies the ships.design_id NOT NULL FK.
@@ -897,17 +907,23 @@ router.post('/exit-pod', authMiddleware, async (req, res) => {
     if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
 
     const result = await transaction(async (client) => {
+      // Lock the user row first; FOR UPDATE on a LEFT JOIN's nullable
+      // side is rejected by Postgres, so we read the ship in a follow-up.
       const userRow = await client.query(
-        `SELECT u.active_ship_id, s.hull_type_id
-         FROM users u LEFT JOIN ships s ON u.active_ship_id = s.id
-         WHERE u.id = $1 FOR UPDATE`,
+        `SELECT active_ship_id FROM users WHERE id = $1 FOR UPDATE`,
         [userId]
       );
-      const row = userRow.rows[0];
-      if (row?.hull_type_id !== 'pod') {
+      const podId = userRow.rows[0]?.active_ship_id;
+      if (!podId) {
+        throw Object.assign(new Error('No active ship'), { statusCode: 400 });
+      }
+      const shipRow = await client.query(
+        `SELECT hull_type_id FROM ships WHERE id = $1 AND user_id = $2`,
+        [podId, userId]
+      );
+      if (shipRow.rows[0]?.hull_type_id !== 'pod') {
         throw Object.assign(new Error('Not currently in a pod'), { statusCode: 400 });
       }
-      const podId = row.active_ship_id;
 
       const target = await client.query(
         `SELECT id, name, hull_type_id FROM ships WHERE id = $1 AND user_id = $2`,

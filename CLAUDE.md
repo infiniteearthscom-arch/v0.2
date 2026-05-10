@@ -69,6 +69,8 @@ These have all caused real bugs. Don't relearn them:
 
 13. **When the user says "only change X" — change ONLY X.** Don't touch viewBox calculations when resizing a window, don't change star sizes when adjusting zoom. If a change has cascading effects, ask first rather than guessing through iterations.
 
+14. **`FOR UPDATE` cannot be applied to the nullable side of a `LEFT JOIN`.** Postgres rejects this at parse time, regardless of data — even if the joined row would exist. Symptom: server-side 500 with a generic error message and a `console.error` log of the actual PG error. Fix: split into two queries — lock the parent row with single-table `FOR UPDATE`, then read the joined row separately. Or use `FOR UPDATE OF parent_table` to scope the lock. Bit the `/enter-pod` and `/exit-pod` endpoints on first deploy of migration 019.
+
 ---
 
 ## Code patterns
