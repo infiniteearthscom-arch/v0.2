@@ -1068,9 +1068,14 @@ export const SystemView = () => {
   // Re-entrancy guard: once /enter-pod is called for a death event,
   // ignore further hull<=0 triggers until the pod ship is active.
   const podEntryInFlightRef = useRef(false);
-  // Auto-disembark guard: only run once per dock cycle so we don't
-  // spam exit-pod / toast on every fleet refresh while docked.
+  // Auto-disembark guard: prevents firing exit-pod multiple times for
+  // the same hull-acquisition (one ships[] update can trigger multiple
+  // re-renders of the effect). Reset on undock and on exit-pod failure.
   const podExitInProgressRef = useRef(false);
+  // Separate guard for the "no reserves" toast: ensures we show the
+  // nudge once per dock cycle, but does NOT block the exit-pod path
+  // when the player buys a hull from the vendor mid-dock.
+  const podNoReserveToastRef = useRef(false);
   const [playerHullDisplay, setPlayerHullDisplay] = useState(100);
   const [playerShieldDisplay, setPlayerShieldDisplay] = useState(50);
   const [combatLog, setCombatLog] = useState([]); // Recent combat messages
@@ -1175,41 +1180,46 @@ export const SystemView = () => {
 
   // Pod auto-disembark on dock. When a podded player docks at any
   // station/body and has a non-pod ship in their fleet, automatically
-  // board the first one and retire the pod. If the fleet is empty,
-  // surface a toast nudging them to buy a hull from the vendor.
+  // board the first one and retire the pod. If the fleet has no real
+  // hulls, surface a one-shot toast nudging them to buy from the vendor
+  // (free Starter Scout is available as a fallback). The "no reserve"
+  // toast guard is separate from the exit-in-progress guard so that a
+  // mid-dock hull purchase will trigger the auto-board, not lock it out.
   useEffect(() => {
     if (!dockedBody) {
       podExitInProgressRef.current = false;
+      podNoReserveToastRef.current = false;
       return;
     }
-    if (!isPod || podExitInProgressRef.current) return;
+    if (!isPod) return;
 
     const reserve = ships.find(s => s.hull_type_id !== 'pod');
-    podExitInProgressRef.current = true;
 
-    if (!reserve) {
+    if (reserve) {
+      if (podExitInProgressRef.current) return;
+      podExitInProgressRef.current = true;
+      fittingAPI.exitPod(reserve.id)
+        .then(() => {
+          if (pushToast) pushToast({
+            kind: 'success',
+            text: `Boarded ${reserve.name}. Pod retired.`,
+            duration: 4000,
+          });
+          if (fetchShips) fetchShips();
+        })
+        .catch(err => {
+          console.warn('exit-pod failed:', err);
+          podExitInProgressRef.current = false;
+          if (pushToast) pushToast({ kind: 'error', text: 'Disembark failed.', duration: 4000 });
+        });
+    } else if (!podNoReserveToastRef.current) {
+      podNoReserveToastRef.current = true;
       if (pushToast) pushToast({
         kind: 'info',
-        text: 'No reserve hulls — purchase one from the vendor before undocking.',
+        text: 'No reserve hulls — purchase a Starter Scout (free) or any other hull from the vendor.',
         duration: 6000,
       });
-      return;
     }
-
-    fittingAPI.exitPod(reserve.id)
-      .then(() => {
-        if (pushToast) pushToast({
-          kind: 'success',
-          text: `Boarded ${reserve.name}. Pod retired.`,
-          duration: 4000,
-        });
-        if (fetchShips) fetchShips();
-      })
-      .catch(err => {
-        console.warn('exit-pod failed:', err);
-        podExitInProgressRef.current = false;
-        if (pushToast) pushToast({ kind: 'error', text: 'Disembark failed.', duration: 4000 });
-      });
   }, [dockedBody, isPod, ships, fetchShips, pushToast]);
 
   // Sync followMode state to ref

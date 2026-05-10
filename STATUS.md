@@ -22,11 +22,7 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
-- **Podding — Phase 1 (pod state + flying back)** — first deploy 500'd on `/enter-pod` due to Postgres `FOR UPDATE` + `LEFT JOIN` bug; **fix written, awaiting redeploy + retest**. (started 2026-05-09, bug fix 2026-05-10)
-  - Bug was a Postgres restriction: `FOR UPDATE` is rejected on the nullable side of a `LEFT JOIN`. Both endpoints split into two queries (lock user row, then read ship). New pitfall #14 in `CLAUDE.md`.
-  - Migration `019_pod_hull.sql` still needs to run on prod if it hasn't. After redeploy, run `npm run db:migrate` in DO Console → `v0-2-star-shipper-server`. If `/enter-pod` now succeeds → migration was already applied; if it returns `"Pod hull missing -- run migration 019"` → migration step still pending.
-  - Manual test on live URL: take active ship to 0 HP via pirates → expect ejection into orange capsule, no Luna teleport, pirates disengage; fly to any station/planet → auto-board next fleet ship (toast); if fleet empty → toast nudges player to vendor.
-  - Files this fix touches: `src/api/fitting.js` (split FOR UPDATE queries in `/enter-pod` + `/exit-pod`); `CLAUDE.md` (added pitfall #14); `STATUS.md`.
+_Nothing in flight._
 
 ---
 
@@ -44,7 +40,6 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 Bugs noticed but not fixed; rough edges to revisit.
 
-- **Stranded-captain edge case (post-podding):** if a podded player has 0 reserves and <2000 cr, no purchasable hull is affordable (Scout = 2000, Fighter = 3000). `starter_scout` is gated to brand-new players (existing-ship check), so they can't fall back to it. Phase 2 may want a cheap "rescue hull" or insurance payout.
 - **`/repair-cost` server endpoint is now dead code** — kept for backward compat. Safe to remove once we confirm no client references remain after deploy.
 
 ---
@@ -53,10 +48,19 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
-### 2026-05-09 — Podding Phase 1 (code only — not deployed)
+### 2026-05-10 — Starter Scout safety net for podded players
 
-- Escape Pod hull + EVE-style death flow scaffolded; player ejects into untargetable pod on ship destruction, auto-boards next fleet ship on dock. Cargo ejection + wrecks deferred to Phase 2.
-- Files (uncommitted at write time): `star-shipper-server/migrations/019_pod_hull.sql` (new), `star-shipper-server/src/api/fitting.js`, `star-shipper/src/utils/api.js`, `star-shipper/src/utils/shipRenderer.js`, `star-shipper/src/components/system/SystemView.jsx`, `STATUS.md`.
+- Relaxed `starter_scout` buy gate: now ignores pod ships when checking "no existing hulls", so a podded captain with no reserves can fall back to the free Starter Scout. Closes the stranded-captain edge case where <2000 cr + 0 reserves = no path forward.
+- Fixed a subtle auto-disembark bug: the "no reserves" toast guard was also blocking the exit-pod path, so buying a hull mid-dock left the player stuck in the pod with the new ship sitting in the fleet. Split into two separate refs.
+- "No reserve" toast now mentions the free Starter Scout explicitly so players know the fallback exists.
+- Files: `star-shipper-server/src/api/fitting.js`, `star-shipper/src/components/system/SystemView.jsx`, `STATUS.md`.
+
+### 2026-05-09 → 2026-05-10 — Podding Phase 1 deployed + working
+
+- Escape Pod hull + EVE-style death flow shipped: player ejects into an untargetable pod on ship destruction, no respawn-at-Luna, pirates disengage, auto-boards next fleet ship on dock. Cargo ejection + wreckage deferred to Phase 2.
+- First deploy 500'd on `/enter-pod` due to a Postgres restriction (`FOR UPDATE` rejected on the nullable side of a `LEFT JOIN`). Fixed by splitting into two queries — see `CLAUDE.md` pitfall #14.
+- User confirmed working on live URL after the FOR UPDATE fix.
+- Files: `star-shipper-server/migrations/019_pod_hull.sql` (new), `star-shipper-server/src/api/fitting.js`, `star-shipper/src/utils/api.js`, `star-shipper/src/utils/shipRenderer.js`, `star-shipper/src/components/system/SystemView.jsx`, `CLAUDE.md`, `HANDOFF.md`, `STATUS.md`.
 
 ### 2026-05-08 — Quests + UI polish
 

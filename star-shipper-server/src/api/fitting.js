@@ -138,14 +138,19 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
       if (!hull.rows[0]) throw Object.assign(new Error('Hull not found'), { statusCode: 404 });
       const hullType = hull.rows[0];
 
-      // Starter Scout: only available to players with no existing ships
+      // Starter Scout: free emergency hull. Available when the player
+      // has no real ships, which covers both the original tutorial case
+      // (brand-new captain) and the post-podding safety net (podded
+      // player with no reserves -- their only "ship" is the pod). A pod
+      // does not count as a real ship for this gate.
       if (hull_type_id === 'starter_scout') {
         const shipCount = await client.query(
-          `SELECT COUNT(*) as count FROM ships WHERE user_id = $1`, [userId]
+          `SELECT COUNT(*) AS count FROM ships WHERE user_id = $1 AND hull_type_id != 'pod'`,
+          [userId]
         );
         if (parseInt(shipCount.rows[0].count) > 0) {
           throw Object.assign(
-            new Error('The Starter Scout is only available to new captains with no ships.'),
+            new Error('The Starter Scout is only available when you have no other hulls.'),
             { statusCode: 400 }
           );
         }
