@@ -885,6 +885,14 @@ export const ShipBuilderWindow = () => {
         flash('success', `Fitted ${result.module} → ${slot.id}`);
         selectShip(selectedShipId);
         loadInventory();
+        // "Ready for Launch" completes whenever every slot on the
+        // active ship is filled. The server's all_slots_filled flag
+        // counts pre-fit modules (e.g. Starter Scout's engine + reactor)
+        // so the player isn't forced to redundantly swap in identical
+        // kit modules just to satisfy the quest.
+        if (result.all_slots_filled) {
+          completeQuest('tutorial_fit_modules');
+        }
       }
     } catch (err) {
       flash('error', err.message || 'Failed to fit module');

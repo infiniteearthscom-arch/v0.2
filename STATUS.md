@@ -49,6 +49,11 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-11 — Ready for Launch quest auto-completes on full fit
+
+- ShipBuilderWindow's `handleSlotDrop` now reads the server's `all_slots_filled` flag and calls `completeQuest('tutorial_fit_modules')` when the last empty slot fills. Counts the Starter Scout's pre-fit engine + reactor, so the player no longer has to redundantly swap in identical kit modules to satisfy the quest.
+- File: `star-shipper/src/components/ship/ShipBuilderWindow.jsx`.
+
 ### 2026-05-11 — Vendor buyHull triggers fleet refresh
 
 - Buying a hull from the station vendor while podded now refreshes the global `ships` array, which lets `SystemView`'s auto-disembark useEffect see the new ship and board it (retiring the pod). Before this fix, the buy succeeded server-side but the pod stayed active alongside the new ship in the fleet.
