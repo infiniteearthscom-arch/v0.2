@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-11
 
 ---
 
@@ -41,12 +41,18 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 Bugs noticed but not fixed; rough edges to revisit.
 
 - **`/repair-cost` server endpoint is now dead code** — kept for backward compat. Safe to remove once we confirm no client references remain after deploy.
+- **`ShipBuilderWindow.jsx:837` also calls `fittingAPI.buyHull()`** but doesn't refresh the global ships array on success. If we ever surface that flow to a podded player it'll have the same auto-disembark staleness bug as the vendor did. Worth a defensive `fetchShips()` if the path becomes reachable from the podded state.
 
 ---
 
 ## Recently shipped
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-11 — Vendor buyHull triggers fleet refresh
+
+- Buying a hull from the station vendor while podded now refreshes the global `ships` array, which lets `SystemView`'s auto-disembark useEffect see the new ship and board it (retiring the pod). Before this fix, the buy succeeded server-side but the pod stayed active alongside the new ship in the fleet.
+- File: `star-shipper/src/components/system/PlanetInteractionWindow.jsx` (added `fetchShips()` call in `buyHull`'s `finally` block).
 
 ### 2026-05-10 — Starter Scout safety net for podded players
 

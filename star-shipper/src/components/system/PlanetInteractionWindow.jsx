@@ -1745,6 +1745,7 @@ const VendorTab = ({ body }) => {
   // here the same way it does in the top bar. Never maintain a separate copy.
   const credits = useGameStore(state => state.resources?.credits ?? 0);
   const fetchCredits = useGameStore(state => state.fetchCredits);
+  const fetchShips = useGameStore(state => state.fetchShips);
   const openWindow = useGameStore(state => state.openWindow);
   const completeQuest = useGameStore(state => state.completeQuest);
 
@@ -1837,6 +1838,11 @@ const VendorTab = ({ body }) => {
       flash('error', err.message || 'Failed to buy hull');
     } finally {
       refreshCredits();
+      // Sync the global ships array. SystemView's auto-disembark
+      // useEffect watches `ships`; without this refresh, a podded
+      // player who buys a hull at the vendor stays stuck in the pod
+      // because the new hull never appears in the store.
+      if (fetchShips) fetchShips();
     }
   };
 
