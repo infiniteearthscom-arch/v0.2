@@ -49,6 +49,12 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-11 — Global font-size bump (system-view canvas exempt)
+
+- Bumped `html` font-size from 16px → 17px (~6.25%) so Tailwind's rem-based `text-*` classes scale proportionally across the whole UI. Conservative bump — easy to dial up if "just a little" turns out to be not enough.
+- Added a `.system-view-canvas` reset class on SystemView's wrapper so the in-map combat log + controls hint overlays stay at their original size. SVG text (planet/ship labels) is unaffected by CSS font-size regardless. Vendor UI / PlanetInteractionWindow renders as a sibling to the canvas wrapper, so it does pick up the bump.
+- Files: `star-shipper/src/index.css`, `star-shipper/src/components/system/SystemView.jsx`.
+
 ### 2026-05-11 — Ready for Launch quest auto-completes on full fit
 
 - ShipBuilderWindow's `handleSlotDrop` now reads the server's `all_slots_filled` flag and calls `completeQuest('tutorial_fit_modules')` when the last empty slot fills. Counts the Starter Scout's pre-fit engine + reactor, so the player no longer has to redundantly swap in identical kit modules to satisfy the quest.

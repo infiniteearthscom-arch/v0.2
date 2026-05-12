@@ -2261,7 +2261,7 @@ export const SystemView = () => {
 
   return (
     <>
-    <div className="absolute inset-0" style={{ zIndex: 1 }}>
+    <div className="absolute inset-0 system-view-canvas" style={{ zIndex: 1 }}>
       {/* Full-screen game canvas */}
       <div className="w-full h-full relative overflow-hidden" style={{ background: '#030308' }}>
           <svg

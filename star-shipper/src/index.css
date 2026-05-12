@@ -17,6 +17,22 @@ html, body, #root {
   background: #050a14;
 }
 
+/* Bump base font-size from the browser default (16px) to 17px. Tailwind's
+   text-* classes are rem-based so they all scale proportionally:
+   text-xs 12→~13, text-sm 14→~15, text-base 16→17. SVG text uses
+   userspace units and is unaffected. */
+html {
+  font-size: 17px;
+}
+
+/* Exception: inside the SystemView canvas (combat log, controls hint
+   overlays), keep the original 16px so the chrome around the map stays
+   compact. PlanetInteractionWindow is rendered as a sibling to this
+   wrapper, not a child, so the vendor UI still picks up the bump. */
+.system-view-canvas {
+  font-size: 16px;
+}
+
 body {
   font-family: 'Rajdhani', 'Exo 2', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
