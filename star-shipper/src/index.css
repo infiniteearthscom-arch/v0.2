@@ -17,12 +17,12 @@ html, body, #root {
   background: #050a14;
 }
 
-/* Bump base font-size from the browser default (16px) to 17px. Tailwind's
+/* Bump base font-size from the browser default (16px) to 18px. Tailwind's
    text-* classes are rem-based so they all scale proportionally:
-   text-xs 12→~13, text-sm 14→~15, text-base 16→17. SVG text uses
+   text-xs 12→13.5, text-sm 14→15.75, text-base 16→18. SVG text uses
    userspace units and is unaffected. */
 html {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 /* Exception: inside the SystemView canvas (combat log, controls hint

@@ -51,7 +51,7 @@ Most recent first. Group by session/theme, not per-commit. Trim entries older th
 
 ### 2026-05-11 — Global font-size bump (system-view canvas exempt)
 
-- Bumped `html` font-size from 16px → 17px (~6.25%) so Tailwind's rem-based `text-*` classes scale proportionally across the whole UI. Conservative bump — easy to dial up if "just a little" turns out to be not enough.
+- Bumped `html` font-size from 16px → 18px (12.5%) so Tailwind's rem-based `text-*` classes scale proportionally across the whole UI. (Started at 17px; user requested bumping to 18px.)
 - Added a `.system-view-canvas` reset class on SystemView's wrapper so the in-map combat log + controls hint overlays stay at their original size. SVG text (planet/ship labels) is unaffected by CSS font-size regardless. Vendor UI / PlanetInteractionWindow renders as a sibling to the canvas wrapper, so it does pick up the bump.
 - Files: `star-shipper/src/index.css`, `star-shipper/src/components/system/SystemView.jsx`.
 
