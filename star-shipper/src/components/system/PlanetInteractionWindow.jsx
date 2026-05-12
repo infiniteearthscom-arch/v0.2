@@ -2329,6 +2329,102 @@ const VendorTab = ({ body }) => {
 };
 
 // ============================================
+// POPULATED BODY TAB (City / Station)
+// ============================================
+// Shown only on bodies with has_city = TRUE or body_type = 'station'.
+// Wraps the existing VendorTab and surfaces stub panes for NPCs and
+// Buildings. Same component is used for both cities and stations -- the
+// outer "Populated" label/icon swap is handled by the parent's iconTabs.
+
+const NPCsStub = () => (
+  <div style={{
+    textAlign: 'center',
+    padding: '40px 16px',
+    color: '#3a5a6a',
+    fontSize: 11,
+    fontFamily: F,
+  }}>
+    <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.5 }}>👥</div>
+    <div style={{ marginBottom: 4 }}>No NPCs available yet.</div>
+    <div style={{ fontSize: 9, color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
+      QUEST GIVERS COMING SOON
+    </div>
+  </div>
+);
+
+const BuildingsStub = () => (
+  <div style={{
+    textAlign: 'center',
+    padding: '40px 16px',
+    color: '#3a5a6a',
+    fontSize: 11,
+    fontFamily: F,
+  }}>
+    <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.5 }}>🏗️</div>
+    <div style={{ marginBottom: 4 }}>No constructions available.</div>
+    <div style={{ fontSize: 9, color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
+      SETTLEMENTS &amp; FORTRESSES COMING SOON
+    </div>
+  </div>
+);
+
+const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */ }) => {
+  const [section, setSection] = useState('vendor');
+  const sections = [
+    { id: 'vendor',    label: 'Vendor',    icon: '🏪' },
+    { id: 'npcs',      label: 'NPCs',      icon: '👥' },
+    { id: 'buildings', label: 'Buildings', icon: '🏗️' },
+  ];
+  return (
+    <div>
+      {/* Sub-tab strip */}
+      <div style={{
+        display: 'flex',
+        gap: 6,
+        marginBottom: 12,
+        borderBottom: `1px solid ${EDGE}`,
+        paddingBottom: 8,
+      }}>
+        {sections.map(s => {
+          const active = section === s.id;
+          return (
+            <button
+              key={s.id}
+              onClick={() => setSection(s.id)}
+              style={{
+                flex: 1,
+                padding: '7px 8px',
+                background: active ? `linear-gradient(180deg, ${GOLD.pri}1a, transparent)` : 'rgba(4,8,16,0.4)',
+                border: active ? `1px solid ${GOLD.pri}66` : `1px solid ${EDGE}`,
+                borderRadius: 3,
+                color: active ? GOLD.light : '#5a7080',
+                fontFamily: F,
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: 0.6,
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{s.icon}</span>
+              {s.label.toUpperCase()}
+            </button>
+          );
+        })}
+      </div>
+      {/* Sub-tab content */}
+      {section === 'vendor'    && <VendorTab body={body} />}
+      {section === 'npcs'      && <NPCsStub />}
+      {section === 'buildings' && <BuildingsStub />}
+    </div>
+  );
+};
+
+// ============================================
 // MAIN PLANET INTERACTION WINDOW
 // ============================================
 
@@ -2347,25 +2443,36 @@ export const PlanetInteractionWindow = ({ body }) => {
   const [groundResults, setGroundResults] = useState(null);
   const [activeTab, setActiveTab] = useState('scan');
   const [resolvedBodyId, setResolvedBodyId] = useState(null);
-  
+  // Phase A city seeding -- comes from /ensure-body for procedural bodies,
+  // hardcoded for Sol. Drives the City tab visibility below. Stations are
+  // populated regardless and use body.type, not this flag.
+  const [hasCity, setHasCity] = useState(false);
+
   // For Sol, use the body.id directly (resolved by alias on server).
   // For procedural systems, register the body in DB first and use the returned UUID.
   useEffect(() => {
-    if (!body?.id || !isOpen) { setResolvedBodyId(null); return; }
-    
+    if (!body?.id || !isOpen) { setResolvedBodyId(null); setHasCity(false); return; }
+
     if (currentSystemId === 'sol') {
       setResolvedBodyId(body.id);
+      // Sol cities are hand-seeded in migration 020. Earth is the only
+      // city today; this matches the DB has_city = TRUE row.
+      setHasCity(body.id === 'earth');
       return;
     }
-    
+
     // Procedural system — register body in DB
     const registerBody = async () => {
       try {
-        // Import galaxy data to get system info
-        const { generateGalaxy } = await import('@/utils/galaxyGenerator');
+        // Import galaxy data to get system info + the planet count we need
+        // for deterministic city placement.
+        const { generateGalaxy, generateSystemContent } = await import('@/utils/galaxyGenerator');
         const galaxy = generateGalaxy(12345, 200);
         const galaxySys = galaxy.systemMap[currentSystemId];
-        
+        // Count planets (not stations / belts / gates) for city-index range.
+        const sysContent = galaxySys ? generateSystemContent(galaxySys) : null;
+        const planetCount = (sysContent?.bodies || []).filter(b => b.type === 'planet').length;
+
         const result = await resourcesAPI.ensureBody({
           system_procedural_id: currentSystemId,
           system_name: galaxySys?.name || currentSystemId,
@@ -2377,19 +2484,23 @@ export const PlanetInteractionWindow = ({ body }) => {
           size: body.size || 20,
           orbit_radius: body.orbitRadius || 1000,
           danger_level: galaxySys?.dangerLevel || 0,
+          system_seed: galaxySys?.seed,
+          system_planet_count: planetCount,
         });
-        
+
         if (result.body_db_id) {
           setResolvedBodyId(result.body_db_id);
         } else {
           setResolvedBodyId(body.id); // fallback
         }
+        setHasCity(result.has_city === true);
       } catch (err) {
         console.error('Failed to register procedural body:', err);
         setResolvedBodyId(body.id); // fallback to client ID
+        setHasCity(false);
       }
     };
-    
+
     registerBody();
   }, [body?.id, isOpen, currentSystemId]);
   
@@ -2408,6 +2519,10 @@ export const PlanetInteractionWindow = ({ body }) => {
     setGroundResults(null);
     setSurveyStatus({ orbital_scanned: false, ground_scanned: false });
     setError(null);
+    // Reset to the always-available Scan tab on body change. Otherwise a
+    // user with the City tab selected at Earth would land on Mars (no
+    // city) with activeTab='populated', which renders nothing.
+    setActiveTab('scan');
   }, [body?.id]);
 
   // Quest trigger: fly to Luna Station
@@ -2475,6 +2590,24 @@ export const PlanetInteractionWindow = ({ body }) => {
   const sizeClass = body.size > 25 ? 'IV' : body.size > 15 ? 'III' : body.size > 8 ? 'II' : 'I';
   const gravity = body.size > 25 ? '1.8g' : body.size > 15 ? '1.0g' : body.size > 8 ? '0.6g' : '0.3g';
 
+  // Populated-body tab: stations always show one (labeled "Station"),
+  // planets only if the server flagged has_city (labeled "City"). Same
+  // tab id either way so content rendering stays uniform.
+  const isStation = body.type === 'station';
+  const isPopulated = isStation || hasCity;
+  const populatedKind = isStation ? 'station' : 'city';
+  const iconTabs = [
+    { id: 'scan',       icon: '📡', label: 'Scan', color: '#22d3ee'  },
+    { id: 'mine',       icon: '⛏️', label: 'Mine', color: GOLD.pri   },
+    { id: 'harvesters', icon: '⚙️', label: 'Auto', color: '#ff6622'  },
+    ...(isPopulated ? [{
+      id: 'populated',
+      icon: isStation ? '🛰️' : '🏙️',
+      label: isStation ? 'Station' : 'City',
+      color: GOLD.light,
+    }] : []),
+  ];
+
   return (
     <div
       className="fixed z-30"
@@ -2539,12 +2672,7 @@ export const PlanetInteractionWindow = ({ body }) => {
             flexShrink: 0,
             background: 'rgba(4,8,16,0.4)',
           }}>
-            {[
-              { id: 'scan',       icon: '📡', label: 'Scan',       color: '#22d3ee' },
-              { id: 'mine',       icon: '⛏️', label: 'Mine',       color: GOLD.pri },
-              { id: 'harvesters', icon: '⚙️', label: 'Auto',       color: '#ff6622' },
-              { id: 'vendor',     icon: '🏪', label: 'Vendor',     color: GOLD.light },
-            ].map(tab => {
+            {iconTabs.map(tab => {
               const isActive = activeTab === tab.id;
               return (
                 <button
@@ -2702,7 +2830,7 @@ export const PlanetInteractionWindow = ({ body }) => {
 
             {activeTab === 'mine' && <MineTab body={body} surveyStatus={surveyStatus} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'harvesters' && <HarvestersTab body={body} effectiveBodyId={effectiveBodyId} />}
-            {activeTab === 'vendor' && <VendorTab body={body} />}
+            {activeTab === 'populated' && isPopulated && <PopulatedBodyTab body={body} kind={populatedKind} />}
           </div>
         </div>
       </div>

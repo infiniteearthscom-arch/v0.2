@@ -4,12 +4,13 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
-import { 
-  ensureDepositsExist, 
+import {
+  ensureDepositsExist,
   getDepositsForBody,
   getDepositById,
-  depleteDeposit 
+  depleteDeposit
 } from '../game/deposits.js';
+import { isCityPlanet } from '../util/seed.js';
 
 const router = express.Router();
 
@@ -1687,6 +1688,11 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
       size,
       orbit_radius,
       danger_level,
+      // Phase A city seeding -- both required to deterministically place
+      // a city in a procedural system. If omitted, defaults below treat
+      // the body as not-a-city (safe for old clients during deploy).
+      system_seed,
+      system_planet_count,
     } = req.body;
 
     if (!system_procedural_id || !body_client_id || !body_name) {
@@ -1707,9 +1713,16 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
       `, [system_name || system_procedural_id, star_type || 'yellow_star', danger_level || 0, system_procedural_id]);
     }
 
+    // City decision is deterministic from the system seed + the body's
+    // index in the system's planet list. Same answer for every player,
+    // every dock. Stations / jump gates / asteroid belts are never cities.
+    const hasCity = (typeof system_seed === 'number' && typeof system_planet_count === 'number')
+      ? isCityPlanet(system_seed, system_planet_count, body_client_id)
+      : false;
+
     // 2. Check if body already exists (by system + client-side name)
     let body = await queryOne(
-      `SELECT id FROM celestial_bodies WHERE system_id = $1 AND name = $2`,
+      `SELECT id, has_city FROM celestial_bodies WHERE system_id = $1 AND name = $2`,
       [system.id, body_name]
     );
 
@@ -1717,9 +1730,9 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
       body = await queryOne(`
         INSERT INTO celestial_bodies (
           system_id, name, body_type, planet_type, size,
-          orbit_radius, orbit_speed, star_type, deposit_slots
-        ) VALUES ($1, $2, $3, $4, $5, $6, 1.0, $7, $8)
-        RETURNING id
+          orbit_radius, orbit_speed, star_type, deposit_slots, has_city
+        ) VALUES ($1, $2, $3, $4, $5, $6, 1.0, $7, $8, $9)
+        RETURNING id, has_city
       `, [
         system.id,
         body_name,
@@ -1729,6 +1742,7 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
         orbit_radius || 1000,
         star_type || null,
         body_type === 'station' || body_type === 'jump_gate' ? 0 : (size > 50 ? 6 : size > 25 ? 4 : 3),
+        hasCity,
       ]);
     }
 
@@ -1736,6 +1750,7 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
       success: true,
       system_db_id: system.id,
       body_db_id: body.id,
+      has_city: body.has_city === true,
     });
   } catch (error) {
     console.error('Error ensuring body:', error);

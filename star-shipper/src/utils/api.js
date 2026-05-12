@@ -177,7 +177,9 @@ export const resourcesAPI = {
   collectHarvest: () => request('/resources/harvest/collect', { method: 'POST' }),
   stopHarvest: () => request('/resources/harvest/stop', { method: 'POST' }),
 
-  // Register procedural body in DB (for scanning/mining in procedural systems)
+  // Register procedural body in DB (for scanning/mining in procedural systems).
+  // bodyData should include system_seed + system_planet_count for Phase A
+  // city seeding -- without them the body is treated as not-a-city.
   ensureBody: (bodyData) => request('/resources/ensure-body', {
     method: 'POST',
     body: JSON.stringify(bodyData),

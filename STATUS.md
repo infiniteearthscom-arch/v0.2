@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-12
+**Last updated:** 2026-05-12 (Phase A city seeding)
 
 ---
 
@@ -22,7 +22,13 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
-_Nothing in flight._
+- **Cities — Phase A (presence + tab restructure)** — code written, **needs commit + push + DO migrate + live-URL test**. (started 2026-05-12)
+  - Migration `020_city_planets.sql` adds `has_city BOOLEAN` to `celestial_bodies` and sets Earth = TRUE.
+  - Server: `ensureBody` now computes `has_city` deterministically from `system_seed + system_planet_count + body_client_id` (40% chance per system, picks one random planet index). New helper `src/util/seed.js`.
+  - Client: ensureBody call passes seed + planet count; `PlanetInteractionWindow` stores `has_city` in state.
+  - UI: Vendor tab renamed/gated. Stations always show "Station" tab; planets show "City" tab only if `has_city`. Inside is sub-tabbed: Vendor (existing) / NPCs (stub) / Buildings (stub).
+  - Phase B (per-city vendor variance — faction-driven inventory + resource-availability pricing) deferred.
+  - Files: `migrations/020_city_planets.sql` (new); `src/util/seed.js` (new); `src/api/resources.js` (ensureBody); `src/utils/api.js` (comment); `src/components/system/PlanetInteractionWindow.jsx` (state + UI restructure); `CLAUDE.md` (migration counter); `STATUS.md`.
 
 ---
 
@@ -48,6 +54,10 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-12 — Game is multiplayer (4–8 players)
+
+- User clarified scope: this is a multiplayer game, not single-player. World state must be authoritative on the server. New memory `project_multiplayer.md` captures the implications. Phase A city seeding is the first feature designed under this constraint.
 
 ### 2026-05-12 — Fix Auto tab blue-screen crash
 
