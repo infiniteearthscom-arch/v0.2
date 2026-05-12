@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-11
+**Last updated:** 2026-05-12
 
 ---
 
@@ -48,6 +48,12 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-12 — Fix Auto tab blue-screen crash
+
+- `HarvestersTab` and `MineTab` were referencing `effectiveBodyId` from the parent's scope without it being defined locally. `HarvestersTab`'s `useCallback` deps array `[effectiveBodyId]` evaluated synchronously during render → uncaught `ReferenceError` → React error boundary blue screen on click. (`MineTab` had the same bug but its references were inside async try/catch blocks so it failed silently with the error in the in-tab message bar.)
+- Fix: pass `effectiveBodyId` as a prop from the parent to both child tabs and destructure it.
+- File: `star-shipper/src/components/system/PlanetInteractionWindow.jsx`.
 
 ### 2026-05-11 — Global font-size bump (system-view canvas exempt)
 

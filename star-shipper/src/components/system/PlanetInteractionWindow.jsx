@@ -1299,7 +1299,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
   );
 };
 
-const HarvestersTab = ({ body }) => {
+const HarvestersTab = ({ body, effectiveBodyId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1497,7 +1497,7 @@ const HarvestersTab = ({ body }) => {
 // MINE TAB
 // ============================================
 
-const MineTab = ({ body, surveyStatus }) => {
+const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
   const [deposits, setDeposits] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
   const [cargo, setCargo] = useState(null);
@@ -2700,8 +2700,8 @@ export const PlanetInteractionWindow = ({ body }) => {
               </div>
             )}
 
-            {activeTab === 'mine' && <MineTab body={body} surveyStatus={surveyStatus} />}
-            {activeTab === 'harvesters' && <HarvestersTab body={body} />}
+            {activeTab === 'mine' && <MineTab body={body} surveyStatus={surveyStatus} effectiveBodyId={effectiveBodyId} />}
+            {activeTab === 'harvesters' && <HarvestersTab body={body} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'vendor' && <VendorTab body={body} />}
           </div>
         </div>
