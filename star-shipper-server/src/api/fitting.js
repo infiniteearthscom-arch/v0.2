@@ -95,6 +95,11 @@ router.get('/ship/:shipId', authMiddleware, async (req, res) => {
         moduleDetails[slotId] = {
           ...modInfo,
           name: modType.name,
+          // slot_type is what the client's normalizeFittedModule keys
+          // into SLOT_TYPE_META to resolve the proper icon + color.
+          // Without it, fitted modules render as near-invisible gray
+          // boxes that look like empty slots.
+          slot_type: modType.slot_type,
           tier: modType.tier,
           base_stats: modType.stats,
         };

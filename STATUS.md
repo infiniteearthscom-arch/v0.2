@@ -55,6 +55,12 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-13 — Fix invisible fitted modules in Ship Builder
+
+- `getShipDetail`'s `moduleDetails` entries were missing `slot_type`. The client's `normalizeFittedModule` keys into `SLOT_TYPE_META[slot_type]` to resolve the proper icon + color; without `slot_type` it fell back to gray `#64748b` + `📦`, which on the dark ship canvas looked like empty slots. Modules were persisted correctly — just invisible.
+- Single-line server fix: include `slot_type: modType.slot_type` in the moduleDetails entries.
+- File: `star-shipper-server/src/api/fitting.js`.
+
 ### 2026-05-12 — Game is multiplayer (4–8 players)
 
 - User clarified scope: this is a multiplayer game, not single-player. World state must be authoritative on the server. New memory `project_multiplayer.md` captures the implications. Phase A city seeding is the first feature designed under this constraint.
