@@ -1170,18 +1170,27 @@ export const SystemView = () => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
   }, [dockedBody, setDockedBodyStore]);
 
-  // Fleet engine ambient loop. Plays whenever the player is in system
-  // view and not docked. Stops on dock + on unmount (e.g. switching to
-  // galaxy view). The audio service throttles loop volume below one-shot
-  // SFX so it doesn't drown out combat sounds.
+  // Fleet engine ambient loop. Plays whenever the fleet is moving in
+  // system view (speed > threshold). Stops when stationary, when docked,
+  // and on unmount (e.g. switching to galaxy view).
+  //
+  // shipSpeed is pushed to the store every 10 frames by the physics
+  // loop, so this effect re-evaluates a few times per second -- but
+  // only RUNS (calls start/stopLoop) when the `moving` boolean flips,
+  // since deps are [dockedBody, moving] not [dockedBody, shipSpeed].
+  // Threshold of 5 is comfortably below normal cruise speeds and above
+  // physics drag noise, so no hysteresis needed (speed decays smoothly
+  // through the threshold once on either side).
+  const shipSpeedForAudio = useGameStore(state => state.shipSpeed);
+  const fleetMovingForAudio = shipSpeedForAudio > 5;
   useEffect(() => {
-    if (dockedBody) {
+    if (dockedBody || !fleetMovingForAudio) {
       stopLoop('fleet_engine');
       return undefined;
     }
     startLoop('fleet_engine');
     return () => stopLoop('fleet_engine');
-  }, [dockedBody]);
+  }, [dockedBody, fleetMovingForAudio]);
 
   // Mirror isPod into a ref so the combat AI loop can branch on pod
   // state without crossing the React/closure boundary.
