@@ -24,7 +24,7 @@ const SOUND_FILES = {
   weapon_hit:     '/sounds/impactMetal_000.ogg',
   ship_destroyed: '/sounds/explosionCrunch_000.ogg',
   dock_complete:  '/sounds/doorClose_000.ogg',
-  button_click:   '/sounds/computerNoise_000.ogg',
+  button_click:   '/sounds/impactMetal_000.ogg',
 };
 
 // Cached Howl instances. Value is a Howl on success, null after a load
