@@ -14,11 +14,10 @@
 import { Howl } from 'howler';
 import { useGameStore } from '@/stores/gameStore';
 
-// Event id -> file path (relative to public/). Filenames map directly
-// to Kenney's free Sci-Fi Sounds pack (https://kenney.nl/assets/sci-fi-sounds)
-// so you can drop the pack files in unchanged. To swap sounds: edit the
-// path here and drop the new file in public/sounds/. Missing files silently
-// no-op so it's safe to add an event before the asset exists.
+// One-shot event id -> file path (relative to public/). Filenames map
+// directly to Kenney's free Sci-Fi Sounds pack so the pack files drop
+// in unchanged. Missing files silently no-op so it's safe to add an
+// event before the asset exists.
 const SOUND_FILES = {
   weapon_fire:    '/sounds/laserSmall_000.ogg',
   weapon_hit:     '/sounds/impactMetal_000.ogg',
@@ -27,9 +26,22 @@ const SOUND_FILES = {
   button_click:   '/sounds/impactMetal_000.ogg',
 };
 
+// Looping ambient sounds -- separate from one-shots because they need
+// loop:true on the Howl + manual start/stop tied to game state. Volumes
+// are scaled down (LOOP_GAIN_MULT) so the constant background doesn't
+// drown out one-shot SFX.
+const LOOP_FILES = {
+  fleet_engine: '/sounds/spaceEngine_000.ogg',
+};
+const LOOP_GAIN_MULT = 0.4;
+
 // Cached Howl instances. Value is a Howl on success, null after a load
 // error (so we don't retry on every play call), undefined before first use.
 const cache = {};
+const loopCache = {};
+// Tracks which loops are currently playing (loopId -> Howl playId).
+// Used so startLoop is idempotent and stopLoop knows what to stop.
+const loopPlayingIds = {};
 
 function getHowl(id) {
   if (cache[id] !== undefined) return cache[id];
@@ -79,4 +91,55 @@ export function playSound(id) {
     // Browsers throttle / reject under various conditions (no user
     // interaction yet, too many concurrent sounds). Silent no-op.
   }
+}
+
+// ============================================
+// LOOPS
+// ============================================
+// Long-running ambient sounds. Call startLoop on mount / state-enter,
+// stopLoop on unmount / state-exit. Idempotent -- calling startLoop
+// twice is safe (won't double-play).
+
+function getLoopHowl(id) {
+  if (loopCache[id] !== undefined) return loopCache[id];
+  const src = LOOP_FILES[id];
+  if (!src) { loopCache[id] = null; return null; }
+  try {
+    loopCache[id] = new Howl({
+      src: [src],
+      loop: true,
+      preload: true,
+      onloaderror: () => { loopCache[id] = null; },
+      onplayerror: () => { loopCache[id] = null; },
+    });
+  } catch {
+    loopCache[id] = null;
+  }
+  return loopCache[id];
+}
+
+export function startLoop(id) {
+  const { muted, masterVolume, sfxVolume } = getAudioSettings();
+  if (muted) return;
+  const gain = masterVolume * sfxVolume * LOOP_GAIN_MULT;
+  if (gain <= 0) return;
+  const howl = getLoopHowl(id);
+  if (!howl) return;
+  if (loopPlayingIds[id] != null) return; // already playing
+  try {
+    howl.volume(gain);
+    loopPlayingIds[id] = howl.play();
+  } catch {
+    // Same browser throttling caveats as one-shots.
+  }
+}
+
+export function stopLoop(id) {
+  const howl = loopCache[id];
+  const playId = loopPlayingIds[id];
+  if (!howl || playId == null) return;
+  try {
+    howl.stop(playId);
+  } catch {}
+  delete loopPlayingIds[id];
 }

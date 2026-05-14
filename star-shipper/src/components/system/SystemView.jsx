@@ -5,7 +5,7 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HUL
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
 import { fittingAPI } from '@/utils/api';
-import { playSound } from '@/utils/audio';
+import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 
@@ -1169,6 +1169,19 @@ export const SystemView = () => {
   useEffect(() => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
   }, [dockedBody, setDockedBodyStore]);
+
+  // Fleet engine ambient loop. Plays whenever the player is in system
+  // view and not docked. Stops on dock + on unmount (e.g. switching to
+  // galaxy view). The audio service throttles loop volume below one-shot
+  // SFX so it doesn't drown out combat sounds.
+  useEffect(() => {
+    if (dockedBody) {
+      stopLoop('fleet_engine');
+      return undefined;
+    }
+    startLoop('fleet_engine');
+    return () => stopLoop('fleet_engine');
+  }, [dockedBody]);
 
   // Mirror isPod into a ref so the combat AI loop can branch on pod
   // state without crossing the React/closure boundary.

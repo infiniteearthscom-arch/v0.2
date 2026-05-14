@@ -13,6 +13,7 @@ These match Kenney's free Sci-Fi Sounds pack (https://kenney.nl/assets/sci-fi-so
 | `explosionCrunch_000.ogg`| An enemy hull reaches 0 |
 | `doorClose_000.ogg`      | Ship transitions to docked at any body |
 | `impactMetal_000.ogg`    | Toolbar button is clicked |
+| `spaceEngine_000.ogg`    | **Loop:** plays while in system view + not docked (fleet engine ambient) |
 
 To swap a sound for a different one (e.g. `laserLarge_000.ogg` for the fire sound), edit the path in `audio.js` — no other code changes needed.
 
