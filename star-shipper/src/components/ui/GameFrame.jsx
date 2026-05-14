@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI } from '@/utils/api';
+import { playSound } from '@/utils/audio';
 import { Outliner } from '@/components/ui/Outliner';
 
 // ============================================
@@ -55,6 +56,11 @@ const TopBar = () => {
   // Outliner toggle
   const outlinerVisible = useGameStore(state => state.outlinerVisible);
   const toggleOutliner = useGameStore(state => state.toggleOutliner);
+
+  // Audio mute toggle (volume sliders deferred to a settings UI later;
+  // mute alone covers the "I'm in a quiet room" case).
+  const audioMuted = useGameStore(state => state.audio?.muted ?? false);
+  const toggleAudioMuted = useGameStore(state => state.toggleAudioMuted);
 
   const MAX_FLEET = 3;
   const fleetSize = ships?.length || 0;
@@ -222,6 +228,18 @@ const TopBar = () => {
           title={outlinerVisible ? 'Hide outliner' : 'Show outliner'}
         >☰</button>
 
+        {/* Audio mute toggle */}
+        <button
+          onClick={toggleAudioMuted}
+          className="text-[10px] px-1.5 py-0.5 rounded transition-colors ml-1"
+          style={{
+            color: audioMuted ? '#3a4a5a' : BLUE.light,
+            border: `1px solid ${audioMuted ? EDGE : `${BLUE.pri}55`}`,
+            background: audioMuted ? 'transparent' : `${BLUE.pri}10`,
+          }}
+          title={audioMuted ? 'Unmute' : 'Mute'}
+        >{audioMuted ? '🔇' : '🔊'}</button>
+
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
         {/* DEV Reset */}
@@ -255,6 +273,7 @@ const LeftToolbar = () => {
   const dockedBody = useGameStore(state => state.dockedBody);
 
   const handleClick = (id) => {
+    playSound('button_click');
     const isCurrentlyOpen = windows[id]?.open && !windows[id]?.minimized;
 
     if (isCurrentlyOpen) {

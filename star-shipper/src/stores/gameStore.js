@@ -111,6 +111,15 @@ const initialState = {
   // Shape: [{ id, kind: 'success'|'error'|'info', text, createdAt }]
   toasts: [],
 
+  // Audio settings — read by utils/audio.js's playSound() on every call.
+  // Persisted via partialize below so the player's mute / volume choice
+  // survives reloads. Volumes are 0..1; gain = master * sfx.
+  audio: {
+    muted: false,
+    masterVolume: 0.8,
+    sfxVolume: 1.0,
+  },
+
   // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
   viewMode: 'system',
   arrivalType: 'warp', // 'warp' or 'jump_gate' — where to spawn in system
@@ -438,6 +447,23 @@ export const useGameStore = create(
       }),
 
       // ==========================================
+      // AUDIO CONTROLS
+      // ==========================================
+      // Mute toggle is bound to the speaker icon in the top bar. Volume
+      // setters are exposed for a future settings UI; today nothing
+      // calls them, but they're here so the audio service has the API
+      // it expects.
+      toggleAudioMuted: () => set(state => {
+        state.audio.muted = !state.audio.muted;
+      }),
+      setMasterVolume: (v) => set(state => {
+        state.audio.masterVolume = Math.max(0, Math.min(1, v));
+      }),
+      setSfxVolume: (v) => set(state => {
+        state.audio.sfxVolume = Math.max(0, Math.min(1, v));
+      }),
+
+      // ==========================================
       // TOAST NOTIFICATIONS
       // ==========================================
       // pushToast({ kind, text, duration? }) — adds a toast to the global
@@ -507,6 +533,7 @@ export const useGameStore = create(
         // Only persist UI state locally
         gameStarted: state.gameStarted,
         outlinerVisible: state.outlinerVisible,
+        audio: state.audio,
       }),
       // Merge persisted state with initial state. Window open/minimized
       // state is NOT persisted — we always start with all panels closed

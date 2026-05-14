@@ -5,6 +5,7 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HUL
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
 import { fittingAPI } from '@/utils/api';
+import { playSound } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 
@@ -1498,6 +1499,7 @@ export const SystemView = () => {
               // Set docked body and open interaction window
               if (!dockedBodyRef.current || dockedBodyRef.current.id !== targetBody.id) {
                 console.log('🚀 Docked at:', targetBody);
+                playSound('dock_complete');
                 dockedBodyRef.current = targetBody;
                 // Use setTimeout to avoid state update during render
                 setTimeout(() => {
@@ -1867,6 +1869,7 @@ export const SystemView = () => {
 
           // Fire!
           cooldowns.set(cooldownKey, w.fire_rate);
+          playSound('weapon_fire');
           const aimAngle = Math.atan2(nearest.y - sy, nearest.x - sx);
 
           if (w.type === 'laser') {
@@ -1990,12 +1993,14 @@ export const SystemView = () => {
               }
               e.hull -= dmg;
               effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: e.shield > 0 ? '#4488ff' : '#ff8844' });
+              playSound('weapon_hit');
               projectiles.splice(i, 1);
-              
+
               // Enemy destroyed
               if (e.hull <= 0) {
                 e.hull = 0;
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
+                playSound('ship_destroyed');
                 // Award credits via store
                 const loot = e.lootCredits || 50;
                 setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! +${loot} cr`]);

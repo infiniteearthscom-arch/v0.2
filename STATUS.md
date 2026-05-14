@@ -55,6 +55,14 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-13 — Audio scaffold (Howler) + mute toggle
+
+- Howler.js added as dep. New `src/utils/audio.js` exposes a single `playSound(eventId)` API; reads volume + mute from gameStore.audio (persisted via Zustand). Missing audio files silently no-op so the scaffold ships before assets land.
+- 5 events wired: `weapon_fire`, `weapon_hit`, `ship_destroyed`, `dock_complete` (in `SystemView.jsx`), `button_click` (in `GameFrame.jsx` LeftToolbar).
+- Mute toggle (🔊/🔇) added to top bar next to outliner toggle. Volume sliders deferred — mute alone covers the common need.
+- Drop `.mp3` files in `star-shipper/public/sounds/` matching the names listed in the `README.md` there. They activate on next page load — no code change needed.
+- Files: `package.json` (howler dep); `src/utils/audio.js` (new); `src/stores/gameStore.js` (audio state + actions + persist); `src/components/ui/GameFrame.jsx` (mute toggle, button_click); `src/components/system/SystemView.jsx` (weapon_fire / weapon_hit / ship_destroyed / dock_complete); `public/sounds/README.md` (new).
+
 ### 2026-05-13 — Fix invisible fitted modules in Ship Builder
 
 - `getShipDetail`'s `moduleDetails` entries were missing `slot_type`. The client's `normalizeFittedModule` keys into `SLOT_TYPE_META[slot_type]` to resolve the proper icon + color; without `slot_type` it fell back to gray `#64748b` + `📦`, which on the dark ship canvas looked like empty slots. Modules were persisted correctly — just invisible.
