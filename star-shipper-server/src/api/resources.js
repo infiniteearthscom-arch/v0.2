@@ -1773,6 +1773,12 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
 const SOL_SYSTEM_ID = '00000000-0000-0000-0000-000000000001';
 const WRECK_TTL_MINUTES = 5;
 const WRECK_MAX_CREDITS = 1000;
+// Probability a pirate kill drops a module alongside credits. Tune
+// here. Phase 1.5: tier 1-2 only, low-mid quality (30-60 per stat) so
+// dropped loot is "decent but encourages crafting/buying for better".
+const MODULE_DROP_CHANCE = 0.25;
+// Random integer in [lo, hi] inclusive.
+const randInt = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
 
 // Resolve a client's currentSystemId to the DB system UUID. Sol is hand-
 // seeded (migration 005) without a procedural_id, so we hard-map it.
@@ -1803,11 +1809,39 @@ router.post('/wrecks/spawn', authMiddleware, async (req, res) => {
 
     const wreck = await transaction(async (client) => {
       const systemId = await resolveSystemId(client, system_procedural_id, system_name, star_type, danger_level);
+
+      // Module drop roll. tier <= 2 keeps elites out of pirate drops;
+      // ORDER BY RANDOM() is fine at this scale (a few dozen module rows).
+      const modules = [];
+      if (Math.random() < MODULE_DROP_CHANCE) {
+        const modResult = await client.query(`
+          SELECT id, slot_type FROM module_types
+          WHERE buy_price IS NOT NULL AND tier <= 2
+          ORDER BY RANDOM() LIMIT 1
+        `);
+        const mod = modResult.rows[0];
+        if (mod) {
+          modules.push({
+            module_type_id: mod.id,
+            slot_type: mod.slot_type,
+            quality: {
+              purity:    randInt(30, 60),
+              stability: randInt(30, 60),
+              potency:   randInt(30, 60),
+              density:   randInt(30, 60),
+            },
+          });
+        }
+      }
+      const contents = modules.length > 0
+        ? { credits: lootCredits, modules }
+        : { credits: lootCredits };
+
       const result = await client.query(`
         INSERT INTO wrecks (system_id, x, y, contents, source, expires_at)
         VALUES ($1, $2, $3, $4, 'pirate', NOW() + ($5 || ' minutes')::INTERVAL)
         RETURNING id, x, y, contents, expires_at
-      `, [systemId, x, y, JSON.stringify({ credits: lootCredits }), WRECK_TTL_MINUTES]);
+      `, [systemId, x, y, JSON.stringify(contents), WRECK_TTL_MINUTES]);
       return result.rows[0];
     });
 
@@ -1880,9 +1914,50 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
       if (creditsAwarded > 0) {
         await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [creditsAwarded, userId]);
       }
-      // Future: handle contents.items / contents.modules when v2 lands.
 
-      return { credits_awarded: creditsAwarded };
+      // Module drops (Phase 1.5). For each module in contents.modules,
+      // find the player's next free inventory slot and insert as a
+      // module-type cargo item -- same shape /buy-module produces, so
+      // the rest of the cargo + fitting UI handles it without changes.
+      // No cargo-cap check: the inventory schema allows arbitrary slot
+      // indexes, and this matches the existing buy-module behavior.
+      const modulesAwarded = [];
+      const droppedModules = Array.isArray(contents.modules) ? contents.modules : [];
+      for (const m of droppedModules) {
+        const modInfo = await client.query(
+          `SELECT name, slot_type FROM module_types WHERE id = $1`,
+          [m.module_type_id]
+        );
+        const mt = modInfo.rows[0];
+        if (!mt) continue; // module type was removed; skip silently
+
+        const slotRes = await client.query(`
+          SELECT s.slot FROM generate_series(
+            0,
+            COALESCE((SELECT MAX(slot_index) + 1 FROM player_resource_inventory WHERE user_id = $1), 0)
+          ) s(slot)
+          WHERE s.slot NOT IN (
+            SELECT slot_index FROM player_resource_inventory
+            WHERE user_id = $1 AND slot_index IS NOT NULL
+          )
+          ORDER BY s.slot ASC LIMIT 1
+        `, [userId]);
+        const nextSlot = parseInt(slotRes.rows[0]?.slot) || 0;
+
+        const itemData = {
+          slot_type: mt.slot_type,
+          quality: m.quality || { purity: 50, stability: 50, potency: 50, density: 50 },
+        };
+        await client.query(`
+          INSERT INTO player_resource_inventory
+            (user_id, item_type, item_id, quantity, slot_index, item_data)
+          VALUES ($1, 'item', $2, 1, $3, $4)
+        `, [userId, m.module_type_id, nextSlot, JSON.stringify(itemData)]);
+
+        modulesAwarded.push(mt.name);
+      }
+
+      return { credits_awarded: creditsAwarded, modules_awarded: modulesAwarded };
     });
 
     res.json({ success: true, ...result });

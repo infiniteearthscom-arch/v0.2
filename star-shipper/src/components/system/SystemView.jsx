@@ -2150,13 +2150,16 @@ export const SystemView = () => {
             claimingWrecksRef.current.add(w.id);
             const wreckId = w.id;
             wrecksAPI.claim(wreckId)
-              .then(({ credits_awarded }) => {
+              .then(({ credits_awarded, modules_awarded }) => {
                 wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
                 const fc = useGameStore.getState().fetchCredits;
                 if (fc) fc();
                 const pt = useGameStore.getState().pushToast;
-                if (pt && credits_awarded > 0) {
-                  pt({ kind: 'success', text: `+${credits_awarded} cr salvaged`, duration: 2500 });
+                if (pt && (credits_awarded > 0 || modules_awarded?.length)) {
+                  const parts = [];
+                  if (credits_awarded > 0) parts.push(`+${credits_awarded} cr`);
+                  if (modules_awarded?.length) parts.push(modules_awarded.join(', '));
+                  pt({ kind: 'success', text: `Salvaged: ${parts.join(' + ')}`, duration: 3500 });
                 }
                 claimingWrecksRef.current.delete(wreckId);
               })
@@ -2638,20 +2641,30 @@ export const SystemView = () => {
                 up on the next frame. */}
             {wrecksRef.current.map(w => {
               const credits = w.contents?.credits || 0;
+              // Phase 1.5: dropped modules surface as a cyan dashed ring
+              // around the gold chip + a "+ MOD" suffix on the label so
+              // the player can spot module wrecks at a distance.
+              const hasModule = Array.isArray(w.contents?.modules) && w.contents.modules.length > 0;
               return (
                 <g key={`wreck-${w.id}`}>
                   {/* Outer halo */}
                   <circle cx={w.x} cy={w.y} r={20} fill="#fbbf24" opacity={0.10} />
                   <circle cx={w.x} cy={w.y} r={12} fill="#fbbf24" opacity={0.20} />
+                  {/* Module indicator ring */}
+                  {hasModule && (
+                    <circle cx={w.x} cy={w.y} r={9}
+                      fill="none" stroke="#22d3ee" strokeWidth={0.8}
+                      opacity={0.75} strokeDasharray="2,1.5" />
+                  )}
                   {/* Center chip */}
                   <circle cx={w.x} cy={w.y} r={4}
                     fill="#f59e0b" stroke="#fff" strokeWidth={0.5} opacity={0.95} />
-                  {/* Credit count label */}
+                  {/* Credit count + module hint */}
                   <text x={w.x} y={w.y - 14}
                     textAnchor="middle" fill="#fbbf24" fontSize="6"
                     fontFamily="monospace" opacity={0.9}
                     style={{ pointerEvents: 'none' }}>
-                    {credits} cr
+                    {credits} cr{hasModule ? ' + MOD' : ''}
                   </text>
                 </g>
               );

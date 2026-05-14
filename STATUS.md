@@ -22,7 +22,14 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
-- **Wreckage Phase 1 (pirate-kill loot drops)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-14)
+- **Wreckage Phase 1.5 (random module drops)** — code written, **needs commit + push + live-URL test**. (2026-05-14)
+  - Server: `/wrecks/spawn` now rolls 25% chance to drop a random module (tier ≤ 2, low-mid quality 30-60 per stat) into `contents.modules`. `/wrecks/claim` deposits modules into the player's next free inventory slot using the existing buy-module pattern, returns `modules_awarded` names.
+  - Client: wrecks with modules render an extra cyan dashed ring + "+ MOD" suffix on the credit label so players can spot them at a distance. Salvage toast lists the module name (e.g. `Salvaged: +50 cr + Pulse Laser`).
+  - Tunable: `MODULE_DROP_CHANCE` constant in resources.js (currently 0.25). Quality range hardcoded 30-60 — easy to tune later.
+  - No new migration required — the `contents` JSONB schema already supports modules.
+  - Files: `src/api/resources.js` (spawn roll + claim deposit); `src/components/system/SystemView.jsx` (visual ring + toast wording); `STATUS.md`.
+
+- **Wreckage Phase 1 (pirate-kill loot drops)** — ✓ deployed and verified working. (2026-05-14)
   - Migration `021_wrecks.sql` adds the `wrecks` table (system_id, x, y, JSONB contents, source, expires_at, claimed_by). Indexes for active-by-system and unclaimed-by-system lookups.
   - Server: 3 new endpoints — `POST /resources/wrecks/spawn` (caps credits at 1000, ensures system row), `GET /resources/wrecks` (active list, filtered by claimed/expired), `POST /resources/wrecks/claim` (atomic race-safe claim).
   - Client: `wrecksAPI` in `api.js`. SystemView replaces `fittingAPI.awardLoot` with `wrecksAPI.spawn` on enemy kill. Polls `/wrecks` every 3s. Renders gold credit chips at wreck positions in the SVG (between enemies and projectiles). Game loop checks proximity each frame; flying within `PICKUP_RANGE = 30px` fires a claim, awards credits, toasts "+N cr salvaged".
