@@ -1170,27 +1170,16 @@ export const SystemView = () => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
   }, [dockedBody, setDockedBodyStore]);
 
-  // Fleet engine ambient loop. Plays whenever the fleet is moving in
-  // system view (speed > threshold). Stops when stationary, when docked,
-  // and on unmount (e.g. switching to galaxy view).
-  //
-  // shipSpeed is pushed to the store every 10 frames by the physics
-  // loop, so this effect re-evaluates a few times per second -- but
-  // only RUNS (calls start/stopLoop) when the `moving` boolean flips,
-  // since deps are [dockedBody, moving] not [dockedBody, shipSpeed].
-  // Threshold of 5 is comfortably below normal cruise speeds and above
-  // physics drag noise, so no hysteresis needed (speed decays smoothly
-  // through the threshold once on either side).
-  const shipSpeedForAudio = useGameStore(state => state.shipSpeed);
-  const fleetMovingForAudio = shipSpeedForAudio > 5;
+  // Fleet engine ambient loop. Tied to the W (gas) key — see the
+  // keydown/keyup handlers below for the start/stop calls. This effect
+  // exists only as a safety net: forces the loop off when the player
+  // docks while still holding W, and on unmount (e.g. switching to
+  // galaxy view). If the player re-undocks, they must re-press W to
+  // hear the engine again, which matches "engine = throttle" intent.
   useEffect(() => {
-    if (dockedBody || !fleetMovingForAudio) {
-      stopLoop('fleet_engine');
-      return undefined;
-    }
-    startLoop('fleet_engine');
+    if (dockedBody) stopLoop('fleet_engine');
     return () => stopLoop('fleet_engine');
-  }, [dockedBody, fleetMovingForAudio]);
+  }, [dockedBody]);
 
   // Mirror isPod into a ref so the combat AI loop can branch on pod
   // state without crossing the React/closure boundary.
@@ -2023,6 +2012,7 @@ export const SystemView = () => {
                 e.hull = 0;
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
                 playSound('ship_destroyed');
+                playSound('ship_destroyed_metal');
                 // Award credits via store
                 const loot = e.lootCredits || 50;
                 setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! +${loot} cr`]);
@@ -2146,12 +2136,20 @@ export const SystemView = () => {
     const handleKeyDown = (e) => {
       const key = e.key.toLowerCase();
       keysPressed.current.add(key);
-      
+
+      // Engine ambient — W is the gas key. startLoop is idempotent,
+      // so the OS-level keydown repeat (~30/sec while held) just no-ops
+      // after the first call. dockedBody check prevents the engine
+      // firing while parked at a station.
+      if (key === 'w' && !dockedBodyRef.current) {
+        startLoop('fleet_engine');
+      }
+
       // Cancel autopilot on Escape
       if (key === 'escape') {
         cancelAutopilot();
       }
-      
+
       // Cancel autopilot on manual movement keys
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
         if (autopilotTargetRef.current) {
@@ -2185,7 +2183,15 @@ export const SystemView = () => {
     };
     
     const handleKeyUp = (e) => {
-      keysPressed.current.delete(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      keysPressed.current.delete(key);
+      // Counterpart to the engine startLoop in handleKeyDown. Stops the
+      // ambient when the player releases the gas. (Window blur isn't
+      // handled here -- if the user alt-tabs while holding W, keyup
+      // typically fires anyway; if it sticks, we'll add a blur listener.)
+      if (key === 'w') {
+        stopLoop('fleet_engine');
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);

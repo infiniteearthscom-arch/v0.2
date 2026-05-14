@@ -19,11 +19,12 @@ import { useGameStore } from '@/stores/gameStore';
 // in unchanged. Missing files silently no-op so it's safe to add an
 // event before the asset exists.
 const SOUND_FILES = {
-  weapon_fire:    '/sounds/laserSmall_000.ogg',
-  weapon_hit:     '/sounds/impactMetal_000.ogg',
-  ship_destroyed: '/sounds/explosionCrunch_000.ogg',
-  dock_complete:  '/sounds/doorClose_000.ogg',
-  button_click:   '/sounds/impactMetal_000.ogg',
+  weapon_fire:          '/sounds/laserSmall_000.ogg',
+  weapon_hit:           '/sounds/impactMetal_000.ogg',
+  ship_destroyed:       '/sounds/explosionCrunch_000.ogg',
+  ship_destroyed_metal: '/sounds/impactMetal_000.ogg',
+  dock_complete:        '/sounds/doorClose_000.ogg',
+  button_click:         '/sounds/impactMetal_000.ogg',
 };
 
 // Looping ambient sounds -- separate from one-shots because they need

@@ -10,10 +10,10 @@ These match Kenney's free Sci-Fi Sounds pack (https://kenney.nl/assets/sci-fi-so
 |---|---|
 | `laserSmall_000.ogg`     | Any fleet weapon fires |
 | `impactMetal_000.ogg`    | A player projectile hits an enemy |
-| `explosionCrunch_000.ogg`| An enemy hull reaches 0 |
+| `explosionCrunch_000.ogg`| An enemy hull reaches 0 (layered with `impactMetal_000.ogg` for a percussive "hit then boom") |
 | `doorClose_000.ogg`      | Ship transitions to docked at any body |
 | `impactMetal_000.ogg`    | Toolbar button is clicked |
-| `spaceEngine_000.ogg`    | **Loop:** plays while fleet is moving (speed > 5) in system view + not docked |
+| `spaceEngine_000.ogg`    | **Loop:** plays while W (gas) is held + not docked |
 
 To swap a sound for a different one (e.g. `laserLarge_000.ogg` for the fire sound), edit the path in `audio.js` — no other code changes needed.
 
