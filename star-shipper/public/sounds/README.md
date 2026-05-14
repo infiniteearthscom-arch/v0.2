@@ -1,23 +1,25 @@
 # Sound Effects
 
-Drop `.mp3` files in this directory matching the filenames the audio service expects. Missing files silently no-op — the game still runs without them.
+Drop audio files in this directory matching the filenames the audio service expects. Missing files silently no-op — the game still runs without them.
 
 ## Required filenames
 
-These are the events wired into the game today (`star-shipper/src/utils/audio.js` → `SOUND_FILES`):
+These match Kenney's free Sci-Fi Sounds pack (https://kenney.nl/assets/sci-fi-sounds) so you can drop the pack files in unchanged. Source-of-truth list lives in `star-shipper/src/utils/audio.js` → `SOUND_FILES`.
 
 | File | Triggered when |
 |---|---|
-| `weapon_fire.mp3` | Any fleet weapon fires |
-| `weapon_hit.mp3` | A player projectile hits an enemy |
-| `ship_destroyed.mp3` | An enemy hull reaches 0 |
-| `dock_complete.mp3` | Ship transitions to docked at any body |
-| `button_click.mp3` | Toolbar button is clicked |
+| `laserSmall_000.ogg`     | Any fleet weapon fires |
+| `impactMetal_000.ogg`    | A player projectile hits an enemy |
+| `explosionCrunch_000.ogg`| An enemy hull reaches 0 |
+| `doorClose_000.ogg`      | Ship transitions to docked at any body |
+| `computerNoise_000.ogg`  | Toolbar button is clicked |
+
+To swap a sound for a different one (e.g. `laserLarge_000.ogg` for the fire sound), edit the path in `audio.js` — no other code changes needed.
 
 ## Adding new events
 
 1. Add the event to `SOUND_FILES` in `star-shipper/src/utils/audio.js`.
-2. Drop the matching `.mp3` here.
+2. Drop the matching audio file here.
 3. Call `playSound('your_event_id')` from anywhere in the client.
 
 ## Where to source sounds

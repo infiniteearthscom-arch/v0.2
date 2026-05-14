@@ -14,15 +14,17 @@
 import { Howl } from 'howler';
 import { useGameStore } from '@/stores/gameStore';
 
-// Event id -> file path (relative to public/). Add new events here +
-// drop the file in public/sounds/. Missing files silently no-op so it's
-// safe to add an event before the asset exists.
+// Event id -> file path (relative to public/). Filenames map directly
+// to Kenney's free Sci-Fi Sounds pack (https://kenney.nl/assets/sci-fi-sounds)
+// so you can drop the pack files in unchanged. To swap sounds: edit the
+// path here and drop the new file in public/sounds/. Missing files silently
+// no-op so it's safe to add an event before the asset exists.
 const SOUND_FILES = {
-  weapon_fire:    '/sounds/weapon_fire.mp3',
-  weapon_hit:     '/sounds/weapon_hit.mp3',
-  ship_destroyed: '/sounds/ship_destroyed.mp3',
-  dock_complete:  '/sounds/dock_complete.mp3',
-  button_click:   '/sounds/button_click.mp3',
+  weapon_fire:    '/sounds/laserSmall_000.ogg',
+  weapon_hit:     '/sounds/impactMetal_000.ogg',
+  ship_destroyed: '/sounds/explosionCrunch_000.ogg',
+  dock_complete:  '/sounds/doorClose_000.ogg',
+  button_click:   '/sounds/computerNoise_000.ogg',
 };
 
 // Cached Howl instances. Value is a Howl on success, null after a load
