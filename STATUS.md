@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-12 (Phase A city seeding)
+**Last updated:** 2026-05-14 (Wreckage Phase 1)
 
 ---
 
@@ -21,6 +21,15 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 ---
 
 ## In progress
+
+- **Wreckage Phase 1 (pirate-kill loot drops)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-14)
+  - Migration `021_wrecks.sql` adds the `wrecks` table (system_id, x, y, JSONB contents, source, expires_at, claimed_by). Indexes for active-by-system and unclaimed-by-system lookups.
+  - Server: 3 new endpoints — `POST /resources/wrecks/spawn` (caps credits at 1000, ensures system row), `GET /resources/wrecks` (active list, filtered by claimed/expired), `POST /resources/wrecks/claim` (atomic race-safe claim).
+  - Client: `wrecksAPI` in `api.js`. SystemView replaces `fittingAPI.awardLoot` with `wrecksAPI.spawn` on enemy kill. Polls `/wrecks` every 3s. Renders gold credit chips at wreck positions in the SVG (between enemies and projectiles). Game loop checks proximity each frame; flying within `PICKUP_RANGE = 30px` fires a claim, awards credits, toasts "+N cr salvaged".
+  - Locally-spawned wrecks added immediately so the salvage target appears before the next poll.
+  - Despawn: 5-min server-side TTL via `expires_at`, filtered out of list endpoint.
+  - Multiplayer trust caveat: spawn + claim trust client position (same as old `awardLoot`). Tighten when pirates move server-side.
+  - Files: `migrations/021_wrecks.sql` (new); `src/api/resources.js` (3 endpoints + system resolver helper); `src/utils/api.js` (wrecksAPI); `src/components/system/SystemView.jsx` (kill→spawn, polling, proximity claim, SVG render); `CLAUDE.md` (migration counter); `STATUS.md`.
 
 - **Cities — Phase A (presence + tab restructure)** — code written, **needs commit + push + DO migrate + live-URL test**. (started 2026-05-12)
   - Migration `020_city_planets.sql` adds `has_city BOOLEAN` to `celestial_bodies` and sets Earth = TRUE.

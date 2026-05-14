@@ -213,6 +213,21 @@ export const resourcesAPI = {
   }),
 };
 
+// Wrecks — lootable spatial entities. Replaces the old direct-credit
+// awardLoot flow: enemy kills now spawn a wreck the player flies to.
+export const wrecksAPI = {
+  spawn: (data) => request('/resources/wrecks/spawn', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  list: (systemProceduralId) =>
+    request(`/resources/wrecks?system_procedural_id=${encodeURIComponent(systemProceduralId)}`),
+  claim: (wreckId) => request('/resources/wrecks/claim', {
+    method: 'POST',
+    body: JSON.stringify({ wreck_id: wreckId }),
+  }),
+};
+
 // Harvester API
 export const harvesterAPI = {
   getPlanetHarvesters: (bodyId) => request(`/harvesters/planet/${bodyId}`),

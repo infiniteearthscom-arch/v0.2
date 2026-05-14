@@ -1758,4 +1758,139 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================
+// WRECKS — lootable spatial entities (Phase 1: pirate-kill credit drops)
+// ============================================
+// Migration 021. Replaces the old fittingAPI.awardLoot flow: instead of
+// instantly crediting the player when an enemy is destroyed, the server
+// spawns a wreck row at the kill position. Players fly to it, claim it
+// via /wrecks/claim, and the contents transfer to their account.
+//
+// Multiplayer trust note: spawn + claim trust client-supplied position
+// data (same model as the old awardLoot). When pirates move server-side
+// we'll tighten this. The 1000-cr/spawn cap is the only safeguard for now.
+
+const SOL_SYSTEM_ID = '00000000-0000-0000-0000-000000000001';
+const WRECK_TTL_MINUTES = 5;
+const WRECK_MAX_CREDITS = 1000;
+
+// Resolve a client's currentSystemId to the DB system UUID. Sol is hand-
+// seeded (migration 005) without a procedural_id, so we hard-map it.
+// Procedural systems use the ensure-or-fetch pattern from /ensure-body.
+async function resolveSystemId(client, system_procedural_id, system_name, star_type, danger_level) {
+  if (system_procedural_id === 'sol') return SOL_SYSTEM_ID;
+  const existing = await client.query(
+    `SELECT id FROM star_systems WHERE procedural_id = $1`,
+    [system_procedural_id]
+  );
+  if (existing.rows[0]) return existing.rows[0].id;
+  const created = await client.query(`
+    INSERT INTO star_systems (name, galaxy_x, galaxy_y, star_type, star_size, danger_level, procedural_id)
+    VALUES ($1, 0, 0, $2, 1.0, $3, $4)
+    RETURNING id
+  `, [system_name || system_procedural_id, star_type || 'yellow_star', danger_level || 0, system_procedural_id]);
+  return created.rows[0].id;
+}
+
+// Spawn a wreck. Called by client on pirate kill.
+router.post('/wrecks/spawn', authMiddleware, async (req, res) => {
+  try {
+    const { system_procedural_id, system_name, star_type, danger_level, x, y, credits } = req.body;
+    if (!system_procedural_id || x == null || y == null) {
+      return res.status(400).json({ error: 'system_procedural_id, x, y required' });
+    }
+    const lootCredits = Math.max(0, Math.min(parseInt(credits) || 0, WRECK_MAX_CREDITS));
+
+    const wreck = await transaction(async (client) => {
+      const systemId = await resolveSystemId(client, system_procedural_id, system_name, star_type, danger_level);
+      const result = await client.query(`
+        INSERT INTO wrecks (system_id, x, y, contents, source, expires_at)
+        VALUES ($1, $2, $3, $4, 'pirate', NOW() + ($5 || ' minutes')::INTERVAL)
+        RETURNING id, x, y, contents, expires_at
+      `, [systemId, x, y, JSON.stringify({ credits: lootCredits }), WRECK_TTL_MINUTES]);
+      return result.rows[0];
+    });
+
+    res.json({ success: true, wreck });
+  } catch (error) {
+    console.error('Error spawning wreck:', error);
+    res.status(500).json({ error: 'Failed to spawn wreck' });
+  }
+});
+
+// List active (unclaimed, unexpired) wrecks in a system. Polled by client.
+router.get('/wrecks', authMiddleware, async (req, res) => {
+  try {
+    const { system_procedural_id } = req.query;
+    if (!system_procedural_id) return res.status(400).json({ error: 'system_procedural_id required' });
+
+    let systemId;
+    if (system_procedural_id === 'sol') {
+      systemId = SOL_SYSTEM_ID;
+    } else {
+      const sys = await queryOne(
+        `SELECT id FROM star_systems WHERE procedural_id = $1`,
+        [system_procedural_id]
+      );
+      // System not yet registered -- no wrecks possible. Return empty.
+      if (!sys) return res.json({ wrecks: [] });
+      systemId = sys.id;
+    }
+
+    const wrecks = await queryAll(`
+      SELECT id, x, y, contents, expires_at
+      FROM wrecks
+      WHERE system_id = $1 AND claimed_by IS NULL AND expires_at > NOW()
+      ORDER BY spawned_at DESC
+      LIMIT 50
+    `, [systemId]);
+
+    res.json({ wrecks });
+  } catch (error) {
+    console.error('Error listing wrecks:', error);
+    res.status(500).json({ error: 'Failed to list wrecks' });
+  }
+});
+
+// Claim a wreck. Atomically marks it claimed_by the requesting user,
+// then awards the contents. Returns 409 if already claimed / expired
+// (race condition with another player or the despawn timer).
+router.post('/wrecks/claim', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { wreck_id } = req.body;
+    if (!wreck_id) return res.status(400).json({ error: 'wreck_id required' });
+
+    const result = await transaction(async (client) => {
+      // The WHERE clause does the race-safety: if another player claimed
+      // first or the wreck expired, this updates 0 rows and we throw 409.
+      const claimRes = await client.query(`
+        UPDATE wrecks
+        SET claimed_by = $1, claimed_at = NOW()
+        WHERE id = $2 AND claimed_by IS NULL AND expires_at > NOW()
+        RETURNING contents
+      `, [userId, wreck_id]);
+
+      if (claimRes.rows.length === 0) {
+        throw Object.assign(new Error('Wreck already claimed or expired'), { statusCode: 409 });
+      }
+
+      const contents = claimRes.rows[0].contents || {};
+      const creditsAwarded = parseInt(contents.credits) || 0;
+      if (creditsAwarded > 0) {
+        await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [creditsAwarded, userId]);
+      }
+      // Future: handle contents.items / contents.modules when v2 lands.
+
+      return { credits_awarded: creditsAwarded };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error claiming wreck:', error);
+    res.status(500).json({ error: 'Failed to claim wreck' });
+  }
+});
+
 export default router;

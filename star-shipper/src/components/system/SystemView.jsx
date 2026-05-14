@@ -4,7 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
-import { fittingAPI } from '@/utils/api';
+import { fittingAPI, wrecksAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
@@ -1055,6 +1055,16 @@ export const SystemView = () => {
   const projectilesRef = useRef([]); // Active projectiles {x, y, vx, vy, age, fromPlayer, damage}
   const combatEffectsRef = useRef([]); // Visual effects: explosions, hit sparks
   const playerFireCooldownRef = useRef(0);
+  // Wrecks (lootable spatial entities from pirate kills). Refs not state
+  // because the game loop reads them every frame for proximity-claim
+  // checks; the existing frameCount setState already drives rerenders so
+  // the SVG picks up new wrecks on the next frame.
+  const wrecksRef = useRef([]);
+  // Wreck IDs we've already fired a claim request for, so we don't
+  // double-claim the same wreck across multiple frames while waiting
+  // for the server's response.
+  const claimingWrecksRef = useRef(new Set());
+  const PICKUP_RANGE = 30;
   // Per-ship weapon cooldowns. Map keyed by `${shipId}:${weaponIndex}` → seconds remaining.
   const fleetWeaponCooldownsRef = useRef(new Map());
   const playerHullRef = useRef(100);
@@ -1180,6 +1190,25 @@ export const SystemView = () => {
     if (dockedBody) stopLoop('fleet_engine');
     return () => stopLoop('fleet_engine');
   }, [dockedBody]);
+
+  // Wreck polling. Refresh active (unclaimed, unexpired) wrecks for the
+  // current system every 3s. Server returns at most 50, ordered newest
+  // first. Resets on system change. Locally-spawned wrecks are added
+  // immediately on enemy-kill (see game-loop branch above) so the
+  // salvage target appears without waiting for the next poll.
+  useEffect(() => {
+    if (!currentSystemId) return undefined;
+    let cancelled = false;
+    const fetchWrecks = async () => {
+      try {
+        const { wrecks } = await wrecksAPI.list(currentSystemId);
+        if (!cancelled) wrecksRef.current = wrecks || [];
+      } catch (err) { /* network blip; next poll retries */ }
+    };
+    fetchWrecks();
+    const interval = setInterval(fetchWrecks, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [currentSystemId]);
 
   // Mirror isPod into a ref so the combat AI loop can branch on pod
   // state without crossing the React/closure boundary.
@@ -2007,22 +2036,32 @@ export const SystemView = () => {
               playSound('weapon_hit');
               projectiles.splice(i, 1);
 
-              // Enemy destroyed
+              // Enemy destroyed -- spawn a wreck at the kill position
+              // instead of instantly crediting (Phase 1 wreckage system).
+              // Player has to fly over it to claim. Local-add the wreck
+              // returned by the server so the salvage target appears
+              // before the next polling cycle.
               if (e.hull <= 0) {
                 e.hull = 0;
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
                 playSound('ship_destroyed');
                 playSound('ship_destroyed_metal');
-                // Award credits via store
                 const loot = e.lootCredits || 50;
-                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! +${loot} cr`]);
-                // Award credits server-side, then refresh the global credit display
-                fittingAPI.awardLoot(loot)
-                  .then(() => {
-                    const fc = useGameStore.getState().fetchCredits;
-                    if (fc) fc();
-                  })
-                  .catch(err => console.warn('awardLoot failed:', err));
+                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! Loot dropped (${loot} cr) — fly to salvage.`]);
+
+                const galaxy = getGalaxy();
+                const galaxySys = galaxy.systemMap[currentSystemId];
+                wrecksAPI.spawn({
+                  system_procedural_id: currentSystemId,
+                  system_name:          galaxySys?.name        || currentSystemId,
+                  star_type:            galaxySys?.starType    || 'yellow_star',
+                  danger_level:         galaxySys?.dangerLevel || 0,
+                  x: e.x,
+                  y: e.y,
+                  credits: loot,
+                })
+                  .then(({ wreck }) => { if (wreck) wrecksRef.current.push(wreck); })
+                  .catch(err => console.warn('wreck spawn failed:', err));
               }
               break;
             }
@@ -2095,7 +2134,42 @@ export const SystemView = () => {
         const lifetime = effects[i].lifetime || 0.5;
         if (effects[i].age > lifetime) effects.splice(i, 1);
       }
-      
+
+      // --- Wreck proximity claim ---
+      // Fly within PICKUP_RANGE of any unclaimed wreck → fire claim
+      // request. claimingWrecksRef dedupes so we don't fire twice while
+      // the request is in flight (60fps × N wrecks would otherwise
+      // hammer the server). Server enforces the actual race-safe claim.
+      if (wrecksRef.current.length > 0) {
+        const px = playerPos.x, py = playerPos.y;
+        for (let i = wrecksRef.current.length - 1; i >= 0; i--) {
+          const w = wrecksRef.current[i];
+          if (claimingWrecksRef.current.has(w.id)) continue;
+          const dx = w.x - px, dy = w.y - py;
+          if (dx * dx + dy * dy < PICKUP_RANGE * PICKUP_RANGE) {
+            claimingWrecksRef.current.add(w.id);
+            const wreckId = w.id;
+            wrecksAPI.claim(wreckId)
+              .then(({ credits_awarded }) => {
+                wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
+                const fc = useGameStore.getState().fetchCredits;
+                if (fc) fc();
+                const pt = useGameStore.getState().pushToast;
+                if (pt && credits_awarded > 0) {
+                  pt({ kind: 'success', text: `+${credits_awarded} cr salvaged`, duration: 2500 });
+                }
+                claimingWrecksRef.current.delete(wreckId);
+              })
+              .catch(err => {
+                // 409 = race lost (someone else claimed) or expired.
+                // Either way, drop the wreck from local state.
+                wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
+                claimingWrecksRef.current.delete(wreckId);
+              });
+          }
+        }
+      }
+
       // --- Sync combat state to React (every 5 frames for perf) ---
       if (frameNum % 5 === 0) {
         const hullNow = Math.round(playerHullRef.current);
@@ -2557,6 +2631,32 @@ export const SystemView = () => {
               </g>
             ))}
             
+            {/* Wrecks (lootable credit drops). Render between enemies and
+                projectiles so projectiles read on top, but wrecks read
+                above the planet/orbit layer. The frameCount setState in
+                the game loop drives rerenders, so wreckRef updates pick
+                up on the next frame. */}
+            {wrecksRef.current.map(w => {
+              const credits = w.contents?.credits || 0;
+              return (
+                <g key={`wreck-${w.id}`}>
+                  {/* Outer halo */}
+                  <circle cx={w.x} cy={w.y} r={20} fill="#fbbf24" opacity={0.10} />
+                  <circle cx={w.x} cy={w.y} r={12} fill="#fbbf24" opacity={0.20} />
+                  {/* Center chip */}
+                  <circle cx={w.x} cy={w.y} r={4}
+                    fill="#f59e0b" stroke="#fff" strokeWidth={0.5} opacity={0.95} />
+                  {/* Credit count label */}
+                  <text x={w.x} y={w.y - 14}
+                    textAnchor="middle" fill="#fbbf24" fontSize="6"
+                    fontFamily="monospace" opacity={0.9}
+                    style={{ pointerEvents: 'none' }}>
+                    {credits} cr
+                  </text>
+                </g>
+              );
+            })}
+
             {/* Projectiles */}
             {projectilesRef.current.map((p, i) => {
               const opacity = 1 - p.age / PROJECTILE_LIFETIME;
