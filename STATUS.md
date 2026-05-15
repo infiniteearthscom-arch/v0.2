@@ -22,7 +22,7 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
-- **Wreckage Phase 1.5 (random module drops)** — code written, **needs commit + push + live-URL test**. (2026-05-14)
+- **Wreckage Phase 1.5 (random module drops)** — code written, **DROP RATE TEMPORARILY 100% for verification — must dial back to 0.25 after testing**. (2026-05-14)
   - Server: `/wrecks/spawn` now rolls 25% chance to drop a random module (tier ≤ 2, low-mid quality 30-60 per stat) into `contents.modules`. `/wrecks/claim` deposits modules into the player's next free inventory slot using the existing buy-module pattern, returns `modules_awarded` names.
   - Client: wrecks with modules render an extra cyan dashed ring + "+ MOD" suffix on the credit label so players can spot them at a distance. Salvage toast lists the module name (e.g. `Salvaged: +50 cr + Pulse Laser`).
   - Tunable: `MODULE_DROP_CHANCE` constant in resources.js (currently 0.25). Quality range hardcoded 30-60 — easy to tune later.

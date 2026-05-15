@@ -1776,7 +1776,8 @@ const WRECK_MAX_CREDITS = 1000;
 // Probability a pirate kill drops a module alongside credits. Tune
 // here. Phase 1.5: tier 1-2 only, low-mid quality (30-60 per stat) so
 // dropped loot is "decent but encourages crafting/buying for better".
-const MODULE_DROP_CHANCE = 0.25;
+// TEMPORARILY 1.0 for verification -- dial back to 0.25 once confirmed working.
+const MODULE_DROP_CHANCE = 1.0;
 // Random integer in [lo, hi] inclusive.
 const randInt = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
 
