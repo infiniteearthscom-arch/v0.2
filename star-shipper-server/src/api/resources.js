@@ -1848,8 +1848,28 @@ router.post('/wrecks/spawn', authMiddleware, async (req, res) => {
 
     res.json({ success: true, wreck });
   } catch (error) {
-    console.error('Error spawning wreck:', error);
-    res.status(500).json({ error: 'Failed to spawn wreck' });
+    // Verbose logging for the Phase 1.5 debug -- the previous one-liner
+    // hid the actual cause. PG errors expose code/detail/constraint/table
+    // which usually point straight at the bug. Strip back to a one-liner
+    // once we know what's broken.
+    console.error('[wreck spawn] FAIL:', {
+      message:    error?.message,
+      code:       error?.code,
+      detail:     error?.detail,
+      hint:       error?.hint,
+      constraint: error?.constraint,
+      table:      error?.table,
+      column:     error?.column,
+      position:   error?.position,
+      stack:      error?.stack,
+      input: {
+        system_procedural_id: req.body?.system_procedural_id,
+        x:                    req.body?.x,
+        y:                    req.body?.y,
+        credits:              req.body?.credits,
+      },
+    });
+    res.status(500).json({ error: 'Failed to spawn wreck', detail: error?.message });
   }
 });
 
