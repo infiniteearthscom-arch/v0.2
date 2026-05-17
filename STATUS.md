@@ -62,6 +62,7 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 Bugs noticed but not fixed; rough edges to revisit.
 
+- **Wreckage feature stuck on missing-table error in prod** — server's `/wrecks/spawn` and `/wrecks/list` returned PG `42P01` (relation does not exist) on the `wrecks` table, despite migration 021 (and a repair migration 022) being recorded as applied. Multiple migration attempts didn't resolve it. Possibilities not yet ruled out: DATABASE_URL differs between migrate command and runtime, table created in different schema, schema cache, or migrate script silently failing the CREATE TABLE while still recording the row. **Reverted client to instant-credit `awardLoot` on enemy kill (2026-05-17)** so combat works again. Wreck endpoints, table, and render code are all still in the codebase — re-enable by uncommenting the polling useEffect and swapping `awardLoot` for `wrecksAPI.spawn` in the enemy-destroyed branch of `SystemView.jsx`. Debug separately with a probe endpoint that queries `information_schema.tables`.
 - **`/repair-cost` server endpoint is now dead code** — kept for backward compat. Safe to remove once we confirm no client references remain after deploy.
 - **`ShipBuilderWindow.jsx:837` also calls `fittingAPI.buyHull()`** but doesn't refresh the global ships array on success. If we ever surface that flow to a podded player it'll have the same auto-disembark staleness bug as the vendor did. Worth a defensive `fetchShips()` if the path becomes reachable from the podded state.
 

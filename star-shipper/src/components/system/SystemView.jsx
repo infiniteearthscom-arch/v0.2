@@ -1191,24 +1191,24 @@ export const SystemView = () => {
     return () => stopLoop('fleet_engine');
   }, [dockedBody]);
 
-  // Wreck polling. Refresh active (unclaimed, unexpired) wrecks for the
-  // current system every 3s. Server returns at most 50, ordered newest
-  // first. Resets on system change. Locally-spawned wrecks are added
-  // immediately on enemy-kill (see game-loop branch above) so the
-  // salvage target appears without waiting for the next poll.
-  useEffect(() => {
-    if (!currentSystemId) return undefined;
-    let cancelled = false;
-    const fetchWrecks = async () => {
-      try {
-        const { wrecks } = await wrecksAPI.list(currentSystemId);
-        if (!cancelled) wrecksRef.current = wrecks || [];
-      } catch (err) { /* network blip; next poll retries */ }
-    };
-    fetchWrecks();
-    const interval = setInterval(fetchWrecks, 3000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [currentSystemId]);
+  // Wreck polling DISABLED while wrecks table issue is unresolved.
+  // Re-enable by restoring the useEffect body once /wrecks/list stops
+  // erroring server-side. With this disabled, wrecksRef stays empty,
+  // the SVG render block below renders nothing, and the proximity-claim
+  // check in the game loop never triggers.
+  // useEffect(() => {
+  //   if (!currentSystemId) return undefined;
+  //   let cancelled = false;
+  //   const fetchWrecks = async () => {
+  //     try {
+  //       const { wrecks } = await wrecksAPI.list(currentSystemId);
+  //       if (!cancelled) wrecksRef.current = wrecks || [];
+  //     } catch (err) { /* network blip; next poll retries */ }
+  //   };
+  //   fetchWrecks();
+  //   const interval = setInterval(fetchWrecks, 3000);
+  //   return () => { cancelled = true; clearInterval(interval); };
+  // }, [currentSystemId]);
 
   // Mirror isPod into a ref so the combat AI loop can branch on pod
   // state without crossing the React/closure boundary.
@@ -2036,32 +2036,28 @@ export const SystemView = () => {
               playSound('weapon_hit');
               projectiles.splice(i, 1);
 
-              // Enemy destroyed -- spawn a wreck at the kill position
-              // instead of instantly crediting (Phase 1 wreckage system).
-              // Player has to fly over it to claim. Local-add the wreck
-              // returned by the server so the salvage target appears
-              // before the next polling cycle.
+              // Enemy destroyed.
+              //
+              // TEMPORARILY REVERTED to instant credit award via
+              // fittingAPI.awardLoot. The wrecksAPI.spawn path (and
+              // associated wreck table + polling + claim render below)
+              // hit a "wrecks table doesn't exist" error on prod that
+              // multiple migration attempts couldn't fix. Putting that
+              // debug aside; bringing back the working pre-wreckage flow
+              // so combat is functional. See STATUS.md "Known issues".
               if (e.hull <= 0) {
                 e.hull = 0;
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
                 playSound('ship_destroyed');
                 playSound('ship_destroyed_metal');
                 const loot = e.lootCredits || 50;
-                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! Loot dropped (${loot} cr) — fly to salvage.`]);
-
-                const galaxy = getGalaxy();
-                const galaxySys = galaxy.systemMap[currentSystemId];
-                wrecksAPI.spawn({
-                  system_procedural_id: currentSystemId,
-                  system_name:          galaxySys?.name        || currentSystemId,
-                  star_type:            galaxySys?.starType    || 'yellow_star',
-                  danger_level:         galaxySys?.dangerLevel || 0,
-                  x: e.x,
-                  y: e.y,
-                  credits: loot,
-                })
-                  .then(({ wreck }) => { if (wreck) wrecksRef.current.push(wreck); })
-                  .catch(err => console.warn('wreck spawn failed:', err));
+                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! +${loot} cr`]);
+                fittingAPI.awardLoot(loot)
+                  .then(() => {
+                    const fc = useGameStore.getState().fetchCredits;
+                    if (fc) fc();
+                  })
+                  .catch(err => console.warn('awardLoot failed:', err));
               }
               break;
             }
