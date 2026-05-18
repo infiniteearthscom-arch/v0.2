@@ -1938,23 +1938,24 @@ export const SystemView = () => {
               color: nearest.shield > 0 ? '#4488ff' : w.color,
             });
             // Enemy destroyed by laser? Mirror the projectile-hit
-            // destruction path so laser kills also explode, sound, and
-            // award credits. Without this, lasers silently zero an
-            // enemy's hull with NO reward / VFX -- the bug that masked
-            // "kills don't give credits" while we chased wreck migrations.
+            // destruction path. Spawns a CLIENT-LOCAL wreck (no server
+            // persistence -- the server-side wrecks table issue is
+            // still unresolved). Credits are awarded on pickup via the
+            // existing awardLoot endpoint, which works.
             if (nearest.hull <= 0) {
               nearest.hull = 0;
               effects.push({ x: nearest.x, y: nearest.y, type: 'explosion', age: 0, size: nearest.displaySize });
               playSound('ship_destroyed');
               playSound('ship_destroyed_metal');
               const loot = nearest.lootCredits || 50;
-              setCombatLog(prev => [...prev.slice(-4), `Destroyed ${nearest.name}! +${loot} cr`]);
-              fittingAPI.awardLoot(loot)
-                .then(() => {
-                  const fc = useGameStore.getState().fetchCredits;
-                  if (fc) fc();
-                })
-                .catch(err => console.warn('awardLoot failed:', err));
+              setCombatLog(prev => [...prev.slice(-4), `Destroyed ${nearest.name}! Loot dropped (${loot} cr) — fly to salvage.`]);
+              wrecksRef.current.push({
+                id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                x: nearest.x,
+                y: nearest.y,
+                contents: { credits: loot },
+                expires_at_ms: Date.now() + 5 * 60 * 1000, // 5 min local TTL
+              });
             }
           } else if (w.type === 'kinetic') {
             // Bullet with slight aim spread
@@ -2055,28 +2056,24 @@ export const SystemView = () => {
               playSound('weapon_hit');
               projectiles.splice(i, 1);
 
-              // Enemy destroyed.
-              //
-              // TEMPORARILY REVERTED to instant credit award via
-              // fittingAPI.awardLoot. The wrecksAPI.spawn path (and
-              // associated wreck table + polling + claim render below)
-              // hit a "wrecks table doesn't exist" error on prod that
-              // multiple migration attempts couldn't fix. Putting that
-              // debug aside; bringing back the working pre-wreckage flow
-              // so combat is functional. See STATUS.md "Known issues".
+              // Enemy destroyed by projectile. Spawns a CLIENT-LOCAL
+              // wreck the player flies to. See the laser branch above
+              // for the same logic + the rationale (server-side wrecks
+              // table is still busted; local-only is the workaround).
               if (e.hull <= 0) {
                 e.hull = 0;
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
                 playSound('ship_destroyed');
                 playSound('ship_destroyed_metal');
                 const loot = e.lootCredits || 50;
-                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! +${loot} cr`]);
-                fittingAPI.awardLoot(loot)
-                  .then(() => {
-                    const fc = useGameStore.getState().fetchCredits;
-                    if (fc) fc();
-                  })
-                  .catch(err => console.warn('awardLoot failed:', err));
+                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! Loot dropped (${loot} cr) — fly to salvage.`]);
+                wrecksRef.current.push({
+                  id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  x: e.x,
+                  y: e.y,
+                  contents: { credits: loot },
+                  expires_at_ms: Date.now() + 5 * 60 * 1000,
+                });
               }
               break;
             }
@@ -2151,11 +2148,16 @@ export const SystemView = () => {
       }
 
       // --- Wreck proximity claim ---
-      // Fly within PICKUP_RANGE of any unclaimed wreck → fire claim
-      // request. claimingWrecksRef dedupes so we don't fire twice while
-      // the request is in flight (60fps × N wrecks would otherwise
-      // hammer the server). Server enforces the actual race-safe claim.
+      // Local-only wreckage: expire old wrecks (5-min TTL) and on
+      // pickup, award credits via fittingAPI.awardLoot (which works
+      // today) instead of wrecksAPI.claim (which 500s on missing
+      // table). claimingWrecksRef dedupes mid-flight requests so a
+      // 60fps loop doesn't fire awardLoot multiple times per wreck.
       if (wrecksRef.current.length > 0) {
+        const now = Date.now();
+        // Drop expired wrecks first (avoid claiming a stale wreck)
+        wrecksRef.current = wrecksRef.current.filter(w => (w.expires_at_ms ?? Infinity) > now);
+
         const px = playerPos.x, py = playerPos.y;
         for (let i = wrecksRef.current.length - 1; i >= 0; i--) {
           const w = wrecksRef.current[i];
@@ -2164,24 +2166,20 @@ export const SystemView = () => {
           if (dx * dx + dy * dy < PICKUP_RANGE * PICKUP_RANGE) {
             claimingWrecksRef.current.add(w.id);
             const wreckId = w.id;
-            wrecksAPI.claim(wreckId)
-              .then(({ credits_awarded, modules_awarded }) => {
+            const credits = w.contents?.credits || 0;
+            fittingAPI.awardLoot(credits)
+              .then(() => {
                 wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
                 const fc = useGameStore.getState().fetchCredits;
                 if (fc) fc();
                 const pt = useGameStore.getState().pushToast;
-                if (pt && (credits_awarded > 0 || modules_awarded?.length)) {
-                  const parts = [];
-                  if (credits_awarded > 0) parts.push(`+${credits_awarded} cr`);
-                  if (modules_awarded?.length) parts.push(modules_awarded.join(', '));
-                  pt({ kind: 'success', text: `Salvaged: ${parts.join(' + ')}`, duration: 3500 });
+                if (pt && credits > 0) {
+                  pt({ kind: 'success', text: `+${credits} cr salvaged`, duration: 2500 });
                 }
                 claimingWrecksRef.current.delete(wreckId);
               })
               .catch(err => {
-                // 409 = race lost (someone else claimed) or expired.
-                // Either way, drop the wreck from local state.
-                wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
+                console.warn('salvage award failed:', err);
                 claimingWrecksRef.current.delete(wreckId);
               });
           }

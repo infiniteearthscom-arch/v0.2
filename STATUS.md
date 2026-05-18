@@ -72,6 +72,13 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-17 — Local-only wreckage (workaround for missing wrecks table)
+
+- Re-enabled the "loot dropped on kill, fly to salvage" gameplay without depending on the server-side `wrecks` table (still busted). Wrecks spawn in client memory (`wrecksRef`) on enemy destruction (laser AND projectile branches), render via the existing SVG block, and on proximity-claim award credits via the working `fittingAPI.awardLoot` endpoint. 5-min TTL filtered each game-loop frame.
+- Trade-offs vs the server-persisted design: client-only (each player sees their own wrecks if multiplayer is added later), wrecks vanish on reload / system change, no module drops (would need a server endpoint to grant a random module — defer). Identical visuals + UX otherwise.
+- Server wreck endpoints, table, migration, and `wrecksAPI` client methods all remain in place. When the wrecks-table issue is resolved, swap the local `wrecksRef.current.push(...)` calls back to `wrecksAPI.spawn(...)` and re-enable the polling useEffect.
+- File: `star-shipper/src/components/system/SystemView.jsx`.
+
 ### 2026-05-17 — Fix latent laser-kill-no-credits bug
 
 - Long-standing bug surfaced during wreckage debugging: the laser weapon branch in `SystemView.jsx` applied damage instantly (`nearest.hull -= dmg`) but **never checked if the enemy just died**. The destruction handler (explosion VFX, sound, `awardLoot`) lived only in the projectile-hit loop, which lasers bypass since they don't spawn projectiles. So laser kills silently zeroed enemy hull with zero feedback or reward. Pre-existing bug; the Starter Kit's `weapon_laser` made it 100%-reproducible from a new captain.
