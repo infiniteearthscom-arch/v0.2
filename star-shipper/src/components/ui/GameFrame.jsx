@@ -208,7 +208,7 @@ const TopBar = () => {
         {/* User */}
         <span className="text-[9px] mr-1" style={{ color: '#5a6a7a' }}>{user?.username}</span>
         <button
-          onClick={logout}
+          onClick={() => { playSound('button_click'); logout(); }}
           className="text-[9px] px-1.5 py-0.5 rounded hover:text-red-400 transition-colors"
           style={{ color: '#3a4a5a', border: `1px solid ${EDGE}` }}
           title="Sign Out"
@@ -218,7 +218,7 @@ const TopBar = () => {
 
         {/* Outliner toggle */}
         <button
-          onClick={toggleOutliner}
+          onClick={() => { playSound('button_click'); toggleOutliner(); }}
           className="text-[10px] px-1.5 py-0.5 rounded transition-colors"
           style={{
             color: outlinerVisible ? BLUE.light : '#3a4a5a',
@@ -230,7 +230,7 @@ const TopBar = () => {
 
         {/* Audio mute toggle */}
         <button
-          onClick={toggleAudioMuted}
+          onClick={() => { playSound('button_click'); toggleAudioMuted(); }}
           className="text-[10px] px-1.5 py-0.5 rounded transition-colors ml-1"
           style={{
             color: audioMuted ? '#3a4a5a' : BLUE.light,
@@ -244,7 +244,7 @@ const TopBar = () => {
 
         {/* DEV Reset */}
         <button
-          onClick={handleReset}
+          onClick={() => { playSound('button_click'); handleReset(); }}
           disabled={resetting}
           className="text-[8px] font-bold px-1.5 py-0.5 rounded hover:bg-red-900/50 transition-colors disabled:opacity-40"
           style={{ color: '#ef4444', border: '1px solid #ef444433' }}

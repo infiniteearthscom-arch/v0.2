@@ -53,11 +53,13 @@ function getHowl(id) {
     cache[id] = new Howl({
       src: [src],
       preload: true,
-      // Silently mark as unavailable on load failure (file missing,
-      // 404, decode error). Keeps call sites simple -- they don't have
-      // to check whether assets are present.
-      onloaderror: () => { cache[id] = null; },
-      onplayerror: () => { cache[id] = null; },
+      // On load/play failure, DELETE the cache entry rather than null-
+      // marking. Null would lock us out permanently; delete lets a
+      // future startLoop call re-create the Howl (file may have been
+      // added between the first failure and now, or browser autoplay
+      // unlocked after first user interaction).
+      onloaderror: () => { delete cache[id]; },
+      onplayerror: () => { delete cache[id]; },
     });
   } catch {
     cache[id] = null;
@@ -111,8 +113,12 @@ function getLoopHowl(id) {
       src: [src],
       loop: true,
       preload: true,
-      onloaderror: () => { loopCache[id] = null; },
-      onplayerror: () => { loopCache[id] = null; },
+      // Delete (not null) so future startLoop calls can retry. Critical
+      // for loops, since they're only kicked off by mount / mute-toggle;
+      // without retry, a single load failure means no music for the
+      // entire session.
+      onloaderror: () => { delete loopCache[id]; delete loopPlayingIds[id]; },
+      onplayerror: () => { delete loopCache[id]; delete loopPlayingIds[id]; },
     });
   } catch {
     loopCache[id] = null;

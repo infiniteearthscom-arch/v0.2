@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
 import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
+import { playSound } from '@/utils/audio';
 import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
 
 // ============================================
@@ -1965,7 +1966,7 @@ const VendorTab = ({ body }) => {
           return (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => { playSound('button_click'); setSection(s.id); }}
               style={{
                 flex: 1,
                 padding: '5px 6px',
@@ -2045,7 +2046,7 @@ const VendorTab = ({ body }) => {
                   <span style={{ color: '#4a6580' }}>SLOTS <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{(h.slots || []).length}</span></span>
                 </div>
               </div>
-              <PanelButton accent={GOLD.pri} onClick={() => buyHull(h.id)}>
+              <PanelButton accent={GOLD.pri} onClick={() => { playSound('button_click'); buyHull(h.id); }}>
                 {h.price > 0 ? `${h.price.toLocaleString()} CR` : 'FREE'}
               </PanelButton>
             </div>
@@ -2120,7 +2121,7 @@ const VendorTab = ({ body }) => {
                           textOverflow: 'ellipsis',
                         }}>T{m.tier} • {m.description}</div>
                       </div>
-                      <PanelButton size="sm" accent={GOLD.pri} onClick={() => buyModule(m.id)}>
+                      <PanelButton size="sm" accent={GOLD.pri} onClick={() => { playSound('button_click'); buyModule(m.id); }}>
                         {m.buy_price.toLocaleString()} CR
                       </PanelButton>
                     </div>
@@ -2161,7 +2162,7 @@ const VendorTab = ({ body }) => {
                   letterSpacing: 0.3,
                 }}>{s.desc}</div>
               </div>
-              <PanelButton size="sm" accent={GOLD.pri} onClick={() => buySupply(s.id)}>
+              <PanelButton size="sm" accent={GOLD.pri} onClick={() => { playSound('button_click'); buySupply(s.id); }}>
                 {s.price} CR
               </PanelButton>
             </div>
@@ -2262,7 +2263,7 @@ const VendorTab = ({ body }) => {
                             width: 32,
                             textAlign: 'right',
                           }}>{qty}</span>
-                          <PanelButton size="sm" accent="#22c55e" onClick={() => sellResource(r.id, qty)}>
+                          <PanelButton size="sm" accent="#22c55e" onClick={() => { playSound('button_click'); sellResource(r.id, qty); }}>
                             Sell {total} CR
                           </PanelButton>
                         </div>
@@ -2313,7 +2314,7 @@ const VendorTab = ({ body }) => {
                           letterSpacing: 0.3,
                         }}>×{item.quantity} • {item.sell_price} CR EACH</div>
                       </div>
-                      <PanelButton size="sm" accent="#22c55e" onClick={() => sellItem(item.id, item.quantity)}>
+                      <PanelButton size="sm" accent="#22c55e" onClick={() => { playSound('button_click'); sellItem(item.id, item.quantity); }}>
                         Sell {item.sell_price * item.quantity} CR
                       </PanelButton>
                     </div>
@@ -2390,7 +2391,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */ }) => {
           return (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => { playSound('button_click'); setSection(s.id); }}
               style={{
                 flex: 1,
                 padding: '7px 8px',
@@ -2677,7 +2678,7 @@ export const PlanetInteractionWindow = ({ body }) => {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => { playSound('button_click'); setActiveTab(tab.id); }}
                   title={tab.label}
                   style={{
                     width: 46,
