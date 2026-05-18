@@ -1989,4 +1989,74 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================
+// DB DIAGNOSTIC — wrecks-table mystery probe
+// ============================================
+// No auth (read-only metadata; not secret). Hit this URL in a browser:
+//   https://star-shipper-fjrrq.ondigitalocean.app/api/resources/diag/db
+// Returns a JSON dump of what the runtime can actually see in the DB.
+// Tells us in one round-trip whether the wrecks table exists in any
+// schema, what search_path the runtime uses, what migrations are
+// recorded, and a sanitized hint at which DATABASE_URL it connected to.
+// Remove this endpoint once the wrecks-table mystery is resolved.
+
+router.get('/diag/db', async (req, res) => {
+  const out = {};
+  try {
+    // What schema(s) does the runtime search by default?
+    const schemaRow = await queryOne(`SELECT current_schema() AS current, current_setting('search_path') AS search_path`);
+    out.current_schema  = schemaRow?.current;
+    out.search_path     = schemaRow?.search_path;
+
+    // What's the DB version + the DB name we're connected to?
+    const versionRow = await queryOne(`SELECT version() AS v, current_database() AS db, current_user AS u`);
+    out.pg_version   = versionRow?.v;
+    out.database     = versionRow?.db;
+    out.connected_as = versionRow?.u;
+
+    // Does the wrecks table exist ANYWHERE (any schema)?
+    const wrecksAnywhere = await queryAll(`
+      SELECT table_schema, table_name
+      FROM information_schema.tables
+      WHERE table_name = 'wrecks'
+    `);
+    out.wrecks_found_in_schemas = wrecksAnywhere.map(r => r.table_schema);
+
+    // All tables in the public schema (the runtime's default)
+    const publicTables = await queryAll(`
+      SELECT tablename FROM pg_tables
+      WHERE schemaname = 'public'
+      ORDER BY tablename
+    `);
+    out.public_tables = publicTables.map(t => t.tablename);
+
+    // Migrations the tracker thinks have been applied
+    try {
+      const migs = await queryAll(`SELECT name, executed_at FROM migrations ORDER BY name`);
+      out.recorded_migrations = migs.map(m => ({ name: m.name, executed_at: m.executed_at }));
+    } catch (e) {
+      out.recorded_migrations_error = e.message;
+    }
+
+    // Sanitized hint at the connection string (host + db only, no creds)
+    const dbUrl = process.env.DATABASE_URL || '';
+    out.database_url_hint = dbUrl
+      ? dbUrl.replace(/^([a-z]+:\/\/)[^:]+:[^@]+@/, '$1***:***@').slice(0, 100)
+      : '(unset)';
+
+    // Probe: try to read the wrecks table directly. Tells us exactly
+    // what error the runtime hits when the spawn/list endpoints fail.
+    try {
+      const count = await queryOne(`SELECT COUNT(*) AS c FROM wrecks`);
+      out.wrecks_probe = { ok: true, row_count: parseInt(count?.c) || 0 };
+    } catch (e) {
+      out.wrecks_probe = { ok: false, code: e.code, message: e.message };
+    }
+
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: error.message, code: error.code, partial: out });
+  }
+});
+
 export default router;
