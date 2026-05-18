@@ -62,7 +62,7 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 Bugs noticed but not fixed; rough edges to revisit.
 
-- **Wreckage feature stuck on missing-table error in prod** — server's `/wrecks/spawn` and `/wrecks/list` returned PG `42P01` (relation does not exist) on the `wrecks` table, despite migration 021 (and a repair migration 022) being recorded as applied. Multiple migration attempts didn't resolve it. Possibilities not yet ruled out: DATABASE_URL differs between migrate command and runtime, table created in different schema, schema cache, or migrate script silently failing the CREATE TABLE while still recording the row. **Reverted client to instant-credit `awardLoot` on enemy kill (2026-05-17)** so combat works again. Wreck endpoints, table, and render code are all still in the codebase — re-enable by uncommenting the polling useEffect and swapping `awardLoot` for `wrecksAPI.spawn` in the enemy-destroyed branch of `SystemView.jsx`. Debug separately with a probe endpoint that queries `information_schema.tables`.
+- **Wreckage feature stuck on missing-table error in prod** — `/wrecks/spawn` and `/wrecks/list` returned PG `42P01` on the `wrecks` table even after migrations 021 and 022 (repair) were both recorded as applied. Not resolved; bypassed by reverting to `awardLoot` on kill. Worth a probe endpoint (`GET /api/diag/db` returning `information_schema.tables`) to definitively see what the runtime can see in the DB — DATABASE_URL routing or schema cache are still suspect. Wreck endpoints, table, polling, render, and proximity-claim code all remain in the codebase, ready to re-enable once the missing-table issue is solved.
 - **`/repair-cost` server endpoint is now dead code** — kept for backward compat. Safe to remove once we confirm no client references remain after deploy.
 - **`ShipBuilderWindow.jsx:837` also calls `fittingAPI.buyHull()`** but doesn't refresh the global ships array on success. If we ever surface that flow to a podded player it'll have the same auto-disembark staleness bug as the vendor did. Worth a defensive `fetchShips()` if the path becomes reachable from the podded state.
 
@@ -71,6 +71,13 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-17 — Fix latent laser-kill-no-credits bug
+
+- Long-standing bug surfaced during wreckage debugging: the laser weapon branch in `SystemView.jsx` applied damage instantly (`nearest.hull -= dmg`) but **never checked if the enemy just died**. The destruction handler (explosion VFX, sound, `awardLoot`) lived only in the projectile-hit loop, which lasers bypass since they don't spawn projectiles. So laser kills silently zeroed enemy hull with zero feedback or reward. Pre-existing bug; the Starter Kit's `weapon_laser` made it 100%-reproducible from a new captain.
+- Fix: mirror the destruction block inside the laser branch, right after `nearest.hull -= dmg`. Plays sounds, pushes explosion effect, fires `fittingAPI.awardLoot`.
+- This is the real cause of the "still not working" reports across the wreckage-debugging arc. The wreckage system added on top of broken kill plumbing — even after reverting wrecks, lasers still didn't pay out.
+- File: `star-shipper/src/components/system/SystemView.jsx`.
 
 ### 2026-05-13 — Audio scaffold (Howler) + mute toggle
 

@@ -1937,6 +1937,25 @@ export const SystemView = () => {
               type: 'hit', age: 0,
               color: nearest.shield > 0 ? '#4488ff' : w.color,
             });
+            // Enemy destroyed by laser? Mirror the projectile-hit
+            // destruction path so laser kills also explode, sound, and
+            // award credits. Without this, lasers silently zero an
+            // enemy's hull with NO reward / VFX -- the bug that masked
+            // "kills don't give credits" while we chased wreck migrations.
+            if (nearest.hull <= 0) {
+              nearest.hull = 0;
+              effects.push({ x: nearest.x, y: nearest.y, type: 'explosion', age: 0, size: nearest.displaySize });
+              playSound('ship_destroyed');
+              playSound('ship_destroyed_metal');
+              const loot = nearest.lootCredits || 50;
+              setCombatLog(prev => [...prev.slice(-4), `Destroyed ${nearest.name}! +${loot} cr`]);
+              fittingAPI.awardLoot(loot)
+                .then(() => {
+                  const fc = useGameStore.getState().fetchCredits;
+                  if (fc) fc();
+                })
+                .catch(err => console.warn('awardLoot failed:', err));
+            }
           } else if (w.type === 'kinetic') {
             // Bullet with slight aim spread
             const spread = (Math.random() - 0.5) * (w.spread || 0.08) * 2;
