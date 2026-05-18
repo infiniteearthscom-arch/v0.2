@@ -24,7 +24,7 @@ const SOUND_FILES = {
   ship_destroyed:       '/sounds/explosionCrunch_000.ogg',
   ship_destroyed_metal: '/sounds/impactMetal_000.ogg',
   dock_complete:        '/sounds/doorClose_000.ogg',
-  button_click:         '/sounds/impactMetal_000.ogg',
+  button_click:         '/sounds/universfield-computer-mouse-click-02-383961.mp3',
 };
 
 // Looping ambient sounds -- separate from one-shots because they need
@@ -33,6 +33,7 @@ const SOUND_FILES = {
 // drown out one-shot SFX.
 const LOOP_FILES = {
   fleet_engine: '/sounds/spaceEngine_000.ogg',
+  system_music: '/sounds/placidplace-spaceship-ambience-with-effects-21420.mp3',
 };
 const LOOP_GAIN_MULT = 0.4;
 

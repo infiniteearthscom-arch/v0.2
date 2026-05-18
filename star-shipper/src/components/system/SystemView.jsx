@@ -1180,6 +1180,21 @@ export const SystemView = () => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
   }, [dockedBody, setDockedBodyStore]);
 
+  // Background music for the system view. Loops while the player is
+  // in this view, stops on unmount (e.g. switch to galaxy view).
+  // Re-runs on mute toggle so unmuting mid-view actually starts the
+  // music -- without this dep, a player who entered SystemView muted
+  // and then unmuted would hear silence until they left + returned.
+  const audioMutedForMusic = useGameStore(state => state.audio?.muted ?? false);
+  useEffect(() => {
+    if (audioMutedForMusic) {
+      stopLoop('system_music');
+      return undefined;
+    }
+    startLoop('system_music');
+    return () => stopLoop('system_music');
+  }, [audioMutedForMusic]);
+
   // Fleet engine ambient loop. Tied to the W (gas) key — see the
   // keydown/keyup handlers below for the start/stop calls. This effect
   // exists only as a safety net: forces the loop off when the player
