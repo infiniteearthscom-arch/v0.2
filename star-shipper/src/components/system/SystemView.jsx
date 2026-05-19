@@ -1061,6 +1061,12 @@ export const SystemView = () => {
   // (multiplayer-ready); fetched on system change, not polled (no
   // depletion yet -- A3 will add polling or proximity-driven refresh).
   const asteroidsRef = useRef([]);
+  // A2 scan state: at most one scan in flight at a time. Game loop
+  // checks range each frame; if player flies out, cancels. On time
+  // elapsed, fires the server scan endpoint to record + reveal.
+  const activeScanRef = useRef(null); // { asteroidId, startMs } | null
+  const SCAN_RANGE = 80;     // matches utility_scanner.stats.scan_range
+  const SCAN_TIME_MS = 8000; // matches utility_scanner.stats.scan_time * 1000
 
   // Wrecks (lootable spatial entities from pirate kills). Refs not state
   // because the game loop reads them every frame for proximity-claim
@@ -1236,11 +1242,58 @@ export const SystemView = () => {
   useEffect(() => {
     if (!currentSystemId) return undefined;
     let cancelled = false;
+    activeScanRef.current = null; // cancel any pending scan on system change
     asteroidsAPI.list(currentSystemId)
       .then(({ asteroids }) => { if (!cancelled) asteroidsRef.current = asteroids || []; })
       .catch(err => { console.warn('asteroid list failed:', err); });
     return () => { cancelled = true; };
   }, [currentSystemId]);
+
+  // Asteroid click → scan logic. Validates fitted Sensor Suite + range
+  // client-side first (fast feedback); server also validates the
+  // scanner module to gate the contents reveal. Click on an
+  // already-scanned asteroid surfaces its contents in a toast.
+  const hasScannerFitted = (ship) => {
+    if (!ship?.fitted_modules) return false;
+    for (const slot of Object.values(ship.fitted_modules)) {
+      const id = slot?.module_type_id;
+      if (id && id.startsWith('utility_scanner')) return true;
+    }
+    return false;
+  };
+  const formatContents = (contents) => {
+    if (!contents) return 'unknown';
+    const parts = Object.values(contents)
+      .map(v => `${v.remaining || 0}u ${v.name || ''}`.trim())
+      .filter(Boolean);
+    return parts.length ? parts.join(', ') : 'empty';
+  };
+  const handleAsteroidClick = (asteroid) => {
+    // Already scanned? Reveal contents in a toast.
+    if (asteroid.scanned && asteroid.contents) {
+      if (pushToast) pushToast({
+        kind: 'info',
+        text: `Asteroid contents: ${formatContents(asteroid.contents)}`,
+        duration: 6000,
+      });
+      return;
+    }
+    // Scanner check
+    if (!hasScannerFitted(playerShip)) {
+      if (pushToast) pushToast({ kind: 'error', text: 'Sensor Suite required to scan asteroids.', duration: 3000 });
+      return;
+    }
+    // Range check
+    const dx = asteroid.x - shipPosRef.current.x;
+    const dy = asteroid.y - shipPosRef.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > SCAN_RANGE) {
+      if (pushToast) pushToast({ kind: 'error', text: 'Too far to scan — get closer to the asteroid.', duration: 3000 });
+      return;
+    }
+    // Start scan (game loop watches activeScanRef for completion + cancel)
+    activeScanRef.current = { asteroidId: asteroid.id, startMs: Date.now() };
+    if (pushToast) pushToast({ kind: 'info', text: 'Scanning asteroid...', duration: 2000 });
+  };
 
   // Wreck polling DISABLED while wrecks table issue is unresolved.
   // Re-enable by restoring the useEffect body once /wrecks/list stops
@@ -2206,6 +2259,47 @@ export const SystemView = () => {
         if (effects[i].age > lifetime) effects.splice(i, 1);
       }
 
+      // --- Asteroid scan progress ---
+      // Watch the active scan: cancel if player drifts out of range,
+      // complete if scan_time elapses. Server records the reveal +
+      // returns contents; we patch the local asteroid so the SVG
+      // render immediately reflects the new "scanned" state.
+      if (activeScanRef.current) {
+        const scan = activeScanRef.current;
+        const ast = asteroidsRef.current.find(a => a.id === scan.asteroidId);
+        if (!ast) {
+          activeScanRef.current = null;
+        } else {
+          const sdx = ast.x - playerPos.x;
+          const sdy = ast.y - playerPos.y;
+          if (sdx * sdx + sdy * sdy > (SCAN_RANGE * 1.2) ** 2) {
+            // Out of range -- cancel
+            activeScanRef.current = null;
+            const pt = useGameStore.getState().pushToast;
+            if (pt) pt({ kind: 'error', text: 'Scan cancelled — flew out of range.', duration: 2500 });
+          } else if (Date.now() - scan.startMs >= SCAN_TIME_MS) {
+            // Time complete -- record server-side and reveal
+            const astId = scan.asteroidId;
+            activeScanRef.current = null;
+            asteroidsAPI.scan(astId)
+              .then(({ contents }) => {
+                const a = asteroidsRef.current.find(x => x.id === astId);
+                if (a) { a.scanned = true; a.contents = contents; }
+                const pt = useGameStore.getState().pushToast;
+                if (pt) pt({
+                  kind: 'success',
+                  text: `Scan complete: ${formatContents(contents)}`,
+                  duration: 5000,
+                });
+              })
+              .catch(err => {
+                const pt = useGameStore.getState().pushToast;
+                if (pt) pt({ kind: 'error', text: err?.message || 'Scan failed', duration: 3000 });
+              });
+          }
+        }
+      }
+
       // --- Wreck proximity claim ---
       // Local-only wreckage: expire old wrecks (5-min TTL) and on
       // pickup, award credits via fittingAPI.awardLoot (which works
@@ -2721,10 +2815,34 @@ export const SystemView = () => {
                 const c = Math.cos(a.rotation), si = Math.sin(a.rotation);
                 return `${px * c - py * si},${px * si + py * c}`;
               }).join(' ');
+              // A2: scanned asteroids get a green tint + outline so
+              // the player can see at a glance which ones they've
+              // surveyed. Active scan target gets a yellow arc that
+              // fills over scan_time.
+              const isScanning = activeScanRef.current?.asteroidId === a.id;
+              const scanPct = isScanning
+                ? Math.min(1, (Date.now() - activeScanRef.current.startMs) / SCAN_TIME_MS)
+                : 0;
+              const ringR = a.size + 4;
+              const circumference = 2 * Math.PI * ringR;
               return (
-                <g key={`ast-${a.id}`} transform={`translate(${a.x}, ${a.y})`}>
-                  <polygon points={pts} fill="#6b6258" stroke="#3a3530" strokeWidth={0.3} />
+                <g key={`ast-${a.id}`}
+                   transform={`translate(${a.x}, ${a.y})`}
+                   onClick={(e) => { e.stopPropagation(); handleAsteroidClick(a); }}
+                   style={{ cursor: 'pointer' }}>
+                  <polygon points={pts}
+                    fill={a.scanned ? '#6b7a5c' : '#6b6258'}
+                    stroke={a.scanned ? '#a0c860' : '#3a3530'}
+                    strokeWidth={a.scanned ? 0.5 : 0.3} />
                   <polygon points={pts} fill="url(#planetHighlight)" opacity={0.25} />
+                  {/* Scan progress arc */}
+                  {isScanning && (
+                    <circle cx={0} cy={0} r={ringR}
+                      fill="none" stroke="#ffdd44" strokeWidth={0.8}
+                      strokeDasharray={`${scanPct * circumference} ${circumference}`}
+                      transform="rotate(-90)" opacity={0.9}
+                      style={{ pointerEvents: 'none' }} />
+                  )}
                 </g>
               );
             })}

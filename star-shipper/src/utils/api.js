@@ -213,11 +213,15 @@ export const resourcesAPI = {
   }),
 };
 
-// Asteroids — mineable spatial entities in belt bodies. Phase A1
-// only has list; scan + mine come in A2 + A3.
+// Asteroids — mineable spatial entities in belt bodies. List + scan
+// (A2). Mine endpoint comes in A3.
 export const asteroidsAPI = {
   list: (systemProceduralId) =>
     request(`/resources/asteroids?system_procedural_id=${encodeURIComponent(systemProceduralId)}`),
+  scan: (asteroidId) => request('/resources/asteroids/scan', {
+    method: 'POST',
+    body: JSON.stringify({ asteroid_id: asteroidId }),
+  }),
 };
 
 // Wrecks — lootable spatial entities. Replaces the old direct-credit

@@ -2134,13 +2134,23 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         }
       }
 
-      // Return all non-depleted asteroids in the system.
+      // Return all non-depleted asteroids in the system. JOIN to
+      // player_asteroid_scans so we only send contents for asteroids
+      // THIS player has scanned -- unscanned asteroids get null contents
+      // (client treats them as "unknown, click to scan"). This gates the
+      // information reveal at the data layer so a tampered client can't
+      // see contents without a scan.
+      const userId = req.user.id;
       const result = await client.query(`
-        SELECT id, belt_body_id, x, y, size, rotation, contents
-        FROM asteroids
-        WHERE system_id = $1 AND depleted_at IS NULL
-        ORDER BY belt_body_id, id
-      `, [systemId]);
+        SELECT a.id, a.belt_body_id, a.x, a.y, a.size, a.rotation,
+               CASE WHEN s.asteroid_id IS NOT NULL THEN a.contents ELSE NULL END AS contents,
+               (s.asteroid_id IS NOT NULL) AS scanned
+        FROM asteroids a
+        LEFT JOIN player_asteroid_scans s
+          ON s.asteroid_id = a.id AND s.user_id = $2
+        WHERE a.system_id = $1 AND a.depleted_at IS NULL
+        ORDER BY a.belt_body_id, a.id
+      `, [systemId, userId]);
       return result.rows;
     });
 
@@ -2148,6 +2158,75 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Error listing asteroids:', error);
     res.status(500).json({ error: 'Failed to list asteroids' });
+  }
+});
+
+// Scan an asteroid to reveal its contents. Records the reveal in
+// player_asteroid_scans so future GET /asteroids includes the contents.
+// Validates the player has a sensor module fitted; distance is trusted
+// client-side for MVP (matches the existing trust model for wreck claim
+// and award-loot). Idempotent: re-scanning is a no-op + still returns
+// the contents.
+router.post('/asteroids/scan', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { asteroid_id } = req.body;
+    if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
+
+    const out = await transaction(async (client) => {
+      // Fetch the player's active ship + fitted modules.
+      const userRow = await client.query(
+        `SELECT active_ship_id FROM users WHERE id = $1`, [userId]
+      );
+      const activeShipId = userRow.rows[0]?.active_ship_id;
+      if (!activeShipId) throw Object.assign(new Error('No active ship'), { statusCode: 400 });
+
+      const shipRow = await client.query(
+        `SELECT fitted_modules FROM ships WHERE id = $1 AND user_id = $2`,
+        [activeShipId, userId]
+      );
+      const fitted = shipRow.rows[0]?.fitted_modules || {};
+
+      // Look for any fitted scanner-type module. utility_scanner is the
+      // only one today; tier upgrades will live under different ids but
+      // share the slot_type='utility' and a name match on 'scanner'.
+      let hasScanner = false;
+      for (const slotKey of Object.keys(fitted)) {
+        const modTypeId = fitted[slotKey]?.module_type_id;
+        if (!modTypeId) continue;
+        if (modTypeId === 'utility_scanner' || modTypeId.startsWith('utility_scanner')) {
+          hasScanner = true; break;
+        }
+      }
+      if (!hasScanner) {
+        throw Object.assign(new Error('Sensor Suite required to scan'), { statusCode: 400 });
+      }
+
+      // Verify asteroid exists + is not depleted; fetch contents to return.
+      const ast = await client.query(
+        `SELECT contents FROM asteroids WHERE id = $1 AND depleted_at IS NULL`,
+        [asteroid_id]
+      );
+      if (!ast.rows[0]) {
+        throw Object.assign(new Error('Asteroid not found or depleted'), { statusCode: 404 });
+      }
+
+      // Record the scan. PK on (user_id, asteroid_id) means re-scans
+      // are silent no-ops via ON CONFLICT DO NOTHING.
+      await client.query(`
+        INSERT INTO player_asteroid_scans (user_id, asteroid_id)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, asteroid_id) DO NOTHING
+      `, [userId, asteroid_id]);
+
+      return { contents: ast.rows[0].contents };
+    });
+
+    res.json({ success: true, ...out });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error scanning asteroid:', error);
+    res.status(500).json({ error: 'Failed to scan asteroid' });
   }
 });
 

@@ -22,6 +22,13 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
+- **Asteroid mining — Phase A2 (per-asteroid scan)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
+  - Migration `025_scanner_stats.sql` adds `scan_range: 80` + `scan_time: 8` to `utility_scanner.stats` and creates `player_asteroid_scans` table.
+  - Server: `GET /resources/asteroids` now LEFT JOINs `player_asteroid_scans` and returns contents only for asteroids THIS player has scanned (data-layer gate, not just UI). `POST /resources/asteroids/scan` validates the player has a `utility_scanner*` module fitted, records the reveal, returns contents.
+  - Client: click an asteroid → range + scanner check → starts an 8s client-side timer with a yellow progress arc visual on the asteroid → server call on completion records + reveals. Scanned asteroids render with a green tint + outline. Click a scanned asteroid to re-toast its contents.
+  - Module-quality tier upgrades (advanced/elite + bulk-scan flag) deferred per spec — listed in "Up next".
+  - Files: `migrations/025_scanner_stats.sql` (new); `src/api/resources.js` (gated GET + POST scan); `src/utils/api.js` (asteroidsAPI.scan); `src/components/system/SystemView.jsx` (click handler, scan game-loop block, progress arc render); `CLAUDE.md` (migration counter); `STATUS.md`.
+
 - **Asteroid mining — Phase A1 (presence + render)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
   - Migration `024_asteroids.sql` adds the `asteroids` table (system_id, belt_body_id, x, y, size, rotation, contents JSONB, depleted_at, respawn_at).
   - Server: `GET /resources/asteroids?system_procedural_id=X` lazily generates 20–40 asteroids per belt on first request, deterministic from system seed + belt index. Resource pools rolled 70% common / 25% rare / 5% exotic per resource slot; 1–3 resources per asteroid. SRng helper now exported from `util/seed.js`.
@@ -60,8 +67,12 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 Unranked queue. Pull from the top of the next session, or pick by interest.
 
+- **Asteroid mining Phase A3** — mining laser as auto-fire weapon. Server-side mine tick, cargo capacity check, asteroid depletion → respawn timer. The schema for depletion + respawn already exists in migration 024.
+- **Scanner tier upgrades** (Phase A2 follow-up): add `utility_scanner_adv` (tier 2) and `utility_scanner_elite` (tier 3) to `module_types`. Stats per design — wider `scan_range`, shorter `scan_time`, elite gets `bulk_scan: true` flag.
+- **Bulk-scan-belt action** — when elite scanner is fitted, a button appears in SystemView that scans every asteroid in the current belt at once. UI affordance + server endpoint variant.
+- **System-wide sensor sweep** — late-game module that reveals all enemies on the system map regardless of proximity. Likely a new module type (`utility_systemscan` or similar) with a cooldown. Pairs with wiring `sensor_range` to enemy render visibility so basic-sensor ships can be jumped.
+- **Wire `sensor_range` to enemy detection** — pirates currently render at all distances; gate visibility on the fleet's totalSensorRange.
 - **Podding — Phase 2: wreckage + cargo ejection.** Add `wrecks` table + spatial entity, eject ~50% of player inventory + destroyed ship's modules into a wreck on death, pod can salvage. Pirates contest wrecks (Phase 3 polish).
-- **CLAUDE.md migration counter is stale** — says "next migration is 017", but 017/018 exist. Bump pitfall #8 to "next is 020" once 019 ships.
 - **Hardcoded `localhost:3001` audit** — pitfall #9 violation existed in the old respawn code; sweep the rest of the client for similar stragglers.
 
 ---
