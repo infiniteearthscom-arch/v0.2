@@ -22,6 +22,12 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
+- **Mining fitting fixes** — code written, **needs commit + push + DO migrate**. (2026-05-18)
+  - Scout + starter_scout get a mining slot (mng1, at the bow). Without it the starter ship literally couldn't fit a mining laser since only Shuttle + Capital had mining slots.
+  - Server `unfit-module` was writing item_data without slot_type. The Ship Builder's FittableModulesPanel filters cargo by `item_data.slot_type` — so unfit modules became invisible in the ship builder (still in regular Cargo, just hidden from the fit panel). Fixed: unfit now looks up + includes slot_type.
+  - Migration 027 backfills existing cargo items with slot_type so previously-stranded modules reappear in the Ship Builder.
+  - Files: `migrations/027_scout_mining_slot.sql` (new); `src/api/fitting.js` (unfit-module slot_type include); `CLAUDE.md` (migration counter); `STATUS.md`.
+
 - **Asteroid mining — Phase A3 (mining laser + respawn)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
   - Migration `026_mining_laser_stats.sql` adds `mine_range:120`, `mine_yield:5`, `mine_cycle:2` to `mining_basic.stats`.
   - Server: `POST /resources/asteroids/mine` validates fitted laser, picks first resource with remaining > 0, decrements asteroid + adds to inventory in a transaction, checks fleet cargo capacity (returns 409 `cargo_full` for client to halt). Depletes asteroid + sets `respawn_at = NOW() + 10min` when emptied. `GET /resources/asteroids` now runs a lazy respawn pass before listing — depleted asteroids whose respawn timer has passed get fresh contents (re-rolled, non-deterministic) at the same position. Resource names enriched server-side.

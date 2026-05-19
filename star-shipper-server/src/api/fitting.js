@@ -343,7 +343,16 @@ router.post('/unfit-module', authMiddleware, async (req, res) => {
       const slotResult = await client.query(slotSql, [userId]);
       const nextSlot = parseInt(slotResult.rows[0]?.slot) || 0;
 
+      // Look up the module's slot_type so it surfaces in the Ship Builder's
+      // FittableModulesPanel, which filters cargo by item_data.slot_type.
+      // Without this the unfit module is in cargo but invisible in the
+      // ship builder (only the generic Cargo window can see it).
+      const modTypeRow = await client.query(
+        `SELECT slot_type FROM module_types WHERE id = $1`,
+        [modInfo.module_type_id]
+      );
       const itemData = {};
+      if (modTypeRow.rows[0]?.slot_type) itemData.slot_type = modTypeRow.rows[0].slot_type;
       if (modInfo.quality) itemData.quality = modInfo.quality;
 
       await client.query(`
