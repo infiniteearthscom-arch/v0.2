@@ -4,7 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
-import { fittingAPI, wrecksAPI } from '@/utils/api';
+import { fittingAPI, wrecksAPI, asteroidsAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
@@ -1056,6 +1056,12 @@ export const SystemView = () => {
   const projectilesRef = useRef([]); // Active projectiles {x, y, vx, vy, age, fromPlayer, damage}
   const combatEffectsRef = useRef([]); // Visual effects: explosions, hit sparks
   const playerFireCooldownRef = useRef(0);
+  // Asteroids (mineable spatial entities in belts). Ref-stored so the
+  // SVG render reads from it on each frameCount tick. Server-persisted
+  // (multiplayer-ready); fetched on system change, not polled (no
+  // depletion yet -- A3 will add polling or proximity-driven refresh).
+  const asteroidsRef = useRef([]);
+
   // Wrecks (lootable spatial entities from pirate kills). Refs not state
   // because the game loop reads them every frame for proximity-claim
   // checks; the existing frameCount setState already drives rerenders so
@@ -1221,6 +1227,20 @@ export const SystemView = () => {
     if (dockedBody) stopLoop('fleet_engine');
     return () => stopLoop('fleet_engine');
   }, [dockedBody]);
+
+  // Asteroid fetch on system change. Server lazily generates the field
+  // on first request for a belt that has zero rows -- so the first
+  // visit to a system might add ~100-200ms to this call. After that
+  // it's a simple SELECT. No polling for now; A3 will refresh after
+  // mining ticks that deplete an asteroid.
+  useEffect(() => {
+    if (!currentSystemId) return undefined;
+    let cancelled = false;
+    asteroidsAPI.list(currentSystemId)
+      .then(({ asteroids }) => { if (!cancelled) asteroidsRef.current = asteroids || []; })
+      .catch(err => { console.warn('asteroid list failed:', err); });
+    return () => { cancelled = true; };
+  }, [currentSystemId]);
 
   // Wreck polling DISABLED while wrecks table issue is unresolved.
   // Re-enable by restoring the useEffect body once /wrecks/list stops
@@ -2686,6 +2706,29 @@ export const SystemView = () => {
               </g>
             ))}
             
+            {/* Asteroids (Phase A1: presence only -- scan in A2, mine in
+                A3). Render before wrecks/projectiles so combat reads on
+                top. Each asteroid is a small irregular gray rock shape
+                with a slight rotation for variety. No interaction yet. */}
+            {asteroidsRef.current.map(a => {
+              // Tiny irregular polygon for the rocky silhouette. Same
+              // shape rotated per-asteroid by `a.rotation` for variety.
+              const s = a.size;
+              const pts = [
+                [s, 0], [s * 0.6, s * 0.8], [-s * 0.3, s], [-s, s * 0.3],
+                [-s * 0.8, -s * 0.5], [-s * 0.2, -s], [s * 0.7, -s * 0.6],
+              ].map(([px, py]) => {
+                const c = Math.cos(a.rotation), si = Math.sin(a.rotation);
+                return `${px * c - py * si},${px * si + py * c}`;
+              }).join(' ');
+              return (
+                <g key={`ast-${a.id}`} transform={`translate(${a.x}, ${a.y})`}>
+                  <polygon points={pts} fill="#6b6258" stroke="#3a3530" strokeWidth={0.3} />
+                  <polygon points={pts} fill="url(#planetHighlight)" opacity={0.25} />
+                </g>
+              );
+            })}
+
             {/* Wrecks (lootable credit drops). Render between enemies and
                 projectiles so projectiles read on top, but wrecks read
                 above the planet/orbit layer. The frameCount setState in

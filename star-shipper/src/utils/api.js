@@ -213,6 +213,13 @@ export const resourcesAPI = {
   }),
 };
 
+// Asteroids — mineable spatial entities in belt bodies. Phase A1
+// only has list; scan + mine come in A2 + A3.
+export const asteroidsAPI = {
+  list: (systemProceduralId) =>
+    request(`/resources/asteroids?system_procedural_id=${encodeURIComponent(systemProceduralId)}`),
+};
+
 // Wrecks — lootable spatial entities. Replaces the old direct-credit
 // awardLoot flow: enemy kills now spawn a wreck the player flies to.
 export const wrecksAPI = {

@@ -10,7 +10,7 @@ import {
   getDepositById,
   depleteDeposit
 } from '../game/deposits.js';
-import { isCityPlanet } from '../util/seed.js';
+import { isCityPlanet, SRng } from '../util/seed.js';
 
 const router = express.Router();
 
@@ -1986,6 +1986,168 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error('Error claiming wreck:', error);
     res.status(500).json({ error: 'Failed to claim wreck' });
+  }
+});
+
+// ============================================
+// ASTEROIDS — mineable spatial entities in belt bodies (Phase A1)
+// ============================================
+// Server-persisted so depletion state (A3) is shared across players.
+// Generated lazily on first GET for a system: takes the system seed +
+// belt orbit_radius as a per-belt RNG seed, deterministic across calls.
+//
+// Contents shape: { "<resource_type_id>": { initial: N, remaining: N } }
+// 1-3 resource types per asteroid, rarity-weighted (70% common / 25%
+// rare / 5% exotic). Quantity scales with asteroid size + rarity.
+
+const ASTEROIDS_PER_BELT_MIN = 20;
+const ASTEROIDS_PER_BELT_MAX = 40;
+const RARITY_WEIGHTS = { common: 0.70, rare: 0.25, exotic: 0.05 };
+
+// Generates the asteroid set for a belt body. Returns rows ready for
+// bulk INSERT. Uses SRng for determinism so re-runs would produce the
+// same field (though in practice we only generate once per belt).
+async function buildAsteroidsForBelt(client, belt, systemSeed) {
+  // Per-belt seed: combine system seed + belt's orbit radius so each
+  // belt in a multi-belt system gets a distinct field.
+  const seed = (systemSeed | 0) + Math.round(belt.orbit_radius);
+  const rng = new SRng(seed + 0xA570); // 0xA570 salt = "ASTROID"
+
+  // Pre-fetch resource ids by rarity so we don't query per-asteroid.
+  const resByRarity = { common: [], rare: [], exotic: [] };
+  const allRes = await client.query(`SELECT id, rarity FROM resource_types`);
+  for (const r of allRes.rows) {
+    if (resByRarity[r.rarity]) resByRarity[r.rarity].push(r.id);
+  }
+
+  const pickRarity = () => {
+    const r = rng.next();
+    if (r < RARITY_WEIGHTS.common) return 'common';
+    if (r < RARITY_WEIGHTS.common + RARITY_WEIGHTS.rare) return 'rare';
+    return 'exotic';
+  };
+  const pickResource = () => {
+    const rarity = pickRarity();
+    const pool = resByRarity[rarity];
+    if (!pool || pool.length === 0) return null;
+    return pool[rng.int(0, pool.length - 1)];
+  };
+
+  // Quantity scales by rarity: rare/exotic asteroids carry less.
+  const qtyFor = (rarity, sizeUnit) => {
+    const base = { common: 200, rare: 80, exotic: 25 }[rarity] || 100;
+    return Math.round(base * (sizeUnit / 4) * (0.7 + rng.next() * 0.6));
+  };
+
+  const beltSize = belt.size || 50;
+  const beltRadius = belt.orbit_radius || 1000;
+  const count = rng.int(ASTEROIDS_PER_BELT_MIN, ASTEROIDS_PER_BELT_MAX);
+  const rows = [];
+
+  for (let i = 0; i < count; i++) {
+    const angle = rng.range(0, Math.PI * 2);
+    // Radial jitter: stay within +/- 40% of belt size so asteroids
+    // cluster in the visible belt zone.
+    const radius = beltRadius + rng.range(-beltSize * 0.4, beltSize * 0.4);
+    const size = rng.int(2, 6);
+    const numResources = rng.int(1, 3);
+
+    const contents = {};
+    for (let r = 0; r < numResources; r++) {
+      const resId = pickResource();
+      if (!resId) continue;
+      // Find rarity for the qty calc (cheap re-lookup; small N)
+      const rarity = Object.entries(resByRarity).find(([, ids]) => ids.includes(resId))?.[0] || 'common';
+      const qty = qtyFor(rarity, size);
+      // If the same resource was rolled twice, sum quantities.
+      contents[resId] = contents[resId]
+        ? { initial: contents[resId].initial + qty, remaining: contents[resId].remaining + qty }
+        : { initial: qty, remaining: qty };
+    }
+
+    rows.push({
+      system_id: belt.system_id,
+      belt_body_id: belt.id,
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+      size,
+      rotation: rng.range(0, Math.PI * 2),
+      contents,
+    });
+  }
+  return rows;
+}
+
+// List active (non-depleted) asteroids in a system. Generates the set
+// lazily on first request for a belt that has zero asteroid rows.
+router.get('/asteroids', authMiddleware, async (req, res) => {
+  try {
+    const { system_procedural_id } = req.query;
+    if (!system_procedural_id) return res.status(400).json({ error: 'system_procedural_id required' });
+
+    const asteroids = await transaction(async (client) => {
+      // Resolve system id (Sol special-case mirrors wrecks/spawn).
+      let systemId;
+      if (system_procedural_id === 'sol') {
+        systemId = SOL_SYSTEM_ID;
+      } else {
+        const sys = await client.query(
+          `SELECT id FROM star_systems WHERE procedural_id = $1`,
+          [system_procedural_id]
+        );
+        if (!sys.rows[0]) return [];
+        systemId = sys.rows[0].id;
+      }
+
+      // Find belt bodies in this system.
+      const belts = await client.query(
+        `SELECT id, system_id, orbit_radius, size FROM celestial_bodies
+         WHERE system_id = $1 AND body_type = 'asteroid_belt'`,
+        [systemId]
+      );
+      if (belts.rows.length === 0) return [];
+
+      // System seed for deterministic generation. Sol's seed is its
+      // procedural_id hash; procedural systems may not have a seed
+      // column stored, so we derive from procedural_id hash too.
+      // Simple FNV-ish hash so server doesn't need to import the client RNG seed.
+      let systemSeed = 0;
+      for (let i = 0; i < system_procedural_id.length; i++) {
+        systemSeed = ((systemSeed << 5) - systemSeed + system_procedural_id.charCodeAt(i)) | 0;
+      }
+
+      // For each belt, generate asteroids if none exist yet.
+      for (const belt of belts.rows) {
+        const existing = await client.query(
+          `SELECT 1 FROM asteroids WHERE belt_body_id = $1 LIMIT 1`,
+          [belt.id]
+        );
+        if (existing.rows.length > 0) continue;
+
+        const rows = await buildAsteroidsForBelt(client, belt, systemSeed);
+        // Bulk insert. JSONB contents passed as stringified JSON per row.
+        for (const r of rows) {
+          await client.query(`
+            INSERT INTO asteroids (system_id, belt_body_id, x, y, size, rotation, contents)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `, [r.system_id, r.belt_body_id, r.x, r.y, r.size, r.rotation, JSON.stringify(r.contents)]);
+        }
+      }
+
+      // Return all non-depleted asteroids in the system.
+      const result = await client.query(`
+        SELECT id, belt_body_id, x, y, size, rotation, contents
+        FROM asteroids
+        WHERE system_id = $1 AND depleted_at IS NULL
+        ORDER BY belt_body_id, id
+      `, [systemId]);
+      return result.rows;
+    });
+
+    res.json({ asteroids });
+  } catch (error) {
+    console.error('Error listing asteroids:', error);
+    res.status(500).json({ error: 'Failed to list asteroids' });
   }
 });
 

@@ -22,6 +22,14 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
+- **Asteroid mining — Phase A1 (presence + render)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
+  - Migration `024_asteroids.sql` adds the `asteroids` table (system_id, belt_body_id, x, y, size, rotation, contents JSONB, depleted_at, respawn_at).
+  - Server: `GET /resources/asteroids?system_procedural_id=X` lazily generates 20–40 asteroids per belt on first request, deterministic from system seed + belt index. Resource pools rolled 70% common / 25% rare / 5% exotic per resource slot; 1–3 resources per asteroid. SRng helper now exported from `util/seed.js`.
+  - Client: `asteroidsAPI.list(...)` + a `useEffect` in SystemView fetching on system change. Rendered as small irregular gray polygons (rotation per asteroid for variety) between celestial bodies and projectiles in the SVG.
+  - **Phase A2 (next):** per-asteroid scan endpoint + UI to reveal contents. Bulk-scan module is the upgrade path.
+  - **Phase A3 (later):** mining laser as auto-fire weapon — server-side mine tick, cargo capacity check, depletion → respawn.
+  - Files: `migrations/024_asteroids.sql` (new); `src/util/seed.js` (export SRng); `src/api/resources.js` (asteroid endpoint + generator); `src/utils/api.js` (asteroidsAPI); `src/components/system/SystemView.jsx` (fetch + SVG render); `CLAUDE.md` (migration counter); `STATUS.md`.
+
 - **Wreckage Phase 1.5 (random module drops)** — code written, **DROP RATE TEMPORARILY 100% for verification — must dial back to 0.25 after testing**. (2026-05-14)
   - Server: `/wrecks/spawn` now rolls 25% chance to drop a random module (tier ≤ 2, low-mid quality 30-60 per stat) into `contents.modules`. `/wrecks/claim` deposits modules into the player's next free inventory slot using the existing buy-module pattern, returns `modules_awarded` names.
   - Client: wrecks with modules render an extra cyan dashed ring + "+ MOD" suffix on the credit label so players can spot them at a distance. Salvage toast lists the module name (e.g. `Salvaged: +50 cr + Pulse Laser`).
