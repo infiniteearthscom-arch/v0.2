@@ -1303,8 +1303,11 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
 const HarvestersTab = ({ body, effectiveBodyId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [message, setMessage] = useState(null);
+  // Status/error feedback goes to the global toast queue instead of an
+  // inline MessageBar -- the inline version caused layout shift on every
+  // deploy/refuel/collect, pushing the harvester slots around.
+  const pushToast = useGameStore(state => state.pushToast);
+  const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1312,7 +1315,7 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
       const result = await harvesterAPI.getPlanetHarvesters(effectiveBodyId);
       setData(result);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     } finally {
       setLoading(false);
     }
@@ -1327,62 +1330,52 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
   }, [fetchData]);
 
   const handleDeploy = async (slotIndex, dragData) => {
-    setError(null);
-    setMessage(null);
     try {
       await harvesterAPI.deploy(effectiveBodyId, slotIndex, dragData.stack_id, null);
-      setMessage('Harvester deployed! Assign a deposit to start mining.');
+      flash('success', 'Harvester deployed! Assign a deposit to start mining.');
       await fetchData();
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     }
   };
 
   const handleAssignDeposit = async (harvesterId, depositId) => {
-    setError(null);
     try {
       await harvesterAPI.assignDeposit(harvesterId, depositId);
-      setMessage('Deposit assigned.');
+      flash('success', 'Deposit assigned.');
       await fetchData();
-      setTimeout(() => setMessage(null), 2000);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     }
   };
 
   const handleRefuel = async (harvesterId, fuelItemId) => {
-    setError(null);
     try {
       const result = await harvesterAPI.refuel(harvesterId, fuelItemId);
-      setMessage(`Added ${result.fuel_added_hours.toFixed(1)}h fuel.`);
+      flash('success', `Added ${result.fuel_added_hours.toFixed(1)}h fuel.`);
       await fetchData();
-      setTimeout(() => setMessage(null), 2000);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     }
   };
 
   const handleCollect = async (harvesterId) => {
-    setError(null);
     try {
       const result = await harvesterAPI.collect(harvesterId);
-      setMessage(result.message);
+      flash('success', result.message);
       await fetchData();
-      setTimeout(() => setMessage(null), 2000);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     }
   };
 
   const handleRemove = async (harvesterId) => {
-    setError(null);
     try {
       await harvesterAPI.remove(harvesterId);
-      setMessage('Harvester returned to cargo.');
+      flash('success', 'Harvester returned to cargo.');
       await fetchData();
-      setTimeout(() => setMessage(null), 2000);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     }
   };
 
@@ -1452,17 +1445,6 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
         </div>
       </div>
 
-      {error && (
-        <div style={{ marginBottom: 8 }}>
-          <MessageBar type="error">{error}</MessageBar>
-        </div>
-      )}
-      {message && (
-        <div style={{ marginBottom: 8 }}>
-          <MessageBar type="success">{message}</MessageBar>
-        </div>
-      )}
-
       {totalSlots === 0 ? (
         <div style={{
           textAlign: 'center',
@@ -1504,9 +1486,12 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
   const [cargo, setCargo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [message, setMessage] = useState(null);
-  
+  // Status/error feedback goes to the global toast queue. Inline
+  // MessageBar caused layout shift each time a mining action started/
+  // collected, displacing the deposit list and active-session panel.
+  const pushToast = useGameStore(state => state.pushToast);
+  const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
+
   const fetchData = useCallback(async () => {
     if (!body?.id) return;
     setLoading(true);
@@ -1520,12 +1505,12 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
       if (harvestData.cargo) setCargo(harvestData.cargo);
     } catch (err) {
       console.error('Error fetching mine data:', err);
-      setError(err.message);
+      flash('error', err.message);
     } finally {
       setLoading(false);
     }
   }, [body?.id]);
-  
+
   // Also fetch cargo independently if no active session
   useEffect(() => {
     const fetchCargo = async () => {
@@ -1539,7 +1524,7 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
     fetchCargo();
     fetchData();
   }, [fetchData]);
-  
+
   // Auto-refresh every 30s while mining
   useEffect(() => {
     if (!activeSession) return;
@@ -1554,39 +1539,28 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
     }, 30000);
     return () => clearInterval(interval);
   }, [activeSession?.id]);
-  
-  // Clear messages after 5s
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(() => setMessage(null), 5000);
-    return () => clearTimeout(t);
-  }, [message]);
-  
+
   const handleStartHarvest = async (depositId) => {
     setActionLoading(true);
-    setError(null);
-    setMessage(null);
     try {
       const data = await resourcesAPI.startHarvest(depositId);
       setActiveSession(data.session);
       if (data.cargo) setCargo(data.cargo);
-      setMessage(data.message);
+      flash('success', data.message);
       await fetchData();
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     } finally {
       setActionLoading(false);
     }
   };
-  
+
   const handleCollect = async () => {
     setActionLoading(true);
-    setError(null);
-    setMessage(null);
     try {
       const data = await resourcesAPI.collectHarvest();
-      setMessage(data.message);
-      
+      flash('success', data.message);
+
       if (data.session_ended) {
         setActiveSession(null);
       } else {
@@ -1594,35 +1568,33 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
         setActiveSession(harvestData.session);
         if (harvestData.cargo) setCargo(harvestData.cargo);
       }
-      
+
       // Refresh deposits to show updated quantities
       const depositsData = await resourcesAPI.getDeposits(effectiveBodyId);
       setDeposits(depositsData.deposits || []);
-      
+
       // Refresh cargo
       const cargoData = await resourcesAPI.getCargo();
       setCargo(cargoData.cargo);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     } finally {
       setActionLoading(false);
     }
   };
-  
+
   const handleStop = async () => {
     setActionLoading(true);
-    setError(null);
-    setMessage(null);
     try {
       const data = await resourcesAPI.stopHarvest();
-      setMessage(data.message);
+      flash('success', data.message);
       setActiveSession(null);
       await fetchData();
       // Refresh cargo
       const cargoData = await resourcesAPI.getCargo();
       setCargo(cargoData.cargo);
     } catch (err) {
-      setError(err.message);
+      flash('error', err.message);
     } finally {
       setActionLoading(false);
     }
@@ -1669,17 +1641,6 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
 
   return (
     <div>
-      {error && (
-        <div style={{ marginBottom: 8 }}>
-          <MessageBar type="error">{error}</MessageBar>
-        </div>
-      )}
-      {message && (
-        <div style={{ marginBottom: 8 }}>
-          <MessageBar type="success">{message}</MessageBar>
-        </div>
-      )}
-
       {cargo && <CargoBar capacity={cargo.capacity} used={cargo.used} />}
 
       {activeSession && (
@@ -1738,7 +1699,6 @@ const VendorTab = ({ body }) => {
   const [supplies, setSupplies] = useState([]);
   const [sellInventory, setSellInventory] = useState({ resources: [], items: [] });
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState(null);
   const [section, setSection] = useState('hulls'); // 'hulls', 'modules', 'supplies', 'sell'
   const [sellQuantities, setSellQuantities] = useState({}); // id → quantity to sell
   // Credits are read directly from the global store so that ANY server-side
@@ -1749,6 +1709,7 @@ const VendorTab = ({ body }) => {
   const fetchShips = useGameStore(state => state.fetchShips);
   const openWindow = useGameStore(state => state.openWindow);
   const completeQuest = useGameStore(state => state.completeQuest);
+  const pushToast = useGameStore(state => state.pushToast);
 
   // Call after any vendor tx to immediately pull the authoritative balance
   // from the server (the 3s poll would catch it eventually, but we want it
@@ -1826,7 +1787,14 @@ const VendorTab = ({ body }) => {
     setLoading(false);
   };
 
-  const flash = (type, text) => { setMessage({ type, text }); setTimeout(() => setMessage(null), 3000); };
+  // Vendor notifications go to the global toast queue instead of an
+  // inline MessageBar -- the inline version caused a layout shift on
+  // every transaction as it appeared/disappeared, pushing the rest of
+  // the vendor UI down. Toast is fixed-position bottom-of-screen so
+  // it doesn't reflow vendor content.
+  const flash = (type, text) => {
+    if (pushToast) pushToast({ kind: type === 'success' ? 'success' : 'error', text });
+  };
 
   const buyHull = async (hullId) => {
     try {
@@ -1921,12 +1889,6 @@ const VendorTab = ({ body }) => {
 
   return (
     <div>
-      {message && (
-        <div style={{ marginBottom: 8 }}>
-          <MessageBar type={message.type === 'success' ? 'success' : 'error'}>{message.text}</MessageBar>
-        </div>
-      )}
-
       {/* Credits balance */}
       <div style={{
         display: 'flex',

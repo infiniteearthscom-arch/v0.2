@@ -947,6 +947,7 @@ export const SystemView = () => {
   const playerShip = useActiveShip();
   const fetchShips = useGameStore(state => state.fetchShips);
   const pushToast = useGameStore(state => state.pushToast);
+  const completeQuest = useGameStore(state => state.completeQuest);
   // Pod state: when active ship is the 'pod' hull, pirates ignore us and
   // we can't fight back. See migration 019 + /enter-pod endpoint.
   const isPod = playerShip?.hull_type_id === 'pod';
@@ -1179,6 +1180,21 @@ export const SystemView = () => {
   useEffect(() => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
   }, [dockedBody, setDockedBodyStore]);
+
+  // "Baptism by Fire" quest trigger -- watches enemyCount for the
+  // exact transition from >0 to 0 (player just killed the last hostile).
+  // completeQuest is server-side idempotent / no-op if the quest isn't
+  // in the player's active list, so we can fire freely without checking.
+  // Fires once per transition; if the player jumps to a new system with
+  // new enemies and clears that too, it fires again -- harmless since
+  // the server skips already-completed quests.
+  const prevEnemyCountRef = useRef(0);
+  useEffect(() => {
+    if (prevEnemyCountRef.current > 0 && enemyCount === 0) {
+      if (completeQuest) completeQuest('tutorial_clear_sector');
+    }
+    prevEnemyCountRef.current = enemyCount;
+  }, [enemyCount, completeQuest]);
 
   // Background music for the system view. Loops while the player is
   // in this view, stops on unmount (e.g. switch to galaxy view).
