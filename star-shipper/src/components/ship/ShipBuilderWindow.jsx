@@ -885,6 +885,11 @@ export const ShipBuilderWindow = () => {
         flash('success', `Fitted ${result.module} → ${slot.id}`);
         selectShip(selectedShipId);
         loadInventory();
+        // Refresh the global ships array so SystemView's playerShip
+        // selector sees the new fitted_modules. Without this, the
+        // mining laser / scanner-fitted checks in the game loop
+        // read stale data and the new module appears not to "work".
+        if (fetchShips) fetchShips();
         // "Ready for Launch" completes whenever every slot on the
         // active ship is filled. The server's all_slots_filled flag
         // counts pre-fit modules (e.g. Starter Scout's engine + reactor)
@@ -909,6 +914,11 @@ export const ShipBuilderWindow = () => {
           flash('success', `Removed ${result.removed_module} → cargo`);
           selectShip(selectedShipId);
           loadInventory();
+          // Same store-sync rationale as handleSlotDrop -- without it,
+          // SystemView's playerShip would still claim the module is
+          // fitted after unfit, which breaks all the fitted-module
+          // checks (mining, scanning, future toggleable abilities).
+          if (fetchShips) fetchShips();
         }
       } catch (err) {
         flash('error', err.message || 'Failed to unfit module');

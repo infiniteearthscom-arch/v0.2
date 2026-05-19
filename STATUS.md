@@ -22,6 +22,11 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
+- **Mining UX fixes: store-sync on fit + click-to-mine** — code written, **needs commit + push** (no migration). (2026-05-19)
+  - Bug 1: After fitting a module in Ship Builder, the global store's `ships` array wasn't refreshed, so SystemView's `playerShip.fitted_modules` stayed stale. `hasMiningLaserFitted` / `hasScannerFitted` returned false, so no firing / scanning. Fix: `handleSlotDrop` + `handleSlotClick` now call `fetchShips()` after success.
+  - Bug 2: Mining was auto-fire-on-proximity. User wants click-to-mine on a specific scanned asteroid. Refactored: `miningTargetRef` holds the explicit lock. Click a scanned asteroid (in range, laser fitted, cargo not full) → mining starts on it. Click same again → stop. Click different one → switch. Out-of-range automatically releases lock. Depletion clears lock. Orange dashed ring marks the active target.
+  - Files: `src/components/ship/ShipBuilderWindow.jsx` (fetchShips on fit + unfit); `src/components/system/SystemView.jsx` (miningTargetRef, click handler refactor, loop reads target not nearest, target visual); `STATUS.md`.
+
 - **Mining fitting fixes** — code written, **needs commit + push + DO migrate**. (2026-05-18)
   - Scout + starter_scout get a mining slot (mng1, at the bow). Without it the starter ship literally couldn't fit a mining laser since only Shuttle + Capital had mining slots.
   - Server `unfit-module` was writing item_data without slot_type. The Ship Builder's FittableModulesPanel filters cargo by `item_data.slot_type` — so unfit modules became invisible in the ship builder (still in regular Cargo, just hidden from the fit panel). Fixed: unfit now looks up + includes slot_type.
