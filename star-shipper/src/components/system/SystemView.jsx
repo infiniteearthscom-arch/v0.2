@@ -2316,6 +2316,32 @@ export const SystemView = () => {
         if (effects[i].age > lifetime) effects.splice(i, 1);
       }
 
+      // --- Mining spark spawn ---
+      // Every other frame while a mining target is locked + valid,
+      // spawn 2 tiny sparks at small random offsets from the asteroid.
+      // ~30 spawns/sec, 0.3s lifetime each = roughly 9 sparks on screen.
+      // Lives in its own block (not the per-cycle mining fire below)
+      // because the sparks are continuous visual texture, not tied to
+      // the 2s tick.
+      if (miningTargetRef.current && hasMiningLaserFitted(playerShip) && frameNum % 2 === 0) {
+        const t = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
+        if (t) {
+          for (let k = 0; k < 2; k++) {
+            const ang = Math.random() * Math.PI * 2;
+            const off = Math.random() * (t.size || 4);
+            effects.push({
+              x: t.x + Math.cos(ang) * off,
+              y: t.y + Math.sin(ang) * off,
+              type: 'mining_spark',
+              age: 0,
+              lifetime: 0.3,
+              color: ['#ffdd44', '#ffaa44', '#ffffff'][Math.floor(Math.random() * 3)],
+              size: 0.5 + Math.random() * 1.0,
+            });
+          }
+        }
+      }
+
       // --- Mining sound on/off transition ---
       // Centralized in the game loop so every place that clears the
       // target (handleAsteroidClick toggle, range cancel, depletion,
@@ -3146,6 +3172,17 @@ export const SystemView = () => {
                     <circle cx={fx.x} cy={fx.y} r={s * t * 3} fill="none"
                       stroke="#ff444466" strokeWidth={0.5} opacity={0.5 * (1 - t)} />
                   </g>
+                );
+              }
+              if (fx.type === 'mining_spark') {
+                // Tiny bright dot at the asteroid end of the mining beam.
+                // Shrinks + fades over its 0.3s lifetime. Many spawned
+                // per second while mining is active for a continuous-
+                // sparkle look.
+                const sz = (fx.size || 1) * (1 - t * 0.5);
+                return (
+                  <circle key={`fx-${i}`} cx={fx.x} cy={fx.y}
+                    r={sz} fill={fx.color} opacity={1 - t} />
                 );
               }
               return null;
