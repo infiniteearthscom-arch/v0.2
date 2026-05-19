@@ -1068,6 +1068,16 @@ export const SystemView = () => {
   const SCAN_RANGE = 80;     // matches utility_scanner.stats.scan_range
   const SCAN_TIME_MS = 8000; // matches utility_scanner.stats.scan_time * 1000
 
+  // A3 mining state. Auto-fires while a mining laser is fitted + an
+  // asteroid is within MINE_RANGE. Cooldown = MINE_CYCLE_MS. Stops on
+  // cargo full (server returns 409) and on asteroid depletion.
+  const mineCooldownRef = useRef(0);       // ms remaining in current cycle
+  const lastMineFrameRef = useRef(0);      // for delta calc
+  const miningInFlightRef = useRef(false); // dedupe overlapping requests
+  const cargoFullRef = useRef(false);      // pause mining when full; reset on system change
+  const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
+  const MINE_CYCLE_MS = 2000; // matches mining_basic.stats.mine_cycle * 1000
+
   // Wrecks (lootable spatial entities from pirate kills). Refs not state
   // because the game loop reads them every frame for proximity-claim
   // checks; the existing frameCount setState already drives rerenders so
@@ -1243,6 +1253,8 @@ export const SystemView = () => {
     if (!currentSystemId) return undefined;
     let cancelled = false;
     activeScanRef.current = null; // cancel any pending scan on system change
+    mineCooldownRef.current = 0;
+    cargoFullRef.current = false; // re-check capacity in new system
     asteroidsAPI.list(currentSystemId)
       .then(({ asteroids }) => { if (!cancelled) asteroidsRef.current = asteroids || []; })
       .catch(err => { console.warn('asteroid list failed:', err); });
@@ -1258,6 +1270,14 @@ export const SystemView = () => {
     for (const slot of Object.values(ship.fitted_modules)) {
       const id = slot?.module_type_id;
       if (id && id.startsWith('utility_scanner')) return true;
+    }
+    return false;
+  };
+  const hasMiningLaserFitted = (ship) => {
+    if (!ship?.fitted_modules) return false;
+    for (const slot of Object.values(ship.fitted_modules)) {
+      const id = slot?.module_type_id;
+      if (id && (id === 'mining_basic' || id.startsWith('mining_'))) return true;
     }
     return false;
   };
@@ -2257,6 +2277,96 @@ export const SystemView = () => {
         effects[i].age += delta;
         const lifetime = effects[i].lifetime || 0.5;
         if (effects[i].age > lifetime) effects.splice(i, 1);
+      }
+
+      // --- Asteroid mining auto-fire ---
+      // Fires every MINE_CYCLE_MS while a mining laser is fitted, an
+      // asteroid is in range, and cargo isn't full. Server validates
+      // everything; client just sequences the cycle + visual beam +
+      // refreshes the local asteroid on each tick's response.
+      if (!isPodRef.current && !cargoFullRef.current && !dockedBodyRef.current
+          && hasMiningLaserFitted(playerShip)) {
+        mineCooldownRef.current -= delta * 1000;
+        if (mineCooldownRef.current <= 0 && !miningInFlightRef.current) {
+          // Find nearest non-depleted asteroid in range.
+          let nearest = null, nearestDist = MINE_RANGE;
+          for (const a of asteroidsRef.current) {
+            const dx = a.x - playerPos.x, dy = a.y - playerPos.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < nearestDist) { nearest = a; nearestDist = d; }
+          }
+          if (nearest) {
+            // Reset cycle now so even a fast server response doesn't
+            // double-fire. Visual beam scaled with a longer lifetime
+            // so the player sees it across the whole cycle.
+            mineCooldownRef.current = MINE_CYCLE_MS;
+            miningInFlightRef.current = true;
+            effects.push({
+              type: 'laser_beam',
+              x1: playerPos.x, y1: playerPos.y,
+              x2: nearest.x,   y2: nearest.y,
+              age: 0, lifetime: 0.6,
+              color: '#ffaa44', // orange = mining (vs combat lasers)
+              fromPlayer: true,
+            });
+            const targetId = nearest.id;
+            asteroidsAPI.mine(targetId)
+              .then(({ mined, asteroid_remaining, asteroid_depleted, cargo_used, cargo_capacity }) => {
+                miningInFlightRef.current = false;
+                // Patch local asteroid with new contents (so the next
+                // tick picks the right resource + we know when empty).
+                const a = asteroidsRef.current.find(x => x.id === targetId);
+                if (a) {
+                  if (asteroid_depleted) {
+                    asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
+                  } else {
+                    a.contents = asteroid_remaining;
+                    a.scanned = true; // mining counts as a reveal
+                  }
+                }
+                // Optional periodic toast on depletion (don't spam per-tick toasts).
+                if (asteroid_depleted) {
+                  const pt = useGameStore.getState().pushToast;
+                  if (pt) pt({
+                    kind: 'info',
+                    text: `Asteroid depleted (last: +${mined.quantity} ${mined.name}). Respawns in ${10} min.`,
+                    duration: 4000,
+                  });
+                }
+                // Refresh credits/cargo display once we're at cap.
+                if (cargo_capacity > 0 && cargo_used >= cargo_capacity) {
+                  cargoFullRef.current = true;
+                  const pt = useGameStore.getState().pushToast;
+                  if (pt) pt({
+                    kind: 'error',
+                    text: 'Cargo full — mining stopped. Dock to sell or jettison.',
+                    duration: 4000,
+                  });
+                }
+              })
+              .catch(err => {
+                miningInFlightRef.current = false;
+                const msg = err?.message || '';
+                if (msg === 'cargo_full') {
+                  cargoFullRef.current = true;
+                  const pt = useGameStore.getState().pushToast;
+                  if (pt) pt({
+                    kind: 'error',
+                    text: 'Cargo full — mining stopped. Dock to sell or jettison.',
+                    duration: 4000,
+                  });
+                } else if (msg.includes('depleted')) {
+                  // Asteroid already gone -- drop locally so we pick a new target next cycle.
+                  asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
+                } else {
+                  console.warn('mine failed:', err);
+                }
+              });
+          } else {
+            // No target in range -- short cooldown so we re-poll soon.
+            mineCooldownRef.current = 500;
+          }
+        }
       }
 
       // --- Asteroid scan progress ---

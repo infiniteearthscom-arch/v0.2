@@ -2003,6 +2003,45 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
 const ASTEROIDS_PER_BELT_MIN = 20;
 const ASTEROIDS_PER_BELT_MAX = 40;
 const RARITY_WEIGHTS = { common: 0.70, rare: 0.25, exotic: 0.05 };
+const ASTEROID_RESPAWN_MINUTES = 10;
+
+// Roll resource composition for one asteroid. Used by initial generation
+// (deterministic via shared SRng) and by lazy respawn (uses Math.random
+// since respawn is a stochastic world event, not seed-derived).
+// `rng` is { next, range, int } -- accepts SRng OR a Math.random adapter.
+function rollAsteroidContents(rng, resByRarity, size) {
+  const pickRarity = () => {
+    const r = rng.next();
+    if (r < RARITY_WEIGHTS.common) return 'common';
+    if (r < RARITY_WEIGHTS.common + RARITY_WEIGHTS.rare) return 'rare';
+    return 'exotic';
+  };
+  const qtyFor = (rarity, sz) => {
+    const base = { common: 200, rare: 80, exotic: 25 }[rarity] || 100;
+    return Math.round(base * (sz / 4) * (0.7 + rng.next() * 0.6));
+  };
+  const numResources = rng.int(1, 3);
+  const contents = {};
+  for (let r = 0; r < numResources; r++) {
+    const rarity = pickRarity();
+    const pool = resByRarity[rarity];
+    if (!pool || pool.length === 0) continue;
+    const resId = pool[rng.int(0, pool.length - 1)];
+    const qty = qtyFor(rarity, size);
+    contents[resId] = contents[resId]
+      ? { initial: contents[resId].initial + qty, remaining: contents[resId].remaining + qty }
+      : { initial: qty, remaining: qty };
+  }
+  return contents;
+}
+
+// Math.random-backed adapter that satisfies the same {next/range/int}
+// interface SRng exposes. Used for non-deterministic rolls (respawn).
+const mathRng = {
+  next: () => Math.random(),
+  range: (a, b) => a + Math.random() * (b - a),
+  int: (a, b) => Math.floor(a + Math.random() * (b - a + 1)),
+};
 
 // Generates the asteroid set for a belt body. Returns rows ready for
 // bulk INSERT. Uses SRng for determinism so re-runs would produce the
@@ -2012,32 +2051,7 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
   // belt in a multi-belt system gets a distinct field.
   const seed = (systemSeed | 0) + Math.round(belt.orbit_radius);
   const rng = new SRng(seed + 0xA570); // 0xA570 salt = "ASTROID"
-
-  // Pre-fetch resource ids by rarity so we don't query per-asteroid.
-  const resByRarity = { common: [], rare: [], exotic: [] };
-  const allRes = await client.query(`SELECT id, rarity FROM resource_types`);
-  for (const r of allRes.rows) {
-    if (resByRarity[r.rarity]) resByRarity[r.rarity].push(r.id);
-  }
-
-  const pickRarity = () => {
-    const r = rng.next();
-    if (r < RARITY_WEIGHTS.common) return 'common';
-    if (r < RARITY_WEIGHTS.common + RARITY_WEIGHTS.rare) return 'rare';
-    return 'exotic';
-  };
-  const pickResource = () => {
-    const rarity = pickRarity();
-    const pool = resByRarity[rarity];
-    if (!pool || pool.length === 0) return null;
-    return pool[rng.int(0, pool.length - 1)];
-  };
-
-  // Quantity scales by rarity: rare/exotic asteroids carry less.
-  const qtyFor = (rarity, sizeUnit) => {
-    const base = { common: 200, rare: 80, exotic: 25 }[rarity] || 100;
-    return Math.round(base * (sizeUnit / 4) * (0.7 + rng.next() * 0.6));
-  };
+  const resByRarity = await loadResByRarity(client);
 
   const beltSize = belt.size || 50;
   const beltRadius = belt.orbit_radius || 1000;
@@ -2050,20 +2064,6 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
     // cluster in the visible belt zone.
     const radius = beltRadius + rng.range(-beltSize * 0.4, beltSize * 0.4);
     const size = rng.int(2, 6);
-    const numResources = rng.int(1, 3);
-
-    const contents = {};
-    for (let r = 0; r < numResources; r++) {
-      const resId = pickResource();
-      if (!resId) continue;
-      // Find rarity for the qty calc (cheap re-lookup; small N)
-      const rarity = Object.entries(resByRarity).find(([, ids]) => ids.includes(resId))?.[0] || 'common';
-      const qty = qtyFor(rarity, size);
-      // If the same resource was rolled twice, sum quantities.
-      contents[resId] = contents[resId]
-        ? { initial: contents[resId].initial + qty, remaining: contents[resId].remaining + qty }
-        : { initial: qty, remaining: qty };
-    }
 
     rows.push({
       system_id: belt.system_id,
@@ -2072,10 +2072,42 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
       y: Math.sin(angle) * radius,
       size,
       rotation: rng.range(0, Math.PI * 2),
-      contents,
+      contents: rollAsteroidContents(rng, resByRarity, size),
     });
   }
   return rows;
+}
+
+// Cache resource-by-rarity within a request to avoid repeating the
+// SELECT for every roll. Resolves once and reuses.
+async function loadResByRarity(client) {
+  const resByRarity = { common: [], rare: [], exotic: [] };
+  const allRes = await client.query(`SELECT id, rarity FROM resource_types`);
+  for (const r of allRes.rows) {
+    if (resByRarity[r.rarity]) resByRarity[r.rarity].push(r.id);
+  }
+  return resByRarity;
+}
+
+// Helper: enrich a contents object ({resId: {initial, remaining}}) with
+// the human-readable resource name. Called on every list + scan + mine
+// response so the client doesn't have to maintain its own resource_types
+// lookup. Skips null/empty contents.
+async function enrichContentsWithNames(client, contents) {
+  if (!contents || typeof contents !== 'object') return contents;
+  const ids = Object.keys(contents).map(Number).filter(n => !isNaN(n));
+  if (ids.length === 0) return contents;
+  const rows = await client.query(
+    `SELECT id, name FROM resource_types WHERE id = ANY($1::INT[])`,
+    [ids]
+  );
+  const nameMap = {};
+  rows.rows.forEach(r => { nameMap[r.id] = r.name; });
+  const enriched = {};
+  for (const [k, v] of Object.entries(contents)) {
+    enriched[k] = { ...v, name: nameMap[Number(k)] || `res_${k}` };
+  }
+  return enriched;
 }
 
 // List active (non-depleted) asteroids in a system. Generates the set
@@ -2134,6 +2166,27 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         }
       }
 
+      // A3: lazy respawn pass. Any asteroid in this system whose
+      // respawn_at has passed gets a fresh roll of contents at its
+      // original position. Done inline on the list query so we don't
+      // need a background job. Re-rolled with Math.random (not seeded)
+      // so successive respawns vary.
+      const respawnable = await client.query(`
+        SELECT id, size FROM asteroids
+        WHERE system_id = $1 AND depleted_at IS NOT NULL AND respawn_at < NOW()
+      `, [systemId]);
+      if (respawnable.rows.length > 0) {
+        const resByRarity = await loadResByRarity(client);
+        for (const a of respawnable.rows) {
+          const newContents = rollAsteroidContents(mathRng, resByRarity, a.size);
+          await client.query(`
+            UPDATE asteroids
+            SET contents = $1, depleted_at = NULL, respawn_at = NULL, spawned_at = NOW()
+            WHERE id = $2
+          `, [JSON.stringify(newContents), a.id]);
+        }
+      }
+
       // Return all non-depleted asteroids in the system. JOIN to
       // player_asteroid_scans so we only send contents for asteroids
       // THIS player has scanned -- unscanned asteroids get null contents
@@ -2151,6 +2204,11 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         WHERE a.system_id = $1 AND a.depleted_at IS NULL
         ORDER BY a.belt_body_id, a.id
       `, [systemId, userId]);
+
+      // Enrich each asteroid's contents with resource names
+      for (const row of result.rows) {
+        row.contents = await enrichContentsWithNames(client, row.contents);
+      }
       return result.rows;
     });
 
@@ -2219,7 +2277,8 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
         ON CONFLICT (user_id, asteroid_id) DO NOTHING
       `, [userId, asteroid_id]);
 
-      return { contents: ast.rows[0].contents };
+      const enriched = await enrichContentsWithNames(client, ast.rows[0].contents);
+      return { contents: enriched };
     });
 
     res.json({ success: true, ...out });
@@ -2227,6 +2286,171 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error('Error scanning asteroid:', error);
     res.status(500).json({ error: 'Failed to scan asteroid' });
+  }
+});
+
+// Mine a single tick from an asteroid. Validates fitted mining laser,
+// non-depleted asteroid, available cargo. Picks the first resource
+// with remaining > 0 (round-robin / player choice deferred to a
+// later phase). Decrements asteroid + adds to player inventory in a
+// transaction so we don't get half-applied state on errors.
+//
+// Returns 409 with `error: 'cargo_full'` so the client can stop the
+// mining loop cleanly. Returns 410 if the asteroid is depleted /
+// missing (gone since last poll). Returns 200 with the mined
+// resource info + the asteroid's remaining contents on success.
+router.post('/asteroids/mine', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { asteroid_id } = req.body;
+    if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
+
+    const out = await transaction(async (client) => {
+      // 1. Player must have a mining laser fitted.
+      const userRow = await client.query(
+        `SELECT active_ship_id FROM users WHERE id = $1`, [userId]
+      );
+      const activeShipId = userRow.rows[0]?.active_ship_id;
+      if (!activeShipId) throw Object.assign(new Error('No active ship'), { statusCode: 400 });
+
+      const shipRow = await client.query(
+        `SELECT fitted_modules FROM ships WHERE id = $1 AND user_id = $2`,
+        [activeShipId, userId]
+      );
+      const fitted = shipRow.rows[0]?.fitted_modules || {};
+      let hasLaser = false;
+      for (const slot of Object.values(fitted)) {
+        const id = slot?.module_type_id;
+        if (id && (id === 'mining_basic' || id.startsWith('mining_'))) {
+          hasLaser = true; break;
+        }
+      }
+      if (!hasLaser) {
+        throw Object.assign(new Error('Mining Laser required'), { statusCode: 400 });
+      }
+
+      // 2. Lock + load the asteroid.
+      const ast = await client.query(
+        `SELECT id, contents, system_id FROM asteroids
+         WHERE id = $1 AND depleted_at IS NULL FOR UPDATE`,
+        [asteroid_id]
+      );
+      if (!ast.rows[0]) {
+        throw Object.assign(new Error('Asteroid depleted or missing'), { statusCode: 410 });
+      }
+      const contents = ast.rows[0].contents || {};
+
+      // 3. Pick first resource with remaining > 0.
+      const target = Object.entries(contents).find(([_, v]) => (v?.remaining || 0) > 0);
+      if (!target) {
+        // Defensive: shouldn't normally hit since we check depleted_at,
+        // but if a previous tick race left empty contents, deplete now.
+        await client.query(`
+          UPDATE asteroids
+          SET depleted_at = NOW(), respawn_at = NOW() + ($1 || ' minutes')::INTERVAL
+          WHERE id = $2
+        `, [ASTEROID_RESPAWN_MINUTES, asteroid_id]);
+        throw Object.assign(new Error('Asteroid depleted or missing'), { statusCode: 410 });
+      }
+      const [resKey, resInfo] = target;
+      const resId = parseInt(resKey, 10);
+
+      // 4. Cargo capacity check (fleet-wide). Sum current resource
+      // units vs total cargo. Approximate (no per-resource volumes
+      // yet); enough to gate "stop when full".
+      const capRow = await client.query(
+        `SELECT COALESCE(SUM(computed_cargo), 0)::INT AS cap FROM ships WHERE user_id = $1`,
+        [userId]
+      );
+      const totalCap = capRow.rows[0]?.cap || 0;
+      const usedRow = await client.query(
+        `SELECT COALESCE(SUM(quantity), 0)::INT AS used
+         FROM player_resource_inventory
+         WHERE user_id = $1 AND item_type = 'resource'`,
+        [userId]
+      );
+      const used = usedRow.rows[0]?.used || 0;
+      if (totalCap > 0 && used >= totalCap) {
+        throw Object.assign(new Error('cargo_full'), { statusCode: 409 });
+      }
+
+      // 5. How much to mine this tick: mine_yield (5) capped by what's
+      // remaining and by what fits in cargo.
+      const MINE_YIELD = 5;
+      const minable = Math.min(MINE_YIELD, resInfo.remaining, totalCap > 0 ? (totalCap - used) : MINE_YIELD);
+      if (minable <= 0) {
+        throw Object.assign(new Error('cargo_full'), { statusCode: 409 });
+      }
+
+      // 6. Decrement asteroid contents.
+      contents[resKey] = { ...resInfo, remaining: resInfo.remaining - minable };
+      const allEmpty = Object.values(contents).every(v => (v?.remaining || 0) <= 0);
+      if (allEmpty) {
+        await client.query(`
+          UPDATE asteroids
+          SET contents = $1, depleted_at = NOW(), respawn_at = NOW() + ($2 || ' minutes')::INTERVAL
+          WHERE id = $3
+        `, [JSON.stringify(contents), ASTEROID_RESPAWN_MINUTES, asteroid_id]);
+      } else {
+        await client.query(
+          `UPDATE asteroids SET contents = $1 WHERE id = $2`,
+          [JSON.stringify(contents), asteroid_id]
+        );
+      }
+
+      // 7. Add to player inventory. Stack with existing row of the
+      // same resource_type_id, or create a new one in next free slot.
+      const existing = await client.query(
+        `SELECT id, quantity FROM player_resource_inventory
+         WHERE user_id = $1 AND item_type = 'resource' AND resource_type_id = $2
+         LIMIT 1`,
+        [userId, resId]
+      );
+      if (existing.rows[0]) {
+        await client.query(
+          `UPDATE player_resource_inventory SET quantity = quantity + $1, updated_at = NOW()
+           WHERE id = $2`,
+          [minable, existing.rows[0].id]
+        );
+      } else {
+        const slotRes = await client.query(`
+          SELECT s.slot FROM generate_series(
+            0,
+            COALESCE((SELECT MAX(slot_index) + 1 FROM player_resource_inventory WHERE user_id = $1), 0)
+          ) s(slot)
+          WHERE s.slot NOT IN (
+            SELECT slot_index FROM player_resource_inventory WHERE user_id = $1 AND slot_index IS NOT NULL
+          )
+          ORDER BY s.slot ASC LIMIT 1
+        `, [userId]);
+        const nextSlot = parseInt(slotRes.rows[0]?.slot) || 0;
+        await client.query(
+          `INSERT INTO player_resource_inventory
+            (user_id, item_type, resource_type_id, quantity, slot_index)
+           VALUES ($1, 'resource', $2, $3, $4)`,
+          [userId, resId, minable, nextSlot]
+        );
+      }
+
+      // 8. Resource name for the client toast / log.
+      const nameRow = await client.query(
+        `SELECT name FROM resource_types WHERE id = $1`, [resId]
+      );
+
+      return {
+        mined: { resource_type_id: resId, name: nameRow.rows[0]?.name || `res_${resId}`, quantity: minable },
+        asteroid_remaining: await enrichContentsWithNames(client, contents),
+        asteroid_depleted: allEmpty,
+        cargo_used: used + minable,
+        cargo_capacity: totalCap,
+      };
+    });
+
+    res.json({ success: true, ...out });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error mining asteroid:', error);
+    res.status(500).json({ error: 'Failed to mine asteroid' });
   }
 });
 

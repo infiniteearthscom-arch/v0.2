@@ -222,6 +222,10 @@ export const asteroidsAPI = {
     method: 'POST',
     body: JSON.stringify({ asteroid_id: asteroidId }),
   }),
+  mine: (asteroidId) => request('/resources/asteroids/mine', {
+    method: 'POST',
+    body: JSON.stringify({ asteroid_id: asteroidId }),
+  }),
 };
 
 // Wrecks — lootable spatial entities. Replaces the old direct-credit

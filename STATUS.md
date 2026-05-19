@@ -22,6 +22,13 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
+- **Asteroid mining — Phase A3 (mining laser + respawn)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
+  - Migration `026_mining_laser_stats.sql` adds `mine_range:120`, `mine_yield:5`, `mine_cycle:2` to `mining_basic.stats`.
+  - Server: `POST /resources/asteroids/mine` validates fitted laser, picks first resource with remaining > 0, decrements asteroid + adds to inventory in a transaction, checks fleet cargo capacity (returns 409 `cargo_full` for client to halt). Depletes asteroid + sets `respawn_at = NOW() + 10min` when emptied. `GET /resources/asteroids` now runs a lazy respawn pass before listing — depleted asteroids whose respawn timer has passed get fresh contents (re-rolled, non-deterministic) at the same position. Resource names enriched server-side.
+  - Client: auto-fire mining loop in the game loop. While a `mining_basic` is fitted and an asteroid is within `MINE_RANGE = 120`, fires every 2s with an orange beam visual (`#ffaa44`). Server response patches the local asteroid contents; depleted ones drop from `asteroidsRef`. On `cargo_full`, sets a ref that halts mining + pushes an error toast. Reset on system change.
+  - **Phase A complete** with this push — A1 (presence), A2 (scan reveal), A3 (mining). Follow-up items in "Up next" cover the tier upgrades (advanced/elite scanner), bulk-scan, system-wide sweep, and the cargo-volume model.
+  - Files: `migrations/026_mining_laser_stats.sql` (new); `src/api/resources.js` (mine endpoint + lazy respawn + name enrichment helper + roll-contents extraction); `src/utils/api.js` (asteroidsAPI.mine); `src/components/system/SystemView.jsx` (mining loop + helper); `CLAUDE.md` (migration counter); `STATUS.md`.
+
 - **Asteroid mining — Phase A2 (per-asteroid scan)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
   - Migration `025_scanner_stats.sql` adds `scan_range: 80` + `scan_time: 8` to `utility_scanner.stats` and creates `player_asteroid_scans` table.
   - Server: `GET /resources/asteroids` now LEFT JOINs `player_asteroid_scans` and returns contents only for asteroids THIS player has scanned (data-layer gate, not just UI). `POST /resources/asteroids/scan` validates the player has a `utility_scanner*` module fitted, records the reveal, returns contents.
