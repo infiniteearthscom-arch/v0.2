@@ -1979,7 +1979,11 @@ export const SystemView = () => {
               playSound('ship_destroyed');
               playSound('ship_destroyed_metal');
               const loot = nearest.lootCredits || 50;
-              setCombatLog(prev => [...prev.slice(-4), `Destroyed ${nearest.name}! Loot dropped (${loot} cr) — fly to salvage.`]);
+              if (pushToast) pushToast({
+                kind: 'success',
+                text: `Destroyed ${nearest.name} — ${loot} cr loot dropped, fly to salvage.`,
+                duration: 3500,
+              });
               wrecksRef.current.push({
                 id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                 x: nearest.x,
@@ -2097,7 +2101,11 @@ export const SystemView = () => {
                 playSound('ship_destroyed');
                 playSound('ship_destroyed_metal');
                 const loot = e.lootCredits || 50;
-                setCombatLog(prev => [...prev.slice(-4), `Destroyed ${e.name}! Loot dropped (${loot} cr) — fly to salvage.`]);
+                if (pushToast) pushToast({
+                  kind: 'success',
+                  text: `Destroyed ${e.name} — ${loot} cr loot dropped, fly to salvage.`,
+                  duration: 3500,
+                });
                 wrecksRef.current.push({
                   id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                   x: e.x,
