@@ -1077,6 +1077,10 @@ export const SystemView = () => {
   const mineCooldownRef = useRef(0);       // ms remaining in current cycle
   const miningInFlightRef = useRef(false); // dedupe overlapping requests
   const cargoFullRef = useRef(false);      // pause mining when full; reset on system change
+  // Tracks whether the mining_laser audio loop is currently playing,
+  // so the game loop can drive start/stop transitions in one place
+  // (every place that toggles miningTargetRef stays simpler).
+  const miningLoopActiveRef = useRef(false);
   const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
   const MINE_CYCLE_MS = 2000; // matches mining_basic.stats.mine_cycle * 1000
 
@@ -1258,6 +1262,11 @@ export const SystemView = () => {
     miningTargetRef.current = null; // cancel any active mining on system change
     mineCooldownRef.current = 0;
     cargoFullRef.current = false; // re-check capacity in new system
+    // The game-loop transition watcher will stop the mining sound on
+    // the next frame, but call it explicitly here too in case the
+    // game loop is paused / unmounted during the change.
+    stopLoop('mining_laser');
+    miningLoopActiveRef.current = false;
     asteroidsAPI.list(currentSystemId)
       .then(({ asteroids }) => { if (!cancelled) asteroidsRef.current = asteroids || []; })
       .catch(err => { console.warn('asteroid list failed:', err); });
@@ -2307,6 +2316,20 @@ export const SystemView = () => {
         if (effects[i].age > lifetime) effects.splice(i, 1);
       }
 
+      // --- Mining sound on/off transition ---
+      // Centralized in the game loop so every place that clears the
+      // target (handleAsteroidClick toggle, range cancel, depletion,
+      // cargo-full) doesn't have to remember to stopLoop. Idempotent.
+      const wantMiningSound = !!miningTargetRef.current && !isPodRef.current
+        && !dockedBodyRef.current && hasMiningLaserFitted(playerShip);
+      if (wantMiningSound && !miningLoopActiveRef.current) {
+        startLoop('mining_laser');
+        miningLoopActiveRef.current = true;
+      } else if (!wantMiningSound && miningLoopActiveRef.current) {
+        stopLoop('mining_laser');
+        miningLoopActiveRef.current = false;
+      }
+
       // --- Asteroid mining (click-to-mine target) ---
       // Fires every MINE_CYCLE_MS at the explicit target locked via
       // handleAsteroidClick. Cancels the lock automatically if the
@@ -2328,17 +2351,11 @@ export const SystemView = () => {
           } else {
             mineCooldownRef.current -= delta * 1000;
             if (mineCooldownRef.current <= 0 && !miningInFlightRef.current) {
-              // Fire!
+              // Fire! The constant beam visual is rendered directly in
+              // the SVG below (driven by miningTargetRef), so no
+              // per-tick effect push here -- just the server call.
               mineCooldownRef.current = MINE_CYCLE_MS;
               miningInFlightRef.current = true;
-              effects.push({
-                type: 'laser_beam',
-                x1: playerPos.x, y1: playerPos.y,
-                x2: target.x,    y2: target.y,
-                age: 0, lifetime: 0.6,
-                color: '#ffaa44', // orange = mining (vs combat lasers)
-                fromPlayer: true,
-              });
               asteroidsAPI.mine(targetId)
                 .then(({ mined, asteroid_remaining, asteroid_depleted, cargo_used, cargo_capacity }) => {
                   miningInFlightRef.current = false;
@@ -2937,6 +2954,44 @@ export const SystemView = () => {
               </g>
             ))}
             
+            {/* Mining beams (green, constant while target locked).
+                Drawn from EVERY fleet ship that has a mining laser
+                fitted, to the active mining target. Layered render
+                (outer glow + core + bright center) mirrors the
+                combat laser_beam style. Rendered before asteroids so
+                the rocky polygon reads on top of the beam terminus. */}
+            {miningTargetRef.current && (() => {
+              const target = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
+              if (!target) return null;
+              const theta = shipRotationRef.current * Math.PI / 180;
+              const cosT = Math.cos(theta), sinT = Math.sin(theta);
+              const rightX = -sinT, rightY = cosT;
+              const behindX = -cosT, behindY = -sinT;
+              const px = shipPosRef.current.x, py = shipPosRef.current.y;
+              const beams = [];
+              for (const fs of (fleetShipsRef.current || [])) {
+                if (!hasMiningLaserFitted(fs)) continue;
+                let sx, sy;
+                if (fs.isActive) { sx = px; sy = py; }
+                else {
+                  const off = fs.formationOffset || { x: 0, y: 0 };
+                  sx = px + rightX * off.x + behindX * off.y;
+                  sy = py + rightY * off.x + behindY * off.y;
+                }
+                beams.push(
+                  <g key={`mbeam-${fs.id}`} style={{ pointerEvents: 'none' }}>
+                    <line x1={sx} y1={sy} x2={target.x} y2={target.y}
+                      stroke="#44ff66" strokeWidth={3} opacity={0.25} strokeLinecap="round" />
+                    <line x1={sx} y1={sy} x2={target.x} y2={target.y}
+                      stroke="#44ff66" strokeWidth={1.4} opacity={0.85} strokeLinecap="round" />
+                    <line x1={sx} y1={sy} x2={target.x} y2={target.y}
+                      stroke="#ffffff" strokeWidth={0.4} opacity={0.7} strokeLinecap="round" />
+                  </g>
+                );
+              }
+              return beams;
+            })()}
+
             {/* Asteroids (Phase A1: presence only -- scan in A2, mine in
                 A3). Render before wrecks/projectiles so combat reads on
                 top. Each asteroid is a small irregular gray rock shape

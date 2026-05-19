@@ -15,6 +15,7 @@ These match Kenney's free Sci-Fi Sounds pack (https://kenney.nl/assets/sci-fi-so
 | `universfield-computer-mouse-click-02-383961.mp3` | Toolbar button is clicked |
 | `spaceEngine_000.ogg`    | **Loop:** plays while W (gas) is held + not docked |
 | `placidplace-spaceship-ambience-with-effects-21420.mp3` | **Loop:** background music for the system view (plays always while in SystemView) |
+| `freesound_community-laser-weld-103309.mp3`             | **Loop:** continuous mining beam noise while a mining target is locked |
 
 To swap a sound for a different one (e.g. `laserLarge_000.ogg` for the fire sound), edit the path in `audio.js` — no other code changes needed.
 

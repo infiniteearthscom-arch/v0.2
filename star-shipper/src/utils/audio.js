@@ -34,6 +34,10 @@ const SOUND_FILES = {
 const LOOP_FILES = {
   fleet_engine: '/sounds/spaceEngine_000.ogg',
   system_music: '/sounds/placidplace-spaceship-ambience-with-effects-21420.mp3',
+  // Continuous mining beam noise; started when the player locks a
+  // mining target, stopped when the lock releases (range, depletion,
+  // cargo full, manual cancel, system change).
+  mining_laser: '/sounds/freesound_community-laser-weld-103309.mp3',
 };
 const LOOP_GAIN_MULT = 0.4;
 
