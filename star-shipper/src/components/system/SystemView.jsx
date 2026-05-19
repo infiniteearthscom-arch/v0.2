@@ -2316,14 +2316,38 @@ export const SystemView = () => {
         if (effects[i].age > lifetime) effects.splice(i, 1);
       }
 
-      // --- Mining spark spawn ---
-      // Every other frame while a mining target is locked + valid,
-      // spawn 2 tiny sparks at small random offsets from the asteroid.
-      // ~30 spawns/sec, 0.3s lifetime each = roughly 9 sparks on screen.
-      // Lives in its own block (not the per-cycle mining fire below)
-      // because the sparks are continuous visual texture, not tied to
-      // the 2s tick.
-      if (miningTargetRef.current && hasMiningLaserFitted(playerShip) && frameNum % 2 === 0) {
+      // --- Mining: gates + auto-release ---
+      // Check fleet-wide for a mining laser (not just the active ship)
+      // via the always-current fleetShipsRef -- avoids the stale-
+      // playerShip trap where the gameStore selector lags an in-flight
+      // fetch. Auto-release is its OWN block (before fire/sparks/sound)
+      // so flying out of range / docking / unfitting cleanly drops the
+      // lock regardless of whether the fire-gate also passes.
+      const fleetHasMiningLaser = (fleetShipsRef.current || []).some(hasMiningLaserFitted);
+      if (miningTargetRef.current) {
+        const t = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
+        let releaseReason = null;
+        if (isPodRef.current)             releaseReason = 'in pod';
+        else if (cargoFullRef.current)    releaseReason = 'cargo full';
+        else if (dockedBodyRef.current)   releaseReason = 'docked';
+        else if (!fleetHasMiningLaser)    releaseReason = 'no mining laser';
+        else if (!t)                      releaseReason = 'asteroid gone';
+        else {
+          const dxr = t.x - playerPos.x, dyr = t.y - playerPos.y;
+          if (dxr * dxr + dyr * dyr > MINE_RANGE * MINE_RANGE) releaseReason = 'out of range';
+        }
+        if (releaseReason) {
+          miningTargetRef.current = null;
+          const pt = useGameStore.getState().pushToast;
+          if (pt) pt({ kind: 'info', text: `Mining stopped (${releaseReason}).`, duration: 2500 });
+        }
+      }
+
+      // --- Mining sparks (continuous visual at the impact point) ---
+      // ~30 spawns/sec, 0.3s lifetime each = roughly 9 sparks on screen
+      // at any time. Only runs when target is still locked (passed the
+      // auto-release above).
+      if (miningTargetRef.current && fleetHasMiningLaser && frameNum % 2 === 0) {
         const t = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
         if (t) {
           for (let k = 0; k < 2; k++) {
@@ -2343,11 +2367,10 @@ export const SystemView = () => {
       }
 
       // --- Mining sound on/off transition ---
-      // Centralized in the game loop so every place that clears the
-      // target (handleAsteroidClick toggle, range cancel, depletion,
-      // cargo-full) doesn't have to remember to stopLoop. Idempotent.
-      const wantMiningSound = !!miningTargetRef.current && !isPodRef.current
-        && !dockedBodyRef.current && hasMiningLaserFitted(playerShip);
+      // Centralized so every place that clears miningTargetRef doesn't
+      // need to remember to stopLoop. Idempotent. Same fleet-wide
+      // laser check as everything else.
+      const wantMiningSound = !!miningTargetRef.current && fleetHasMiningLaser;
       if (wantMiningSound && !miningLoopActiveRef.current) {
         startLoop('mining_laser');
         miningLoopActiveRef.current = true;
@@ -2356,27 +2379,16 @@ export const SystemView = () => {
         miningLoopActiveRef.current = false;
       }
 
-      // --- Asteroid mining (click-to-mine target) ---
-      // Fires every MINE_CYCLE_MS at the explicit target locked via
-      // handleAsteroidClick. Cancels the lock automatically if the
-      // target moves out of range, depletes, or cargo fills.
-      if (!isPodRef.current && !cargoFullRef.current && !dockedBodyRef.current
-          && hasMiningLaserFitted(playerShip) && miningTargetRef.current) {
+      // --- Mining fire cycle ---
+      // Per-tick server call. Auto-release above already validated
+      // range / target / fleet laser, so we just decrement the cycle
+      // and fire when ready.
+      if (miningTargetRef.current && fleetHasMiningLaser) {
         const targetId = miningTargetRef.current.asteroidId;
         const target = asteroidsRef.current.find(a => a.id === targetId);
-        if (!target) {
-          // Asteroid disappeared (depleted between ticks)
-          miningTargetRef.current = null;
-        } else {
-          const tdx = target.x - playerPos.x, tdy = target.y - playerPos.y;
-          if (tdx * tdx + tdy * tdy > MINE_RANGE * MINE_RANGE) {
-            // Out of range -- release the lock
-            miningTargetRef.current = null;
-            const pt = useGameStore.getState().pushToast;
-            if (pt) pt({ kind: 'error', text: 'Mining target out of range — lock released.', duration: 2500 });
-          } else {
-            mineCooldownRef.current -= delta * 1000;
-            if (mineCooldownRef.current <= 0 && !miningInFlightRef.current) {
+        if (target) {
+          mineCooldownRef.current -= delta * 1000;
+          if (mineCooldownRef.current <= 0 && !miningInFlightRef.current) {
               // Fire! The constant beam visual is rendered directly in
               // the SVG below (driven by miningTargetRef), so no
               // per-tick effect push here -- just the server call.
@@ -2434,7 +2446,6 @@ export const SystemView = () => {
                     console.warn('mine failed:', err);
                   }
                 });
-            }
           }
         }
       }
