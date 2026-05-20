@@ -2188,13 +2188,17 @@ const VendorTab = ({ body }) => {
                                 textTransform: 'uppercase',
                               }}>{r.category}</span>
                               {r.quality_tier && (
-                                <Pill color={
-                                  r.quality_tier === 'legendary' ? '#fbbf24' :
-                                  r.quality_tier === 'excellent' ? '#a855f7' :
-                                  r.quality_tier === 'good' ? '#60a5fa' :
-                                  r.quality_tier === 'fine' ? '#22c55e' :
-                                  '#4a6580'
-                                }>{r.quality_tier}</Pill>
+                                // quality_tier is an object {name, color}
+                                // from getQualityTier -- render the .name
+                                // string + read .color directly. The old
+                                // string-equality switch never matched
+                                // (compared object to 'legendary' etc.)
+                                // and would crash on object-as-child once
+                                // a stack had stats populated, e.g. from
+                                // asteroid mining.
+                                <Pill color={r.quality_tier.color || '#4a6580'}>
+                                  {r.quality_tier.name}
+                                </Pill>
                               )}
                             </div>
                             <div style={{
