@@ -12,40 +12,40 @@ import {
 // ============================================
 const ShipThumb = ({ hullId, size = 48 }) => {
   const img = useMemo(() => getShipImage(hullId, size / 200), [hullId, size]);
-  if (!img) return <div style={{ width: size, height: size, background: '#0a1528' }} />;
+  if (!img) return null;
   return (
-    <img
-      src={img.dataUrl}
-      style={{ imageRendering: 'pixelated', maxWidth: size, maxHeight: size }}
-      alt=""
-    />
+    <img src={img.dataUrl} width={size} height={size}
+      style={{ imageRendering: 'pixelated', display: 'block' }} />
   );
 };
 
-// ============================================
-// SLOT TYPE COLORS
-// ============================================
 const SLOT_COLORS = {
   engine:  '#ff6622',
-  weapon:  '#ef4444',
-  shield:  '#818cf8',
-  cargo:   COLORS.GOLD.light,
+  weapon:  '#ff2244',
+  shield:  '#8844ff',
+  cargo:   '#ddaa22',
   utility: '#22ccaa',
-  reactor: '#22d3ee',
-  mining:  '#a855f7',
+  reactor: '#00ddff',
+  mining:  '#aa66ff',
 };
 
 // ============================================
 // SHIP CARD
 // ============================================
-const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renamingId, renameVal, setRenameVal, startRename, finishRename }) => {
+// Active ships: shown normally, can Set Active / Store (if docked) / Fitting.
+// Stored ships: dimmed, show storage location, can Activate (if docked HERE
+// and fleet has room).
+const ShipCard = ({
+  ship, isActive, fleetPos, isStored, storedHere, canActivateForCap, dockedSomewhere,
+  onSetActive, onOpenFitting, onStore, onActivate,
+  renamingId, renameVal, setRenameVal, startRename, finishRename,
+}) => {
   const fittedMods = ship.fitted_modules || {};
   const fittedCount = Object.keys(fittedMods).length;
   const totalSlots = (ship.hull_slots || []).length;
-  const inFleet = fleetPos < MAX_FLEET_SIZE;
   const isRenaming = renamingId === ship.id;
 
-  const accent = isActive ? COLORS.BLUE.pri : COLORS.EDGE;
+  const accent = isActive ? COLORS.BLUE.pri : (isStored ? COLORS.GOLD.pri : COLORS.EDGE);
 
   return (
     <div style={{
@@ -59,6 +59,7 @@ const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renami
       marginBottom: 8,
       transition: 'all 0.15s',
       boxShadow: isActive ? glow(COLORS.BLUE.pri, 0.15) : 'none',
+      opacity: isStored ? 0.65 : 1,
     }}>
       <div style={{ display: 'flex', gap: 10 }}>
         {/* Thumbnail */}
@@ -72,6 +73,7 @@ const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renami
           background: 'rgba(2,4,10,0.6)',
           border: `1px solid ${COLORS.EDGE}`,
           borderRadius: 2,
+          filter: isStored ? 'grayscale(0.5)' : 'none',
         }}>
           <ShipThumb hullId={ship.hull_type_id} size={48} />
         </div>
@@ -118,12 +120,14 @@ const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renami
               >{ship.name}</span>
             )}
             {isActive && <Pill color={COLORS.BLUE.light} filled>ACTIVE</Pill>}
-            {inFleet && (
-              <Pill color={COLORS.GREEN.light}>
-                {isActive ? 'LEAD' : `WING ${fleetPos}`}
+            {!isActive && !isStored && (
+              <Pill color={COLORS.GREEN.light}>WING {fleetPos}</Pill>
+            )}
+            {isStored && (
+              <Pill color={COLORS.GOLD.light}>
+                STORED · {ship.storage_body_name || 'unknown'}
               </Pill>
             )}
-            {!inFleet && <Pill color={COLORS.TEXT.muted}>DOCKED</Pill>}
           </div>
 
           {/* Hull type subtitle */}
@@ -134,7 +138,10 @@ const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renami
             marginBottom: 6,
             letterSpacing: 0.5,
           }}>
-            {ship.hull_name || 'Unknown'} · {ship.hull_class || ''} · {ship.status || 'docked'}
+            {ship.hull_name || 'Unknown'} · {ship.hull_class || ''}
+            {isStored && ship.storage_body_name && (
+              <span style={{ color: COLORS.GOLD.dim }}> · housed at {ship.storage_body_name}</span>
+            )}
           </div>
 
           {/* Stats row */}
@@ -182,14 +189,45 @@ const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renami
 
         {/* Action buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
-          {!isActive && (
-            <PanelButton size="sm" accent={COLORS.BLUE.light} onClick={() => onSetActive(ship.id)}>
-              Set Active
+          {isStored ? (
+            <PanelButton
+              size="sm"
+              accent={storedHere && canActivateForCap ? COLORS.GREEN.light : COLORS.TEXT.muted}
+              disabled={!storedHere || !canActivateForCap}
+              onClick={() => storedHere && canActivateForCap && onActivate(ship.id)}
+              title={
+                !storedHere
+                  ? `Dock at ${ship.storage_body_name} to activate`
+                  : !canActivateForCap
+                  ? 'Fleet full — store another ship first'
+                  : 'Bring this ship into the active fleet'
+              }
+            >
+              Activate
             </PanelButton>
+          ) : (
+            <>
+              {!isActive && (
+                <PanelButton size="sm" accent={COLORS.BLUE.light} onClick={() => onSetActive(ship.id)}>
+                  Set Active
+                </PanelButton>
+              )}
+              {!isActive && (
+                <PanelButton
+                  size="sm"
+                  accent={dockedSomewhere ? COLORS.GOLD.light : COLORS.TEXT.muted}
+                  disabled={!dockedSomewhere}
+                  onClick={() => dockedSomewhere && onStore(ship.id)}
+                  title={dockedSomewhere ? 'Store this ship at the current station' : 'Dock at a station to store ships'}
+                >
+                  Store
+                </PanelButton>
+              )}
+              <PanelButton size="sm" accent="#ff6622" onClick={onOpenFitting}>
+                Fitting
+              </PanelButton>
+            </>
           )}
-          <PanelButton size="sm" accent="#ff6622" onClick={onOpenFitting}>
-            Fitting
-          </PanelButton>
         </div>
       </div>
     </div>
@@ -202,11 +240,16 @@ const ShipCard = ({ ship, isActive, fleetPos, onSetActive, onOpenFitting, renami
 export const FleetWindow = () => {
   const [ships, setShips] = useState([]);
   const [activeShipId, setActiveShipId] = useState(null);
+  const [activeFleetCount, setActiveFleetCount] = useState(0);
+  const [fleetCap, setFleetCap] = useState(MAX_FLEET_SIZE);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal] = useState('');
   const openWindow = useGameStore(state => state.openWindow);
+  const dockedBody = useGameStore(state => state.dockedBody);
+  const dockedBodyDbId = useGameStore(state => state.dockedBodyDbId);
+  const pushToast = useGameStore(state => state.pushToast);
 
   useEffect(() => { loadFleet(); }, []);
 
@@ -216,11 +259,16 @@ export const FleetWindow = () => {
       const data = await fittingAPI.getFleet();
       setShips(data.ships || []);
       setActiveShipId(data.activeShipId);
+      setActiveFleetCount(data.activeFleetCount ?? (data.ships || []).filter(s => s.storage_body_id == null).length);
+      setFleetCap(data.fleetCap ?? MAX_FLEET_SIZE);
     } catch (err) { console.error('Fleet load error:', err); }
     setLoading(false);
   };
 
-  const flash = (type, text) => { setMessage({ type, text }); setTimeout(() => setMessage(null), 3000); };
+  const flash = (type, text) => {
+    if (pushToast) pushToast({ kind: type === 'success' ? 'success' : 'error', text });
+    else { setMessage({ type, text }); setTimeout(() => setMessage(null), 3000); }
+  };
 
   const handleSetActive = async (shipId) => {
     try {
@@ -230,6 +278,30 @@ export const FleetWindow = () => {
         flash('success', `${result.ship_name} is now your active ship`);
       }
     } catch (err) { flash('error', err.message || 'Failed to set active ship'); }
+  };
+
+  const handleStore = async (shipId) => {
+    if (!dockedBodyDbId) {
+      flash('error', 'Dock at a station to store ships');
+      return;
+    }
+    try {
+      const result = await fittingAPI.storeShip(shipId, dockedBodyDbId);
+      if (result.success) {
+        flash('success', `${result.ship_name} stored at ${result.storage_body_name}`);
+        await loadFleet();
+      }
+    } catch (err) { flash('error', err.message || 'Failed to store ship'); }
+  };
+
+  const handleActivate = async (shipId) => {
+    try {
+      const result = await fittingAPI.activateShip(shipId);
+      if (result.success) {
+        flash('success', `${result.ship_name} added to active fleet`);
+        await loadFleet();
+      }
+    } catch (err) { flash('error', err.message || 'Failed to activate ship'); }
   };
 
   const finishRename = async (shipId) => {
@@ -250,8 +322,18 @@ export const FleetWindow = () => {
     setRenameVal(ship.name);
   };
 
-  const fleetCount = Math.min(ships.length, MAX_FLEET_SIZE);
   const totalCargo = ships.reduce((sum, s) => sum + (s.total_cargo || s.computed_cargo || 0), 0);
+  const canActivateForCap = activeFleetCount < fleetCap;
+  // Storage match by name (works for both Sol aliases + procedural UUIDs --
+  // celestial body NAMES are unique within a system, and the player can
+  // only be at one body at a time).
+  const isStoredHere = (ship) =>
+    !!dockedBody?.name && ship.storage_body_name === dockedBody.name;
+
+  // Partition: active first, then stored. Server already orders this way,
+  // but compute the split locally for the section break.
+  const activeShips = ships.filter(s => s.storage_body_id == null);
+  const storedShips = ships.filter(s => s.storage_body_id != null);
 
   return (
     <ContextPanel windowId="fleet" title="Fleet" icon="🚀" accent={COLORS.BLUE.light} width={420}>
@@ -264,7 +346,7 @@ export const FleetWindow = () => {
           accent={COLORS.BLUE.light}
           icon="📊"
           marginTop={0}
-          right={`${fleetCount}/${MAX_FLEET_SIZE} active`}
+          right={`${activeFleetCount}/${fleetCap} active`}
         />
         <div style={{
           display: 'grid',
@@ -274,7 +356,7 @@ export const FleetWindow = () => {
         }}>
           {[
             { label: 'SHIPS OWNED', value: ships.length, accent: COLORS.BLUE.pri, color: COLORS.TEXT.primary },
-            { label: 'IN FORMATION', value: fleetCount, accent: COLORS.GREEN.pri, color: COLORS.GREEN.light },
+            { label: 'ACTIVE', value: `${activeFleetCount}/${fleetCap}`, accent: COLORS.GREEN.pri, color: COLORS.GREEN.light },
             { label: 'CARGO CAP', value: totalCargo, accent: COLORS.GOLD.pri, color: COLORS.GOLD.light },
           ].map((stat, i) => (
             <div key={i} style={{
@@ -290,7 +372,7 @@ export const FleetWindow = () => {
           ))}
         </div>
 
-        {ships.length > MAX_FLEET_SIZE && (
+        {activeFleetCount > fleetCap && (
           <div style={{
             background: 'rgba(133,77,14,0.2)',
             border: '1px solid rgba(251,191,36,0.4)',
@@ -302,7 +384,8 @@ export const FleetWindow = () => {
             fontFamily: FONT.ui,
             lineHeight: 1.4,
           }}>
-            Only your first {MAX_FLEET_SIZE} ships fly in formation. Increase fleet capacity via the skill tree.
+            You have {activeFleetCount} active ships, over the {fleetCap}-ship fleet cap.
+            Dock at a station and Store ships to bring it down.
           </div>
         )}
 
@@ -337,28 +420,73 @@ export const FleetWindow = () => {
             }}>
               No ships — buy a hull at a station vendor
             </div>
-          ) : ships.map((ship) => {
-            const isActive = ship.id === activeShipId;
-            const fleetPos = isActive
-              ? 0
-              : ships.filter(s => s.id !== activeShipId).indexOf(ship) + 1;
-
-            return (
-              <ShipCard
-                key={ship.id}
-                ship={ship}
-                isActive={isActive}
-                fleetPos={fleetPos}
-                onSetActive={handleSetActive}
-                onOpenFitting={() => openWindow('shipBuilder')}
-                renamingId={renamingId}
-                renameVal={renameVal}
-                setRenameVal={setRenameVal}
-                startRename={startRename}
-                finishRename={finishRename}
-              />
-            );
-          })}
+          ) : (
+            <>
+              {activeShips.map((ship, idx) => {
+                const isActive = ship.id === activeShipId;
+                const fleetPos = isActive ? 0 : activeShips.filter(s => s.id !== activeShipId).indexOf(ship) + 1;
+                return (
+                  <ShipCard
+                    key={ship.id}
+                    ship={ship}
+                    isActive={isActive}
+                    fleetPos={fleetPos}
+                    isStored={false}
+                    storedHere={false}
+                    canActivateForCap={canActivateForCap}
+                    dockedSomewhere={!!dockedBodyDbId}
+                    onSetActive={handleSetActive}
+                    onStore={handleStore}
+                    onActivate={handleActivate}
+                    onOpenFitting={() => openWindow('shipBuilder')}
+                    renamingId={renamingId}
+                    renameVal={renameVal}
+                    setRenameVal={setRenameVal}
+                    startRename={startRename}
+                    finishRename={finishRename}
+                  />
+                );
+              })}
+              {storedShips.length > 0 && (
+                <div style={{
+                  marginTop: 12,
+                  marginBottom: 6,
+                  fontSize: 9,
+                  fontFamily: FONT.mono,
+                  color: COLORS.GOLD.light,
+                  letterSpacing: 1,
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                  padding: '4px 8px',
+                  background: `linear-gradient(90deg, ${COLORS.GOLD.pri}18, transparent)`,
+                  borderLeft: `2px solid ${COLORS.GOLD.pri}`,
+                }}>
+                  Stored ({storedShips.length})
+                </div>
+              )}
+              {storedShips.map((ship) => (
+                <ShipCard
+                  key={ship.id}
+                  ship={ship}
+                  isActive={false}
+                  fleetPos={0}
+                  isStored={true}
+                  storedHere={isStoredHere(ship)}
+                  canActivateForCap={canActivateForCap}
+                  dockedSomewhere={!!dockedBodyDbId}
+                  onSetActive={handleSetActive}
+                  onStore={handleStore}
+                  onActivate={handleActivate}
+                  onOpenFitting={() => openWindow('shipBuilder')}
+                  renamingId={renamingId}
+                  renameVal={renameVal}
+                  setRenameVal={setRenameVal}
+                  startRename={startRename}
+                  finishRename={finishRename}
+                />
+              ))}
+            </>
+          )}
         </div>
       </div>
     </ContextPanel>

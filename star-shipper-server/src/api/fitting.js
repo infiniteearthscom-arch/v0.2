@@ -134,7 +134,10 @@ router.get('/credits', authMiddleware, async (req, res) => {
 router.post('/buy-hull', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { hull_type_id, ship_name } = req.body;
+    // dock_body_id is the body the player is currently docked at;
+    // required only when the resulting fleet would exceed FLEET_CAP
+    // (server stores the new ship at that body instead of activating).
+    const { hull_type_id, ship_name, dock_body_id } = req.body;
 
     if (!hull_type_id) return res.status(400).json({ error: 'hull_type_id required' });
 
@@ -186,22 +189,49 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
         RETURNING id
       `, [userId, ship_name || hullType.name, hullType.grid_w * hullType.grid_h, 0]);
 
-      // Create the ship
+      // Fleet cap check: if activating this ship would exceed cap,
+      // it must be stored at the player's current dock instead.
+      // The pod is never counted toward the cap (storage_body_id is
+      // never NULL for it -- pods never enter storage anyway, but if
+      // a pod is active we let normal podding rules apply).
+      const activeCountRow = await client.query(
+        `SELECT COUNT(*)::INT AS c FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL`,
+        [userId]
+      );
+      const activeCount = activeCountRow.rows[0]?.c || 0;
+      const willStore = activeCount >= FLEET_CAP;
+      if (willStore && !dock_body_id) {
+        throw Object.assign(
+          new Error(`Fleet full (${activeCount}/${FLEET_CAP}). Dock at a station to receive new ships.`),
+          { statusCode: 400 }
+        );
+      }
+
+      // Create the ship. If we're storing it, set storage_body_id now
+      // so the row never appears as active mid-transaction.
       const shipResult = await client.query(`
-        INSERT INTO ships (user_id, design_id, name, hull_type_id, fitted_modules, location_type)
-        VALUES ($1, $2, $3, $4, $5, 'hub')
+        INSERT INTO ships (user_id, design_id, name, hull_type_id, fitted_modules, location_type, storage_body_id)
+        VALUES ($1, $2, $3, $4, $5, 'hub', $6)
         RETURNING *
-      `, [userId, designResult.rows[0].id, ship_name || hullType.name, hull_type_id, initialFittedModules]);
+      `, [
+        userId, designResult.rows[0].id, ship_name || hullType.name,
+        hull_type_id, initialFittedModules,
+        willStore ? dock_body_id : null,
+      ]);
 
       const ship = shipResult.rows[0];
 
-      // Auto-set as active ship if player has no active ship yet
-      await client.query(
-        `UPDATE users SET active_ship_id = $1 WHERE id = $2 AND active_ship_id IS NULL`,
-        [ship.id, userId]
-      );
+      // Auto-set as active ship if player has no active ship yet AND
+      // the new ship is active (not just-stored).
+      if (!willStore) {
+        await client.query(
+          `UPDATE users SET active_ship_id = $1 WHERE id = $2 AND active_ship_id IS NULL`,
+          [ship.id, userId]
+        );
+      }
 
-      return { ship, hull: hullType };
+      return { ship, hull: hullType, stored: willStore };
     });
 
     res.json({ success: true, ...result });
@@ -566,19 +596,158 @@ router.get('/fleet', authMiddleware, async (req, res) => {
       SELECT s.*, ht.name as hull_name, ht.class as hull_class,
              ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors,
              ht.grid_w, ht.grid_h, ht.slots as hull_slots,
-             (u.active_ship_id = s.id) as is_active
+             (u.active_ship_id = s.id) as is_active,
+             cb.name AS storage_body_name
       FROM ships s
-      LEFT JOIN hull_types ht ON s.hull_type_id = ht.id
-      LEFT JOIN users u ON u.id = s.user_id
+      LEFT JOIN hull_types ht       ON s.hull_type_id    = ht.id
+      LEFT JOIN celestial_bodies cb ON s.storage_body_id = cb.id
+      LEFT JOIN users u             ON u.id              = s.user_id
       WHERE s.user_id = $1
-      ORDER BY (u.active_ship_id = s.id) DESC, s.created_at ASC
+      ORDER BY (s.storage_body_id IS NULL) DESC,
+               (u.active_ship_id = s.id) DESC,
+               s.created_at ASC
     `, [userId]);
 
     const activeShipId = ships.find(s => s.is_active)?.id || null;
-    res.json({ ships, activeShipId });
+    const activeFleetCount = ships.filter(s => s.storage_body_id == null).length;
+    res.json({ ships, activeShipId, activeFleetCount, fleetCap: FLEET_CAP });
   } catch (error) {
     console.error('Error fetching fleet:', error);
     res.status(500).json({ error: 'Failed to fetch fleet' });
+  }
+});
+
+// Server-side fleet cap (matches client MAX_FLEET_SIZE). Beyond this,
+// purchased ships must be stored at a station and activation is gated.
+const FLEET_CAP = 5;
+
+// Resolve a celestial body identifier to its DB UUID. Accepts either
+// the UUID itself (returned as-is if valid) or a Sol alias like
+// 'earth' / 'luna station' that lives in the celestial_body_aliases
+// table. Returns null if neither matches. Used by store-ship so the
+// client can pass whichever form it has on hand.
+async function resolveCelestialBodyId(client, idOrAlias) {
+  if (!idOrAlias) return null;
+  const s = String(idOrAlias);
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
+    const r = await client.query(`SELECT id FROM celestial_bodies WHERE id = $1`, [s]);
+    return r.rows[0]?.id || null;
+  }
+  const r = await client.query(
+    `SELECT celestial_body_id FROM celestial_body_aliases WHERE alias = $1`,
+    [s.toLowerCase()]
+  );
+  return r.rows[0]?.celestial_body_id || null;
+}
+
+// ============================================
+// STORE SHIP (move active -> stored at a body)
+// ============================================
+// Client passes the body the player is currently docked at; the
+// server doesn't track dock state, so we trust the body_id but
+// validate the ship is owned + currently active + not the pod or
+// the active_ship_id (deactivating those leaves you stranded).
+
+router.post('/store-ship', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ship_id, body_id } = req.body;
+    if (!ship_id || !body_id) return res.status(400).json({ error: 'ship_id and body_id required' });
+
+    const result = await transaction(async (client) => {
+      const shipRow = await client.query(
+        `SELECT id, hull_type_id, storage_body_id, name FROM ships
+         WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [ship_id, userId]
+      );
+      const ship = shipRow.rows[0];
+      if (!ship) throw Object.assign(new Error('Ship not found'), { statusCode: 404 });
+      if (ship.storage_body_id != null) {
+        throw Object.assign(new Error('Ship is already stored'), { statusCode: 400 });
+      }
+      if (ship.hull_type_id === 'pod') {
+        throw Object.assign(new Error('Cannot store an Escape Pod'), { statusCode: 400 });
+      }
+
+      const userRow = await client.query(
+        `SELECT active_ship_id FROM users WHERE id = $1`, [userId]
+      );
+      if (userRow.rows[0]?.active_ship_id === ship_id) {
+        throw Object.assign(
+          new Error('Cannot store the active ship — switch active ship first'),
+          { statusCode: 400 }
+        );
+      }
+
+      const resolvedBodyId = await resolveCelestialBodyId(client, body_id);
+      if (!resolvedBodyId) throw Object.assign(new Error('Station not found'), { statusCode: 404 });
+      const bodyRow = await client.query(
+        `SELECT name FROM celestial_bodies WHERE id = $1`, [resolvedBodyId]
+      );
+
+      await client.query(`UPDATE ships SET storage_body_id = $1 WHERE id = $2`, [resolvedBodyId, ship_id]);
+      return {
+        ship_id, ship_name: ship.name,
+        storage_body_id: resolvedBodyId, storage_body_name: bodyRow.rows[0].name,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error storing ship:', error);
+    res.status(500).json({ error: 'Failed to store ship' });
+  }
+});
+
+// ============================================
+// ACTIVATE SHIP (move stored -> active in fleet)
+// ============================================
+// Gates: ship must be stored, fleet must have room (< FLEET_CAP active).
+// Server doesn't enforce that the player is at the storage body --
+// client UI gates the button, server trusts (same model as wreck claim,
+// award-loot, mining). Tighten when multiplayer presence is enforced.
+
+router.post('/activate-ship', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ship_id } = req.body;
+    if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
+
+    const result = await transaction(async (client) => {
+      const shipRow = await client.query(
+        `SELECT id, storage_body_id, name FROM ships
+         WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [ship_id, userId]
+      );
+      const ship = shipRow.rows[0];
+      if (!ship) throw Object.assign(new Error('Ship not found'), { statusCode: 404 });
+      if (ship.storage_body_id == null) {
+        throw Object.assign(new Error('Ship is already active'), { statusCode: 400 });
+      }
+
+      const countRow = await client.query(
+        `SELECT COUNT(*)::INT AS c FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL`,
+        [userId]
+      );
+      const activeCount = countRow.rows[0]?.c || 0;
+      if (activeCount >= FLEET_CAP) {
+        throw Object.assign(
+          new Error(`Fleet full (${activeCount}/${FLEET_CAP}). Store another ship first.`),
+          { statusCode: 400 }
+        );
+      }
+
+      await client.query(`UPDATE ships SET storage_body_id = NULL WHERE id = $1`, [ship_id]);
+      return { ship_id, ship_name: ship.name };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error activating ship:', error);
+    res.status(500).json({ error: 'Failed to activate ship' });
   }
 });
 

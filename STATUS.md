@@ -22,6 +22,17 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 ## In progress
 
+- **Ship storage + station ship manager (Phase 1)** — code written, **needs commit + push + DO migrate**. (2026-05-20)
+  - Migration `028_ship_storage.sql` adds `ships.storage_body_id` (UUID, NULLABLE, FK→celestial_bodies, ON DELETE SET NULL).
+  - Server: `FLEET_CAP = 5` constant. New endpoints `POST /fitting/store-ship` (active→stored at body) and `POST /fitting/activate-ship` (stored→active, gated on fleet cap). `getFleet` joins `celestial_bodies` for `storage_body_name` and returns `activeFleetCount` + `fleetCap`. `buy-hull` auto-stores at the passed `dock_body_id` when fleet is full, errors if fleet full + not docked. Server-side helper `resolveCelestialBodyId` accepts either UUID or Sol alias so client can pass whichever it has.
+  - Client store: new `dockedBodyDbId` field set by `PlanetInteractionWindow` when the body is resolved (mirror of `effectiveBodyId` so cross-component callers don't re-resolve).
+  - Client UI:
+    - **Fleet window** — partitioned into Active + Stored sections. Stored ships dimmed, show `STORED · {body name}` pill, get an Activate button (enabled only when docked at the storage body AND fleet has room). Active ships get a Store button (enabled when docked anywhere). Header shows `X/5 active`. Over-cap warning if grandfathered above the limit.
+    - **City/Station tab** — new "🚀 Ships" sub-tab between Vendor and NPCs. Lists ships stored HERE with Activate buttons + active ships with Store-Here buttons. Active ship row cannot be stored (must switch active first).
+  - Plus a one-line quick fix: top-bar `MAX_FLEET` was stuck at 3 while SystemView already rendered 5; bumped to 5 so the HUD indicator matches the visible flying fleet.
+  - **Phase 2 (later)**: drag-to-store, swap-via-deactivate-active-then-activate flow, fleet roster preview pane on dock.
+  - Files: `migrations/028_ship_storage.sql` (new); `src/api/fitting.js` (FLEET_CAP, store/activate, getFleet join, buy-hull cap handling); `src/utils/api.js` (storeShip/activateShip + buyHull dockBodyId arg); `src/stores/gameStore.js` (dockedBodyDbId state); `src/components/system/PlanetInteractionWindow.jsx` (set dockedBodyDbId + new ShipsTab in PopulatedBodyTab); `src/components/ship/FleetWindow.jsx` (split active/stored sections, store/activate handlers, gating); `src/components/ui/GameFrame.jsx` (MAX_FLEET 3 → 5); `CLAUDE.md` (migration counter); `STATUS.md`.
+
 - **Mining UX fixes: store-sync on fit + click-to-mine** — code written, **needs commit + push** (no migration). (2026-05-19)
   - Bug 1: After fitting a module in Ship Builder, the global store's `ships` array wasn't refreshed, so SystemView's `playerShip.fitted_modules` stayed stale. `hasMiningLaserFitted` / `hasScannerFitted` returned false, so no firing / scanning. Fix: `handleSlotDrop` + `handleSlotClick` now call `fetchShips()` after success.
   - Bug 2: Mining was auto-fire-on-proximity. User wants click-to-mine on a specific scanned asteroid. Refactored: `miningTargetRef` holds the explicit lock. Click a scanned asteroid (in range, laser fitted, cargo not full) → mining starts on it. Click same again → stop. Click different one → switch. Out-of-range automatically releases lock. Depletion clears lock. Orange dashed ring marks the active target.

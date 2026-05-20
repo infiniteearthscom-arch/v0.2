@@ -99,6 +99,12 @@ const initialState = {
   // Docked body (set by SystemView when player docks, cleared on undock)
   // Shape: { id, name, type, ... } — or null when undocked
   dockedBody: null,
+  // The same body's DB identifier (UUID for procedural bodies, Sol
+  // alias string for hand-seeded ones). Set by PlanetInteractionWindow
+  // when it resolves the docked body for API calls. Consumers that
+  // need to make server calls referencing the docked body (store-ship,
+  // activate-ship, etc.) read this rather than re-resolving.
+  dockedBodyDbId: null,
 
   // Outliner state
   systemBodies: [], // [{ id, name, type, planetType, color, parentBody }] — pushed by SystemView
@@ -438,6 +444,10 @@ export const useGameStore = create(
       }),
 
       // Dock status: SystemView pushes on dock / undock
+      setDockedBodyDbId: (id) => set(state => {
+        state.dockedBodyDbId = id || null;
+      }),
+
       setDockedBody: (body) => set(state => {
         state.dockedBody = body || null;
       }),

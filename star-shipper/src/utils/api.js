@@ -274,9 +274,12 @@ export const fittingAPI = {
   getModuleTypes: () => request('/fitting/modules'),
   getMyShips: () => request('/fitting/my-ships'),
   getShipDetail: (shipId) => request(`/fitting/ship/${shipId}`),
-  buyHull: (hullTypeId, shipName) => request('/fitting/buy-hull', {
+  // dockBodyId is the celestial body uuid the player is currently
+  // docked at -- required only when the fleet would exceed cap and
+  // the new ship needs to be stored. Pass null/undefined if unknown.
+  buyHull: (hullTypeId, shipName, dockBodyId) => request('/fitting/buy-hull', {
     method: 'POST',
-    body: JSON.stringify({ hull_type_id: hullTypeId, ship_name: shipName }),
+    body: JSON.stringify({ hull_type_id: hullTypeId, ship_name: shipName, dock_body_id: dockBodyId }),
   }),
   fitModule: (shipId, slotId, cargoItemId) => request('/fitting/fit-module', {
     method: 'POST',
@@ -293,6 +296,19 @@ export const fittingAPI = {
   getFleet: () => request('/fitting/fleet'),
   getCredits: () => request('/fitting/credits'),
   setActiveShip: (shipId) => request('/fitting/set-active-ship', {
+    method: 'POST',
+    body: JSON.stringify({ ship_id: shipId }),
+  }),
+  // Move an active ship into storage at a celestial body. Player must
+  // be docked at the body; server validates ship is owned + active +
+  // not the active ship + not a pod.
+  storeShip: (shipId, bodyId) => request('/fitting/store-ship', {
+    method: 'POST',
+    body: JSON.stringify({ ship_id: shipId, body_id: bodyId }),
+  }),
+  // Activate a stored ship. Server validates ownership + storage state
+  // + fleet cap. Client gates the button on "docked at the storage body."
+  activateShip: (shipId) => request('/fitting/activate-ship', {
     method: 'POST',
     body: JSON.stringify({ ship_id: shipId }),
   }),

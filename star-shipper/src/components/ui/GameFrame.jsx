@@ -62,7 +62,10 @@ const TopBar = () => {
   const audioMuted = useGameStore(state => state.audio?.muted ?? false);
   const toggleAudioMuted = useGameStore(state => state.toggleAudioMuted);
 
-  const MAX_FLEET = 3;
+  // Matches MAX_FLEET_SIZE in shipRenderer.js (the in-system formation
+  // cap). Was stuck at 3 here while SystemView already rendered 5 -- so
+  // the top-bar indicator under-counted the visible flying fleet.
+  const MAX_FLEET = 5;
   const fleetSize = ships?.length || 0;
 
   useEffect(() => {

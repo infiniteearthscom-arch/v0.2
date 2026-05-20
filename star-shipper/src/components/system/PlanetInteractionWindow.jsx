@@ -2335,10 +2335,150 @@ const BuildingsStub = () => (
   </div>
 );
 
-const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */ }) => {
+// Ship Manager — sub-tab inside the City/Station UI. Lists ships
+// stored at THIS body (with Activate buttons gated on fleet cap) and
+// active fleet ships (with Store Here buttons). Same actions as the
+// global Fleet window, scoped to the current dock.
+const ShipsTab = ({ body, effectiveBodyId }) => {
+  const [ships, setShips] = useState([]);
+  const [activeShipId, setActiveShipId] = useState(null);
+  const [fleetCap, setFleetCap] = useState(5);
+  const [loading, setLoading] = useState(false);
+  const pushToast = useGameStore(state => state.pushToast);
+  const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fittingAPI.getFleet();
+      setShips(data.ships || []);
+      setActiveShipId(data.activeShipId);
+      if (data.fleetCap) setFleetCap(data.fleetCap);
+    } catch (err) {
+      console.error('Fleet load (ShipsTab) error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleActivate = async (shipId) => {
+    try {
+      const result = await fittingAPI.activateShip(shipId);
+      flash('success', `${result.ship_name} added to active fleet.`);
+      await load();
+    } catch (err) { flash('error', err.message || 'Failed to activate ship'); }
+  };
+  const handleStore = async (shipId) => {
+    try {
+      const result = await fittingAPI.storeShip(shipId, effectiveBodyId);
+      flash('success', `${result.ship_name} stored at ${result.storage_body_name}.`);
+      await load();
+    } catch (err) { flash('error', err.message || 'Failed to store ship'); }
+  };
+
+  const housedHere    = ships.filter(s => s.storage_body_name === body.name);
+  const activeShips   = ships.filter(s => s.storage_body_id == null);
+  const activeCount   = activeShips.length;
+  const canActivate   = activeCount < fleetCap;
+
+  const sectionHeader = (label, accent) => (
+    <div style={{
+      fontSize: 9, fontFamily: FM, letterSpacing: 1, marginTop: 10, marginBottom: 5,
+      padding: '4px 8px', background: `linear-gradient(90deg, ${accent}18, transparent)`,
+      borderLeft: `2px solid ${accent}`, textTransform: 'uppercase',
+      fontWeight: 800, color: accent,
+    }}>{label}</div>
+  );
+
+  const ShipRow = ({ ship, action, onClick, disabled, hint }) => {
+    const isActiveShip = ship.id === activeShipId;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: 8, background: 'rgba(4,8,16,0.5)',
+        border: `1px solid ${EDGE}`,
+        borderLeft: `2px solid ${isActiveShip ? '#60a5fa' : EDGE}`,
+        borderRadius: 3, marginBottom: 4,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', fontFamily: F }}>
+            {ship.name}{isActiveShip && <span style={{ color: '#60a5fa', marginLeft: 6, fontSize: 9 }}>· ACTIVE</span>}
+          </div>
+          <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM, letterSpacing: 0.3 }}>
+            {ship.hull_name || ship.hull_type_id}
+            {action === 'activate' && ship.storage_body_name && (
+              <span> · housed here</span>
+            )}
+          </div>
+        </div>
+        <PanelButton
+          size="sm"
+          accent={disabled ? '#5a6a7a' : (action === 'activate' ? '#22c55e' : GOLD.light)}
+          onClick={disabled ? undefined : onClick}
+          title={hint || ''}
+          style={{ opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+        >
+          {action === 'activate' ? 'Activate' : 'Store Here'}
+        </PanelButton>
+      </div>
+    );
+  };
+
+  if (loading && ships.length === 0) {
+    return <div style={{ padding: 24, textAlign: 'center', color: '#3a5a6a', fontSize: 11, fontFamily: F }}>Loading fleet…</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: '#5a7080', fontFamily: FM, letterSpacing: 0.5, marginBottom: 6 }}>
+        Fleet: {activeCount}/{fleetCap} active. Ships only move between active + storage while you're docked here.
+      </div>
+
+      {sectionHeader(`Stored at ${body.name} (${housedHere.length})`, GOLD.pri)}
+      {housedHere.length === 0 ? (
+        <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: 10, fontFamily: F, fontStyle: 'italic' }}>
+          No ships stored here yet. Store from your active fleet below to park ships at this station.
+        </div>
+      ) : housedHere.map(ship => (
+        <ShipRow
+          key={ship.id}
+          ship={ship}
+          action="activate"
+          onClick={() => handleActivate(ship.id)}
+          disabled={!canActivate}
+          hint={!canActivate ? `Fleet full (${activeCount}/${fleetCap}) — store another ship first` : 'Bring this ship into the active fleet'}
+        />
+      ))}
+
+      {sectionHeader(`Active fleet (${activeCount}/${fleetCap})`, '#60a5fa')}
+      {activeShips.length === 0 ? (
+        <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: 10, fontFamily: F, fontStyle: 'italic' }}>
+          No active ships.
+        </div>
+      ) : activeShips.map(ship => {
+        const isActiveShip = ship.id === activeShipId;
+        return (
+          <ShipRow
+            key={ship.id}
+            ship={ship}
+            action="store"
+            onClick={() => handleStore(ship.id)}
+            disabled={isActiveShip}
+            hint={isActiveShip ? 'Switch active ship first (Fleet window) before storing it' : `Park this ship at ${body.name}`}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId }) => {
   const [section, setSection] = useState('vendor');
   const sections = [
     { id: 'vendor',    label: 'Vendor',    icon: '🏪' },
+    { id: 'ships',     label: 'Ships',     icon: '🚀' },
     { id: 'npcs',      label: 'NPCs',      icon: '👥' },
     { id: 'buildings', label: 'Buildings', icon: '🏗️' },
   ];
@@ -2385,6 +2525,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */ }) => {
       </div>
       {/* Sub-tab content */}
       {section === 'vendor'    && <VendorTab body={body} />}
+      {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'npcs'      && <NPCsStub />}
       {section === 'buildings' && <BuildingsStub />}
     </div>
@@ -2473,6 +2614,16 @@ export const PlanetInteractionWindow = ({ body }) => {
   
   // The effective body ID to use for all API calls
   const effectiveBodyId = resolvedBodyId;
+
+  // Mirror to the global store so the Fleet window (and any future
+  // out-of-this-component caller) can reference "the body the player
+  // is currently docked at" by DB identifier (UUID for procedural, Sol
+  // alias for hand-seeded). Cleared on unmount / when not open.
+  const setDockedBodyDbId = useGameStore(state => state.setDockedBodyDbId);
+  useEffect(() => {
+    if (setDockedBodyDbId) setDockedBodyDbId(isOpen ? resolvedBodyId : null);
+    return () => { if (setDockedBodyDbId) setDockedBodyDbId(null); };
+  }, [resolvedBodyId, isOpen, setDockedBodyDbId]);
   
   useEffect(() => {
     if (effectiveBodyId && isOpen) {
@@ -2797,7 +2948,7 @@ export const PlanetInteractionWindow = ({ body }) => {
 
             {activeTab === 'mine' && <MineTab body={body} surveyStatus={surveyStatus} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'harvesters' && <HarvestersTab body={body} effectiveBodyId={effectiveBodyId} />}
-            {activeTab === 'populated' && isPopulated && <PopulatedBodyTab body={body} kind={populatedKind} />}
+            {activeTab === 'populated' && isPopulated && <PopulatedBodyTab body={body} kind={populatedKind} effectiveBodyId={effectiveBodyId} />}
           </div>
         </div>
       </div>
