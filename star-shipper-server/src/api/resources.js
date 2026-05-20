@@ -2306,27 +2306,54 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
     if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
 
     const out = await transaction(async (client) => {
-      // 1. Player must have a mining laser fitted.
-      const userRow = await client.query(
-        `SELECT active_ship_id FROM users WHERE id = $1`, [userId]
+      // 1. Enumerate ALL mining lasers across the fleet (not just the
+      // active ship). Each contributes its own yield based on the
+      // module's stats.mine_yield + the fitted quality multiplier.
+      // No lasers anywhere -> reject.
+      const fleetShips = await client.query(
+        `SELECT fitted_modules FROM ships WHERE user_id = $1`,
+        [userId]
       );
-      const activeShipId = userRow.rows[0]?.active_ship_id;
-      if (!activeShipId) throw Object.assign(new Error('No active ship'), { statusCode: 400 });
-
-      const shipRow = await client.query(
-        `SELECT fitted_modules FROM ships WHERE id = $1 AND user_id = $2`,
-        [activeShipId, userId]
-      );
-      const fitted = shipRow.rows[0]?.fitted_modules || {};
-      let hasLaser = false;
-      for (const slot of Object.values(fitted)) {
-        const id = slot?.module_type_id;
-        if (id && (id === 'mining_basic' || id.startsWith('mining_'))) {
-          hasLaser = true; break;
+      const lasers = []; // [{ moduleTypeId, quality }]
+      for (const ship of fleetShips.rows) {
+        const fitted = ship.fitted_modules || {};
+        for (const slot of Object.values(fitted)) {
+          const id = slot?.module_type_id;
+          if (id && (id === 'mining_basic' || id.startsWith('mining_'))) {
+            lasers.push({ moduleTypeId: id, quality: slot.quality || null });
+          }
         }
       }
-      if (!hasLaser) {
+      if (lasers.length === 0) {
         throw Object.assign(new Error('Mining Laser required'), { statusCode: 400 });
+      }
+
+      // Look up base mine_yield for each distinct laser module type.
+      // Default 5 if the stat isn't set (matches pre-tiered behavior).
+      const moduleIds = [...new Set(lasers.map(l => l.moduleTypeId))];
+      const statsRows = await client.query(
+        `SELECT id, stats FROM module_types WHERE id = ANY($1::TEXT[])`,
+        [moduleIds]
+      );
+      const yieldByModule = {};
+      for (const r of statsRows.rows) {
+        const y = r.stats?.mine_yield;
+        yieldByModule[r.id] = (typeof y === 'number' && y > 0) ? y : 5;
+      }
+
+      // Total yield = sum across all fitted lasers of (base * qMult).
+      // qMult uses the same average-stat / 50 convention as the rest of
+      // the module-stat system. q50 = 1.0x, q100 = 2.0x, q25 = 0.5x.
+      let totalYield = 0;
+      for (const laser of lasers) {
+        const base = yieldByModule[laser.moduleTypeId] || 5;
+        let qMult = 1.0;
+        if (laser.quality) {
+          const q = laser.quality;
+          const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
+          qMult = avg / 50;
+        }
+        totalYield += Math.max(1, Math.round(base * qMult));
       }
 
       // 2. Lock + load the asteroid.
@@ -2368,14 +2395,12 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         throw Object.assign(new Error('cargo_full'), { statusCode: 409 });
       }
 
-      // 5. How much to mine this tick: mine_yield (5) capped by what's
-      // remaining on the asteroid. We don't cap by remaining-volume
-      // here -- a single tick can slightly overflow capacity (max ~5
-      // units * density/100 volume), and the next tick's upfront check
-      // throws cargo_full. Tighter math would need per-resource
-      // density lookup to convert quantity-to-volume here.
-      const MINE_YIELD = 5;
-      const minable = Math.min(MINE_YIELD, resInfo.remaining);
+      // 5. How much to mine this tick: totalYield (fleet-wide sum from
+      // step 1) capped by what's remaining on the asteroid. We don't
+      // cap by remaining-volume here -- a single tick can slightly
+      // overflow capacity (more so now with multi-laser yields), and
+      // the next tick's upfront check throws cargo_full.
+      const minable = Math.min(totalYield, resInfo.remaining);
       if (minable <= 0) {
         throw Object.assign(new Error('cargo_full'), { statusCode: 409 });
       }
