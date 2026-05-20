@@ -7,6 +7,7 @@ import { computeFleetStats } from '@/utils/fleetStats';
 import { fittingAPI, wrecksAPI, asteroidsAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
+import { useTooltip } from '@/components/ui/TooltipProvider';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 
 // ============================================
@@ -948,6 +949,7 @@ export const SystemView = () => {
   const fetchShips = useGameStore(state => state.fetchShips);
   const pushToast = useGameStore(state => state.pushToast);
   const completeQuest = useGameStore(state => state.completeQuest);
+  const { showTooltip, hideTooltip } = useTooltip();
   // Pod state: when active ship is the 'pod' hull, pirates ignore us and
   // we can't fight back. See migration 019 + /enter-pod endpoint.
   const isPod = playerShip?.hull_type_id === 'pod';
@@ -3055,10 +3057,62 @@ export const SystemView = () => {
                 : 0;
               const ringR = a.size + 4;
               const circumference = 2 * Math.PI * ringR;
+              // Hover tooltip content -- captured as JSX so the
+              // existing TooltipProvider renders + positions it near
+              // the cursor. Recomputed each render so it always
+              // reflects the asteroid's current contents (which
+              // decrement live during mining).
+              const tooltipNode = (
+                <div style={{
+                  padding: '8px 12px', fontSize: 11, fontFamily: 'monospace',
+                  minWidth: 160,
+                }}>
+                  {a.scanned ? (
+                    <>
+                      <div style={{
+                        marginBottom: 6, color: '#a0c860', fontWeight: 700,
+                        fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase',
+                      }}>
+                        Asteroid Contents
+                      </div>
+                      {(() => {
+                        const entries = Object.values(a.contents || {}).filter(v => (v?.remaining || 0) > 0);
+                        if (entries.length === 0) {
+                          return <div style={{ color: '#888' }}>Empty</div>;
+                        }
+                        return entries.map((e, ei) => (
+                          <div key={ei} style={{
+                            display: 'flex', justifyContent: 'space-between', gap: 16,
+                            color: '#e2e8f0',
+                          }}>
+                            <span>{e.name || `res_${ei}`}</span>
+                            <span style={{ color: '#fbbf24' }}>{e.remaining || 0}u</span>
+                          </div>
+                        ));
+                      })()}
+                      {isMineTarget && (
+                        <div style={{
+                          marginTop: 6, paddingTop: 6, borderTop: '1px solid #2a3a4a',
+                          color: '#ffaa44', fontSize: 9, letterSpacing: 0.5,
+                        }}>
+                          ▸ MINING ACTIVE
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ color: '#888' }}>
+                      Unsurveyed asteroid<br />
+                      <span style={{ color: '#666', fontSize: 10 }}>Click to scan</span>
+                    </div>
+                  )}
+                </div>
+              );
               return (
                 <g key={`ast-${a.id}`}
                    transform={`translate(${a.x}, ${a.y})`}
                    onClick={(e) => { e.stopPropagation(); handleAsteroidClick(a); }}
+                   onMouseEnter={() => showTooltip(tooltipNode)}
+                   onMouseLeave={() => hideTooltip()}
                    style={{ cursor: 'pointer' }}>
                   <polygon points={pts}
                     fill={a.scanned ? '#6b7a5c' : '#6b6258'}
