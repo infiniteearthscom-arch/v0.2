@@ -40,6 +40,12 @@ const LOOP_FILES = {
   mining_laser: '/sounds/freesound_community-laser-weld-103309.mp3',
 };
 const LOOP_GAIN_MULT = 0.4;
+// Per-loop gain overrides. Use when one loop should sit at a
+// different baseline level than the rest (e.g. the mining laser
+// runs for long stretches so we tune it quieter than ambient).
+const LOOP_GAIN_OVERRIDES = {
+  mining_laser: 0.20,
+};
 
 // Cached Howl instances. Value is a Howl on success, null after a load
 // error (so we don't retry on every play call), undefined before first use.
@@ -133,7 +139,8 @@ function getLoopHowl(id) {
 export function startLoop(id) {
   const { muted, masterVolume, sfxVolume } = getAudioSettings();
   if (muted) return;
-  const gain = masterVolume * sfxVolume * LOOP_GAIN_MULT;
+  const mult = LOOP_GAIN_OVERRIDES[id] ?? LOOP_GAIN_MULT;
+  const gain = masterVolume * sfxVolume * mult;
   if (gain <= 0) return;
   const howl = getLoopHowl(id);
   if (!howl) return;
