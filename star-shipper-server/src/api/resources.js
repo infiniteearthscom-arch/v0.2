@@ -2355,29 +2355,27 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
       const [resKey, resInfo] = target;
       const resId = parseInt(resKey, 10);
 
-      // 4. Cargo capacity check (fleet-wide). Sum current resource
-      // units vs total cargo. Approximate (no per-resource volumes
-      // yet); enough to gate "stop when full".
-      const capRow = await client.query(
-        `SELECT COALESCE(SUM(computed_cargo), 0)::INT AS cap FROM ships WHERE user_id = $1`,
-        [userId]
-      );
-      const totalCap = capRow.rows[0]?.cap || 0;
-      const usedRow = await client.query(
-        `SELECT COALESCE(SUM(quantity), 0)::INT AS used
-         FROM player_resource_inventory
-         WHERE user_id = $1 AND item_type = 'resource'`,
-        [userId]
-      );
-      const used = usedRow.rows[0]?.used || 0;
-      if (totalCap > 0 && used >= totalCap) {
+      // 4. Cargo capacity check via the shared getPlayerCargoInfo
+      // helper -- this is the SAME calculation the UI uses (volume =
+      // quantity * stat_density / 100 for resources, * volume_per_unit
+      // for items, summed across all inventory rows; capacity = sum of
+      // computed_cargo across ships). Using the helper guarantees the
+      // server's "full" state matches what the cargo bar shows.
+      const cargoInfo = await getPlayerCargoInfo(userId, client);
+      const totalCap = cargoInfo.capacity;
+      const usedVolume = cargoInfo.used;
+      if (totalCap > 0 && usedVolume >= totalCap) {
         throw Object.assign(new Error('cargo_full'), { statusCode: 409 });
       }
 
       // 5. How much to mine this tick: mine_yield (5) capped by what's
-      // remaining and by what fits in cargo.
+      // remaining on the asteroid. We don't cap by remaining-volume
+      // here -- a single tick can slightly overflow capacity (max ~5
+      // units * density/100 volume), and the next tick's upfront check
+      // throws cargo_full. Tighter math would need per-resource
+      // density lookup to convert quantity-to-volume here.
       const MINE_YIELD = 5;
-      const minable = Math.min(MINE_YIELD, resInfo.remaining, totalCap > 0 ? (totalCap - used) : MINE_YIELD);
+      const minable = Math.min(MINE_YIELD, resInfo.remaining);
       if (minable <= 0) {
         throw Object.assign(new Error('cargo_full'), { statusCode: 409 });
       }
@@ -2437,12 +2435,15 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         `SELECT name FROM resource_types WHERE id = $1`, [resId]
       );
 
+      // Re-query cargo so the response shows the post-mine state
+      // exactly matching what the cargo bar will display next refresh.
+      const afterCargo = await getPlayerCargoInfo(userId, client);
       return {
         mined: { resource_type_id: resId, name: nameRow.rows[0]?.name || `res_${resId}`, quantity: minable },
         asteroid_remaining: await enrichContentsWithNames(client, contents),
         asteroid_depleted: allEmpty,
-        cargo_used: used + minable,
-        cargo_capacity: totalCap,
+        cargo_used: afterCargo.used,
+        cargo_capacity: afterCargo.capacity,
       };
     });
 
