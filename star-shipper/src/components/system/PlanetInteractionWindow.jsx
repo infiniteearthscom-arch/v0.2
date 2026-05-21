@@ -2371,6 +2371,8 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
     } catch (err) { flash('error', err.message || 'Failed to activate ship'); }
   };
   const handleStore = async (shipId) => {
+    // Temporary debug log — remove once the click-not-firing report is resolved.
+    console.log('[ShipsTab] handleStore', { shipId, effectiveBodyId });
     if (!effectiveBodyId) {
       flash('error', 'Station not yet resolved — try again in a moment.');
       return;
