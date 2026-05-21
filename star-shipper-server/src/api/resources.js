@@ -2232,28 +2232,25 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
     if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
 
     const out = await transaction(async (client) => {
-      // Fetch the player's active ship + fitted modules.
-      const userRow = await client.query(
-        `SELECT active_ship_id FROM users WHERE id = $1`, [userId]
+      // Fleet-wide scanner check. A scanner on a wingman scans for the
+      // whole fleet -- same model as the mining laser endpoint below.
+      // Stored ships (storage_body_id IS NOT NULL) are parked at a
+      // station and do NOT contribute their fitted modules to in-space
+      // capability checks. Future module gates should follow this
+      // same fleet-wide + active-only pattern out of the gate.
+      const fleetShips = await client.query(
+        `SELECT fitted_modules FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL`,
+        [userId]
       );
-      const activeShipId = userRow.rows[0]?.active_ship_id;
-      if (!activeShipId) throw Object.assign(new Error('No active ship'), { statusCode: 400 });
-
-      const shipRow = await client.query(
-        `SELECT fitted_modules FROM ships WHERE id = $1 AND user_id = $2`,
-        [activeShipId, userId]
-      );
-      const fitted = shipRow.rows[0]?.fitted_modules || {};
-
-      // Look for any fitted scanner-type module. utility_scanner is the
-      // only one today; tier upgrades will live under different ids but
-      // share the slot_type='utility' and a name match on 'scanner'.
       let hasScanner = false;
-      for (const slotKey of Object.keys(fitted)) {
-        const modTypeId = fitted[slotKey]?.module_type_id;
-        if (!modTypeId) continue;
-        if (modTypeId === 'utility_scanner' || modTypeId.startsWith('utility_scanner')) {
-          hasScanner = true; break;
+      outer: for (const ship of fleetShips.rows) {
+        const fitted = ship.fitted_modules || {};
+        for (const slot of Object.values(fitted)) {
+          const id = slot?.module_type_id;
+          if (id && (id === 'utility_scanner' || id.startsWith('utility_scanner'))) {
+            hasScanner = true; break outer;
+          }
         }
       }
       if (!hasScanner) {
@@ -2306,12 +2303,15 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
     if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
 
     const out = await transaction(async (client) => {
-      // 1. Enumerate ALL mining lasers across the fleet (not just the
-      // active ship). Each contributes its own yield based on the
-      // module's stats.mine_yield + the fitted quality multiplier.
-      // No lasers anywhere -> reject.
+      // 1. Enumerate ALL mining lasers across the *active* fleet (not
+      // just the player's active ship, and NOT counting ships parked
+      // at a station via the Ship Storage system -- those ships aren't
+      // present in space and shouldn't grant capability). Each laser
+      // contributes its own yield based on the module's stats.mine_yield
+      // + the fitted quality multiplier. No lasers anywhere -> reject.
       const fleetShips = await client.query(
-        `SELECT fitted_modules FROM ships WHERE user_id = $1`,
+        `SELECT fitted_modules FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL`,
         [userId]
       );
       const lasers = []; // [{ moduleTypeId, quality }]

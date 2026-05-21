@@ -1086,6 +1086,15 @@ export const SystemView = () => {
   const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
   const MINE_CYCLE_MS = 2000; // matches mining_basic.stats.mine_cycle * 1000
 
+  // Wingman world positions, lagged toward the formation slot so the
+  // fleet *follows* the leader instead of pivoting rigidly around it.
+  // Map of shipId -> { x, y, rot }. Cleared on system change so wingmen
+  // re-spawn at their slot in the new system. WINGMAN_LAG_RATE is the
+  // exponential catch-up rate (higher = stiffer/snappier; lower = floatier).
+  // Tuned for "noticeable lag on hard turns, fully caught up on a straight."
+  const wingmenPosRef = useRef({});
+  const WINGMAN_LAG_RATE = 4;
+
   // Wrecks (lootable spatial entities from pirate kills). Refs not state
   // because the game loop reads them every frame for proximity-claim
   // checks; the existing frameCount setState already drives rerenders so
@@ -1267,6 +1276,10 @@ export const SystemView = () => {
     miningTargetRef.current = null; // cancel any active mining on system change
     mineCooldownRef.current = 0;
     cargoFullRef.current = false; // re-check capacity in new system
+    // Wingmen warp in with the leader: clear lagged positions so they
+    // re-init at their slot on the first frame of the new system instead
+    // of streaking across the map from the old position.
+    wingmenPosRef.current = {};
     // The game-loop transition watcher will stop the mining sound on
     // the next frame, but call it explicitly here too in case the
     // game loop is paused / unmounted during the change.
@@ -1298,6 +1311,15 @@ export const SystemView = () => {
     }
     return false;
   };
+  // Fleet-wide module-fit check. Use this -- NOT hasXFitted(playerShip) --
+  // for any "can the player do X?" gate. The fleet shares capabilities:
+  // a scanner on a wingman scans for the whole fleet, a laser on a
+  // wingman mines for the whole fleet, etc. Active-only checks were
+  // the source of "non-primary ship doesn't recognise the module" bugs
+  // for mining and scanning; future modules (sensor sweep, salvager,
+  // tractor beam, ...) should all go through fleetHas() out of the gate.
+  // Reads the live fleetShipsRef so it doesn't get stale across renders.
+  const fleetHas = (predicate) => (fleetShipsRef.current || []).some(predicate);
   const formatContents = (contents) => {
     if (!contents) return 'unknown';
     const parts = Object.values(contents)
@@ -1319,11 +1341,7 @@ export const SystemView = () => {
 
     // Already scanned → try to mine (the explicit player-chosen target).
     if (asteroid.scanned) {
-      // Fleet-wide check (any active fleet ship with a laser can mine),
-      // matching the game-loop's fleetHasMiningLaser test. The active
-      // ship doesn't need to be the one carrying the laser.
-      const fleetHasMiningLaser = (fleetShipsRef.current || []).some(hasMiningLaserFitted);
-      if (!fleetHasMiningLaser) {
+      if (!fleetHas(hasMiningLaserFitted)) {
         // No laser fitted -- fall back to a contents reveal so the
         // click still does something useful.
         if (pushToast) pushToast({
@@ -1348,8 +1366,9 @@ export const SystemView = () => {
       return;
     }
 
-    // Not yet scanned → start scan (existing flow).
-    if (!hasScannerFitted(playerShip)) {
+    // Not yet scanned → start scan (existing flow). Fleet-wide check
+    // so a scanner on a wingman counts the same as one on the primary.
+    if (!fleetHas(hasScannerFitted)) {
       if (pushToast) pushToast({ kind: 'error', text: 'Sensor Suite required to scan asteroids.', duration: 3000 });
       return;
     }
@@ -1874,23 +1893,70 @@ export const SystemView = () => {
       if (followModeRef.current) {
         cameraRef.current = { x: shipPosRef.current.x, y: shipPosRef.current.y };
       }
-      
-      // Record contrail positions for all fleet ships
+
+      // ============================================
+      // WINGMAN LAG -- "follow" feel for the fleet
+      // ============================================
+      // Each wingman has its own world position that lerps toward the
+      // formation slot (primary pos + rotated offset). When the primary
+      // banks hard, wingmen drift wide and curve back into the slot
+      // over ~0.4-0.6s instead of teleporting around the leader. The
+      // wingman's heading tracks its actual movement direction so the
+      // ship icons bank into their turns; when they're settled in the
+      // slot they snap to the leader's heading. Stored positions /
+      // rotations are then read by trails, combat, render, mining beam.
+      {
+        const theta = shipRotationRef.current * Math.PI / 180;
+        const cosT = Math.cos(theta), sinT = Math.sin(theta);
+        const rightX = -sinT, rightY = cosT;
+        const behindX = -cosT, behindY = -sinT;
+        const f = 1 - Math.exp(-WINGMAN_LAG_RATE * delta);
+        const fleetDataLag = fleetShipsRef.current || [];
+        for (const fs of fleetDataLag) {
+          if (fs.isActive) continue;
+          const off = fs.formationOffset || { x: 0, y: 0 };
+          const slotX = shipPosRef.current.x + rightX * off.x + behindX * off.y;
+          const slotY = shipPosRef.current.y + rightY * off.x + behindY * off.y;
+          let cur = wingmenPosRef.current[fs.id];
+          if (!cur) {
+            // First sight of this wingman -- spawn directly in the slot
+            // (no fly-in streak from origin or stale prior position).
+            wingmenPosRef.current[fs.id] = { x: slotX, y: slotY, rot: shipRotationRef.current };
+            continue;
+          }
+          const prevX = cur.x, prevY = cur.y;
+          cur.x = prevX + (slotX - prevX) * f;
+          cur.y = prevY + (slotY - prevY) * f;
+          const moveX = cur.x - prevX;
+          const moveY = cur.y - prevY;
+          const moveDist = Math.sqrt(moveX * moveX + moveY * moveY);
+          // Use velocity-direction rotation only while actively chasing
+          // the slot; once settled (<0.2 px/frame ~= 12 px/s) snap to
+          // the leader's heading so wingmen don't randomly skew when idle.
+          if (moveDist > 0.2) {
+            cur.rot = Math.atan2(moveY, moveX) * 180 / Math.PI;
+          } else {
+            cur.rot = shipRotationRef.current;
+          }
+        }
+      }
+
+      // Record contrail positions for all fleet ships. Reads lagged
+      // wingman positions so the contrails curve with the actual
+      // followed path, not the rigid formation slot.
       if (frameNum % TRAIL_SAMPLE === 0) {
         const currentSpeed = Math.sqrt(newVx * newVx + newVy * newVy);
         if (currentSpeed > 3) { // Only trail when moving
-          const theta = shipRotationRef.current * Math.PI / 180;
-          const cosT = Math.cos(theta);
-          const sinT = Math.sin(theta);
-          const rightX = -sinT, rightY = cosT;
-          const behindX = -cosT, behindY = -sinT;
-          
           const fleetData = fleetShipsRef.current || [];
           for (const fs of fleetData) {
-            const off = fs.formationOffset;
-            const wx = shipPosRef.current.x + rightX * off.x + behindX * off.y;
-            const wy = shipPosRef.current.y + rightY * off.x + behindY * off.y;
-            
+            let wx, wy;
+            if (fs.isActive) {
+              wx = shipPosRef.current.x; wy = shipPosRef.current.y;
+            } else {
+              const w = wingmenPosRef.current[fs.id];
+              if (!w) continue;
+              wx = w.x; wy = w.y;
+            }
             if (!trailsRef.current[fs.id]) trailsRef.current[fs.id] = [];
             const trail = trailsRef.current[fs.id];
             trail.push({ x: wx, y: wy });
@@ -2043,15 +2109,22 @@ export const SystemView = () => {
       for (const fs of fleetData) {
         if (!fs.weapons || fs.weapons.length === 0) continue;
 
-        // Compute this ship's world position
+        // Compute this ship's world position. Wingmen fire from their
+        // lagged follow position (not the rigid slot) so combat reads
+        // match the rendered icon -- otherwise tracer origins jump
+        // ahead of the ship sprite during hard turns.
         let sx, sy;
         if (fs.isActive) {
           sx = playerPos.x;
           sy = playerPos.y;
         } else {
-          const off = fs.formationOffset;
-          sx = playerPos.x + rightX * off.x + behindX * off.y;
-          sy = playerPos.y + rightY * off.x + behindY * off.y;
+          const w = wingmenPosRef.current[fs.id];
+          if (w) { sx = w.x; sy = w.y; }
+          else {
+            const off = fs.formationOffset;
+            sx = playerPos.x + rightX * off.x + behindX * off.y;
+            sy = playerPos.y + rightY * off.x + behindY * off.y;
+          }
         }
 
         // Fire each weapon independently
@@ -2885,31 +2958,34 @@ export const SystemView = () => {
               return <g key={`trail-${ship.id}`}>{segments}</g>;
             })}
 
-            {/* Fleet Ships — Flying V formation */}
+            {/* Fleet Ships — Flying V formation. Active ship reads
+                directly from shipPosRef + shipRotationRef. Wingmen read
+                their lagged position + heading from wingmenPosRef so
+                they bank into turns and trail naturally behind the
+                leader instead of pivoting rigidly around it. */}
             {fleetShips.map((ship) => {
               if (!ship.icon) return null;
-              const offset = ship.formationOffset;
-              // Convert ship-local offset to world coordinates
-              // offset.x = lateral (positive = right of heading)
-              // offset.y = longitudinal (positive = behind heading)
-              // Ship heading vector: (cos θ, sin θ)
-              // Ship right vector (perpendicular): (sin θ, -cos θ) ... but in Y-down screen: (-sin θ, cos θ) is left, so (sin θ, -cos θ) would be... 
-              // Simplest: "behind" = opposite of heading = (-cos θ, -sin θ)
-              //           "right" = 90° CW in screen Y-down = (sin θ, -cos θ) ... 
-              // Actually just use: world = right * offset.x + behind * offset.y
-              const theta = shipRotationRef.current * Math.PI / 180;
-              const cosT = Math.cos(theta);
-              const sinT = Math.sin(theta);
-              // "right of heading" in screen coords (perpendicular CW in Y-down)
-              const rightX = -sinT; // perpendicular 
-              const rightY = cosT;
-              // "behind heading" = opposite of forward
-              const behindX = -cosT;
-              const behindY = -sinT;
-              const rx = rightX * offset.x + behindX * offset.y;
-              const ry = rightY * offset.x + behindY * offset.y;
-              const sx = shipPosRef.current.x + rx;
-              const sy = shipPosRef.current.y + ry;
+              let sx, sy, shipRot;
+              if (ship.isActive) {
+                sx = shipPosRef.current.x;
+                sy = shipPosRef.current.y;
+                shipRot = shipRotationRef.current;
+              } else {
+                const w = wingmenPosRef.current[ship.id];
+                if (w) {
+                  sx = w.x; sy = w.y; shipRot = w.rot;
+                } else {
+                  // Pre-lag-init fallback: compute the rigid slot once
+                  // so the icon renders during the first frame before
+                  // the game loop seeds wingmenPosRef.
+                  const offset = ship.formationOffset;
+                  const theta = shipRotationRef.current * Math.PI / 180;
+                  const cosT = Math.cos(theta), sinT = Math.sin(theta);
+                  sx = shipPosRef.current.x + (-sinT) * offset.x + (-cosT) * offset.y;
+                  sy = shipPosRef.current.y + (cosT) * offset.x + (-sinT) * offset.y;
+                  shipRot = shipRotationRef.current;
+                }
+              }
               const iw = ship.icon.width;
               const ih = ship.icon.height;
 
@@ -2921,8 +2997,10 @@ export const SystemView = () => {
                     fill={ship.engineColor}
                     opacity={ship.isActive ? 0.12 : 0.08}
                   />
-                  {/* Ship icon rotated to heading */}
-                  <g transform={`rotate(${shipRotationRef.current + 90})`}>
+                  {/* Ship icon rotated to heading. Per CLAUDE.md
+                      pitfall #3, the SVG ship icon points UP so we
+                      add +90 to the math-degrees rotation. */}
+                  <g transform={`rotate(${shipRot + 90})`}>
                     <image
                       href={ship.icon.dataUrl}
                       x={-iw/2}
@@ -3020,9 +3098,15 @@ export const SystemView = () => {
                 let sx, sy;
                 if (fs.isActive) { sx = px; sy = py; }
                 else {
-                  const off = fs.formationOffset || { x: 0, y: 0 };
-                  sx = px + rightX * off.x + behindX * off.y;
-                  sy = py + rightY * off.x + behindY * off.y;
+                  // Use the lagged wingman position so the beam emits
+                  // from the rendered ship sprite, not the empty slot.
+                  const w = wingmenPosRef.current[fs.id];
+                  if (w) { sx = w.x; sy = w.y; }
+                  else {
+                    const off = fs.formationOffset || { x: 0, y: 0 };
+                    sx = px + rightX * off.x + behindX * off.y;
+                    sy = py + rightY * off.x + behindY * off.y;
+                  }
                 }
                 beams.push(
                   <g key={`mbeam-${fs.id}`} style={{ pointerEvents: 'none' }}>

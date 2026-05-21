@@ -71,6 +71,8 @@ These have all caused real bugs. Don't relearn them:
 
 14. **`FOR UPDATE` cannot be applied to the nullable side of a `LEFT JOIN`.** Postgres rejects this at parse time, regardless of data — even if the joined row would exist. Symptom: server-side 500 with a generic error message and a `console.error` log of the actual PG error. Fix: split into two queries — lock the parent row with single-table `FOR UPDATE`, then read the joined row separately. Or use `FOR UPDATE OF parent_table` to scope the lock. Bit the `/enter-pod` and `/exit-pod` endpoints on first deploy of migration 019.
 
+15. **Module-fit checks must be FLEET-WIDE, not active-ship-only.** "Does the player have a scanner / mining laser / sensor sweep fitted?" must enumerate every active fleet ship, not just `playerShip`. A wingman carrying the module satisfies the gate exactly like the primary. Bit mining-laser-on-non-primary, then again with scanner-on-non-primary. Client: use the `fleetHas(predicate)` helper in `SystemView.jsx` (reads `fleetShipsRef.current` — always-current, no closure staleness). Server: `SELECT fitted_modules FROM ships WHERE user_id = $1 AND storage_body_id IS NULL`. The `storage_body_id IS NULL` clause is mandatory — stored ships are parked at a station and must NOT contribute capability in space. Every future module gate (salvager, tractor beam, system-wide sweep, ...) should follow this pattern out of the gate.
+
 ---
 
 ## Code patterns
