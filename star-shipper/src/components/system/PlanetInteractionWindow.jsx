@@ -2371,11 +2371,18 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
     } catch (err) { flash('error', err.message || 'Failed to activate ship'); }
   };
   const handleStore = async (shipId) => {
+    if (!effectiveBodyId) {
+      flash('error', 'Station not yet resolved — try again in a moment.');
+      return;
+    }
     try {
       const result = await fittingAPI.storeShip(shipId, effectiveBodyId);
       flash('success', `${result.ship_name} stored at ${result.storage_body_name}.`);
       await load();
-    } catch (err) { flash('error', err.message || 'Failed to store ship'); }
+    } catch (err) {
+      console.warn('store-ship failed:', err);
+      flash('error', err?.message || 'Failed to store ship');
+    }
   };
 
   const housedHere    = ships.filter(s => s.storage_body_name === body.name);
@@ -2392,7 +2399,7 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
     }}>{label}</div>
   );
 
-  const ShipRow = ({ ship, action, onClick, disabled, hint }) => {
+  const ShipRow = ({ ship, action, onClick, disabled, hint, extraHint }) => {
     const isActiveShip = ship.id === activeShipId;
     return (
       <div style={{
@@ -2412,6 +2419,11 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
               <span> · housed here</span>
             )}
           </div>
+          {extraHint && (
+            <div style={{ fontSize: 9, color: '#fbbf24aa', fontFamily: FM, marginTop: 2, letterSpacing: 0.2 }}>
+              {extraHint}
+            </div>
+          )}
         </div>
         <PanelButton
           size="sm"
@@ -2466,7 +2478,8 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
             action="store"
             onClick={() => handleStore(ship.id)}
             disabled={isActiveShip}
-            hint={isActiveShip ? 'Switch active ship first (Fleet window) before storing it' : `Park this ship at ${body.name}`}
+            hint={isActiveShip ? 'Set a different ship as active first, then store this one' : `Park this ship at ${body.name}`}
+            extraHint={isActiveShip ? 'Active — set a different ship as active first to store this' : null}
           />
         );
       })}
