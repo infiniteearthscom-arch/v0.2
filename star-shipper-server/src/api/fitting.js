@@ -644,7 +644,25 @@ async function resolveCelestialBodyId(client, idOrAlias) {
     `SELECT id FROM celestial_bodies WHERE LOWER(name) = LOWER($1)`,
     [s]
   );
-  return nameRow.rows[0]?.id || null;
+  if (nameRow.rows[0]?.id) return nameRow.rows[0].id;
+  // Final fallback: client IDs use underscores ("luna_station") but the
+  // DB stores names + aliases with spaces ("Luna Station" / "luna station").
+  // Normalize and retry both name + alias lookups so callers don't need
+  // a per-body alias row for every underscore variant.
+  const normalized = s.replace(/_/g, ' ');
+  if (normalized !== s) {
+    const aliasRetry = await client.query(
+      `SELECT celestial_body_id FROM celestial_body_aliases WHERE alias = LOWER($1)`,
+      [normalized]
+    );
+    if (aliasRetry.rows[0]?.celestial_body_id) return aliasRetry.rows[0].celestial_body_id;
+    const nameRetry = await client.query(
+      `SELECT id FROM celestial_bodies WHERE LOWER(name) = LOWER($1)`,
+      [normalized]
+    );
+    if (nameRetry.rows[0]?.id) return nameRetry.rows[0].id;
+  }
+  return null;
 }
 
 // ============================================
