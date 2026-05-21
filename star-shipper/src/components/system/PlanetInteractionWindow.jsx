@@ -2384,6 +2384,11 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
   const [fleetCap, setFleetCap] = useState(5);
   const [loading, setLoading] = useState(false);
   const pushToast = useGameStore(state => state.pushToast);
+  // fetchShips refreshes the global ships array. Required after store /
+  // activate so SystemView's flying-fleet memo, the top-bar HUD, the
+  // Outliner, etc. pick up the new storage_body_id and stop rendering
+  // stored ships in the active fleet.
+  const fetchShips = useGameStore(state => state.fetchShips);
   const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
 
   const load = useCallback(async () => {
@@ -2407,11 +2412,10 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
       const result = await fittingAPI.activateShip(shipId);
       flash('success', `${result.ship_name} added to active fleet.`);
       await load();
+      if (fetchShips) await fetchShips();
     } catch (err) { flash('error', err.message || 'Failed to activate ship'); }
   };
   const handleStore = async (shipId) => {
-    // Temporary debug log — remove once the click-not-firing report is resolved.
-    console.log('[ShipsTab] handleStore', { shipId, effectiveBodyId });
     if (!effectiveBodyId) {
       flash('error', 'Station not yet resolved — try again in a moment.');
       return;
@@ -2420,6 +2424,7 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
       const result = await fittingAPI.storeShip(shipId, effectiveBodyId);
       flash('success', `${result.ship_name} stored at ${result.storage_body_name}.`);
       await load();
+      if (fetchShips) await fetchShips();
     } catch (err) {
       console.warn('store-ship failed:', err);
       flash('error', err?.message || 'Failed to store ship');

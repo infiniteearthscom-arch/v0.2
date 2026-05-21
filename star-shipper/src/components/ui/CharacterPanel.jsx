@@ -92,7 +92,8 @@ export const CharacterPanel = () => {
   const playerHull = useGameStore(state => state.playerHull);
   const playerMaxHull = useGameStore(state => state.playerMaxHull);
 
-  const fleetSize = ships?.length || 0;
+  // Active (flying) fleet count -- stored ships are excluded.
+  const fleetSize = (ships || []).filter(s => s.storage_body_id == null).length;
   const systemsVisited = discoveredSystems instanceof Set
     ? discoveredSystems.size
     : (Array.isArray(discoveredSystems) ? discoveredSystems.length : 0);

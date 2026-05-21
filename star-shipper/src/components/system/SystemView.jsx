@@ -1134,9 +1134,12 @@ export const SystemView = () => {
   const svgRef = useRef(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
 
-  // Pre-render fleet ship icons for system view (tiny silhouettes)
+  // Pre-render fleet ship icons for system view (tiny silhouettes).
+  // Stored ships (storage_body_id != null) are parked at stations and
+  // must NOT fly with the active fleet; filter them out before sort/slice.
   const fleetShips = useMemo(() => {
-    const sorted = [...ships]
+    const sorted = ships
+      .filter(s => s.storage_body_id == null)
       .sort((a, b) => {
         if (a.id === playerShip?.id) return -1;
         if (b.id === playerShip?.id) return 1;

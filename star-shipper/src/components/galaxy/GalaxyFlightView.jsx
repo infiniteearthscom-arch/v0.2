@@ -164,7 +164,10 @@ export const GalaxyFlightView = () => {
   const activeShipId = useGameStore(state => state.activeShipId);
   const fleetShips = useMemo(() => {
     if (!ships?.length) return [];
-    const sorted = [...ships].sort((a, b) => (a.id === activeShipId ? -1 : b.id === activeShipId ? 1 : 0));
+    // Exclude ships stored at stations -- they don't fly with the fleet.
+    const sorted = ships
+      .filter(s => s.storage_body_id == null)
+      .sort((a, b) => (a.id === activeShipId ? -1 : b.id === activeShipId ? 1 : 0));
     return sorted.slice(0, MAX_FLEET_SIZE).map((ship, i) => {
       const hullId = ship.hull_type_id;
       const icon = getShipIcon(hullId);

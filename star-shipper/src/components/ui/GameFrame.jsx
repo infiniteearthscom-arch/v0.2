@@ -66,7 +66,8 @@ const TopBar = () => {
   // cap). Was stuck at 3 here while SystemView already rendered 5 -- so
   // the top-bar indicator under-counted the visible flying fleet.
   const MAX_FLEET = 5;
-  const fleetSize = ships?.length || 0;
+  // Top-bar HUD shows the *active* (flying) fleet, not stored ships.
+  const fleetSize = (ships || []).filter(s => s.storage_body_id == null).length;
 
   useEffect(() => {
     fetchCredits();

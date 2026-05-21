@@ -221,24 +221,30 @@ export const Outliner = () => {
             ))
           )}
 
-          {/* Fleet section */}
-          <Section
-            title="Fleet"
-            count={`${ships?.length || 0}/3`}
-            accent={BLUE.light}
-            icon="🚀"
-          />
-          {(!ships || ships.length === 0) ? (
-            <div style={{
-              fontSize: 9,
-              color: '#3a5a6a',
-              fontFamily: FM,
-              padding: '4px 14px',
-            }}>
-              No ships built
-            </div>
-          ) : (
-            ships.map(ship => {
+          {/* Fleet section -- shows the active flying fleet. Stored
+              ships are parked at stations and intentionally hidden
+              here; the Fleet window has the full active+stored view. */}
+          {(() => {
+            const activeFleet = (ships || []).filter(s => s.storage_body_id == null);
+            return (
+              <>
+                <Section
+                  title="Fleet"
+                  count={`${activeFleet.length}/5`}
+                  accent={BLUE.light}
+                  icon="🚀"
+                />
+                {activeFleet.length === 0 ? (
+                  <div style={{
+                    fontSize: 9,
+                    color: '#3a5a6a',
+                    fontFamily: FM,
+                    padding: '4px 14px',
+                  }}>
+                    No ships built
+                  </div>
+                ) : (
+                  activeFleet.map(ship => {
               const isActive = ship.id === activeShip?.id;
               return (
                 <div key={ship.id} style={{
@@ -286,7 +292,10 @@ export const Outliner = () => {
                 </div>
               );
             })
-          )}
+                )}
+              </>
+            );
+          })()}
 
           {/* System bodies section (only in system view, not galaxy flight) */}
           {viewMode === 'system' && filteredBodies.length > 0 && (
