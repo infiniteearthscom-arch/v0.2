@@ -621,11 +621,13 @@ router.get('/fleet', authMiddleware, async (req, res) => {
 // purchased ships must be stored at a station and activation is gated.
 const FLEET_CAP = 5;
 
-// Resolve a celestial body identifier to its DB UUID. Accepts either
-// the UUID itself (returned as-is if valid) or a Sol alias like
-// 'earth' / 'luna station' that lives in the celestial_body_aliases
-// table. Returns null if neither matches. Used by store-ship so the
-// client can pass whichever form it has on hand.
+// Resolve a celestial body identifier to its DB UUID. Mirrors the
+// resolveBodyId helper in api/resources.js -- accepts a UUID, an
+// alias in celestial_body_aliases, or a direct match on
+// celestial_bodies.name (case-insensitive). The name fallback matters
+// because some Sol stations (e.g. 'Luna Station') ship without alias
+// rows in migration 005, so an alias-only resolver returns null and
+// produces a spurious 'Station not found'. Used by store-ship.
 async function resolveCelestialBodyId(client, idOrAlias) {
   if (!idOrAlias) return null;
   const s = String(idOrAlias);
@@ -633,11 +635,16 @@ async function resolveCelestialBodyId(client, idOrAlias) {
     const r = await client.query(`SELECT id FROM celestial_bodies WHERE id = $1`, [s]);
     return r.rows[0]?.id || null;
   }
-  const r = await client.query(
-    `SELECT celestial_body_id FROM celestial_body_aliases WHERE alias = $1`,
-    [s.toLowerCase()]
+  const aliasRow = await client.query(
+    `SELECT celestial_body_id FROM celestial_body_aliases WHERE alias = LOWER($1)`,
+    [s]
   );
-  return r.rows[0]?.celestial_body_id || null;
+  if (aliasRow.rows[0]?.celestial_body_id) return aliasRow.rows[0].celestial_body_id;
+  const nameRow = await client.query(
+    `SELECT id FROM celestial_bodies WHERE LOWER(name) = LOWER($1)`,
+    [s]
+  );
+  return nameRow.rows[0]?.id || null;
 }
 
 // ============================================
