@@ -342,8 +342,10 @@ export const clearShipImageCache = () => { shipImageCache.clear(); };
 // ============================================
 export const FORMATION_OFFSETS = [
   { x: 0, y: 0 },        // Leader — tip of the V
-  { x: -25, y: 30 },      // Left wing
-  { x: 25, y: 30 },       // Right wing
+  { x: -25, y: 30 },     // Left wing
+  { x: 25, y: 30 },      // Right wing
+  { x: -50, y: 60 },     // Outer left -- extends the V back
+  { x: 50, y: 60 },      // Outer right
 ];
 
-export const MAX_FLEET_SIZE = 3;
+export const MAX_FLEET_SIZE = 5;
