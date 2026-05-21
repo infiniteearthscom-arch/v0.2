@@ -1319,7 +1319,11 @@ export const SystemView = () => {
 
     // Already scanned → try to mine (the explicit player-chosen target).
     if (asteroid.scanned) {
-      if (!hasMiningLaserFitted(playerShip)) {
+      // Fleet-wide check (any active fleet ship with a laser can mine),
+      // matching the game-loop's fleetHasMiningLaser test. The active
+      // ship doesn't need to be the one carrying the laser.
+      const fleetHasMiningLaser = (fleetShipsRef.current || []).some(hasMiningLaserFitted);
+      if (!fleetHasMiningLaser) {
         // No laser fitted -- fall back to a contents reveal so the
         // click still does something useful.
         if (pushToast) pushToast({
