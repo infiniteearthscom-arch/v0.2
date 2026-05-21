@@ -2335,6 +2335,45 @@ const BuildingsStub = () => (
   </div>
 );
 
+// Single ship row in the Ship Manager. Module-scope so it's a stable
+// component type across ShipsTab re-renders -- defining it inside
+// ShipsTab was creating a fresh component type each render, which can
+// cause React to tear down + recreate the buttons on every parent
+// state update and swallow click events.
+const ShipManagerRow = ({ ship, isActiveShip, action, onClick, disabled, hint, extraHint }) => (
+  <div style={{
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: 8, background: 'rgba(4,8,16,0.5)',
+    border: `1px solid ${EDGE}`,
+    borderLeft: `2px solid ${isActiveShip ? '#60a5fa' : EDGE}`,
+    borderRadius: 3, marginBottom: 4,
+  }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', fontFamily: F }}>
+        {ship.name}{isActiveShip && <span style={{ color: '#60a5fa', marginLeft: 6, fontSize: 9 }}>· ACTIVE</span>}
+      </div>
+      <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM, letterSpacing: 0.3 }}>
+        {ship.hull_name || ship.hull_type_id}
+        {action === 'activate' && ship.storage_body_name && <span> · housed here</span>}
+      </div>
+      {extraHint && (
+        <div style={{ fontSize: 9, color: '#fbbf24aa', fontFamily: FM, marginTop: 2, letterSpacing: 0.2 }}>
+          {extraHint}
+        </div>
+      )}
+    </div>
+    <PanelButton
+      size="sm"
+      accent={disabled ? '#5a6a7a' : (action === 'activate' ? '#22c55e' : GOLD.light)}
+      onClick={disabled ? undefined : onClick}
+      title={hint || ''}
+      style={{ opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+    >
+      {action === 'activate' ? 'Activate' : 'Store Here'}
+    </PanelButton>
+  </div>
+);
+
 // Ship Manager — sub-tab inside the City/Station UI. Lists ships
 // stored at THIS body (with Activate buttons gated on fleet cap) and
 // active fleet ships (with Store Here buttons). Same actions as the
@@ -2401,44 +2440,17 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
     }}>{label}</div>
   );
 
-  const ShipRow = ({ ship, action, onClick, disabled, hint, extraHint }) => {
-    const isActiveShip = ship.id === activeShipId;
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: 8, background: 'rgba(4,8,16,0.5)',
-        border: `1px solid ${EDGE}`,
-        borderLeft: `2px solid ${isActiveShip ? '#60a5fa' : EDGE}`,
-        borderRadius: 3, marginBottom: 4,
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', fontFamily: F }}>
-            {ship.name}{isActiveShip && <span style={{ color: '#60a5fa', marginLeft: 6, fontSize: 9 }}>· ACTIVE</span>}
-          </div>
-          <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM, letterSpacing: 0.3 }}>
-            {ship.hull_name || ship.hull_type_id}
-            {action === 'activate' && ship.storage_body_name && (
-              <span> · housed here</span>
-            )}
-          </div>
-          {extraHint && (
-            <div style={{ fontSize: 9, color: '#fbbf24aa', fontFamily: FM, marginTop: 2, letterSpacing: 0.2 }}>
-              {extraHint}
-            </div>
-          )}
-        </div>
-        <PanelButton
-          size="sm"
-          accent={disabled ? '#5a6a7a' : (action === 'activate' ? '#22c55e' : GOLD.light)}
-          onClick={disabled ? undefined : onClick}
-          title={hint || ''}
-          style={{ opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
-        >
-          {action === 'activate' ? 'Activate' : 'Store Here'}
-        </PanelButton>
-      </div>
-    );
-  };
+  // ShipRow uses the module-scope ShipManagerRow + injects activeShipId
+  // comparison since the row needs to know about the active ship for
+  // its visual styling.
+  const rowFor = (ship, props) => (
+    <ShipManagerRow
+      key={ship.id}
+      ship={ship}
+      isActiveShip={ship.id === activeShipId}
+      {...props}
+    />
+  );
 
   if (loading && ships.length === 0) {
     return <div style={{ padding: 24, textAlign: 'center', color: '#3a5a6a', fontSize: 11, fontFamily: F }}>Loading fleet…</div>;
@@ -2455,16 +2467,12 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
         <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: 10, fontFamily: F, fontStyle: 'italic' }}>
           No ships stored here yet. Store from your active fleet below to park ships at this station.
         </div>
-      ) : housedHere.map(ship => (
-        <ShipRow
-          key={ship.id}
-          ship={ship}
-          action="activate"
-          onClick={() => handleActivate(ship.id)}
-          disabled={!canActivate}
-          hint={!canActivate ? `Fleet full (${activeCount}/${fleetCap}) — store another ship first` : 'Bring this ship into the active fleet'}
-        />
-      ))}
+      ) : housedHere.map(ship => rowFor(ship, {
+        action: 'activate',
+        onClick: () => handleActivate(ship.id),
+        disabled: !canActivate,
+        hint: !canActivate ? `Fleet full (${activeCount}/${fleetCap}) — store another ship first` : 'Bring this ship into the active fleet',
+      }))}
 
       {sectionHeader(`Active fleet (${activeCount}/${fleetCap})`, '#60a5fa')}
       {activeShips.length === 0 ? (
@@ -2473,17 +2481,13 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
         </div>
       ) : activeShips.map(ship => {
         const isActiveShip = ship.id === activeShipId;
-        return (
-          <ShipRow
-            key={ship.id}
-            ship={ship}
-            action="store"
-            onClick={() => handleStore(ship.id)}
-            disabled={isActiveShip}
-            hint={isActiveShip ? 'Set a different ship as active first, then store this one' : `Park this ship at ${body.name}`}
-            extraHint={isActiveShip ? 'Active — set a different ship as active first to store this' : null}
-          />
-        );
+        return rowFor(ship, {
+          action: 'store',
+          onClick: () => handleStore(ship.id),
+          disabled: isActiveShip,
+          hint: isActiveShip ? 'Set a different ship as active first, then store this one' : `Park this ship at ${body.name}`,
+          extraHint: isActiveShip ? 'Active — set a different ship as active first to store this' : null,
+        });
       })}
     </div>
   );
