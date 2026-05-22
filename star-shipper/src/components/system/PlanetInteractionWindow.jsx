@@ -1300,6 +1300,197 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
   );
 };
 
+// HarvesterCargoPanel
+// -------------------
+// Right-side cargo pane mirroring CraftingCargoPanel's chrome.
+// Shows item-type stacks from cargo (harvesters + fuel cells +
+// anything else that's an item). Harvesters in cargo glow + accept
+// click-to-deploy to the first empty harvester slot on the planet.
+// Drag-drop still works for all items (the existing HarvesterSlotCard
+// drop handlers stay unchanged).
+const HARVESTER_SLOT_COLORS = {
+  engine: '#ff6622', weapon: '#ff2244', shield: '#8844ff',
+  cargo: '#ddaa22', utility: '#22ccaa', reactor: '#00ddff', mining: '#aa66ff',
+};
+
+const HarvesterItemTile = ({ stack, deployable, onClick }) => {
+  // Same render code as InventoryWindow's item branch. Slot-typed
+  // module items get a slot-type color; everything else falls back
+  // to gold. Harvesters tend to lack slot_type so they end up gold.
+  const slotType = stack.item_data?.slot_type;
+  let borderColor = '#ffaa00';
+  let iconBg = '#ffaa0022';
+  let iconColor = '#ffaa00';
+  if (slotType && HARVESTER_SLOT_COLORS[slotType]) {
+    borderColor = HARVESTER_SLOT_COLORS[slotType];
+    iconBg = HARVESTER_SLOT_COLORS[slotType] + '22';
+    iconColor = HARVESTER_SLOT_COLORS[slotType];
+  }
+  let qualityDot = null;
+  if (stack.item_data?.quality) {
+    const q = stack.item_data.quality;
+    const avg = (q.purity + q.stability + q.potency + q.density) / 4;
+    if (avg >= 80) qualityDot = '#aa44ff';
+    else if (avg >= 60) qualityDot = '#4488ff';
+    else if (avg >= 40) qualityDot = '#44ff44';
+  }
+  const iconContent = stack.item_icon || '📦';
+
+  return (
+    <div
+      className="relative cursor-pointer transition-all hover:brightness-125"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/json', JSON.stringify({
+          stack_id: stack.id,
+          item_type: 'item',
+          item_id: stack.item_id,
+          item_name: stack.item_name,
+          item_icon: stack.item_icon,
+          item_data: stack.item_data,
+          quantity: stack.quantity,
+        }));
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onClick={onClick}
+      title={onClick
+        ? `Click to deploy ${stack.item_name}`
+        : stack.item_name}
+      style={{
+        width: 40,
+        height: 40,
+        border: `2px solid ${borderColor}`,
+        borderRadius: 4,
+        background: `linear-gradient(135deg, ${borderColor}15 0%, ${borderColor}08 100%)`,
+        boxShadow: deployable
+          ? `0 0 8px ${borderColor}aa, inset 0 0 8px ${borderColor}33`
+          : `inset 0 0 8px ${borderColor}11`,
+        opacity: deployable || !onClick ? 1 : 0.55,
+      }}
+    >
+      <div
+        className="absolute inset-1 rounded flex items-center justify-center font-bold"
+        style={{ fontSize: '16px' }}
+      >
+        {iconContent}
+      </div>
+      {stack.quantity > 1 && (
+        <div
+          className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold px-1 rounded-sm leading-tight"
+          style={{ backgroundColor: '#000000cc', color: '#ffffff', minWidth: 14, textAlign: 'center' }}
+        >
+          {stack.quantity}
+        </div>
+      )}
+      {qualityDot && (
+        <div
+          className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: qualityDot }}
+        />
+      )}
+    </div>
+  );
+};
+
+const HarvesterCargoPanel = ({ firstEmptySlot, onDeployFromCargo }) => {
+  const [stacks, setStacks] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchInventory = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await resourcesAPI.getInventory();
+      // Only items (modules / harvesters / fuel cells). Resources can't
+      // be deployed to a harvester slot or refueled, so they're filtered.
+      const out = (data.items || []).filter(it => it.item_type === 'item');
+      setStacks(out);
+    } catch (err) {
+      console.error('Harvester cargo panel load error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchInventory(); }, [fetchInventory]);
+  useEffect(() => {
+    const t = setInterval(fetchInventory, 5000);
+    return () => clearInterval(t);
+  }, [fetchInventory]);
+
+  const hasAny = stacks.length > 0;
+  const canDeploy = firstEmptySlot != null;
+
+  return (
+    <div
+      className="flex flex-col h-full min-h-0"
+      style={{
+        width: 220,
+        flexShrink: 0,
+        background: '#0c1018',
+        borderRadius: 6,
+        border: '1px solid #1e293b',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-700/40">
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: 12 }}>📦</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
+        </div>
+        <button
+          onClick={fetchInventory}
+          title="Refresh from cargo"
+          className="text-[10px] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+        >
+          ↻
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-1.5" style={{ scrollbarWidth: 'thin' }}>
+        {loading && !hasAny && (
+          <div className="text-[10px] text-slate-600 text-center mt-3">Loading…</div>
+        )}
+        {!loading && !hasAny && (
+          <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
+            No items in cargo.
+            <div className="text-slate-600 mt-1">Craft a harvester (or buy fuel cells) and they'll show up here.</div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-1.5 px-0.5">
+          {stacks.map(stack => {
+            const isHarvester = stack.item_id?.includes('harvester');
+            const deployable = isHarvester && canDeploy;
+            return (
+              <HarvesterItemTile
+                key={stack.id}
+                stack={stack}
+                deployable={deployable}
+                onClick={deployable
+                  ? () => onDeployFromCargo(firstEmptySlot, {
+                      stack_id: stack.id,
+                      item_type: 'item',
+                      item_id: stack.item_id,
+                      item_name: stack.item_name,
+                    })
+                  : undefined}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Footer hint */}
+      <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
+        {canDeploy
+          ? 'Click a glowing harvester to deploy'
+          : 'All slots full — collect or remove one'}
+      </div>
+    </div>
+  );
+};
+
 const HarvestersTab = ({ body, effectiveBodyId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1403,8 +1594,18 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
   const harvesterMap = {};
   harvesters.forEach(h => { harvesterMap[h.slot_index] = h; });
 
+  // First empty slot index (for click-to-deploy from the cargo pane).
+  // Null when all slots are occupied -- panel still renders tiles but
+  // disables click + glow.
+  let firstEmptySlot = null;
+  for (let i = 0; i < totalSlots; i++) {
+    if (!harvesterMap[i]) { firstEmptySlot = i; break; }
+  }
+
   return (
-    <div>
+    <div style={{ display: 'flex', gap: 10, minHeight: 0 }}>
+      {/* Left: existing slot list */}
+      <div style={{ flex: 1, minWidth: 0 }}>
       {/* Planet surface header */}
       <div style={{
         background: `linear-gradient(135deg, #ff662215, transparent)`,
@@ -1477,6 +1678,16 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
           ))}
         </div>
       )}
+      </div>
+
+      {/* Right: cargo pane -- click a harvester to deploy it to the
+          first empty slot. Drag-drop still works for users who prefer
+          it, but click is the primary path (matches the crafting
+          window cargo pane). */}
+      <HarvesterCargoPanel
+        firstEmptySlot={firstEmptySlot}
+        onDeployFromCargo={handleDeploy}
+      />
     </div>
   );
 };
