@@ -5,90 +5,23 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-14 (Wreckage Phase 1)
+**Last updated:** 2026-05-22 (Skills/Research framework + harvester quest chain + cargo panes)
 
 ---
 
 ## Current state — one-liner
 
-Live in prod. Full core loop (mine → craft → fit → fly → trade → fight → explore) functional across 200 procedural systems. Recent sessions have been **UI polish + Quest system surfacing**, not new gameplay systems.
+Live in prod. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Onboarding is a 12-step tutorial chain that walks the player from "land in a Starter Scout" → "build + deploy a harvester" → "collect passive output." Recent sessions added **Skills + Research framework** (EVE-style training queue + Civ-style tech tree, 165 skills + 15 tech nodes), **multi-laser per-asteroid mining**, **wingman lagged-follow movement**, **pinned quests overlay**, and **embedded cargo panes** in Crafting + Harvesters tabs.
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- Working tree: clean
-- DB schema: through migration **016**; next new migration is **017** (009 was skipped)
+- DB schema: through migration **039**; next new migration is **040** (009 was skipped)
 
 ---
 
 ## In progress
 
-- **Ship storage + station ship manager (Phase 1)** — code written, **needs commit + push + DO migrate**. (2026-05-20)
-  - Migration `028_ship_storage.sql` adds `ships.storage_body_id` (UUID, NULLABLE, FK→celestial_bodies, ON DELETE SET NULL).
-  - Server: `FLEET_CAP = 5` constant. New endpoints `POST /fitting/store-ship` (active→stored at body) and `POST /fitting/activate-ship` (stored→active, gated on fleet cap). `getFleet` joins `celestial_bodies` for `storage_body_name` and returns `activeFleetCount` + `fleetCap`. `buy-hull` auto-stores at the passed `dock_body_id` when fleet is full, errors if fleet full + not docked. Server-side helper `resolveCelestialBodyId` accepts either UUID or Sol alias so client can pass whichever it has.
-  - Client store: new `dockedBodyDbId` field set by `PlanetInteractionWindow` when the body is resolved (mirror of `effectiveBodyId` so cross-component callers don't re-resolve).
-  - Client UI:
-    - **Fleet window** — partitioned into Active + Stored sections. Stored ships dimmed, show `STORED · {body name}` pill, get an Activate button (enabled only when docked at the storage body AND fleet has room). Active ships get a Store button (enabled when docked anywhere). Header shows `X/5 active`. Over-cap warning if grandfathered above the limit.
-    - **City/Station tab** — new "🚀 Ships" sub-tab between Vendor and NPCs. Lists ships stored HERE with Activate buttons + active ships with Store-Here buttons. Active ship row cannot be stored (must switch active first).
-  - Plus a one-line quick fix: top-bar `MAX_FLEET` was stuck at 3 while SystemView already rendered 5; bumped to 5 so the HUD indicator matches the visible flying fleet.
-  - **Phase 2 (later)**: drag-to-store, swap-via-deactivate-active-then-activate flow, fleet roster preview pane on dock.
-  - Files: `migrations/028_ship_storage.sql` (new); `src/api/fitting.js` (FLEET_CAP, store/activate, getFleet join, buy-hull cap handling); `src/utils/api.js` (storeShip/activateShip + buyHull dockBodyId arg); `src/stores/gameStore.js` (dockedBodyDbId state); `src/components/system/PlanetInteractionWindow.jsx` (set dockedBodyDbId + new ShipsTab in PopulatedBodyTab); `src/components/ship/FleetWindow.jsx` (split active/stored sections, store/activate handlers, gating); `src/components/ui/GameFrame.jsx` (MAX_FLEET 3 → 5); `CLAUDE.md` (migration counter); `STATUS.md`.
-
-- **Mining UX fixes: store-sync on fit + click-to-mine** — code written, **needs commit + push** (no migration). (2026-05-19)
-  - Bug 1: After fitting a module in Ship Builder, the global store's `ships` array wasn't refreshed, so SystemView's `playerShip.fitted_modules` stayed stale. `hasMiningLaserFitted` / `hasScannerFitted` returned false, so no firing / scanning. Fix: `handleSlotDrop` + `handleSlotClick` now call `fetchShips()` after success.
-  - Bug 2: Mining was auto-fire-on-proximity. User wants click-to-mine on a specific scanned asteroid. Refactored: `miningTargetRef` holds the explicit lock. Click a scanned asteroid (in range, laser fitted, cargo not full) → mining starts on it. Click same again → stop. Click different one → switch. Out-of-range automatically releases lock. Depletion clears lock. Orange dashed ring marks the active target.
-  - Files: `src/components/ship/ShipBuilderWindow.jsx` (fetchShips on fit + unfit); `src/components/system/SystemView.jsx` (miningTargetRef, click handler refactor, loop reads target not nearest, target visual); `STATUS.md`.
-
-- **Mining fitting fixes** — code written, **needs commit + push + DO migrate**. (2026-05-18)
-  - Scout + starter_scout get a mining slot (mng1, at the bow). Without it the starter ship literally couldn't fit a mining laser since only Shuttle + Capital had mining slots.
-  - Server `unfit-module` was writing item_data without slot_type. The Ship Builder's FittableModulesPanel filters cargo by `item_data.slot_type` — so unfit modules became invisible in the ship builder (still in regular Cargo, just hidden from the fit panel). Fixed: unfit now looks up + includes slot_type.
-  - Migration 027 backfills existing cargo items with slot_type so previously-stranded modules reappear in the Ship Builder.
-  - Files: `migrations/027_scout_mining_slot.sql` (new); `src/api/fitting.js` (unfit-module slot_type include); `CLAUDE.md` (migration counter); `STATUS.md`.
-
-- **Asteroid mining — Phase A3 (mining laser + respawn)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
-  - Migration `026_mining_laser_stats.sql` adds `mine_range:120`, `mine_yield:5`, `mine_cycle:2` to `mining_basic.stats`.
-  - Server: `POST /resources/asteroids/mine` validates fitted laser, picks first resource with remaining > 0, decrements asteroid + adds to inventory in a transaction, checks fleet cargo capacity (returns 409 `cargo_full` for client to halt). Depletes asteroid + sets `respawn_at = NOW() + 10min` when emptied. `GET /resources/asteroids` now runs a lazy respawn pass before listing — depleted asteroids whose respawn timer has passed get fresh contents (re-rolled, non-deterministic) at the same position. Resource names enriched server-side.
-  - Client: auto-fire mining loop in the game loop. While a `mining_basic` is fitted and an asteroid is within `MINE_RANGE = 120`, fires every 2s with an orange beam visual (`#ffaa44`). Server response patches the local asteroid contents; depleted ones drop from `asteroidsRef`. On `cargo_full`, sets a ref that halts mining + pushes an error toast. Reset on system change.
-  - **Phase A complete** with this push — A1 (presence), A2 (scan reveal), A3 (mining). Follow-up items in "Up next" cover the tier upgrades (advanced/elite scanner), bulk-scan, system-wide sweep, and the cargo-volume model.
-  - Files: `migrations/026_mining_laser_stats.sql` (new); `src/api/resources.js` (mine endpoint + lazy respawn + name enrichment helper + roll-contents extraction); `src/utils/api.js` (asteroidsAPI.mine); `src/components/system/SystemView.jsx` (mining loop + helper); `CLAUDE.md` (migration counter); `STATUS.md`.
-
-- **Asteroid mining — Phase A2 (per-asteroid scan)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
-  - Migration `025_scanner_stats.sql` adds `scan_range: 80` + `scan_time: 8` to `utility_scanner.stats` and creates `player_asteroid_scans` table.
-  - Server: `GET /resources/asteroids` now LEFT JOINs `player_asteroid_scans` and returns contents only for asteroids THIS player has scanned (data-layer gate, not just UI). `POST /resources/asteroids/scan` validates the player has a `utility_scanner*` module fitted, records the reveal, returns contents.
-  - Client: click an asteroid → range + scanner check → starts an 8s client-side timer with a yellow progress arc visual on the asteroid → server call on completion records + reveals. Scanned asteroids render with a green tint + outline. Click a scanned asteroid to re-toast its contents.
-  - Module-quality tier upgrades (advanced/elite + bulk-scan flag) deferred per spec — listed in "Up next".
-  - Files: `migrations/025_scanner_stats.sql` (new); `src/api/resources.js` (gated GET + POST scan); `src/utils/api.js` (asteroidsAPI.scan); `src/components/system/SystemView.jsx` (click handler, scan game-loop block, progress arc render); `CLAUDE.md` (migration counter); `STATUS.md`.
-
-- **Asteroid mining — Phase A1 (presence + render)** — code written, **needs commit + push + DO migrate + live-URL test**. (2026-05-18)
-  - Migration `024_asteroids.sql` adds the `asteroids` table (system_id, belt_body_id, x, y, size, rotation, contents JSONB, depleted_at, respawn_at).
-  - Server: `GET /resources/asteroids?system_procedural_id=X` lazily generates 20–40 asteroids per belt on first request, deterministic from system seed + belt index. Resource pools rolled 70% common / 25% rare / 5% exotic per resource slot; 1–3 resources per asteroid. SRng helper now exported from `util/seed.js`.
-  - Client: `asteroidsAPI.list(...)` + a `useEffect` in SystemView fetching on system change. Rendered as small irregular gray polygons (rotation per asteroid for variety) between celestial bodies and projectiles in the SVG.
-  - **Phase A2 (next):** per-asteroid scan endpoint + UI to reveal contents. Bulk-scan module is the upgrade path.
-  - **Phase A3 (later):** mining laser as auto-fire weapon — server-side mine tick, cargo capacity check, depletion → respawn.
-  - Files: `migrations/024_asteroids.sql` (new); `src/util/seed.js` (export SRng); `src/api/resources.js` (asteroid endpoint + generator); `src/utils/api.js` (asteroidsAPI); `src/components/system/SystemView.jsx` (fetch + SVG render); `CLAUDE.md` (migration counter); `STATUS.md`.
-
-- **Wreckage Phase 1.5 (random module drops)** — code written, **DROP RATE TEMPORARILY 100% for verification — must dial back to 0.25 after testing**. (2026-05-14)
-  - Server: `/wrecks/spawn` now rolls 25% chance to drop a random module (tier ≤ 2, low-mid quality 30-60 per stat) into `contents.modules`. `/wrecks/claim` deposits modules into the player's next free inventory slot using the existing buy-module pattern, returns `modules_awarded` names.
-  - Client: wrecks with modules render an extra cyan dashed ring + "+ MOD" suffix on the credit label so players can spot them at a distance. Salvage toast lists the module name (e.g. `Salvaged: +50 cr + Pulse Laser`).
-  - Tunable: `MODULE_DROP_CHANCE` constant in resources.js (currently 0.25). Quality range hardcoded 30-60 — easy to tune later.
-  - No new migration required — the `contents` JSONB schema already supports modules.
-  - Files: `src/api/resources.js` (spawn roll + claim deposit); `src/components/system/SystemView.jsx` (visual ring + toast wording); `STATUS.md`.
-
-- **Wreckage Phase 1 (pirate-kill loot drops)** — ✓ deployed and verified working. (2026-05-14)
-  - Migration `021_wrecks.sql` adds the `wrecks` table (system_id, x, y, JSONB contents, source, expires_at, claimed_by). Indexes for active-by-system and unclaimed-by-system lookups.
-  - Server: 3 new endpoints — `POST /resources/wrecks/spawn` (caps credits at 1000, ensures system row), `GET /resources/wrecks` (active list, filtered by claimed/expired), `POST /resources/wrecks/claim` (atomic race-safe claim).
-  - Client: `wrecksAPI` in `api.js`. SystemView replaces `fittingAPI.awardLoot` with `wrecksAPI.spawn` on enemy kill. Polls `/wrecks` every 3s. Renders gold credit chips at wreck positions in the SVG (between enemies and projectiles). Game loop checks proximity each frame; flying within `PICKUP_RANGE = 30px` fires a claim, awards credits, toasts "+N cr salvaged".
-  - Locally-spawned wrecks added immediately so the salvage target appears before the next poll.
-  - Despawn: 5-min server-side TTL via `expires_at`, filtered out of list endpoint.
-  - Multiplayer trust caveat: spawn + claim trust client position (same as old `awardLoot`). Tighten when pirates move server-side.
-  - Files: `migrations/021_wrecks.sql` (new); `src/api/resources.js` (3 endpoints + system resolver helper); `src/utils/api.js` (wrecksAPI); `src/components/system/SystemView.jsx` (kill→spawn, polling, proximity claim, SVG render); `CLAUDE.md` (migration counter); `STATUS.md`.
-
-- **Cities — Phase A (presence + tab restructure)** — code written, **needs commit + push + DO migrate + live-URL test**. (started 2026-05-12)
-  - Migration `020_city_planets.sql` adds `has_city BOOLEAN` to `celestial_bodies` and sets Earth = TRUE.
-  - Server: `ensureBody` now computes `has_city` deterministically from `system_seed + system_planet_count + body_client_id` (40% chance per system, picks one random planet index). New helper `src/util/seed.js`.
-  - Client: ensureBody call passes seed + planet count; `PlanetInteractionWindow` stores `has_city` in state.
-  - UI: Vendor tab renamed/gated. Stations always show "Station" tab; planets show "City" tab only if `has_city`. Inside is sub-tabbed: Vendor (existing) / NPCs (stub) / Buildings (stub).
-  - Phase B (per-city vendor variance — faction-driven inventory + resource-availability pricing) deferred.
-  - Files: `migrations/020_city_planets.sql` (new); `src/util/seed.js` (new); `src/api/resources.js` (ensureBody); `src/utils/api.js` (comment); `src/components/system/PlanetInteractionWindow.jsx` (state + UI restructure); `CLAUDE.md` (migration counter); `STATUS.md`.
+*Nothing currently in flight.* Last push was the cargo-full lockout fix + the active training indicator. Up next is Outliner + system map polish (per user direction).
 
 ---
 
@@ -96,15 +29,27 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 Unranked queue. Pull from the top of the next session, or pick by interest.
 
-- **Asteroid mining Phase A3** — mining laser as auto-fire weapon. Server-side mine tick, cargo capacity check, asteroid depletion → respawn timer. The schema for depletion + respawn already exists in migration 024.
-- **Scanner tier upgrades** (Phase A2 follow-up): add `utility_scanner_adv` (tier 2) and `utility_scanner_elite` (tier 3) to `module_types`. Stats per design — wider `scan_range`, shorter `scan_time`, elite gets `bulk_scan: true` flag.
-- **Bulk-scan-belt action** — when elite scanner is fitted, a button appears in SystemView that scans every asteroid in the current belt at once. UI affordance + server endpoint variant.
-- **System-wide sensor sweep** — late-game module that reveals all enemies on the system map regardless of proximity. Likely a new module type (`utility_systemscan` or similar) with a cooldown. Pairs with wiring `sensor_range` to enemy render visibility so basic-sensor ships can be jumped.
-- **Wire `sensor_range` to enemy detection** — pirates currently render at all distances; gate visibility on the fleet's totalSensorRange.
-- **Podding — Phase 2: wreckage + cargo ejection.** Add `wrecks` table + spatial entity, eject ~50% of player inventory + destroyed ship's modules into a wreck on death, pod can salvage. Pirates contest wrecks (Phase 3 polish).
+### User-prompted, coming next
+
+- **Outliner restructure** — user flagged it's due for changes (specifics TBD when work starts). Density, section priority, what shows when, etc.
+- **System map changes** — user flagged the in-system SVG view needs work (specifics TBD).
+- **Grow the research tree as we build systems** — every new gameplay system (colonies, factions, advanced combat, etc.) should land with new tech nodes that gate it. The skill catalog (165 entries) is already broad — research nodes should expand to match. Per pitfall #15, check `skill_definitions.bonus_per_level->>'type'` for existing bonus contracts before inventing new ones.
+
+### Sensor + scanner depth
+
+- **Scanner tier upgrades (Phase A2 follow-up)** — `utility_scanner_adv` (T2) already exists from migration 031 (unlocked via Sensor Refinement research). Still pending: `utility_scanner_elite` (T3) with `bulk_scan: true` flag.
+- **Bulk-scan-belt action** — when elite scanner is fitted, one click scans every asteroid in the current belt. UI button + server endpoint variant.
+- **System-wide sensor sweep** — late-game module that reveals all enemies in the system regardless of proximity. Likely a new module type (`utility_systemscan` or similar) with a cooldown. Now that `sensor_range` gates enemy visibility, this becomes meaningful as a capability tier.
+
+### Combat + death loop
+
+- **Podding Phase 2: wreckage + cargo ejection** — eject ~50% of player inventory + destroyed ship's modules into a wreck on death so the pod can salvage. Pirates contest wrecks (Phase 3 polish). The wrecks table exists (migration 021) but the server endpoints have a parked bug — see Known Issues.
+
+### UX polish
+
+- **Orbital + ground scans should take time** — currently instant on the planet Scan tab. Should run like asteroid scanning (timed progress, cancellable, derives duration from the fitted scanner's `scan_time` stat). Probably a SCAN_TIME constant per scan kind on the server, with the client showing a progress bar.
+- **Extract a shared `<CargoPanel>` component** — `FittableModulesPanel` (ShipBuilderWindow), `CraftingCargoPanel` (CraftingWindow), `HarvesterCargoPanel` (PlanetInteractionWindow), and the main `InventoryWindow` grid all render cargo+drag in their own way. Same chrome + tile render duplicated 4 ways. A common `<CargoPanel filter={…} groupBy={…} header={…} onTileClick={…} />` would let any new "drag-from-cargo" surface drop in.
 - **Hardcoded `localhost:3001` audit** — pitfall #9 violation existed in the old respawn code; sweep the rest of the client for similar stragglers.
-- **Orbital scans should take time** — currently instant on the planet Scan tab. Should run like asteroid scanning (timed progress, cancellable, derives duration from the fitted scanner's `scan_time` stat). Same treatment for ground scans. Probably a SCAN_TIME constant per scan kind on the server, with the client showing a progress bar.
-- **Extract a shared `<CargoPanel>` component** — `FittableModulesPanel` (ShipBuilderWindow), `CraftingCargoPanel` (CraftingWindow), and the main `InventoryWindow` grid all render cargo+drag in their own way. The first two now visually match via shared `ItemCell`, but the chrome + grouping logic is duplicated. A common `<CargoPanel filter={…} groupBy={…} header={…} />` would let any new "drag-from-cargo" surface drop in. Also bring the main InventoryWindow grid onto the same primitive so cargo always looks/feels identical.
 
 ---
 
@@ -112,94 +57,127 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 Bugs noticed but not fixed; rough edges to revisit.
 
-- **Wreckage server-side parked until multiplayer matters** — `/wrecks/spawn` and `/wrecks/list` returned PG `42P01` despite migrations 021 + 022 being recorded as applied. Root cause not pinned down (schema, DATABASE_URL routing, schema cache, or something stranger). **Doesn't matter today** — gameplay works via the client-only wreck workaround (see 2026-05-17 entry below). Revisit when multiplayer ships and we need race-safe server-side claims across players. At that point: add a `GET /api/diag/db` probe endpoint that dumps what the runtime sees vs what migrations tracker recorded.
-- **`/repair-cost` server endpoint is now dead code** — kept for backward compat. Safe to remove once we confirm no client references remain after deploy.
-- **`ShipBuilderWindow.jsx:837` also calls `fittingAPI.buyHull()`** but doesn't refresh the global ships array on success. If we ever surface that flow to a podded player it'll have the same auto-disembark staleness bug as the vendor did. Worth a defensive `fetchShips()` if the path becomes reachable from the podded state.
+- **Planet toolbar button missing intermittently** — user reports the 🪐 Planet button in the left toolbar doesn't appear when they expect to be docked. The button is conditional on `dockedBody` being truthy in the global store. SystemView mirrors local `dockedBody` to the store via a useEffect, and the dock-set path looks intact. **Diagnostic still pending**: need to confirm whether the planet window auto-opens when docked (→ store value is fine, toolbar render issue) or doesn't (→ store value never gets set).
+- **Wreckage server-side parked until multiplayer matters** — `/wrecks/spawn` and `/wrecks/list` returned PG `42P01` despite migrations 021 + 022 being recorded as applied. Root cause not pinned down. **Doesn't matter today** — gameplay works via the client-only wreck workaround. Revisit when multiplayer ships and we need race-safe server-side claims. At that point: add a `GET /api/diag/db` probe endpoint that dumps what the runtime sees vs what the migrations tracker recorded.
+- **`/repair-cost` server endpoint is dead code** — kept for backward compat. Safe to remove once we confirm no client references remain.
+- **`ShipBuilderWindow.jsx:837` calls `fittingAPI.buyHull()`** without refreshing the global ships array. If we ever surface that flow to a podded player it'll have the same auto-disembark staleness bug the vendor had. Defensive `fetchShips()` if reachable from the podded state.
 
 ---
 
 ## Recently shipped
 
-Most recent first. Group by session/theme, not per-commit. Trim entries older than ~2 weeks once they stop being load-bearing context.
+Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
-### 2026-05-17 — Local-only wreckage (workaround for missing wrecks table)
+### 2026-05-22 — Active training indicator (top bar + Skills window header)
 
-- Re-enabled the "loot dropped on kill, fly to salvage" gameplay without depending on the server-side `wrecks` table (still busted). Wrecks spawn in client memory (`wrecksRef`) on enemy destruction (laser AND projectile branches), render via the existing SVG block, and on proximity-claim award credits via the working `fittingAPI.awardLoot` endpoint. 5-min TTL filtered each game-loop frame.
-- Trade-offs vs the server-persisted design: client-only (each player sees their own wrecks if multiplayer is added later), wrecks vanish on reload / system change, no module drops (would need a server endpoint to grant a random module — defer). Identical visuals + UX otherwise.
-- Server wreck endpoints, table, migration, and `wrecksAPI` client methods all remain in place. When the wrecks-table issue is resolved, swap the local `wrecksRef.current.push(...)` calls back to `wrecksAPI.spawn(...)` and re-enable the polling useEffect.
-- File: `star-shipper/src/components/system/SystemView.jsx`.
+- Shared `ActiveTrainingIndicator` component shows the head queue skill (live progress bar driven by precomputed `finishes_at` + 1s ticker) and current RP balance. Compact variant in the GameFrame top bar (clickable → opens Skills & Research window). Expanded variant in the SkillsResearchWindow header next to the tab strip.
+- When the head queue entry's `finishes_at` elapses, the indicator fires `fetchSkillsAndResearch` to commit the level bump server-side + advance the queue.
+- First-load fallback fetches data on mount so the indicator works even before the player enters SystemView.
+- Files: `src/components/ui/ActiveTrainingIndicator.jsx` (new); `src/components/ui/GameFrame.jsx`; `src/components/research/SkillsResearchWindow.jsx`.
 
-### 2026-05-17 — Fix latent laser-kill-no-credits bug
+### 2026-05-22 — Cargo-full lockout cleared on dock-state change
 
-- Long-standing bug surfaced during wreckage debugging: the laser weapon branch in `SystemView.jsx` applied damage instantly (`nearest.hull -= dmg`) but **never checked if the enemy just died**. The destruction handler (explosion VFX, sound, `awardLoot`) lived only in the projectile-hit loop, which lasers bypass since they don't spawn projectiles. So laser kills silently zeroed enemy hull with zero feedback or reward. Pre-existing bug; the Starter Kit's `weapon_laser` made it 100%-reproducible from a new captain.
-- Fix: mirror the destruction block inside the laser branch, right after `nearest.hull -= dmg`. Plays sounds, pushes explosion effect, fires `fittingAPI.awardLoot`.
-- This is the real cause of the "still not working" reports across the wreckage-debugging arc. The wreckage system added on top of broken kill plumbing — even after reverting wrecks, lasers still didn't pay out.
-- File: `star-shipper/src/components/system/SystemView.jsx`.
+- `cargoFullRef` went stale: set to true when server returns `cargo_full`, only reset on system change. Selling at a station / collecting from a harvester / jettisoning cargo all left it stuck → subsequent mine clicks were blocked client-side with "Cargo full" even though cargo was empty.
+- Fix: clear the ref on every dock-state change (dock or undock). Server stays authoritative; client just stops pre-blocking based on a stale observation.
+- File: `src/components/system/SystemView.jsx`.
 
-### 2026-05-13 — Audio scaffold (Howler) + mute toggle
+### 2026-05-22 — PlanetInteractionWindow widened 440 → 720
 
-- Howler.js added as dep. New `src/utils/audio.js` exposes a single `playSound(eventId)` API; reads volume + mute from gameStore.audio (persisted via Zustand). Missing audio files silently no-op so the scaffold ships before assets land.
-- 5 events wired: `weapon_fire`, `weapon_hit`, `ship_destroyed`, `dock_complete` (in `SystemView.jsx`), `button_click` (in `GameFrame.jsx` LeftToolbar).
-- Mute toggle (🔊/🔇) added to top bar next to outliner toggle. Volume sliders deferred — mute alone covers the common need.
-- Drop `.mp3` files in `star-shipper/public/sounds/` matching the names listed in the `README.md` there. They activate on next page load — no code change needed.
-- Files: `package.json` (howler dep); `src/utils/audio.js` (new); `src/stores/gameStore.js` (audio state + actions + persist); `src/components/ui/GameFrame.jsx` (mute toggle, button_click); `src/components/system/SystemView.jsx` (weapon_fire / weapon_hit / ship_destroyed / dock_complete); `public/sounds/README.md` (new).
+- Harvesters tab was cramped after the cargo pane added (440 - 220 cargo - gap - padding ≈ 190px for the slot column). Bumped width to 720 to give the slot column ~470px while leaving other tabs (Scan, Mine, City/Station) with extra breathing room.
 
-### 2026-05-13 — Fix invisible fitted modules in Ship Builder
+### 2026-05-22 — Harvester cargo pane (click-to-deploy)
 
-- `getShipDetail`'s `moduleDetails` entries were missing `slot_type`. The client's `normalizeFittedModule` keys into `SLOT_TYPE_META[slot_type]` to resolve the proper icon + color; without `slot_type` it fell back to gray `#64748b` + `📦`, which on the dark ship canvas looked like empty slots. Modules were persisted correctly — just invisible.
-- Single-line server fix: include `slot_type: modType.slot_type` in the moduleDetails entries.
+- Right-side cargo pane in HarvestersTab mirroring CraftingCargoPanel's chrome. Renders item-type stacks (harvesters + fuel cells) with InventoryWindow's item-branch visual code (slot-type color, quality dot, stack badge).
+- Harvester tiles glow + accept click-to-deploy to the first empty slot. Drag-drop still works. Fuel cells render dimmed but draggable for refueling.
+- Files: `src/components/system/PlanetInteractionWindow.jsx` (`HarvesterItemTile` + `HarvesterCargoPanel` + HarvestersTab restructure).
+
+### 2026-05-22 — Crafting cargo pane (click-to-add + visual parity)
+
+- Right-side cargo pane in CraftingWindow. After a false start with `ItemCell` (visual drifted from InventoryWindow), now uses **the exact same stack-render code as InventoryWindow** (`RESOURCE_ICONS` abbreviation, `TIER_BORDER` color, quality dot, stack badge) for true visual parity.
+- **Click-to-add**: clicking a tile that matches one of the selected recipe's ingredients fires the same `handleIngredientDrop` codepath as drag-drop. Matching tiles glow + stay opaque; non-matching tiles dim to 55% so the player can scan their cargo and instantly see what's relevant. Click-to-remove via existing X-button on assigned-stack pills.
+- ContextPanel width 460 → 720 to fit the new column.
+- Drag-drop still works for users who prefer it.
+- Bonus fixes: `itemShape.normalizeItem` no longer pulls `RESOURCE_TYPES.icon` (legacy filename strings that rendered as overflowing text); always uses the 2-letter abbreviation. `ItemCell`'s default drag payload backfills `item_type` from `item.kind` so resource drags carry the right shape everywhere.
+
+### 2026-05-22 — Vendor: buy probes + fuel cells fixed
+
+- `buySupply` called `/buy-module` for everything, which only special-cased `starter_kit`. `scanner_probe` / `advanced_scanner_probe` / `fuel_cell` fell through to a `module_types` lookup that 404'd → "Module not found" toast.
+- Added a server-side `SUPPLIES_CATALOG` dict with authoritative prices. The buy-module handler matches against it first; if matched, deducts credits and stacks the supply into `player_resource_inventory` (the same table `/probes` reads from).
 - File: `star-shipper-server/src/api/fitting.js`.
 
-### 2026-05-12 — Game is multiplayer (4–8 players)
+### 2026-05-22 — Asteroid mining cargo volume parity
 
-- User clarified scope: this is a multiplayer game, not single-player. World state must be authoritative on the server. New memory `project_multiplayer.md` captures the implications. Phase A city seeding is the first feature designed under this constraint.
+- Asteroid-mined resources occupied ~1/50th the cargo of equivalent planet-mined units because the INSERT into `player_resource_inventory` omitted the `stat_*` columns, leaving `stat_density` NULL, collapsing the volume formula `GREATEST(stat_density, 1) / 100` to 0.01 per unit.
+- Fix: asteroid mines now insert with baseline 50/50/50/50 stats (the q50 convention used everywhere else). Stack-find query matches on stats so asteroid stacks don't merge into planet-mined stacks of different quality.
+- Not backfilling existing rows — silently pushing players over cargo cap mid-session is worse than the inconsistency.
+- File: `star-shipper-server/src/api/resources.js`.
 
-### 2026-05-12 — Fix Auto tab blue-screen crash
+### 2026-05-22 — Harvester quest chain + supporting fixes
 
-- `HarvestersTab` and `MineTab` were referencing `effectiveBodyId` from the parent's scope without it being defined locally. `HarvestersTab`'s `useCallback` deps array `[effectiveBodyId]` evaluated synchronously during render → uncaught `ReferenceError` → React error boundary blue screen on click. (`MineTab` had the same bug but its references were inside async try/catch blocks so it failed silently with the error in the in-tab message bar.)
-- Fix: pass `effectiveBodyId` as a prop from the parent to both child tabs and destructure it.
-- File: `star-shipper/src/components/system/PlanetInteractionWindow.jsx`.
+- Tutorial chain extension: `tutorial_survey_planet` → `tutorial_mine_deposit` → `tutorial_collect_minerals` → `tutorial_craft_harvester` → `tutorial_deploy_harvester` → `tutorial_collect_harvester`. Teaches the full planetary loop. New `craft_basic_harvester` recipe (20 Iron + 10 Copper).
+- Mine tab `fetchData` deps bug: deps were `[body?.id]` but the function used `effectiveBodyId`. On reopen, first fetch fired with `effectiveBodyId=null` and deps never picked up the null→UUID flip. Added `effectiveBodyId` to deps + early-return guard.
+- Quest description for survey quest now hints at the Luna vendor for probe restock.
+- Migrations 037 (new chain + harvester recipe + backfill), 038 (probe hint), 039 (Cargo In Hand + chain rewire + backfill).
 
-### 2026-05-11 — Global font-size bump (system-view canvas exempt)
+### 2026-05-22 — Pinned quests overlay (replaces Outliner Current Quest section)
 
-- Bumped `html` font-size from 16px → 18px (12.5%) so Tailwind's rem-based `text-*` classes scale proportionally across the whole UI. (Started at 17px; user requested bumping to 18px.)
-- Added a `.system-view-canvas` reset class on SystemView's wrapper so the in-map combat log + controls hint overlays stay at their original size. SVG text (planet/ship labels) is unaffected by CSS font-size regardless. Vendor UI / PlanetInteractionWindow renders as a sibling to the canvas wrapper, so it does pick up the bump.
-- Files: `star-shipper/src/index.css`, `star-shipper/src/components/system/SystemView.jsx`.
+- Persistent top-of-screen tiles for the player's pinned active quests. Tutorial quests auto-pin server-side; the player toggles pin/unpin from the Missions log. Slide+fade+pulse animation on entry, per-category accent colors.
+- Migration 035 adds `player_quests.pinned BOOL` + backfills active tutorials.
+- Server auto-pins tutorial quests on first-time activation AND on `triggers_quests` chain activation. `POST /quests/pin` toggle.
+- Outliner Current Quest section deleted — the pinned overlay replaces it with a dedicated, animated focus surface.
 
-### 2026-05-11 — Ready for Launch quest auto-completes on full fit
+### 2026-05-22 — Onboarding: grant Starter Scout on registration
 
-- ShipBuilderWindow's `handleSlotDrop` now reads the server's `all_slots_filled` flag and calls `completeQuest('tutorial_fit_modules')` when the last empty slot fills. Counts the Starter Scout's pre-fit engine + reactor, so the player no longer has to redundantly swap in identical kit modules to satisfy the quest.
-- File: `star-shipper/src/components/ship/ShipBuilderWindow.jsx`.
+- New players spawn already in a Starter Scout (pre-fitted engine + reactor) instead of having to buy one. `tutorial_buy_starter_scout` is retired; `tutorial_fly_to_luna` ("Into the Black") is the new opening quest.
+- `util/starterShip.js` exposes `grantStarterShip(userId)`; called from both `createUser` (email/password) and `findOrCreateOAuthUser` new-user branch + from `/reset-account` so DEV reset matches a fresh registration.
+- Starter Kit now includes `mining_basic` so the player can fit all 7 slots on the Scout (mining slot from migration 027 was added without updating the kit; "Ready for Launch" was stalled). Migration 036 backfills the laser for stuck players.
+- Launch Game button no longer auto-opens Ship Builder (made sense when first quest was "buy your ship," now just clutter); Quest Log still auto-opens so "Into the Black" surfaces.
+- Migrations 034 (retire buy-scout quest), 036 (Starter Kit mining laser + backfill).
 
-### 2026-05-11 — Vendor buyHull triggers fleet refresh
+### 2026-05-22 — Tutorial chain extension: mine + sell
 
-- Buying a hull from the station vendor while podded now refreshes the global `ships` array, which lets `SystemView`'s auto-disembark useEffect see the new ship and board it (retiring the pod). Before this fix, the buy succeeded server-side but the pod stayed active alongside the new ship in the fleet.
-- File: `star-shipper/src/components/system/PlanetInteractionWindow.jsx` (added `fetchShips()` call in `buyHull`'s `finally` block).
+- After scan, the player learns to mine and sell. `tutorial_mine_resources` ("Strike It Rich") fires on first asteroid mine; `tutorial_sell_at_luna` ("Cash Out") fires on first resource sale.
+- Migration 033 + client hooks in SystemView mine response + PlanetInteractionWindow sellResource.
 
-### 2026-05-10 — Starter Scout safety net for podded players
+### 2026-05-21 — Skills + Research framework + 165-skill catalog
 
-- Relaxed `starter_scout` buy gate: now ignores pod ships when checking "no existing hulls", so a podded captain with no reserves can fall back to the free Starter Scout. Closes the stranded-captain edge case where <2000 cr + 0 reserves = no path forward.
-- Fixed a subtle auto-disembark bug: the "no reserves" toast guard was also blocking the exit-pod path, so buying a hull mid-dock left the player stuck in the pod with the new ship sitting in the fleet. Split into two separate refs.
-- "No reserve" toast now mentions the free Starter Scout explicitly so players know the fallback exists.
-- Files: `star-shipper-server/src/api/fitting.js`, `star-shipper/src/components/system/SystemView.jsx`, `STATUS.md`.
+- **Skills**: EVE-style passive training. 10-slot queue, 30 SP/min, on-read commit (no cron). `player_skills` + `player_skill_queue` tables. Routes: `GET /skills`, `POST /skills/queue/{add,remove}`. Initial 20 skills across 6 categories — then expanded to **165 skills across 19 categories** (Gunnery, Missiles, Engineering, Navigation, Targeting, Drones, Astrometrics, Industry, Science, Trade, Social, Spaceship Command, Exploration, Rigging, Leadership, Planetary, Processing, Power, Logistics). Most bonus types are stubs — they're the implementation contract for future systems.
+- **Research**: Civ-style tech tree. 5 trees × 3 tiers = 15 nodes, strict prereqs, single RP pool, 1 RP/min trickle, instant unlock on spend. Two real unlocks today: Sensor Refinement → `utility_scanner_adv`, Advanced Mining → `mining_laser_2`. The other 13 are placeholders waiting for matching gameplay.
+- **UI**: Skills & Research window (90vw × 88vh modal) with 3-pane Skills tab (categories | list | detail) + queue strip, and Research tab with SVG tree visualizer (cubic-bezier prereq lines, status-colored nodes, click-to-research confirm).
+- **Bonus wiring (Phase 1)**: Gunnery → fleet weapon damage; Industry → mining yield (server-applied); Astrometrics → sensor range. Other ~140 bonus types are stubs.
+- Toolbar 🔬 Research button now opens the window.
+- Migrations 031 (schema + initial content + 2 modules) + 032 (catalog expansion).
+- Direction memory: skills/research catalog **defines** what gets built — check `skill_definitions.bonus_per_level->>'type'` before inventing new mechanics. Pitfall #15 captures the fleet-wide check convention.
 
-### 2026-05-09 → 2026-05-10 — Podding Phase 1 deployed + working
+### 2026-05-21 — Sensor range gate + scan tutorial
 
-- Escape Pod hull + EVE-style death flow shipped: player ejects into an untargetable pod on ship destruction, no respawn-at-Luna, pirates disengage, auto-boards next fleet ship on dock. Cargo ejection + wreckage deferred to Phase 2.
-- First deploy 500'd on `/enter-pod` due to a Postgres restriction (`FOR UPDATE` rejected on the nullable side of a `LEFT JOIN`). Fixed by splitting into two queries — see `CLAUDE.md` pitfall #14.
-- User confirmed working on live URL after the FOR UPDATE fix.
-- Files: `star-shipper-server/migrations/019_pod_hull.sql` (new), `star-shipper-server/src/api/fitting.js`, `star-shipper/src/utils/api.js`, `star-shipper/src/utils/shipRenderer.js`, `star-shipper/src/components/system/SystemView.jsx`, `CLAUDE.md`, `HANDOFF.md`, `STATUS.md`.
+- `sensor_range: 500` on `utility_scanner`. SystemView filters enemy render + HUD count by `max(fleet scanner range)`; falls back to `INNATE_SENSOR_RANGE = 150` (matches PIRATE_ATTACK_RANGE) when no scanner fitted. AI keeps running on out-of-range enemies — they're just hidden.
+- HUD enemy count split: local raw count drives the "clear sector" quest watcher; store/HUD shows visible count.
+- New `tutorial_scan_asteroid` quest chained after `tutorial_fit_modules`. Fires on first successful asteroid scan.
+- Migration 030.
 
-### 2026-05-08 — Quests + UI polish
+### 2026-05-20 — Multi-laser per-asteroid mining (Phase A4)
 
-- **Current Quest outliner section + quest-completed toast** (`8267993`)
-- App.jsx update (`206257e`), docs touch-up (`27bd396`)
-- Toast system fix (`90d73fc`); weapon equip fix on top (`d3cb855`)
-- Item tooltip render rewrite for faster load + follow-up tooltip fix (`a6a2514`, `cb91169`)
-- ShipBuilderWindow updates ×2 (`b361178`, `2b72cd7`)
-- PlanetInteractionWindow refactors + fixes (`98426a6`, `0a90a00`, `09755b7`)
-- gameStore + window-pane fixes, credits update (`59286d7`, `d88f4fa`, `c4578e3`, `fecabad`)
-- Earlier UI sweep: `3d40c6c`, `6335c35`
+- Every fitted mining laser is independently click-assigned to its own asteroid. Click a scanned rock → next idle laser locks. Click an already-mined rock → release one laser from it (LIFO). Max concurrent = total fitted lasers across fleet.
+- Server: `/asteroids/mine` accepts `{ship_id, slot_key}` and yields per-laser (not fleet-sum). Validates laser exists + ship not stored.
+- Client: `miningAssignmentsRef` Map (`laserKey → {asteroidId, cooldownMs, inFlight}`). Per-laser cooldown + fire + response handling. Cargo-full releases all; depletion releases all lasers on that asteroid. Beam-per-assignment. Asteroids show concentric rings + `N×` badge for stacked lasers.
+
+### 2026-05-20 — Wingman lagged-follow movement
+
+- Wingmen had rigid satellite math (`primary.pos + rotateOffset(slot, primary.rotation)`), causing them to pinwheel around the primary on hard turns. Now each wingman has its own world position that lerps toward the formation slot at `1 - exp(-WINGMAN_LAG_RATE * delta)` (~90% catch-up in ~600ms). Heading tracks actual movement direction while chasing; snaps to leader when settled. Trails, combat firing, render, and mining beams all read the lagged position so visuals + hitboxes stay aligned. System-change resets `wingmenPosRef`.
+- User-confirmed: this is the right feel for fleet movement. Saved to memory as `feedback_fleet_movement_feel.md`.
+
+### 2026-05-20 — Module-fit checks made fleet-wide
+
+- "Has scanner / mining laser fitted?" was checking only the active ship — modules on wingmen were ignored. Same bug surfaced twice (mining laser, then scanner).
+- New `fleetHas(predicate)` client helper reads `fleetShipsRef.current`. Scanner + mining click handlers use it. Server: `/asteroids/scan` rewritten to enumerate the fleet (matched mining's pre-existing pattern); both endpoints add `AND storage_body_id IS NULL` so stored ships don't grant in-space capability.
+- Pitfall #15 in CLAUDE.md captures the convention for all future module gates.
+
+### 2026-05-20 — Ship Storage Phase 1
+
+- Fleet cap 5. Ships can be stored at a station (`ships.storage_body_id` UUID, nullable). Fleet window partitioned into Active + Stored sections; City/Station tabs gain a Ships sub-tab with Store-Here + Activate buttons. `buy-hull` auto-stores when fleet is full + dock body provided.
+- Migrations 028 (schema) + 029 (luna_station alias for the buy-supply resolver).
+- Various consumers of `ships` (SystemView, GalaxyFlightView, GameFrame HUD, Outliner, CharacterPanel) updated to filter `storage_body_id == null` so stored ships don't fly with the fleet.
 
 ---
 
@@ -207,7 +185,7 @@ Most recent first. Group by session/theme, not per-commit. Trim entries older th
 
 End of each working session:
 
-1. Move anything from **In progress** that shipped → **Recently shipped** (date + commit SHA + one-line gloss).
+1. Move anything from **In progress** that shipped → **Recently shipped** (date + one-line gloss).
 2. Move anything from **Up next** that you started → **In progress**.
 3. Add new ideas to **Up next**, new bugs to **Known issues**.
 4. Bump the **Last updated** date at the top.
