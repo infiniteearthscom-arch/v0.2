@@ -1848,6 +1848,11 @@ const VendorTab = ({ body }) => {
       if (result.success) {
         flash('success', `Sold ${result.sold} ${result.resource_name} for ${result.total_earned} cr`);
         loadSellInventory();
+        // Tutorial: first successful resource sale completes "Cash Out".
+        // Hooked only on the resource sell path (not sellItem) because
+        // the quest is specifically about selling mined ore. Server is
+        // idempotent so firing on every sale is harmless.
+        if (completeQuest) completeQuest('tutorial_sell_at_luna');
       }
     } catch (err) {
       flash('error', err.message || 'Failed to sell');

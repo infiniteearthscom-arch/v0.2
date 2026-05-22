@@ -2632,6 +2632,9 @@ export const SystemView = () => {
             // The assignment may have been released between fire + response.
             const stillAssigned = miningAssignmentsRef.current.get(laserKey);
             if (stillAssigned) stillAssigned.inFlight = false;
+            // Tutorial: first successful mine completes "Strike It Rich"
+            // (server is idempotent, so firing on every tick is harmless).
+            if (completeQuest) completeQuest('tutorial_mine_resources');
             const a = asteroidsRef.current.find(x => x.id === targetId);
             if (a) {
               if (asteroid_depleted) {
