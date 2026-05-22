@@ -5,11 +5,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
-import { RESOURCE_TYPES } from '@/data/resources';
+import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
-import { ItemCell } from '@/components/items/ItemDisplay';
-import { normalizeItem } from '@/utils/itemShape';
 
 // ============================================
 // CONSTANTS
@@ -443,31 +441,121 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
 // ============================================
 // CARGO SIDEBAR (embedded in CraftingWindow)
 // ============================================
-// Pinned right-side cargo pane. Visually mirrors the Fittable Modules
-// panel in ShipBuilderWindow: same outer chrome (dark rounded card,
-// header strip + body + footer hint), same ItemCell-based draggable
-// tiles, same drag payload (ItemCell builds it from normalizeItem so
-// it works with both ingredient slots here AND ship slots there
-// without per-consumer customization).
+// Renders cargo stacks using the EXACT same visual code as the main
+// InventoryWindow grid (RESOURCE_ICONS abbreviation + TIER_BORDER +
+// quality dot + stack count badge) so the player sees identical
+// tiles in both places. No ItemCell here -- the standardized
+// CargoPanel extraction is filed in the backlog; until then,
+// copying the InventoryWindow render verbatim is the most reliable
+// way to guarantee visual parity.
 //
-// Filtered to resources only -- items/modules can't satisfy a recipe
-// ingredient (IngredientSlot.handleIngredientDrop matches on
-// resource_name). Grouped by resource category with color-coded
-// section headers, matching the slot-type grouping in
-// FittableModulesPanel.
+// Interaction model: LEFT CLICK a tile to assign that stack to the
+// currently-selected recipe's matching ingredient. The existing X
+// button on each assigned stack in the middle column handles
+// removal. Drag-drop still works for any user who prefers it.
 
-const CATEGORY_COLOR = {
-  metal:      '#cbd5e1',
-  crystal:    '#67e8f9',
-  gas:        '#a78bfa',
-  organic:    '#86efac',
-  rare_earth: '#fb923c',
-  exotic:     '#f0abfc',
+const CARGO_SLOT_SIZE = 40;
+
+// Mirror of InventoryWindow's RESOURCE_ICONS / TIER_BORDER. Kept
+// duplicated rather than imported because InventoryWindow doesn't
+// export them; extracting both to a shared module is the standardize
+// pass on the backlog.
+const CARGO_RESOURCE_ICONS = {};
+Object.values(RESOURCE_TYPES).forEach(r => {
+  const words = r.name.split(/[\s-]+/);
+  const abbr = words.length > 1
+    ? (words[0][0] + words[1][0]).toUpperCase()
+    : r.name.substring(0, 2).toUpperCase();
+  CARGO_RESOURCE_ICONS[r.id] = { abbr, color: r.color, name: r.name };
+});
+
+const CARGO_TIER_BORDER = {
+  Impure:   '#555555',
+  Standard: '#888888',
+  Refined:  '#44ff44',
+  Superior: '#4488ff',
+  Pristine: '#aa44ff',
 };
-const categoryLabel = (cat) =>
-  (cat || 'other').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-const CraftingCargoPanel = ({ isOpen }) => {
+// Single cargo tile -- visual code lifted from InventoryWindow's
+// stack render so the two views are pixel-identical. `matchesRecipe`
+// adds a subtle glow when the tile's resource is one the currently
+// selected recipe wants, so the player can scan their cargo and see
+// at a glance which stacks are useful right now.
+const CargoStackTile = ({ stack, matchesRecipe, onClick }) => {
+  const tier = getQualityTier(
+    stack.stats.purity, stack.stats.stability,
+    stack.stats.potency, stack.stats.density
+  );
+  const iconInfo = CARGO_RESOURCE_ICONS[stack.resource_type_id];
+  const borderColor = CARGO_TIER_BORDER[tier.name] || '#444';
+  const iconContent = iconInfo?.abbr;
+  const iconBg = (iconInfo?.color || '#888') + '33';
+  const iconColor = iconInfo?.color || '#888';
+  const qualityDot = tier.color;
+
+  return (
+    <div
+      className="relative cursor-pointer transition-all hover:brightness-125"
+      draggable
+      onDragStart={(e) => {
+        // Same payload shape as InventoryWindow so IngredientSlot's
+        // drop handler accepts it byte-for-byte.
+        e.dataTransfer.setData('application/json', JSON.stringify({
+          stack_id: stack.id,
+          item_type: 'resource',
+          resource_type_id: stack.resource_type_id,
+          resource_name: stack.resource_name,
+          quantity: stack.quantity,
+          stats: stack.stats,
+          category: stack.category,
+        }));
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onClick={onClick}
+      title={onClick ? `Click to assign ${stack.resource_name}` : stack.resource_name}
+      style={{
+        width: CARGO_SLOT_SIZE,
+        height: CARGO_SLOT_SIZE,
+        border: `2px solid ${borderColor}`,
+        borderRadius: 4,
+        background: `linear-gradient(135deg, ${iconColor}15 0%, ${iconColor}08 100%)`,
+        boxShadow: matchesRecipe
+          ? `0 0 8px ${iconColor}aa, inset 0 0 8px ${iconColor}33`
+          : `inset 0 0 8px ${iconColor}11`,
+        opacity: matchesRecipe || !onClick ? 1 : 0.55,
+      }}
+    >
+      <div
+        className="absolute inset-1 rounded flex items-center justify-center font-bold"
+        style={{
+          fontSize: '11px',
+          backgroundColor: iconBg,
+          color: iconColor,
+          textShadow: `0 0 4px ${iconColor}66`,
+        }}
+      >
+        {iconContent}
+      </div>
+      {stack.quantity > 1 && (
+        <div
+          className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold px-1 rounded-sm leading-tight"
+          style={{ backgroundColor: '#000000cc', color: '#ffffff', minWidth: 14, textAlign: 'center' }}
+        >
+          {stack.quantity}
+        </div>
+      )}
+      {qualityDot && (
+        <div
+          className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: qualityDot }}
+        />
+      )}
+    </div>
+  );
+};
+
+const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
   const [stacks, setStacks] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -498,26 +586,18 @@ const CraftingCargoPanel = ({ isOpen }) => {
     if (isOpen) fetchInventory();
   }, [isOpen, fetchInventory]);
 
-  // Auto-refresh so quantities track recent crafts / mines without
-  // forcing a window reopen.
+  // Auto-refresh so quantities track recent crafts / mines.
   useEffect(() => {
     if (!isOpen) return;
     const interval = setInterval(fetchInventory, 5000);
     return () => clearInterval(interval);
   }, [isOpen, fetchInventory]);
 
-  // Group resources by category (mirrors the slot-type grouping in
-  // FittableModulesPanel). Preserves a stable order via Map keyed on
-  // first-seen-category.
-  const grouped = (() => {
-    const m = new Map();
-    for (const s of stacks) {
-      const cat = s.category || 'other';
-      if (!m.has(cat)) m.set(cat, []);
-      m.get(cat).push(s);
-    }
-    return m;
-  })();
+  // Set of resource names the selected recipe needs -- drives the
+  // matching-tile glow + which tiles respond to click.
+  const wantedNames = new Set(
+    (selectedRecipe?.ingredients || []).map(i => i.resource_name)
+  );
 
   const hasAny = stacks.length > 0;
 
@@ -555,37 +635,36 @@ const CraftingCargoPanel = ({ isOpen }) => {
         {!loading && !hasAny && (
           <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
             Cargo is empty.
-            <div className="text-slate-600 mt-1">Mine asteroids or planet deposits, then drag resources into the recipe slots.</div>
+            <div className="text-slate-600 mt-1">Mine asteroids or planet deposits to fill cargo with resources.</div>
           </div>
         )}
 
-        {[...grouped.entries()].map(([cat, items]) => (
-          <div key={cat} className="mb-2">
-            <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1">
-              <div
-                className="w-1.5 h-1.5 rounded-sm"
-                style={{ backgroundColor: CATEGORY_COLOR[cat] || '#64748b' }}
+        <div className="flex flex-wrap gap-1.5 px-0.5">
+          {stacks.map(stack => {
+            const matches = wantedNames.has(stack.resource_name);
+            return (
+              <CargoStackTile
+                key={stack.id}
+                stack={stack}
+                matchesRecipe={matches}
+                // Only wire click when a recipe is selected AND the
+                // tile matches an ingredient. Clicking a non-matching
+                // tile would be a no-op anyway since IngredientSlot
+                // rejects mismatched resource names.
+                onClick={(selectedRecipe && matches)
+                  ? () => onAssign(stack)
+                  : undefined}
               />
-              <span
-                className="text-[9px] font-bold uppercase tracking-wider"
-                style={{ color: CATEGORY_COLOR[cat] || '#94a3b8' }}
-              >
-                {categoryLabel(cat)}
-              </span>
-              <span className="text-[9px] text-slate-600">({items.length})</span>
-            </div>
-            <div className="flex flex-wrap gap-1 px-1">
-              {items.map((stack) => (
-                <ItemCell key={stack.id} item={normalizeItem(stack)} size={40} draggable />
-              ))}
-            </div>
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
 
       {/* Footer hint */}
       <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
-        Drag onto an ingredient slot
+        {selectedRecipe
+          ? 'Click a glowing tile to add it · X on a slot to remove'
+          : 'Select a recipe first, then click cargo tiles to add'}
       </div>
     </div>
   );
@@ -1108,11 +1187,33 @@ export const CraftingWindow = () => {
           )}
         </div>
 
-        {/* Cargo sidebar -- drag resources from here straight into
-            ingredient slots in the middle column. Visually + behaviorally
-            matches FittableModulesPanel in ShipBuilderWindow so the
-            cargo experience is identical across the app. */}
-        <CraftingCargoPanel isOpen={isOpen} />
+        {/* Cargo sidebar -- click a glowing tile to assign it to the
+            matching ingredient slot. Tiles render with the EXACT same
+            visual code as the main InventoryWindow grid so cargo looks
+            identical in both places. Drag-drop still works for users
+            who prefer it; click is the more reliable primary path. */}
+        <CraftingCargoPanel
+          isOpen={isOpen}
+          selectedRecipe={selectedRecipe}
+          onAssign={(stack) => {
+            // Find which ingredient this stack satisfies in the
+            // selected recipe -- IngredientSlot's drop handler does
+            // the same name-match, so we just forward the stack with
+            // a synthesized drop payload.
+            const ing = (selectedRecipe?.ingredients || [])
+              .find(i => i.resource_name === stack.resource_name);
+            if (!ing) return;
+            handleIngredientDrop(ing.resource_name, ing.quantity, {
+              stack_id: stack.id,
+              item_type: 'resource',
+              resource_type_id: stack.resource_type_id,
+              resource_name: stack.resource_name,
+              quantity: stack.quantity,
+              stats: stack.stats,
+              category: stack.category,
+            });
+          }}
+        />
       </div>
     </ContextPanel>
   );
