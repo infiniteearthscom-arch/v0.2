@@ -8,6 +8,8 @@ import { useGameStore } from '@/stores/gameStore';
 import { RESOURCE_TYPES } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
+import { ItemCell } from '@/components/items/ItemDisplay';
+import { normalizeItem } from '@/utils/itemShape';
 
 // ============================================
 // CONSTANTS
@@ -441,75 +443,31 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
 // ============================================
 // CARGO SIDEBAR (embedded in CraftingWindow)
 // ============================================
-// Compact draggable cargo grid pinned to the right side of the
-// crafting window. Same dataTransfer payload as InventoryWindow so
-// it drops into IngredientSlot without any change to drop handlers.
+// Pinned right-side cargo pane. Visually mirrors the Fittable Modules
+// panel in ShipBuilderWindow: same outer chrome (dark rounded card,
+// header strip + body + footer hint), same ItemCell-based draggable
+// tiles, same drag payload (ItemCell builds it from normalizeItem so
+// it works with both ingredient slots here AND ship slots there
+// without per-consumer customization).
+//
 // Filtered to resources only -- items/modules can't satisfy a recipe
-// ingredient (handleIngredientDrop matches on resource_name).
+// ingredient (IngredientSlot.handleIngredientDrop matches on
+// resource_name). Grouped by resource category with color-coded
+// section headers, matching the slot-type grouping in
+// FittableModulesPanel.
 
-const RESOURCE_ICON_COLORS = {};
-Object.values(RESOURCE_TYPES).forEach(r => { RESOURCE_ICON_COLORS[r.name] = r.color; });
-
-const CargoTile = ({ stack }) => {
-  const color = RESOURCE_COLORS[stack.resource_name] || '#888';
-  return (
-    <div
-      draggable
-      onDragStart={(e) => {
-        // Mirror InventoryWindow's payload so IngredientSlot's drop
-        // handler stays unchanged.
-        e.dataTransfer.setData('application/json', JSON.stringify({
-          stack_id: stack.id,
-          item_type: 'resource',
-          resource_type_id: stack.resource_type_id,
-          resource_name: stack.resource_name,
-          quantity: stack.quantity,
-          stats: stack.stats,
-          category: stack.category,
-        }));
-        e.dataTransfer.effectAllowed = 'move';
-      }}
-      title={`${stack.resource_name} — ${stack.quantity}u`}
-      style={{
-        position: 'relative',
-        cursor: 'grab',
-        background: `linear-gradient(135deg, ${color}22, ${color}08)`,
-        border: `1px solid ${color}66`,
-        borderRadius: 3,
-        padding: '4px 5px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        height: 52,
-        minWidth: 0,
-        transition: 'all 0.12s',
-      }}
-      onMouseDown={(e) => { e.currentTarget.style.cursor = 'grabbing'; }}
-      onMouseUp={(e) => { e.currentTarget.style.cursor = 'grab'; }}
-    >
-      <div style={{
-        fontSize: 9,
-        fontFamily: FONT.ui,
-        fontWeight: 700,
-        color,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        maxWidth: '100%',
-        letterSpacing: 0.3,
-      }}>{stack.resource_name}</div>
-      <div style={{
-        fontSize: 11,
-        fontFamily: FONT.mono,
-        fontWeight: 800,
-        color: COLORS.GOLD.light,
-      }}>{stack.quantity}</div>
-    </div>
-  );
+const CATEGORY_COLOR = {
+  metal:      '#cbd5e1',
+  crystal:    '#67e8f9',
+  gas:        '#a78bfa',
+  organic:    '#86efac',
+  rare_earth: '#fb923c',
+  exotic:     '#f0abfc',
 };
+const categoryLabel = (cat) =>
+  (cat || 'other').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-const CraftingCargoGrid = ({ isOpen }) => {
+const CraftingCargoPanel = ({ isOpen }) => {
   const [stacks, setStacks] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -530,7 +488,7 @@ const CraftingCargoGrid = ({ isOpen }) => {
       }
       setStacks(out);
     } catch (err) {
-      console.error('Cargo grid load error:', err);
+      console.error('Cargo panel load error:', err);
     } finally {
       setLoading(false);
     }
@@ -540,49 +498,94 @@ const CraftingCargoGrid = ({ isOpen }) => {
     if (isOpen) fetchInventory();
   }, [isOpen, fetchInventory]);
 
-  // Refresh after crafting (and periodically as a safety net).
+  // Auto-refresh so quantities track recent crafts / mines without
+  // forcing a window reopen.
   useEffect(() => {
     if (!isOpen) return;
     const interval = setInterval(fetchInventory, 5000);
     return () => clearInterval(interval);
   }, [isOpen, fetchInventory]);
 
+  // Group resources by category (mirrors the slot-type grouping in
+  // FittableModulesPanel). Preserves a stable order via Map keyed on
+  // first-seen-category.
+  const grouped = (() => {
+    const m = new Map();
+    for (const s of stacks) {
+      const cat = s.category || 'other';
+      if (!m.has(cat)) m.set(cat, []);
+      m.get(cat).push(s);
+    }
+    return m;
+  })();
+
+  const hasAny = stacks.length > 0;
+
   return (
-    <div style={{
-      width: 200,
-      flexShrink: 0,
-      borderLeft: `1px solid ${COLORS.EDGE}`,
-      paddingLeft: 8,
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: 0,
-    }}>
-      <SectionHead
-        title="Cargo (Drag to Slots)"
-        accent={COLORS.GOLD.light}
-        icon="📦"
-        marginTop={0}
-      />
-      <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
-        {loading && stacks.length === 0 ? (
-          <div style={{ fontSize: 10, color: COLORS.TEXT.muted, padding: 8, fontFamily: FONT.ui }}>
-            Loading…
-          </div>
-        ) : stacks.length === 0 ? (
-          <div style={{ fontSize: 10, color: COLORS.TEXT.muted, padding: 8, fontFamily: FONT.ui, fontStyle: 'italic' }}>
-            Cargo empty — mine some resources first.
-          </div>
-        ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: 4,
-          }}>
-            {stacks.map(stack => (
-              <CargoTile key={stack.id} stack={stack} />
-            ))}
+    <div
+      className="flex flex-col h-full min-h-0"
+      style={{
+        width: 220,
+        flexShrink: 0,
+        background: '#0c1018',
+        borderRadius: 6,
+        border: '1px solid #1e293b',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-700/40">
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: 12 }}>📦</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
+        </div>
+        <button
+          onClick={fetchInventory}
+          title="Refresh from cargo"
+          className="text-[10px] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+        >
+          ↻
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-1.5" style={{ scrollbarWidth: 'thin' }}>
+        {loading && !hasAny && (
+          <div className="text-[10px] text-slate-600 text-center mt-3">Loading…</div>
+        )}
+        {!loading && !hasAny && (
+          <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
+            Cargo is empty.
+            <div className="text-slate-600 mt-1">Mine asteroids or planet deposits, then drag resources into the recipe slots.</div>
           </div>
         )}
+
+        {[...grouped.entries()].map(([cat, items]) => (
+          <div key={cat} className="mb-2">
+            <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1">
+              <div
+                className="w-1.5 h-1.5 rounded-sm"
+                style={{ backgroundColor: CATEGORY_COLOR[cat] || '#64748b' }}
+              />
+              <span
+                className="text-[9px] font-bold uppercase tracking-wider"
+                style={{ color: CATEGORY_COLOR[cat] || '#94a3b8' }}
+              >
+                {categoryLabel(cat)}
+              </span>
+              <span className="text-[9px] text-slate-600">({items.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-1 px-1">
+              {items.map((stack) => (
+                <ItemCell key={stack.id} item={normalizeItem(stack)} size={40} draggable />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer hint */}
+      <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
+        Drag onto an ingredient slot
       </div>
     </div>
   );
@@ -1106,8 +1109,10 @@ export const CraftingWindow = () => {
         </div>
 
         {/* Cargo sidebar -- drag resources from here straight into
-            ingredient slots in the middle column. */}
-        <CraftingCargoGrid isOpen={isOpen} />
+            ingredient slots in the middle column. Visually + behaviorally
+            matches FittableModulesPanel in ShipBuilderWindow so the
+            cargo experience is identical across the app. */}
+        <CraftingCargoPanel isOpen={isOpen} />
       </div>
     </ContextPanel>
   );

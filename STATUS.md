@@ -104,6 +104,7 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 - **Podding — Phase 2: wreckage + cargo ejection.** Add `wrecks` table + spatial entity, eject ~50% of player inventory + destroyed ship's modules into a wreck on death, pod can salvage. Pirates contest wrecks (Phase 3 polish).
 - **Hardcoded `localhost:3001` audit** — pitfall #9 violation existed in the old respawn code; sweep the rest of the client for similar stragglers.
 - **Orbital scans should take time** — currently instant on the planet Scan tab. Should run like asteroid scanning (timed progress, cancellable, derives duration from the fitted scanner's `scan_time` stat). Same treatment for ground scans. Probably a SCAN_TIME constant per scan kind on the server, with the client showing a progress bar.
+- **Extract a shared `<CargoPanel>` component** — `FittableModulesPanel` (ShipBuilderWindow), `CraftingCargoPanel` (CraftingWindow), and the main `InventoryWindow` grid all render cargo+drag in their own way. The first two now visually match via shared `ItemCell`, but the chrome + grouping logic is duplicated. A common `<CargoPanel filter={…} groupBy={…} header={…} />` would let any new "drag-from-cargo" surface drop in. Also bring the main InventoryWindow grid onto the same primitive so cargo always looks/feels identical.
 
 ---
 
