@@ -1197,6 +1197,13 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
       await client.query(`DELETE FROM player_quests WHERE user_id = $1`, [userId]);
     });
 
+    // 9. Re-grant the Starter Scout so RESET produces the same
+    // ready-to-fly state as a brand-new registration. Done OUTSIDE
+    // the wipe transaction because grantStarterShip runs its own
+    // transaction (creates design row + ship + sets active).
+    const { grantStarterShip } = await import('../util/starterShip.js');
+    await grantStarterShip(userId);
+
     res.json({ success: true });
   } catch (error) {
     console.error('Reset account error:', error);
