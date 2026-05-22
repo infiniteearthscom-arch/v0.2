@@ -531,6 +531,70 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       return res.json({ success: true, ...kitResult });
     }
 
+    // Supplies catalog (consumable items the vendor sells -- probes,
+    // fuel cells, etc.). These live in item_definitions, not
+    // module_types, so the buy-module endpoint historically returned
+    // "Module not found" when the client tried to buy one. Centralized
+    // here so prices stay server-authoritative (don't trust the
+    // client-side supplies list in PlanetInteractionWindow). To add a
+    // new supply, list it here AND in the client's supplies array.
+    const SUPPLIES_CATALOG = {
+      scanner_probe:          { price: 50,  display_name: 'Scanner Probe' },
+      advanced_scanner_probe: { price: 150, display_name: 'Advanced Scanner Probe' },
+      fuel_cell:              { price: 100, display_name: 'Fuel Cell' },
+    };
+    if (SUPPLIES_CATALOG[module_type_id]) {
+      const supply = SUPPLIES_CATALOG[module_type_id];
+      const supplyResult = await transaction(async (client) => {
+        const userRow = await client.query(
+          `SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]
+        );
+        const credits = parseInt(userRow.rows[0]?.credits || 0);
+        if (credits < supply.price) {
+          throw Object.assign(
+            new Error(`Not enough credits (need ${supply.price}, have ${credits})`),
+            { statusCode: 400 }
+          );
+        }
+        await client.query(
+          `UPDATE users SET credits = credits - $1 WHERE id = $2`,
+          [supply.price, userId]
+        );
+
+        // Stack with existing supply of same id, else create new slot.
+        const existing = await client.query(
+          `SELECT id, quantity FROM player_resource_inventory
+           WHERE user_id = $1 AND item_type = 'item' AND item_id = $2
+           LIMIT 1`,
+          [userId, module_type_id]
+        );
+        if (existing.rows[0]) {
+          await client.query(
+            `UPDATE player_resource_inventory SET quantity = quantity + 1, updated_at = NOW() WHERE id = $1`,
+            [existing.rows[0].id]
+          );
+        } else {
+          const slotResult = await client.query(`
+            SELECT s.slot FROM generate_series(
+              0, COALESCE((SELECT MAX(slot_index) + 1 FROM player_resource_inventory WHERE user_id = $1), 0)
+            ) s(slot)
+            WHERE s.slot NOT IN (
+              SELECT slot_index FROM player_resource_inventory WHERE user_id = $1 AND slot_index IS NOT NULL
+            )
+            ORDER BY s.slot ASC LIMIT 1
+          `, [userId]);
+          const nextSlot = parseInt(slotResult.rows[0]?.slot) || 0;
+          await client.query(
+            `INSERT INTO player_resource_inventory (user_id, item_type, item_id, quantity, slot_index, item_data)
+             VALUES ($1, 'item', $2, 1, $3, '{}')`,
+            [userId, module_type_id, nextSlot]
+          );
+        }
+        return { module: supply.display_name, price: supply.price };
+      });
+      return res.json({ success: true, ...supplyResult });
+    }
+
     const result = await transaction(async (client) => {
       const modResult = await client.query(
         `SELECT * FROM module_types WHERE id = $1`, [module_type_id]

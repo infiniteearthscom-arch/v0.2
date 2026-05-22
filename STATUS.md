@@ -103,6 +103,7 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 - **Wire `sensor_range` to enemy detection** — pirates currently render at all distances; gate visibility on the fleet's totalSensorRange.
 - **Podding — Phase 2: wreckage + cargo ejection.** Add `wrecks` table + spatial entity, eject ~50% of player inventory + destroyed ship's modules into a wreck on death, pod can salvage. Pirates contest wrecks (Phase 3 polish).
 - **Hardcoded `localhost:3001` audit** — pitfall #9 violation existed in the old respawn code; sweep the rest of the client for similar stragglers.
+- **Orbital scans should take time** — currently instant on the planet Scan tab. Should run like asteroid scanning (timed progress, cancellable, derives duration from the fitted scanner's `scan_time` stat). Same treatment for ground scans. Probably a SCAN_TIME constant per scan kind on the server, with the client showing a progress bar.
 
 ---
 
