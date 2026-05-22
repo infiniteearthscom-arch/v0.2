@@ -222,9 +222,13 @@ export const asteroidsAPI = {
     method: 'POST',
     body: JSON.stringify({ asteroid_id: asteroidId }),
   }),
-  mine: (asteroidId) => request('/resources/asteroids/mine', {
+  // Phase A4: per-laser, per-tick. shipId + slotKey identify the
+  // specific fitted laser firing this cycle (yield comes from just
+  // that one laser, not the fleet sum). Each fitted mining laser
+  // is independently click-assigned to its own asteroid client-side.
+  mine: (asteroidId, shipId, slotKey) => request('/resources/asteroids/mine', {
     method: 'POST',
-    body: JSON.stringify({ asteroid_id: asteroidId }),
+    body: JSON.stringify({ asteroid_id: asteroidId, ship_id: shipId, slot_key: slotKey }),
   }),
 };
 

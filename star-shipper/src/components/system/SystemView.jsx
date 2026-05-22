@@ -1070,19 +1070,25 @@ export const SystemView = () => {
   const SCAN_RANGE = 80;     // matches utility_scanner.stats.scan_range
   const SCAN_TIME_MS = 8000; // matches utility_scanner.stats.scan_time * 1000
 
-  // A3 mining state. Click-to-mine model: player explicitly selects an
-  // asteroid (via click on a scanned asteroid with a mining laser fitted)
-  // and the loop fires every MINE_CYCLE_MS while that target stays in
-  // range. Click the same asteroid again to toggle off; click a
-  // different one to switch targets. Stops on cargo full + depletion.
-  const miningTargetRef = useRef(null);    // { asteroidId } | null
-  const mineCooldownRef = useRef(0);       // ms remaining in current cycle
-  const miningInFlightRef = useRef(false); // dedupe overlapping requests
-  const cargoFullRef = useRef(false);      // pause mining when full; reset on system change
-  // Tracks whether the mining_laser audio loop is currently playing,
-  // so the game loop can drive start/stop transitions in one place
-  // (every place that toggles miningTargetRef stays simpler).
-  const miningLoopActiveRef = useRef(false);
+  // A4 mining state. Per-laser click-to-mine: every fitted mining
+  // laser across the active fleet can be independently assigned to
+  // its own asteroid. Click a scanned asteroid -> assigns the next
+  // idle laser. Click an asteroid already being mined -> releases one
+  // laser from it (LIFO). Max simultaneous assignments = total fitted
+  // lasers across the fleet.
+  //
+  // Each assignment owns its own cooldown + in-flight flag so lasers
+  // tick fully independently of each other. cargoFullRef stays a
+  // global gate (it releases EVERY assignment, because no laser can
+  // mine when cargo is full). The audio loop is on whenever the map
+  // has at least one entry.
+  //
+  // Map keys are stable `${shipId}::${slotKey}` so they survive React
+  // re-renders + ship-data refreshes; the value lives across frames
+  // until released. Cleared on system change.
+  const miningAssignmentsRef = useRef(new Map()); // laserKey -> { asteroidId, cooldownMs, inFlight }
+  const cargoFullRef = useRef(false);             // pause mining when full; reset on system change
+  const miningLoopActiveRef = useRef(false);      // tracks audio-loop on/off so transitions stay idempotent
   const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
   const MINE_CYCLE_MS = 2000; // matches mining_basic.stats.mine_cycle * 1000
 
@@ -1273,8 +1279,7 @@ export const SystemView = () => {
     if (!currentSystemId) return undefined;
     let cancelled = false;
     activeScanRef.current = null; // cancel any pending scan on system change
-    miningTargetRef.current = null; // cancel any active mining on system change
-    mineCooldownRef.current = 0;
+    miningAssignmentsRef.current.clear(); // drop all per-laser targets on system change
     cargoFullRef.current = false; // re-check capacity in new system
     // Wingmen warp in with the leader: clear lagged positions so they
     // re-init at their slot on the first frame of the new system instead
@@ -1311,6 +1316,25 @@ export const SystemView = () => {
     }
     return false;
   };
+  // Enumerate every fitted mining laser across the active fleet, with
+  // a stable laserKey for the multi-target assignment map. Excludes
+  // stored ships (they're not present in space). Order is deterministic
+  // (fleet order, then slot order) so the "next idle laser" pick is
+  // predictable: primary's lasers first, then wingmen in formation
+  // order. Re-enumerate each call -- cheap, and avoids stale-fleet bugs.
+  const isMiningLaserId = (id) => !!id && (id === 'mining_basic' || id.startsWith('mining_'));
+  const enumerateFleetLasers = () => {
+    const out = [];
+    for (const fs of (fleetShipsRef.current || [])) {
+      const fitted = fs.fitted_modules || {};
+      for (const slotKey of Object.keys(fitted)) {
+        if (isMiningLaserId(fitted[slotKey]?.module_type_id)) {
+          out.push({ laserKey: `${fs.id}::${slotKey}`, shipId: fs.id, slotKey, ship: fs });
+        }
+      }
+    }
+    return out;
+  };
   // Fleet-wide module-fit check. Use this -- NOT hasXFitted(playerShip) --
   // for any "can the player do X?" gate. The fleet shares capabilities:
   // a scanner on a wingman scans for the whole fleet, a laser on a
@@ -1332,16 +1356,33 @@ export const SystemView = () => {
     const dy = asteroid.y - shipPosRef.current.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Toggle off if this is the asteroid we're currently mining.
-    if (miningTargetRef.current?.asteroidId === asteroid.id) {
-      miningTargetRef.current = null;
-      if (pushToast) pushToast({ kind: 'info', text: 'Mining stopped.', duration: 2000 });
-      return;
-    }
-
-    // Already scanned → try to mine (the explicit player-chosen target).
+    // Already scanned → try to assign or release a laser on this rock.
+    // (Per Phase A4: each fitted laser is independently click-assigned.)
     if (asteroid.scanned) {
-      if (!fleetHas(hasMiningLaserFitted)) {
+      // If any laser is already mining this asteroid, treat the click
+      // as "release one of them" (LIFO -- the most-recent assignment
+      // detaches). Repeated clicks peel lasers off one by one.
+      const assignedHere = [];
+      for (const [laserKey, a] of miningAssignmentsRef.current) {
+        if (a.asteroidId === asteroid.id) assignedHere.push(laserKey);
+      }
+      if (assignedHere.length > 0) {
+        const releaseKey = assignedHere[assignedHere.length - 1];
+        miningAssignmentsRef.current.delete(releaseKey);
+        const remaining = assignedHere.length - 1;
+        if (pushToast) pushToast({
+          kind: 'info',
+          text: remaining > 0
+            ? `Released 1 laser. ${remaining} still mining this asteroid.`
+            : 'Mining stopped on this asteroid.',
+          duration: 2000,
+        });
+        return;
+      }
+
+      // No laser assigned to this rock yet -- try to assign one.
+      const allLasers = enumerateFleetLasers();
+      if (allLasers.length === 0) {
         // No laser fitted -- fall back to a contents reveal so the
         // click still does something useful.
         if (pushToast) pushToast({
@@ -1359,10 +1400,27 @@ export const SystemView = () => {
         if (pushToast) pushToast({ kind: 'error', text: 'Cargo full — sell or jettison first.', duration: 3000 });
         return;
       }
-      // Lock target; fire immediately on next loop tick.
-      miningTargetRef.current = { asteroidId: asteroid.id };
-      mineCooldownRef.current = 0;
-      if (pushToast) pushToast({ kind: 'success', text: 'Mining locked on target.', duration: 2000 });
+      // Pick the first idle laser (one not currently assigned anywhere).
+      const idle = allLasers.find(l => !miningAssignmentsRef.current.has(l.laserKey));
+      if (!idle) {
+        if (pushToast) pushToast({
+          kind: 'error',
+          text: `All ${allLasers.length} mining lasers already assigned. Click a mined target to free one.`,
+          duration: 3500,
+        });
+        return;
+      }
+      miningAssignmentsRef.current.set(idle.laserKey, {
+        asteroidId: asteroid.id,
+        cooldownMs: 0, // fire immediately on next loop tick
+        inFlight: false,
+      });
+      const totalAssigned = miningAssignmentsRef.current.size;
+      if (pushToast) pushToast({
+        kind: 'success',
+        text: `Mining locked (${totalAssigned}/${allLasers.length} lasers active).`,
+        duration: 2000,
+      });
       return;
     }
 
@@ -2398,40 +2456,85 @@ export const SystemView = () => {
         if (effects[i].age > lifetime) effects.splice(i, 1);
       }
 
-      // --- Mining: gates + auto-release ---
-      // Check fleet-wide for a mining laser (not just the active ship)
-      // via the always-current fleetShipsRef -- avoids the stale-
-      // playerShip trap where the gameStore selector lags an in-flight
-      // fetch. Auto-release is its OWN block (before fire/sparks/sound)
-      // so flying out of range / docking / unfitting cleanly drops the
-      // lock regardless of whether the fire-gate also passes.
-      const fleetHasMiningLaser = (fleetShipsRef.current || []).some(hasMiningLaserFitted);
-      if (miningTargetRef.current) {
-        const t = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
-        let releaseReason = null;
-        if (isPodRef.current)             releaseReason = 'in pod';
-        else if (cargoFullRef.current)    releaseReason = 'cargo full';
-        else if (dockedBodyRef.current)   releaseReason = 'docked';
-        else if (!fleetHasMiningLaser)    releaseReason = 'no mining laser';
-        else if (!t)                      releaseReason = 'asteroid gone';
-        else {
-          const dxr = t.x - playerPos.x, dyr = t.y - playerPos.y;
-          if (dxr * dxr + dyr * dyr > MINE_RANGE * MINE_RANGE) releaseReason = 'out of range';
+      // ============================================
+      // MINING: per-laser tick (Phase A4)
+      // ============================================
+      // Every fitted laser in the active fleet runs its own cooldown +
+      // server call. miningAssignmentsRef holds the laserKey -> {asteroidId,
+      // cooldownMs, inFlight} map. Each frame:
+      //   1. Drop any assignment whose laser no longer exists (unfitted,
+      //      ship stored/destroyed) so we don't fire ghost lasers.
+      //   2. Release per-assignment for the global gates that kill ALL
+      //      mining (pod, dock, cargo-full) or for that one laser's
+      //      target going stale (asteroid gone, primary out of range).
+      //   3. Sparks: once per distinct mined asteroid (de-duped) so
+      //      double-laser'd rocks don't get double-bright sparks.
+      //   4. Audio loop: on whenever the assignment map has entries.
+      //   5. Fire: per-assignment cooldown decrement + per-laser server
+      //      call. Yield, depletion, cargo-full all return per-laser
+      //      responses; cargo-full releases ALL lasers globally (every
+      //      laser is mining into the same shared cargo pool).
+      // Helper: release every assignment pointing at one asteroid -- used
+      // when the asteroid depletes (every laser on it must drop).
+      const releaseAllOnAsteroid = (asteroidId) => {
+        const toRelease = [];
+        for (const [k, a] of miningAssignmentsRef.current) {
+          if (a.asteroidId === asteroidId) toRelease.push(k);
         }
-        if (releaseReason) {
-          miningTargetRef.current = null;
+        for (const k of toRelease) miningAssignmentsRef.current.delete(k);
+      };
+
+      // 1 + 2. Validity + release pass.
+      if (miningAssignmentsRef.current.size > 0) {
+        const validKeys = new Set(enumerateFleetLasers().map(l => l.laserKey));
+        // Global release reasons (kill EVERY assignment, with a single toast).
+        let globalReleaseReason = null;
+        if (isPodRef.current)           globalReleaseReason = 'in pod';
+        else if (cargoFullRef.current)  globalReleaseReason = 'cargo full';
+        else if (dockedBodyRef.current) globalReleaseReason = 'docked';
+        if (globalReleaseReason) {
+          miningAssignmentsRef.current.clear();
           const pt = useGameStore.getState().pushToast;
-          if (pt) pt({ kind: 'info', text: `Mining stopped (${releaseReason}).`, duration: 2500 });
+          if (pt) pt({ kind: 'info', text: `Mining stopped (${globalReleaseReason}).`, duration: 2500 });
+        } else {
+          // Per-assignment release: laser gone OR asteroid gone OR primary out of range.
+          // (Range stays primary-anchored for now; per-ship range is a Phase A5 polish.)
+          const releases = []; // [{ key, reason }]
+          for (const [laserKey, assignment] of miningAssignmentsRef.current) {
+            if (!validKeys.has(laserKey)) { releases.push({ key: laserKey, reason: 'laser unfitted' }); continue; }
+            const t = asteroidsRef.current.find(a => a.id === assignment.asteroidId);
+            if (!t) { releases.push({ key: laserKey, reason: 'asteroid gone' }); continue; }
+            const dxr = t.x - playerPos.x, dyr = t.y - playerPos.y;
+            if (dxr * dxr + dyr * dyr > MINE_RANGE * MINE_RANGE) {
+              releases.push({ key: laserKey, reason: 'out of range' });
+            }
+          }
+          for (const r of releases) miningAssignmentsRef.current.delete(r.key);
+          // Single summary toast if anything dropped; saves spamming
+          // one toast per laser when the fleet flies out of range.
+          if (releases.length > 0) {
+            const pt = useGameStore.getState().pushToast;
+            if (pt) {
+              const reasons = [...new Set(releases.map(r => r.reason))].join(', ');
+              pt({
+                kind: 'info',
+                text: releases.length === 1
+                  ? `Mining released 1 laser (${reasons}).`
+                  : `Mining released ${releases.length} lasers (${reasons}).`,
+                duration: 2500,
+              });
+            }
+          }
         }
       }
 
-      // --- Mining sparks (continuous visual at the impact point) ---
-      // ~30 spawns/sec, 0.3s lifetime each = roughly 9 sparks on screen
-      // at any time. Only runs when target is still locked (passed the
-      // auto-release above).
-      if (miningTargetRef.current && fleetHasMiningLaser && frameNum % 2 === 0) {
-        const t = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
-        if (t) {
+      // 3. Sparks (de-duped per asteroid).
+      if (miningAssignmentsRef.current.size > 0 && frameNum % 2 === 0) {
+        const minedAsteroidIds = new Set();
+        for (const a of miningAssignmentsRef.current.values()) minedAsteroidIds.add(a.asteroidId);
+        for (const aid of minedAsteroidIds) {
+          const t = asteroidsRef.current.find(a => a.id === aid);
+          if (!t) continue;
           for (let k = 0; k < 2; k++) {
             const ang = Math.random() * Math.PI * 2;
             const off = Math.random() * (t.size || 4);
@@ -2448,11 +2551,8 @@ export const SystemView = () => {
         }
       }
 
-      // --- Mining sound on/off transition ---
-      // Centralized so every place that clears miningTargetRef doesn't
-      // need to remember to stopLoop. Idempotent. Same fleet-wide
-      // laser check as everything else.
-      const wantMiningSound = !!miningTargetRef.current && fleetHasMiningLaser;
+      // 4. Audio loop transition.
+      const wantMiningSound = miningAssignmentsRef.current.size > 0;
       if (wantMiningSound && !miningLoopActiveRef.current) {
         startLoop('mining_laser');
         miningLoopActiveRef.current = true;
@@ -2461,75 +2561,74 @@ export const SystemView = () => {
         miningLoopActiveRef.current = false;
       }
 
-      // --- Mining fire cycle ---
-      // Per-tick server call. Auto-release above already validated
-      // range / target / fleet laser, so we just decrement the cycle
-      // and fire when ready.
-      if (miningTargetRef.current && fleetHasMiningLaser) {
-        const targetId = miningTargetRef.current.asteroidId;
-        const target = asteroidsRef.current.find(a => a.id === targetId);
-        if (target) {
-          mineCooldownRef.current -= delta * 1000;
-          if (mineCooldownRef.current <= 0 && !miningInFlightRef.current) {
-              // Fire! The constant beam visual is rendered directly in
-              // the SVG below (driven by miningTargetRef), so no
-              // per-tick effect push here -- just the server call.
-              mineCooldownRef.current = MINE_CYCLE_MS;
-              miningInFlightRef.current = true;
-              asteroidsAPI.mine(targetId)
-                .then(({ mined, asteroid_remaining, asteroid_depleted, cargo_used, cargo_capacity }) => {
-                  miningInFlightRef.current = false;
-                  // Patch local asteroid with new contents
-                  const a = asteroidsRef.current.find(x => x.id === targetId);
-                  if (a) {
-                    if (asteroid_depleted) {
-                      asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
-                      miningTargetRef.current = null;
-                    } else {
-                      a.contents = asteroid_remaining;
-                      a.scanned = true; // mining counts as a reveal
-                    }
-                  }
-                  if (asteroid_depleted) {
-                    const pt = useGameStore.getState().pushToast;
-                    if (pt) pt({
-                      kind: 'info',
-                      text: `Asteroid depleted (last: +${mined.quantity} ${mined.name}). Respawns in 10 min.`,
-                      duration: 4000,
-                    });
-                  }
-                  if (cargo_capacity > 0 && cargo_used >= cargo_capacity) {
-                    cargoFullRef.current = true;
-                    miningTargetRef.current = null;
-                    const pt = useGameStore.getState().pushToast;
-                    if (pt) pt({
-                      kind: 'error',
-                      text: 'Cargo full — mining stopped. Dock to sell or jettison.',
-                      duration: 4000,
-                    });
-                  }
-                })
-                .catch(err => {
-                  miningInFlightRef.current = false;
-                  const msg = err?.message || '';
-                  if (msg === 'cargo_full') {
-                    cargoFullRef.current = true;
-                    miningTargetRef.current = null;
-                    const pt = useGameStore.getState().pushToast;
-                    if (pt) pt({
-                      kind: 'error',
-                      text: 'Cargo full — mining stopped. Dock to sell or jettison.',
-                      duration: 4000,
-                    });
-                  } else if (msg.includes('depleted')) {
-                    asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
-                    miningTargetRef.current = null;
-                  } else {
-                    console.warn('mine failed:', err);
-                  }
-                });
-          }
-        }
+      // 5. Fire per-laser.
+      for (const [laserKey, assignment] of miningAssignmentsRef.current) {
+        assignment.cooldownMs -= delta * 1000;
+        if (assignment.cooldownMs > 0 || assignment.inFlight) continue;
+        // Need ship + slot for the server call. laserKey = `${shipId}::${slotKey}`.
+        const sepIdx = laserKey.indexOf('::');
+        const shipId = laserKey.slice(0, sepIdx);
+        const slotKey = laserKey.slice(sepIdx + 2);
+        const targetId = assignment.asteroidId;
+        assignment.cooldownMs = MINE_CYCLE_MS;
+        assignment.inFlight = true;
+        asteroidsAPI.mine(targetId, shipId, slotKey)
+          .then(({ mined, asteroid_remaining, asteroid_depleted, cargo_used, cargo_capacity }) => {
+            // The assignment may have been released between fire + response.
+            const stillAssigned = miningAssignmentsRef.current.get(laserKey);
+            if (stillAssigned) stillAssigned.inFlight = false;
+            const a = asteroidsRef.current.find(x => x.id === targetId);
+            if (a) {
+              if (asteroid_depleted) {
+                asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
+                releaseAllOnAsteroid(targetId);
+              } else {
+                a.contents = asteroid_remaining;
+                a.scanned = true; // mining counts as a reveal
+              }
+            }
+            if (asteroid_depleted) {
+              const pt = useGameStore.getState().pushToast;
+              if (pt) pt({
+                kind: 'info',
+                text: `Asteroid depleted (last: +${mined.quantity} ${mined.name}). Respawns in 10 min.`,
+                duration: 4000,
+              });
+            }
+            if (cargo_capacity > 0 && cargo_used >= cargo_capacity) {
+              cargoFullRef.current = true;
+              miningAssignmentsRef.current.clear();
+              const pt = useGameStore.getState().pushToast;
+              if (pt) pt({
+                kind: 'error',
+                text: 'Cargo full — mining stopped. Dock to sell or jettison.',
+                duration: 4000,
+              });
+            }
+          })
+          .catch(err => {
+            const stillAssigned = miningAssignmentsRef.current.get(laserKey);
+            if (stillAssigned) stillAssigned.inFlight = false;
+            const msg = err?.message || '';
+            if (msg === 'cargo_full') {
+              cargoFullRef.current = true;
+              miningAssignmentsRef.current.clear();
+              const pt = useGameStore.getState().pushToast;
+              if (pt) pt({
+                kind: 'error',
+                text: 'Cargo full — mining stopped. Dock to sell or jettison.',
+                duration: 4000,
+              });
+            } else if (msg.includes('depleted')) {
+              asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
+              releaseAllOnAsteroid(targetId);
+            } else {
+              // Module mismatch (ship stored / unfitted between client check
+              // and server call) is benign -- just release this laser.
+              if (stillAssigned) miningAssignmentsRef.current.delete(laserKey);
+              console.warn('mine failed:', err);
+            }
+          });
       }
 
       // --- Asteroid scan progress ---
@@ -3078,38 +3177,52 @@ export const SystemView = () => {
               </g>
             ))}
             
-            {/* Mining beams (green, constant while target locked).
-                Drawn from EVERY fleet ship that has a mining laser
-                fitted, to the active mining target. Layered render
-                (outer glow + core + bright center) mirrors the
-                combat laser_beam style. Rendered before asteroids so
-                the rocky polygon reads on top of the beam terminus. */}
-            {miningTargetRef.current && (() => {
-              const target = asteroidsRef.current.find(a => a.id === miningTargetRef.current.asteroidId);
-              if (!target) return null;
-              const theta = shipRotationRef.current * Math.PI / 180;
-              const cosT = Math.cos(theta), sinT = Math.sin(theta);
-              const rightX = -sinT, rightY = cosT;
-              const behindX = -cosT, behindY = -sinT;
-              const px = shipPosRef.current.x, py = shipPosRef.current.y;
+            {/* Mining beams (green, constant while assigned). One beam
+                per laser, from its ship to its assigned asteroid. Multi-
+                target Phase A4: different lasers can be on different
+                asteroids, so we draw one beam per entry in the
+                assignment map rather than fan-firing every fleet laser
+                at a single target. Layered render mirrors the combat
+                laser_beam style. */}
+            {miningAssignmentsRef.current.size > 0 && (() => {
               const beams = [];
-              for (const fs of (fleetShipsRef.current || [])) {
-                if (!hasMiningLaserFitted(fs)) continue;
+              // Build a quick shipId -> position lookup so we don't
+              // re-resolve the same ship's pos twice when it carries
+              // two lasers on different rocks.
+              const px = shipPosRef.current.x, py = shipPosRef.current.y;
+              const posByShipId = {};
+              const getShipPos = (fs) => {
+                if (posByShipId[fs.id]) return posByShipId[fs.id];
                 let sx, sy;
                 if (fs.isActive) { sx = px; sy = py; }
                 else {
-                  // Use the lagged wingman position so the beam emits
-                  // from the rendered ship sprite, not the empty slot.
                   const w = wingmenPosRef.current[fs.id];
                   if (w) { sx = w.x; sy = w.y; }
                   else {
+                    // Pre-lag-init fallback. Same theta math we use for
+                    // the wingman lag block above.
+                    const theta = shipRotationRef.current * Math.PI / 180;
+                    const cosT = Math.cos(theta), sinT = Math.sin(theta);
                     const off = fs.formationOffset || { x: 0, y: 0 };
-                    sx = px + rightX * off.x + behindX * off.y;
-                    sy = py + rightY * off.x + behindY * off.y;
+                    sx = px + (-sinT) * off.x + (-cosT) * off.y;
+                    sy = py + (cosT) * off.x + (-sinT) * off.y;
                   }
                 }
+                posByShipId[fs.id] = { x: sx, y: sy };
+                return posByShipId[fs.id];
+              };
+              const shipsById = {};
+              for (const fs of (fleetShipsRef.current || [])) shipsById[fs.id] = fs;
+              for (const [laserKey, assignment] of miningAssignmentsRef.current) {
+                const target = asteroidsRef.current.find(a => a.id === assignment.asteroidId);
+                if (!target) continue;
+                const sepIdx = laserKey.indexOf('::');
+                const shipId = laserKey.slice(0, sepIdx);
+                const fs = shipsById[shipId];
+                if (!fs) continue;
+                const { x: sx, y: sy } = getShipPos(fs);
                 beams.push(
-                  <g key={`mbeam-${fs.id}`} style={{ pointerEvents: 'none' }}>
+                  <g key={`mbeam-${laserKey}`} style={{ pointerEvents: 'none' }}>
                     <line x1={sx} y1={sy} x2={target.x} y2={target.y}
                       stroke="#44ff66" strokeWidth={3} opacity={0.25} strokeLinecap="round" />
                     <line x1={sx} y1={sy} x2={target.x} y2={target.y}
@@ -3142,7 +3255,14 @@ export const SystemView = () => {
               // surveyed. Active scan target gets a yellow arc that
               // fills over scan_time.
               const isScanning = activeScanRef.current?.asteroidId === a.id;
-              const isMineTarget = miningTargetRef.current?.asteroidId === a.id;
+              // Phase A4: any laser pointed at this asteroid counts.
+              // assignedLaserCount drives the optional Nx badge so the
+              // player can see at a glance how many lasers are stacked.
+              let assignedLaserCount = 0;
+              for (const asn of miningAssignmentsRef.current.values()) {
+                if (asn.asteroidId === a.id) assignedLaserCount++;
+              }
+              const isMineTarget = assignedLaserCount > 0;
               const scanPct = isScanning
                 ? Math.min(1, (Date.now() - activeScanRef.current.startMs) / SCAN_TIME_MS)
                 : 0;
@@ -3186,7 +3306,7 @@ export const SystemView = () => {
                           marginTop: 6, paddingTop: 6, borderTop: '1px solid #2a3a4a',
                           color: '#ffaa44', fontSize: 9, letterSpacing: 0.5,
                         }}>
-                          ▸ MINING ACTIVE
+                          ▸ MINING ACTIVE ({assignedLaserCount} laser{assignedLaserCount === 1 ? '' : 's'})
                         </div>
                       )}
                     </>
@@ -3210,12 +3330,32 @@ export const SystemView = () => {
                     stroke={a.scanned ? '#a0c860' : '#3a3530'}
                     strokeWidth={a.scanned ? 0.5 : 0.3} />
                   <polygon points={pts} fill="url(#planetHighlight)" opacity={0.25} />
-                  {/* Active mining target lock ring (orange dashed) */}
-                  {isMineTarget && (
-                    <circle cx={0} cy={0} r={a.size + 6}
-                      fill="none" stroke="#ffaa44" strokeWidth={0.7}
-                      opacity={0.85} strokeDasharray="3,2"
-                      style={{ pointerEvents: 'none' }} />
+                  {/* Active mining target lock ring (orange dashed).
+                      With multi-laser, an outer concentric ring stacks
+                      per additional laser so you can see at a glance
+                      that 2+ lasers are dialed in. Capped at 3 rings to
+                      avoid visual noise -- the tooltip carries the
+                      exact count. */}
+                  {isMineTarget && (() => {
+                    const ringCount = Math.min(assignedLaserCount, 3);
+                    return Array.from({ length: ringCount }).map((_, ri) => (
+                      <circle key={`mring-${ri}`}
+                        cx={0} cy={0} r={a.size + 6 + ri * 2}
+                        fill="none" stroke="#ffaa44" strokeWidth={0.7}
+                        opacity={0.85 - ri * 0.15} strokeDasharray="3,2"
+                        style={{ pointerEvents: 'none' }} />
+                    ));
+                  })()}
+                  {/* Badge: Nx when 2+ lasers are stacked. Single-laser
+                      case skips the badge since the lock ring conveys
+                      "mining" plenty. */}
+                  {assignedLaserCount > 1 && (
+                    <text x={0} y={-a.size - 6}
+                      textAnchor="middle" fill="#ffaa44" fontSize="5"
+                      fontFamily="monospace" fontWeight="700"
+                      style={{ pointerEvents: 'none' }}>
+                      {assignedLaserCount}×
+                    </text>
                   )}
                   {/* Scan progress arc (yellow, fills clockwise) */}
                   {isScanning && (

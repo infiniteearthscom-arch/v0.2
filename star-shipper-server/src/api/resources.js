@@ -2299,62 +2299,58 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
 router.post('/asteroids/mine', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { asteroid_id } = req.body;
+    const { asteroid_id, ship_id, slot_key } = req.body;
     if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
+    if (!ship_id || !slot_key) {
+      return res.status(400).json({ error: 'ship_id and slot_key required (multi-laser per-tick model)' });
+    }
 
     const out = await transaction(async (client) => {
-      // 1. Enumerate ALL mining lasers across the *active* fleet (not
-      // just the player's active ship, and NOT counting ships parked
-      // at a station via the Ship Storage system -- those ships aren't
-      // present in space and shouldn't grant capability). Each laser
-      // contributes its own yield based on the module's stats.mine_yield
-      // + the fitted quality multiplier. No lasers anywhere -> reject.
-      const fleetShips = await client.query(
-        `SELECT fitted_modules FROM ships
-         WHERE user_id = $1 AND storage_body_id IS NULL`,
-        [userId]
+      // 1. Validate the *specific* laser this tick fires from.
+      // Phase A4 model: client assigns each laser to its own asteroid
+      // and pings this endpoint per-laser, per-cycle. Each tick mines
+      // from exactly one laser's yield, not the fleet sum. The ship
+      // must belong to the user and NOT be parked at a station (Ship
+      // Storage Phase 1 -- stored ships don't grant capability).
+      const shipRow = await client.query(
+        `SELECT id, fitted_modules, storage_body_id FROM ships
+         WHERE id = $1 AND user_id = $2`,
+        [ship_id, userId]
       );
-      const lasers = []; // [{ moduleTypeId, quality }]
-      for (const ship of fleetShips.rows) {
-        const fitted = ship.fitted_modules || {};
-        for (const slot of Object.values(fitted)) {
-          const id = slot?.module_type_id;
-          if (id && (id === 'mining_basic' || id.startsWith('mining_'))) {
-            lasers.push({ moduleTypeId: id, quality: slot.quality || null });
-          }
-        }
+      const ship = shipRow.rows[0];
+      if (!ship) {
+        throw Object.assign(new Error('Ship not found'), { statusCode: 404 });
       }
-      if (lasers.length === 0) {
-        throw Object.assign(new Error('Mining Laser required'), { statusCode: 400 });
+      if (ship.storage_body_id != null) {
+        throw Object.assign(new Error('Ship is stored at a station'), { statusCode: 400 });
+      }
+      const fitted = ship.fitted_modules || {};
+      const slot = fitted[slot_key];
+      const moduleTypeId = slot?.module_type_id;
+      if (!moduleTypeId || !(moduleTypeId === 'mining_basic' || moduleTypeId.startsWith('mining_'))) {
+        throw Object.assign(new Error('Slot is not a fitted mining laser'), { statusCode: 400 });
       }
 
-      // Look up base mine_yield for each distinct laser module type.
-      // Default 5 if the stat isn't set (matches pre-tiered behavior).
-      const moduleIds = [...new Set(lasers.map(l => l.moduleTypeId))];
-      const statsRows = await client.query(
-        `SELECT id, stats FROM module_types WHERE id = ANY($1::TEXT[])`,
-        [moduleIds]
+      // Look up the laser's base mine_yield from module_types.stats.
+      // Default 5 if unset (matches the pre-tier behavior of mining_basic).
+      const statsRow = await client.query(
+        `SELECT stats FROM module_types WHERE id = $1`, [moduleTypeId]
       );
-      const yieldByModule = {};
-      for (const r of statsRows.rows) {
-        const y = r.stats?.mine_yield;
-        yieldByModule[r.id] = (typeof y === 'number' && y > 0) ? y : 5;
-      }
+      const baseYield = (() => {
+        const y = statsRow.rows[0]?.stats?.mine_yield;
+        return (typeof y === 'number' && y > 0) ? y : 5;
+      })();
 
-      // Total yield = sum across all fitted lasers of (base * qMult).
-      // qMult uses the same average-stat / 50 convention as the rest of
-      // the module-stat system. q50 = 1.0x, q100 = 2.0x, q25 = 0.5x.
-      let totalYield = 0;
-      for (const laser of lasers) {
-        const base = yieldByModule[laser.moduleTypeId] || 5;
-        let qMult = 1.0;
-        if (laser.quality) {
-          const q = laser.quality;
-          const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
-          qMult = avg / 50;
-        }
-        totalYield += Math.max(1, Math.round(base * qMult));
+      // qMult: average-of-stats / 50, same convention as the rest of
+      // the module system. q50 = 1.0x. Per-laser quality lives on
+      // the fitted slot.
+      let qMult = 1.0;
+      if (slot.quality) {
+        const q = slot.quality;
+        const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
+        qMult = avg / 50;
       }
+      const totalYield = Math.max(1, Math.round(baseYield * qMult));
 
       // 2. Lock + load the asteroid.
       const ast = await client.query(
