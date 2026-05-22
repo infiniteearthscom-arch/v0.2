@@ -18,6 +18,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 
 const EDGE  = '#1a3050';
 const BLUE  = { pri: '#3b82f6', light: '#60a5fa', dim: '#1e3a5f' };
@@ -757,6 +758,10 @@ export const SkillsResearchWindow = () => {
             })}
           </div>
           <div style={{ flex: 1 }} />
+          {/* Same indicator as the GameFrame top bar -- the player
+              sees what's training without scrolling down to the
+              queue strip. Expanded variant for the bigger header. */}
+          <ActiveTrainingIndicator variant="expanded" />
           <button
             onClick={() => closeWindow('research')}
             style={{
@@ -764,6 +769,7 @@ export const SkillsResearchWindow = () => {
               color: '#4a5a6a', width: 28, height: 28,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', borderRadius: 3, fontSize: 13, fontFamily: F,
+              marginLeft: 12,
             }}
           >
             ✕

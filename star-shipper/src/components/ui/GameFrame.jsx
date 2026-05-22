@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { Outliner } from '@/components/ui/Outliner';
+import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 
 // ============================================
 // CONSTANTS
@@ -170,8 +171,18 @@ const TopBar = () => {
         </div>
       </div>
 
-      {/* Status indicators (conditional) — fills any remaining space */}
+      {/* Status indicators (conditional) — fills any remaining space.
+          Active training indicator sits first so it has a consistent
+          spot regardless of whether the conditional indicators (enemies,
+          autopilot) are visible. Clickable -> opens Skills & Research. */}
       <div className="flex items-center gap-3 flex-1 ml-3" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 9 }}>
+        <ActiveTrainingIndicator
+          variant="compact"
+          onOpenSkills={() => {
+            playSound('button_click');
+            useGameStore.getState().openWindow('research');
+          }}
+        />
         {enemyCount > 0 && (
           <div className="flex items-center gap-1 px-2 py-0.5" style={{
             background: 'rgba(127,29,29,0.35)',
