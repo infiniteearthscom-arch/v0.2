@@ -439,6 +439,156 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
 };
 
 // ============================================
+// CARGO SIDEBAR (embedded in CraftingWindow)
+// ============================================
+// Compact draggable cargo grid pinned to the right side of the
+// crafting window. Same dataTransfer payload as InventoryWindow so
+// it drops into IngredientSlot without any change to drop handlers.
+// Filtered to resources only -- items/modules can't satisfy a recipe
+// ingredient (handleIngredientDrop matches on resource_name).
+
+const RESOURCE_ICON_COLORS = {};
+Object.values(RESOURCE_TYPES).forEach(r => { RESOURCE_ICON_COLORS[r.name] = r.color; });
+
+const CargoTile = ({ stack }) => {
+  const color = RESOURCE_COLORS[stack.resource_name] || '#888';
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        // Mirror InventoryWindow's payload so IngredientSlot's drop
+        // handler stays unchanged.
+        e.dataTransfer.setData('application/json', JSON.stringify({
+          stack_id: stack.id,
+          item_type: 'resource',
+          resource_type_id: stack.resource_type_id,
+          resource_name: stack.resource_name,
+          quantity: stack.quantity,
+          stats: stack.stats,
+          category: stack.category,
+        }));
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      title={`${stack.resource_name} — ${stack.quantity}u`}
+      style={{
+        position: 'relative',
+        cursor: 'grab',
+        background: `linear-gradient(135deg, ${color}22, ${color}08)`,
+        border: `1px solid ${color}66`,
+        borderRadius: 3,
+        padding: '4px 5px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        height: 52,
+        minWidth: 0,
+        transition: 'all 0.12s',
+      }}
+      onMouseDown={(e) => { e.currentTarget.style.cursor = 'grabbing'; }}
+      onMouseUp={(e) => { e.currentTarget.style.cursor = 'grab'; }}
+    >
+      <div style={{
+        fontSize: 9,
+        fontFamily: FONT.ui,
+        fontWeight: 700,
+        color,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        maxWidth: '100%',
+        letterSpacing: 0.3,
+      }}>{stack.resource_name}</div>
+      <div style={{
+        fontSize: 11,
+        fontFamily: FONT.mono,
+        fontWeight: 800,
+        color: COLORS.GOLD.light,
+      }}>{stack.quantity}</div>
+    </div>
+  );
+};
+
+const CraftingCargoGrid = ({ isOpen }) => {
+  const [stacks, setStacks] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchInventory = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await resourcesAPI.getInventory();
+      const out = [];
+      for (const resource of (data.inventory || [])) {
+        for (const stack of resource.stacks) {
+          out.push({
+            ...stack,
+            resource_type_id: resource.resource_type_id,
+            resource_name: resource.resource_name,
+            category: resource.category,
+          });
+        }
+      }
+      setStacks(out);
+    } catch (err) {
+      console.error('Cargo grid load error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) fetchInventory();
+  }, [isOpen, fetchInventory]);
+
+  // Refresh after crafting (and periodically as a safety net).
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(fetchInventory, 5000);
+    return () => clearInterval(interval);
+  }, [isOpen, fetchInventory]);
+
+  return (
+    <div style={{
+      width: 200,
+      flexShrink: 0,
+      borderLeft: `1px solid ${COLORS.EDGE}`,
+      paddingLeft: 8,
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+    }}>
+      <SectionHead
+        title="Cargo (Drag to Slots)"
+        accent={COLORS.GOLD.light}
+        icon="📦"
+        marginTop={0}
+      />
+      <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
+        {loading && stacks.length === 0 ? (
+          <div style={{ fontSize: 10, color: COLORS.TEXT.muted, padding: 8, fontFamily: FONT.ui }}>
+            Loading…
+          </div>
+        ) : stacks.length === 0 ? (
+          <div style={{ fontSize: 10, color: COLORS.TEXT.muted, padding: 8, fontFamily: FONT.ui, fontStyle: 'italic' }}>
+            Cargo empty — mine some resources first.
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: 4,
+          }}>
+            {stacks.map(stack => (
+              <CargoTile key={stack.id} stack={stack} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -630,7 +780,7 @@ export const CraftingWindow = () => {
   const toggleSub = (key) => setSubCollapsed(p => ({ ...p, [key]: !p[key] }));
 
   return (
-    <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent={COLORS.PURPLE.light} width={460}>
+    <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent={COLORS.PURPLE.light} width={720}>
       <div style={{ display: 'flex', height: '100%', gap: 8 }}>
         {/* Recipe sidebar */}
         <div style={{
@@ -954,6 +1104,10 @@ export const CraftingWindow = () => {
             </>
           )}
         </div>
+
+        {/* Cargo sidebar -- drag resources from here straight into
+            ingredient slots in the middle column. */}
+        <CraftingCargoGrid isOpen={isOpen} />
       </div>
     </ContextPanel>
   );
