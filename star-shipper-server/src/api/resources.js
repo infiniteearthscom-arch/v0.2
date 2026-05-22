@@ -11,6 +11,7 @@ import {
   depleteDeposit
 } from '../game/deposits.js';
 import { isCityPlanet, SRng } from '../util/seed.js';
+import { getPlayerBonuses } from '../util/playerBonuses.js';
 
 const router = express.Router();
 
@@ -2350,7 +2351,13 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
         qMult = avg / 50;
       }
-      const totalYield = Math.max(1, Math.round(baseYield * qMult));
+      // Industry skill multiplier: +5% per level on "Mining Operations"
+      // (skill id ind_mining_ops). Pulled from the player_bonuses
+      // aggregate so any future skill / research that emits a
+      // 'mining_yield_pct' bonus stacks for free.
+      const bonuses = await getPlayerBonuses(userId);
+      const skillMult = 1 + (bonuses.mining_yield_pct || 0) / 100;
+      const totalYield = Math.max(1, Math.round(baseYield * qMult * skillMult));
 
       // 2. Lock + load the asteroid.
       const ast = await client.query(

@@ -52,8 +52,23 @@ const initialState = {
   discoveredSystems: ['sol'],
   exploredLocations: {},
 
-  // Research
+  // Research + Skills (Phase 1: framework + 20 skills + 15 techs).
+  // researchPoints / techs / skills / skillQueue all populated by
+  // fetchSkillsAndResearch() (a single round-trip into both APIs).
+  // activeBonuses is a flat dict like { fleet_damage_pct: 15, ... }
+  // derived from skill levels -- combat + sensor-range gating reads
+  // it directly so the UI updates the moment a level finishes.
   researchPoints: 0,
+  techs: [],                   // [{ id, tree, tier, name, description, rp_cost, prerequisites, unlocks, status }]
+  skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
+  skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
+  skillSpPerMin: 30,
+  skillMaxLevel: 5,
+  skillMaxQueue: 10,
+  skillsLoaded: false,
+  researchLoaded: false,
+  activeBonuses: {},
+  // Legacy fields kept so older code that referenced them doesn't crash.
   unlockedTech: [],
   currentResearch: null,
 
@@ -241,6 +256,82 @@ export const useGameStore = create(
             state.resources.credits = data.credits ?? state.resources.credits;
           });
         } catch (e) { /* ignore */ }
+      },
+
+      // Skills + Research. Two endpoints, parallel fetch. The
+      // activeBonuses dict is recomputed each fetch from skill levels
+      // so any consumer (combat, sensor-range gating, mining) reads a
+      // canonical aggregate without having to traverse skills itself.
+      fetchSkillsAndResearch: async () => {
+        try {
+          const { skillsAPI, researchAPI } = await import('@/utils/api');
+          const [skillsData, researchData] = await Promise.all([
+            skillsAPI.list().catch(() => null),
+            researchAPI.list().catch(() => null),
+          ]);
+          set(state => {
+            if (skillsData) {
+              state.skills = skillsData.skills || [];
+              state.skillQueue = skillsData.queue || [];
+              state.skillSpPerMin = skillsData.sp_per_min || 30;
+              state.skillMaxLevel = skillsData.max_level || 5;
+              state.skillMaxQueue = skillsData.max_queue || 10;
+              state.skillsLoaded = true;
+              // Aggregate active bonuses from skill levels.
+              const bonuses = {};
+              for (const s of (skillsData.skills || [])) {
+                if (!s.level || !s.bonus_per_level?.type || typeof s.bonus_per_level.value !== 'number') continue;
+                bonuses[s.bonus_per_level.type] = (bonuses[s.bonus_per_level.type] || 0) + s.bonus_per_level.value * s.level;
+              }
+              state.activeBonuses = bonuses;
+            }
+            if (researchData) {
+              state.techs = researchData.techs || [];
+              state.researchPoints = researchData.research_points || 0;
+              state.researchLoaded = true;
+            }
+          });
+        } catch (error) {
+          console.error('Failed to fetch skills/research:', error);
+        }
+      },
+
+      addSkillToQueue: async (skillId, targetLevel) => {
+        try {
+          const { skillsAPI } = await import('@/utils/api');
+          await skillsAPI.queueAdd(skillId, targetLevel);
+          await get().fetchSkillsAndResearch();
+        } catch (error) {
+          const msg = error?.message || 'Failed to queue skill';
+          get().pushToast({ kind: 'error', text: msg, duration: 4000 });
+        }
+      },
+
+      removeSkillFromQueue: async (position) => {
+        try {
+          const { skillsAPI } = await import('@/utils/api');
+          await skillsAPI.queueRemove(position);
+          await get().fetchSkillsAndResearch();
+        } catch (error) {
+          const msg = error?.message || 'Failed to remove from queue';
+          get().pushToast({ kind: 'error', text: msg, duration: 4000 });
+        }
+      },
+
+      unlockTech: async (techId) => {
+        try {
+          const { researchAPI } = await import('@/utils/api');
+          const result = await researchAPI.unlock(techId);
+          await get().fetchSkillsAndResearch();
+          get().pushToast({
+            kind: 'success',
+            text: `Researched: ${result.name}`,
+            duration: 4500,
+          });
+        } catch (error) {
+          const msg = error?.message || 'Failed to unlock tech';
+          get().pushToast({ kind: 'error', text: msg, duration: 4000 });
+        }
       },
 
       fetchQuests: async () => {

@@ -247,6 +247,32 @@ export const wrecksAPI = {
   }),
 };
 
+// Skills API -- EVE-style passive training + 10-slot queue. The
+// /api/skills GET returns the full snapshot (defs + player progress +
+// live-computed SP for the currently training skill + the queue with
+// pre-computed finishes_at timestamps).
+export const skillsAPI = {
+  list: () => request('/skills'),
+  queueAdd: (skillId, targetLevel) => request('/skills/queue/add', {
+    method: 'POST',
+    body: JSON.stringify({ skill_id: skillId, target_level: targetLevel }),
+  }),
+  queueRemove: (position) => request('/skills/queue/remove', {
+    method: 'POST',
+    body: JSON.stringify({ position }),
+  }),
+};
+
+// Research API -- Civ-style tech tree. RP trickles passively
+// (1/min), unlock spends RP instantly when prereqs are met.
+export const researchAPI = {
+  list: () => request('/research'),
+  unlock: (techId) => request('/research/unlock', {
+    method: 'POST',
+    body: JSON.stringify({ tech_id: techId }),
+  }),
+};
+
 // Harvester API
 export const harvesterAPI = {
   getPlanetHarvesters: (bodyId) => request(`/harvesters/planet/${bodyId}`),

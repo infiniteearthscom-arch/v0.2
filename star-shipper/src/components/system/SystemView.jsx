@@ -949,6 +949,22 @@ export const SystemView = () => {
   const fetchShips = useGameStore(state => state.fetchShips);
   const pushToast = useGameStore(state => state.pushToast);
   const completeQuest = useGameStore(state => state.completeQuest);
+  // Active skill bonuses (Phase 1: Gunnery -> fleet_damage_pct,
+  // Astrometrics -> sensor_range_pct). Mirrored to a ref so the
+  // game-loop closure reads the current value rather than the one
+  // captured at mount (the loop's useEffect uses []).
+  const activeBonuses = useGameStore(state => state.activeBonuses);
+  const fetchSkillsAndResearch = useGameStore(state => state.fetchSkillsAndResearch);
+  const activeBonusesRef = useRef(activeBonuses);
+  activeBonusesRef.current = activeBonuses;
+  // First-load fetch + 60s refresh so completed-while-flying skills
+  // start applying without needing the player to open the window.
+  useEffect(() => {
+    if (fetchSkillsAndResearch) fetchSkillsAndResearch();
+    if (!fetchSkillsAndResearch) return undefined;
+    const t = setInterval(fetchSkillsAndResearch, 60000);
+    return () => clearInterval(t);
+  }, [fetchSkillsAndResearch]);
   const { showTooltip, hideTooltip } = useTooltip();
   // Pod state: when active ship is the 'pod' hull, pirates ignore us and
   // we can't fight back. See migration 019 + /enter-pod endpoint.
@@ -1338,7 +1354,12 @@ export const SystemView = () => {
     return false;
   };
   const fleetSensorRange = () => {
-    return fleetHas(hasUtilityScannerFitted) ? BASIC_SCANNER_SENSOR_RANGE : INNATE_SENSOR_RANGE;
+    const base = fleetHas(hasUtilityScannerFitted) ? BASIC_SCANNER_SENSOR_RANGE : INNATE_SENSOR_RANGE;
+    // Astrometrics skill: sensor_range_pct from store bonuses (Sensor
+    // Linking = +5%/level, so L5 = +25%). Innate range is also boosted
+    // -- the bonus is "captain's awareness," not just "better gear."
+    const bonusPct = activeBonusesRef.current?.sensor_range_pct || 0;
+    return Math.round(base * (1 + bonusPct / 100));
   };
 
   // Enumerate every fitted mining laser across the active fleet, with
@@ -2240,7 +2261,11 @@ export const SystemView = () => {
 
           if (w.type === 'laser') {
             // Instant beam — apply damage immediately, push a beam visual.
-            let dmg = w.damage;
+            // Gunnery skill: fleet_damage_pct from store bonuses (Small
+            // Hybrid Turret Operation = +5%/level). Applies fleet-wide
+            // so wingmen benefit from the captain's training too.
+            const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
+            let dmg = w.damage * dmgBonus;
             if (nearest.shield > 0) {
               const shieldDmg = Math.min(nearest.shield, dmg);
               nearest.shield -= shieldDmg;
@@ -2288,7 +2313,11 @@ export const SystemView = () => {
               });
             }
           } else if (w.type === 'kinetic') {
-            // Bullet with slight aim spread
+            // Bullet with slight aim spread. Gunnery skill damage
+            // bonus is baked into the projectile at spawn -- when the
+            // projectile lands, it just subtracts its own damage value
+            // and doesn't have to re-look-up the captain's bonus.
+            const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
             const spread = (Math.random() - 0.5) * (w.spread || 0.08) * 2;
             const fireAngle = aimAngle + spread;
             const speed = w.projectile_speed || 320;
@@ -2297,19 +2326,20 @@ export const SystemView = () => {
               vx: Math.cos(fireAngle) * speed,
               vy: Math.sin(fireAngle) * speed,
               age: 0, fromPlayer: true,
-              damage: w.damage,
+              damage: w.damage * dmgBonus,
               color: w.color,
               weapon_type: 'kinetic',
             });
           } else if (w.type === 'missile') {
             // Tracking projectile — re-aims toward target each frame
+            const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
             const speed = w.projectile_speed || 180;
             projectiles.push({
               x: sx, y: sy,
               vx: Math.cos(aimAngle) * speed,
               vy: Math.sin(aimAngle) * speed,
               age: 0, fromPlayer: true,
-              damage: w.damage,
+              damage: w.damage * dmgBonus,
               color: w.color,
               weapon_type: 'missile',
               target_id: nearest.id,
