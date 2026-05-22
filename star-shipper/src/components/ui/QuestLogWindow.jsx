@@ -74,6 +74,8 @@ const RewardBadges = ({ rewards }) => {
 const QuestCard = ({ quest, isActive }) => {
   const category = quest.category || 'main';
   const accent = CATEGORY_COLORS[category] || COLORS.GOLD.light;
+  const pinQuest = useGameStore(state => state.pinQuest);
+  const isPinned = !!quest.pinned;
 
   return (
     <div style={{
@@ -106,6 +108,30 @@ const QuestCard = ({ quest, isActive }) => {
           }}>{quest.title}</span>
           <Pill color={accent}>{category}</Pill>
         </div>
+        {/* Pin toggle -- shown only on active quests. Filled pin =
+            quest currently in the top overlay. Unpinned active quest
+            just lives in the log; player promotes it when they want
+            it front-and-center. */}
+        {isActive && (
+          <button
+            onClick={() => pinQuest(quest.quest_id, !isPinned)}
+            title={isPinned ? 'Unpin from top overlay' : 'Pin to top overlay'}
+            style={{
+              background: isPinned ? `${accent}22` : 'transparent',
+              border: `1px solid ${isPinned ? accent : COLORS.EDGE}`,
+              color: isPinned ? accent : COLORS.TEXT.muted,
+              padding: '2px 8px',
+              cursor: 'pointer',
+              borderRadius: 2,
+              fontSize: 11,
+              lineHeight: 1,
+              flexShrink: 0,
+              fontFamily: FONT.ui,
+            }}
+          >
+            {isPinned ? '📌 PINNED' : '📌 PIN'}
+          </button>
+        )}
         {!isActive && (
           <span style={{
             color: COLORS.GREEN.light,

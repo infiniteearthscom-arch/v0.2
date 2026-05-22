@@ -14,6 +14,7 @@ import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
 import { SkillsResearchWindow } from '@/components/research/SkillsResearchWindow';
+import { PinnedQuestsOverlay } from '@/components/ui/PinnedQuestsOverlay';
 import { CharacterPanel } from '@/components/ui/CharacterPanel';
 import { TooltipProvider } from '@/components/ui/TooltipProvider';
 import { Toaster } from '@/components/ui/Toaster';
@@ -189,6 +190,10 @@ function App() {
         {windows.galaxyMap?.open && <GalaxyMapWindow />}
         {windows.questLog?.open && <QuestLogWindow />}
         {windows.research?.open && <SkillsResearchWindow />}
+
+        {/* Pinned quests -- persistent top overlay, replaces the old
+            "Current Quest" Outliner section. */}
+        <PinnedQuestsOverlay />
 
         {/* Quest completion toast */}
         <QuestToast />

@@ -62,12 +62,7 @@ export const Outliner = () => {
   const setAutopilotTarget = useGameStore(state => state.setAutopilotTarget);
   const toggleOutliner = useGameStore(state => state.toggleOutliner);
   const viewMode = useGameStore(state => state.viewMode);
-  const quests = useGameStore(state => state.quests);
-  const openContextPanel = useGameStore(state => state.openContextPanel);
-
   if (!visible) return null;
-
-  const activeQuests = (quests || []).filter(q => q.status === 'active');
 
   // Filter bodies — hide minor types from the outliner clutter
   const filteredBodies = (systemBodies || []).filter(b =>
@@ -163,63 +158,10 @@ export const Outliner = () => {
             </>
           )}
 
-          {/* Current quest section */}
-          <Section
-            title={activeQuests.length > 1 ? 'Active Quests' : 'Current Quest'}
-            count={activeQuests.length || undefined}
-            accent={VIOLET.light}
-            icon="◆"
-          />
-          {activeQuests.length === 0 ? (
-            <div style={{
-              fontSize: 9,
-              color: '#3a5a6a',
-              fontFamily: FM,
-              padding: '4px 14px',
-              fontStyle: 'italic',
-            }}>
-              No active quests
-            </div>
-          ) : (
-            activeQuests.map(quest => (
-              <div
-                key={quest.quest_id}
-                onClick={() => openContextPanel('questLog')}
-                title="Open Quest Log"
-                style={{
-                  padding: '4px 10px 6px 14px',
-                  marginLeft: 4,
-                  borderLeft: `2px solid ${VIOLET.pri}55`,
-                  cursor: 'pointer',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = `${VIOLET.pri}10`; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                <div style={{
-                  fontSize: 10,
-                  color: '#e2e8f0',
-                  fontWeight: 700,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>{quest.title}</div>
-                {quest.description && (
-                  <div style={{
-                    fontSize: 9,
-                    color: '#8a9aaa',
-                    fontFamily: F,
-                    marginTop: 1,
-                    lineHeight: 1.3,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}>{quest.description}</div>
-                )}
-              </div>
-            ))
-          )}
+          {/* Current Quest section removed -- moved to the persistent
+              PinnedQuestsOverlay (top of screen). The outliner was
+              too dense for quest info to read at a glance; the pinned
+              overlay is a dedicated, animated focus surface. */}
 
           {/* Fleet section -- shows the active flying fleet. Stored
               ships are parked at stations and intentionally hidden

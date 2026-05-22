@@ -20,15 +20,16 @@ router.get('/', authMiddleware, async (req, res) => {
     // 'tutorial_buy_starter_scout' was retired in migration 034 --
     // new players spawn with the Starter Scout already granted by
     // grantStarterShip() in auth, so they jump straight into
-    // 'tutorial_fly_to_luna' (Into the Black).
+    // 'tutorial_fly_to_luna' (Into the Black). Tutorial quests are
+    // auto-pinned so they appear in the top-of-screen overlay.
     const existing = await queryOne(
       `SELECT COUNT(*) as count FROM player_quests WHERE user_id = $1`,
       [userId]
     );
     if (parseInt(existing.count) === 0) {
       await query(
-        `INSERT INTO player_quests (user_id, quest_id)
-         VALUES ($1, 'tutorial_fly_to_luna')
+        `INSERT INTO player_quests (user_id, quest_id, pinned)
+         VALUES ($1, 'tutorial_fly_to_luna', TRUE)
          ON CONFLICT DO NOTHING`,
         [userId]
       );
@@ -36,7 +37,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     const quests = await queryAll(`
       SELECT
-        pq.id, pq.quest_id, pq.status, pq.progress, pq.activated_at, pq.completed_at,
+        pq.id, pq.quest_id, pq.status, pq.progress, pq.activated_at, pq.completed_at, pq.pinned,
         qd.title, qd.description, qd.category, qd.completion_condition,
         qd.completion_target, qd.rewards, qd.sort_order
       FROM player_quests pq
@@ -135,11 +136,19 @@ router.post('/complete', authMiddleware, async (req, res) => {
         }
       }
 
-      // Activate triggered follow-on quests
+      // Activate triggered follow-on quests. Tutorial quests are
+      // auto-pinned so the player keeps a guided breadcrumb in the
+      // top overlay without manually re-pinning each step. Non-
+      // tutorial quests start unpinned -- player chooses what to focus.
       for (const nextQuestId of triggersQuests) {
+        const nextDef = await client.query(
+          `SELECT category FROM quest_definitions WHERE id = $1`, [nextQuestId]
+        );
+        const autoPin = nextDef.rows[0]?.category === 'tutorial';
         await client.query(
-          `INSERT INTO player_quests (user_id, quest_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [userId, nextQuestId]
+          `INSERT INTO player_quests (user_id, quest_id, pinned)
+           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [userId, nextQuestId, autoPin]
         );
       }
 
@@ -163,6 +172,35 @@ router.post('/complete', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Error completing quest:', error);
     res.status(500).json({ error: 'Failed to complete quest' });
+  }
+});
+
+// ============================================
+// PIN / UNPIN A QUEST
+// ============================================
+// Sets player_quests.pinned. Pinned active quests show up in the
+// top-of-screen overlay. No restriction on which quests can be
+// pinned -- tutorial quests start pinned automatically, the player
+// freely manages everything else.
+
+router.post('/pin', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { quest_id, pinned } = req.body;
+    if (!quest_id || typeof pinned !== 'boolean') {
+      return res.status(400).json({ error: 'quest_id and pinned (bool) required' });
+    }
+    const result = await query(
+      `UPDATE player_quests SET pinned = $1 WHERE user_id = $2 AND quest_id = $3`,
+      [pinned, userId, quest_id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Quest not found for this player' });
+    }
+    res.json({ success: true, quest_id, pinned });
+  } catch (error) {
+    console.error('Error pinning quest:', error);
+    res.status(500).json({ error: 'Failed to pin quest' });
   }
 });
 

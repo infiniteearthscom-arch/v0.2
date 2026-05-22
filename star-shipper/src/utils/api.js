@@ -379,6 +379,10 @@ export const questsAPI = {
     method: 'POST',
     body: JSON.stringify({ quest_id: questId }),
   }),
+  pin: (questId, pinned) => request('/quests/pin', {
+    method: 'POST',
+    body: JSON.stringify({ quest_id: questId, pinned }),
+  }),
 };
 
 // ============================================

@@ -346,6 +346,26 @@ export const useGameStore = create(
         }
       },
 
+      pinQuest: async (questId, pinned) => {
+        // Optimistic flip so the pinned overlay reacts immediately;
+        // server roundtrip + refetch confirms.
+        set(state => {
+          const q = state.quests.find(q => q.quest_id === questId);
+          if (q) q.pinned = pinned;
+        });
+        try {
+          await questsAPI.pin(questId, pinned);
+        } catch (error) {
+          console.error('Failed to pin quest:', error);
+          // Revert on failure.
+          set(state => {
+            const q = state.quests.find(q => q.quest_id === questId);
+            if (q) q.pinned = !pinned;
+          });
+          get().pushToast({ kind: 'error', text: error?.message || 'Failed to update pin', duration: 3000 });
+        }
+      },
+
       completeQuest: async (questId) => {
         // Snapshot the quest title before the API call so we can name it in
         // the completion toast (the local quests list gets refetched after).
