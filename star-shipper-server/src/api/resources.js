@@ -2424,13 +2424,24 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         );
       }
 
-      // 7. Add to player inventory. Stack with existing row of the
-      // same resource_type_id, or create a new one in next free slot.
+      // 7. Add to player inventory. Asteroid-mined resources get
+      // baseline 50/50/50/50 stats (the q50 convention used across
+      // modules + planet mining), so they consume cargo on the same
+      // scale as planet-mined stacks -- ~0.5 volume per unit instead
+      // of the 0.01-per-unit "free cargo" bug that came from NULL
+      // stat_density falling through GREATEST(stat_density, 1)/100.
+      // Stack-find query also matches on stats so asteroid mines
+      // don't accidentally merge into a planet-mined stack (which
+      // has its own quality numbers from the deposit).
+      const ASTEROID_BASELINE = { purity: 50, stability: 50, potency: 50, density: 50 };
       const existing = await client.query(
         `SELECT id, quantity FROM player_resource_inventory
          WHERE user_id = $1 AND item_type = 'resource' AND resource_type_id = $2
+           AND stat_purity = $3 AND stat_stability = $4
+           AND stat_potency = $5 AND stat_density = $6
          LIMIT 1`,
-        [userId, resId]
+        [userId, resId, ASTEROID_BASELINE.purity, ASTEROID_BASELINE.stability,
+         ASTEROID_BASELINE.potency, ASTEROID_BASELINE.density]
       );
       if (existing.rows[0]) {
         await client.query(
@@ -2452,9 +2463,12 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         const nextSlot = parseInt(slotRes.rows[0]?.slot) || 0;
         await client.query(
           `INSERT INTO player_resource_inventory
-            (user_id, item_type, resource_type_id, quantity, slot_index)
-           VALUES ($1, 'resource', $2, $3, $4)`,
-          [userId, resId, minable, nextSlot]
+            (user_id, item_type, resource_type_id, quantity, slot_index,
+             stat_purity, stat_stability, stat_potency, stat_density)
+           VALUES ($1, 'resource', $2, $3, $4, $5, $6, $7, $8)`,
+          [userId, resId, minable, nextSlot,
+           ASTEROID_BASELINE.purity, ASTEROID_BASELINE.stability,
+           ASTEROID_BASELINE.potency, ASTEROID_BASELINE.density]
         );
       }
 
