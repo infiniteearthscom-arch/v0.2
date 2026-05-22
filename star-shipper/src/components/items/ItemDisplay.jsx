@@ -188,10 +188,15 @@ export const ItemCell = ({
   // Build the default drag payload: prefer an explicit `stack_id` (cargo
   // cells use this), fall back to the raw object id. Downstream consumers
   // (e.g. ShipBuilderWindow's slot drop) read `stack_id` to identify the
-  // item to fit.
+  // item to fit. CraftingWindow's IngredientSlot also gates on item_type
+  // === 'resource', so we backfill that field from item.kind when the
+  // raw row didn't include it (resource cargo stacks have
+  // resource_type_id but no item_type column on the server payload).
+  const inferredItemType =
+    item.raw?.item_type ?? (item.kind === 'resource' ? 'resource' : 'item');
   const payload = dragPayload ?? {
     stack_id: item.raw?.id ?? item.id,
-    item_type: item.raw?.item_type,
+    item_type: inferredItemType,
     item_id:   item.raw?.item_id,
     item_name: item.raw?.item_name ?? item.name,
     quantity:  item.raw?.quantity ?? item.stackQty,

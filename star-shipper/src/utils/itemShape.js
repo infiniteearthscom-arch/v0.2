@@ -121,12 +121,17 @@ export function normalizeItem(source, context = {}) {
     const q = source.stats;
     const avg = avgQuality(q);
     const tier = q ? getQualityTier(q.purity, q.stability, q.potency, q.density) : null;
+    // resMeta.icon is currently a filename-like string ('iron', 'copper'
+    // -- the original intent was probably a sprite asset path), not an
+    // emoji glyph. Rendering it inside ItemIcon at icon-font-size made
+    // "Iron" / "Copper" appear as overflowing text on the tile. Use the
+    // 2-letter abbreviation instead until real glyphs are introduced.
     return {
       ...base,
       kind: 'resource',
       id: source.id ?? `res-${source.resource_type_id}`,
       name: source.resource_name || resMeta.name || `Resource ${source.resource_type_id}`,
-      icon: resMeta.icon || RESOURCE_ABBR[source.resource_type_id] || '◆',
+      icon: RESOURCE_ABBR[source.resource_type_id] || '◆',
       iconFallback: RESOURCE_ABBR[source.resource_type_id] || '?',
       color: resMeta.color || '#64748b',
       subtitle: resMeta.category ? `${resMeta.category.charAt(0).toUpperCase() + resMeta.category.slice(1)} resource` : 'Resource',
