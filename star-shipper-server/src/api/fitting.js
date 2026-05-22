@@ -476,6 +476,12 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
     // Starter Kit: special bundle purchase
     if (module_type_id === 'starter_kit') {
       const STARTER_KIT_PRICE = 500;
+      // Kit must fill every slot the Starter Scout exposes -- otherwise
+      // "Ready for Launch" (tutorial_fit_modules) never fires because
+      // the all_slots_filled check stays false. mining_basic was added
+      // here when migration 027 added the mng1 slot to the scout hull;
+      // it also doubles as the laser the player will need for the next
+      // quest in the chain (Strike It Rich -- mine an asteroid).
       const STARTER_KIT_ITEMS = [
         { id: 'engine_basic',      slot_type: 'engine'  },
         { id: 'reactor_basic',     slot_type: 'reactor' },
@@ -483,6 +489,7 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
         { id: 'weapon_laser',      slot_type: 'weapon'  },
         { id: 'utility_scanner',   slot_type: 'utility' },
         { id: 'utility_autopilot', slot_type: 'utility' },
+        { id: 'mining_basic',      slot_type: 'mining'  },
       ];
 
       const kitResult = await transaction(async (client) => {
