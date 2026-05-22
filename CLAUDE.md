@@ -57,7 +57,7 @@ These have all caused real bugs. Don't relearn them:
 
 7. **`useEffect([], [])` closure staleness** — the game loop captures initial values. Anything derived from active-ship stats must be read from `shipPhysicsRef.current` each frame, not from closure scope.
 
-8. **Migrations: no `CREATE EXTENSION`** — DO dev DB blocks it. Use `gen_random_uuid()` (built into PG 18), not `uuid_generate_v4()`. **Migration 009 was skipped.** Highest applied is `029_luna_station_alias.sql` — next new migration is `030`.
+8. **Migrations: no `CREATE EXTENSION`** — DO dev DB blocks it. Use `gen_random_uuid()` (built into PG 18), not `uuid_generate_v4()`. **Migration 009 was skipped.** Highest applied is `030_sensor_range_and_scan_quest.sql` — next new migration is `031`.
 
 9. **`api.js` must use `VITE_API_URL`** — never hardcode `localhost:3001`. The localhost fallback in `api.js` is dead-code only (no local dev). The env var is baked into the bundle at build time, so changing it in DO requires a rebuild (push a commit or Force Rebuild — redeploy alone won't update the client).
 

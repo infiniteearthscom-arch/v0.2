@@ -1316,6 +1316,31 @@ export const SystemView = () => {
     }
     return false;
   };
+  // Sensor range: max scanner reach across the fitted fleet (NOT a
+  // sum -- stacking scanners doesn't add range, you only need one
+  // good eye). Returns 0 if no scanner is fitted anywhere.
+  // BASIC_SCANNER_SENSOR_RANGE mirrors migration 030's stat on
+  // utility_scanner -- kept as a constant on the client because
+  // fitted_modules don't carry the module_types.stats payload, and
+  // every Sensor Suite tier today is the basic one. When tiered
+  // scanners ship, replace the constant with a per-slot lookup.
+  // INNATE_SENSOR_RANGE is what you get with NO scanner: enough to
+  // see whoever is currently shooting you (matches PIRATE_ATTACK_RANGE)
+  // so combat isn't with invisible enemies.
+  const BASIC_SCANNER_SENSOR_RANGE = 500;
+  const INNATE_SENSOR_RANGE = 150;
+  const hasUtilityScannerFitted = (ship) => {
+    if (!ship?.fitted_modules) return false;
+    for (const slot of Object.values(ship.fitted_modules)) {
+      const id = slot?.module_type_id;
+      if (id && id.startsWith('utility_scanner')) return true;
+    }
+    return false;
+  };
+  const fleetSensorRange = () => {
+    return fleetHas(hasUtilityScannerFitted) ? BASIC_SCANNER_SENSOR_RANGE : INNATE_SENSOR_RANGE;
+  };
+
   // Enumerate every fitted mining laser across the active fleet, with
   // a stable laserKey for the multi-target assignment map. Excludes
   // stored ships (they're not present in space). Order is deterministic
@@ -2663,6 +2688,10 @@ export const SystemView = () => {
                   text: `Scan complete: ${formatContents(contents)}`,
                   duration: 5000,
                 });
+                // Tutorial: first successful asteroid scan completes
+                // the chain quest from tutorial_fit_modules. Server is
+                // idempotent so we can fire freely on every scan.
+                if (completeQuest) completeQuest('tutorial_scan_asteroid');
               })
               .catch(err => {
                 const pt = useGameStore.getState().pushToast;
@@ -2715,17 +2744,33 @@ export const SystemView = () => {
       if (frameNum % 5 === 0) {
         const hullNow = Math.round(playerHullRef.current);
         const shieldNow = Math.round(playerShieldRef.current);
+        // Raw count: how many enemies actually exist in the system,
+        // regardless of whether the fleet can detect them. Drives the
+        // "clear sector" quest (semantically: are there hostiles in
+        // this system, yes or no -- not "are any visible right now").
         const enemiesAlive = enemies.filter(e => e.hull > 0).length;
+        // Visible count: gated by fleet sensor range. Drives the HUD
+        // and Outliner so the number in the UI matches the number of
+        // hostiles you can actually see on screen.
+        const sensorR = fleetSensorRange();
+        const sensorR2 = sensorR * sensorR;
+        const visibleEnemies = enemies.filter(e => {
+          if (e.hull <= 0) return false;
+          const dx = e.x - shipPosRef.current.x;
+          const dy = e.y - shipPosRef.current.y;
+          return dx * dx + dy * dy <= sensorR2;
+        }).length;
         setPlayerHullDisplay(hullNow);
         setPlayerShieldDisplay(shieldNow);
         setEnemyCount(enemiesAlive);
-        // Push to GameFrame top bar via store
+        // Push to GameFrame top bar via store. HUD shows VISIBLE count
+        // so what the player sees in the UI matches what's on screen.
         updateHud({
           playerHull: hullNow,
           playerMaxHull: playerMaxHullRef.current,
           playerShield: shieldNow,
           playerMaxShield: playerMaxShieldRef.current,
-          enemyCount: enemiesAlive,
+          enemyCount: visibleEnemies,
           followMode: followModeRef.current,
         });
       }
@@ -3126,8 +3171,24 @@ export const SystemView = () => {
                 </g>
               );
             })}
-            {/* Enemy Ships */}
-            {enemiesRef.current.filter(e => e.hull > 0).map(enemy => (
+            {/* Enemy Ships -- sensor-gated. Only render enemies inside
+                the fleet's sensor range (max of fitted scanners, falls
+                back to INNATE_SENSOR_RANGE if none). AI keeps running
+                on out-of-range enemies (they continue to patrol /
+                aggro / attack); they're just hidden from the screen.
+                Captured to a const so all three sensor-gated render
+                blocks (ships, projectiles-from-them, etc.) read the
+                same snapshot per frame. */}
+            {(() => {
+              const sensorR = fleetSensorRange();
+              const sensorR2 = sensorR * sensorR;
+              const px = shipPosRef.current.x, py = shipPosRef.current.y;
+              return enemiesRef.current.filter(e => {
+                if (e.hull <= 0) return false;
+                const dx = e.x - px, dy = e.y - py;
+                return dx * dx + dy * dy <= sensorR2;
+              });
+            })().map(enemy => (
               <g key={enemy.id}>
                 {/* Aggro ring when attacking */}
                 {(enemy.state === 'attack' || enemy.state === 'chase') && (
