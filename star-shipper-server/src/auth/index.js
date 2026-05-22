@@ -48,22 +48,27 @@ export const verifyToken = (token) => {
 // Create user with email/password
 export const createUser = async (username, email, password) => {
   const passwordHash = await hashPassword(password);
-  
+
   const userResult = await query(
     `INSERT INTO users (username, email, password_hash, display_name, auth_provider)
      VALUES ($1, $2, $3, $1, 'local')
      RETURNING id, username, email, display_name, created_at`,
     [username, email, passwordHash]
   );
-  
+
   const user = userResult.rows[0];
-  
+
   // Create initial resources
   await query(
     `INSERT INTO player_resources (user_id) VALUES ($1)`,
     [user.id]
   );
-  
+
+  // Grant the Starter Scout so the player loads in ready to fly --
+  // no more "buy your free ship" intro friction.
+  const { grantStarterShip } = await import('../util/starterShip.js');
+  await grantStarterShip(user.id);
+
   return user;
 };
 
@@ -134,6 +139,10 @@ export const findOrCreateOAuthUser = async (provider, oauthId, email, displayNam
     `INSERT INTO player_resources (user_id) VALUES ($1)`,
     [user.id]
   );
+
+  // Grant Starter Scout (same as the email/password path).
+  const { grantStarterShip } = await import('../util/starterShip.js');
+  await grantStarterShip(user.id);
 
   return { user, isNew: true };
 };

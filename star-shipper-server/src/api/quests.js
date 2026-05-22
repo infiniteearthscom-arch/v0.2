@@ -16,7 +16,11 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // First-time player: auto-activate the opening quest
+    // First-time player: auto-activate the opening quest. The old
+    // 'tutorial_buy_starter_scout' was retired in migration 034 --
+    // new players spawn with the Starter Scout already granted by
+    // grantStarterShip() in auth, so they jump straight into
+    // 'tutorial_fly_to_luna' (Into the Black).
     const existing = await queryOne(
       `SELECT COUNT(*) as count FROM player_quests WHERE user_id = $1`,
       [userId]
@@ -24,7 +28,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (parseInt(existing.count) === 0) {
       await query(
         `INSERT INTO player_quests (user_id, quest_id)
-         VALUES ($1, 'tutorial_buy_starter_scout')
+         VALUES ($1, 'tutorial_fly_to_luna')
          ON CONFLICT DO NOTHING`,
         [userId]
       );
