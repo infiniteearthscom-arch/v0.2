@@ -1243,6 +1243,14 @@ export const SystemView = () => {
   const setDockedBodyStore = useGameStore(state => state.setDockedBody);
   useEffect(() => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
+    // Clear the cargo-full lockout on every dock-state change. The
+    // ref gets set to true when the server returns cargo_full on a
+    // mine cycle, but stays sticky until system change -- so selling
+    // at a station / collecting from a harvester / jettisoning cargo
+    // never unblocked subsequent mining. Either docking or undocking
+    // is a strong "cargo state could have shrunk" signal; reset so
+    // the next mine click hits the server, which is authoritative.
+    cargoFullRef.current = false;
   }, [dockedBody, setDockedBodyStore]);
 
   // "Baptism by Fire" quest trigger -- watches enemyCount for the

@@ -2996,7 +2996,13 @@ export const PlanetInteractionWindow = ({ body }) => {
         top: 46,
         left: 56,
         bottom: 44,
-        width: 440,
+        // 720 chosen so the Harvesters tab can split into a ~470px
+        // slot column on the left + the 220px cargo pane on the right
+        // (matches CraftingWindow's panel width). The other tabs
+        // (Scan, Mine, City/Station) get the extra breathing room
+        // for free -- they were comfortable at 440 and just get more
+        // horizontal space to work with now.
+        width: 720,
       }}
     >
       {/* Border layer */}
