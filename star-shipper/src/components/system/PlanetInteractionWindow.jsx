@@ -1499,7 +1499,15 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
   const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
 
   const fetchData = useCallback(async () => {
-    if (!body?.id) return;
+    // effectiveBodyId is resolved asynchronously by the parent
+    // (Sol bodies set it immediately, procedural systems await an
+    // ensureBody round-trip). Bail until both body.id AND
+    // effectiveBodyId are ready -- without the second guard the
+    // first mount fires with effectiveBodyId=null, the API call
+    // returns nothing useful, and the deps array doesn't pick up
+    // effectiveBodyId so the refetch never happens. Including it
+    // in the deps re-fires fetch when null -> UUID.
+    if (!body?.id || !effectiveBodyId) return;
     setLoading(true);
     try {
       const [depositsData, harvestData] = await Promise.all([
@@ -1515,7 +1523,7 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
     } finally {
       setLoading(false);
     }
-  }, [body?.id]);
+  }, [body?.id, effectiveBodyId]);
 
   // Also fetch cargo independently if no active session
   useEffect(() => {
@@ -1568,6 +1576,9 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
     try {
       const data = await resourcesAPI.collectHarvest();
       flash('success', data.message);
+      // Tutorial: collecting the planetary harvest completes "Cargo
+      // In Hand" (the bridge between mining and crafting).
+      if (completeQuest) completeQuest('tutorial_collect_minerals');
 
       if (data.session_ended) {
         setActiveSession(null);
