@@ -444,6 +444,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
 
 export const CraftingWindow = () => {
   const windows = useGameStore(state => state.windows);
+  const completeQuest = useGameStore(state => state.completeQuest);
   const isOpen = windows.crafting?.open;
 
   const [recipes, setRecipes] = useState([]);
@@ -573,13 +574,20 @@ export const CraftingWindow = () => {
       }
       
       const result = await resourcesAPI.craft(selectedRecipe.id, ingredients);
-      
+
       setSuccess(`Crafted ${result.crafted.item_name}!`);
       setAssignedIngredients({});
-      
+
       // Refresh recipes to update resource counts
       await fetchRecipes();
-      
+
+      // Tutorial: crafting the basic harvester completes "Build the Bot".
+      // Server is idempotent so this is safe to fire even when the
+      // quest is already complete / not active.
+      if (completeQuest && selectedRecipe.id === 'craft_basic_harvester') {
+        completeQuest('tutorial_craft_harvester');
+      }
+
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err.message);

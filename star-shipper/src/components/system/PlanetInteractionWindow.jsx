@@ -1307,6 +1307,7 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
   // inline MessageBar -- the inline version caused layout shift on every
   // deploy/refuel/collect, pushing the harvester slots around.
   const pushToast = useGameStore(state => state.pushToast);
+  const completeQuest = useGameStore(state => state.completeQuest);
   const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
 
   const fetchData = useCallback(async () => {
@@ -1334,6 +1335,8 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
       await harvesterAPI.deploy(effectiveBodyId, slotIndex, dragData.stack_id, null);
       flash('success', 'Harvester deployed! Assign a deposit to start mining.');
       await fetchData();
+      // Tutorial: first harvester deploy completes "Set & Forget".
+      if (completeQuest) completeQuest('tutorial_deploy_harvester');
     } catch (err) {
       flash('error', err.message);
     }
@@ -1364,6 +1367,8 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
       const result = await harvesterAPI.collect(harvesterId);
       flash('success', result.message);
       await fetchData();
+      // Tutorial: first harvester collect completes "Coming Home".
+      if (completeQuest) completeQuest('tutorial_collect_harvester');
     } catch (err) {
       flash('error', err.message);
     }
@@ -1490,6 +1495,7 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
   // MessageBar caused layout shift each time a mining action started/
   // collected, displacing the deposit list and active-session panel.
   const pushToast = useGameStore(state => state.pushToast);
+  const completeQuest = useGameStore(state => state.completeQuest);
   const flash = (kind, text) => { if (pushToast) pushToast({ kind, text }); };
 
   const fetchData = useCallback(async () => {
@@ -1548,6 +1554,8 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
       if (data.cargo) setCargo(data.cargo);
       flash('success', data.message);
       await fetchData();
+      // Tutorial: starting a manual planetary mine completes "Pickaxe Time".
+      if (completeQuest) completeQuest('tutorial_mine_deposit');
     } catch (err) {
       flash('error', err.message);
     } finally {
@@ -2716,12 +2724,16 @@ export const PlanetInteractionWindow = ({ body }) => {
   const performGroundScan = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const data = await resourcesAPI.groundScan(effectiveBodyId);
       setGroundResults(data.results);
       setSurveyStatus(prev => ({ ...prev, ground_scanned: true }));
       setProbes(prev => ({ ...prev, advanced_scanner_probes: prev.advanced_scanner_probes - 1 }));
+      // Tutorial: completing a ground scan completes "Look Down"
+      // (orbital is a prereq, so ground scan = the player surveyed
+      // the full pipeline).
+      if (completeQuest) completeQuest('tutorial_survey_planet');
     } catch (err) {
       setError(err.message);
     } finally {
