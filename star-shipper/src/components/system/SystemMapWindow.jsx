@@ -149,8 +149,12 @@ const BodyTooltip = ({ body, distance, shipSpeed, x, y, mapSize }) => {
 // ============================================
 
 const MAP_SIZE = 442; // was 340 in NavigationWindow; +30%
+const GHOST_TTL_MS = 30000; // mirror of SystemView -- drives ghost fade opacity
 
-const SystemMapSvg = ({ system, time, shipPosition, shipSpeed, autopilotTarget, onClickBody }) => {
+const SystemMapSvg = ({
+  system, time, shipPosition, shipSpeed, autopilotTarget, onClickBody,
+  scannerData,
+}) => {
   const [hoveredBody, setHoveredBody] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -273,6 +277,60 @@ const SystemMapSvg = ({ system, time, shipPosition, shipSpeed, autopilotTarget, 
           );
         })}
 
+        {/* Scanner pins (asteroids + enemies + ghosts). Rendered after
+            orbits/bodies but before the ship + autopilot line so the
+            ship's own glow reads on top. */}
+        {scannerData?.scannedAsteroids?.map(a => (
+          <circle
+            key={`ast-${a.id}`}
+            cx={a.x * mapScale}
+            cy={a.y * mapScale}
+            r={1.5}
+            fill="#a0c860"
+            opacity={0.7}
+          />
+        ))}
+        {scannerData?.liveEnemies?.map(e => (
+          <g key={`live-${e.id}`} transform={`translate(${e.x * mapScale}, ${e.y * mapScale})`}>
+            <circle r={5} fill="#ef444433" />
+            <circle r={2.5} fill="#ef4444" stroke="#fff" strokeWidth="0.4" />
+            {/* Crosshair tick so live enemies read distinct from bodies */}
+            <line x1="-3.5" y1="0" x2="-1.5" y2="0" stroke="#ef4444" strokeWidth="0.5" />
+            <line x1="1.5"  y1="0" x2="3.5"  y2="0" stroke="#ef4444" strokeWidth="0.5" />
+            <line x1="0" y1="-3.5" x2="0" y2="-1.5" stroke="#ef4444" strokeWidth="0.5" />
+            <line x1="0" y1="1.5"  x2="0" y2="3.5"  stroke="#ef4444" strokeWidth="0.5" />
+          </g>
+        ))}
+        {scannerData?.enemyGhosts?.map(g => {
+          // Fade linearly with age: full opacity at lastSeen, 0 at TTL.
+          const age = Date.now() - g.lastSeenMs;
+          const fade = Math.max(0, 1 - age / GHOST_TTL_MS);
+          return (
+            <g key={`ghost-${g.id}`} transform={`translate(${g.x * mapScale}, ${g.y * mapScale})`} opacity={fade}>
+              <circle r={3} fill="none" stroke="#ef4444" strokeWidth="0.5" strokeDasharray="2,2" />
+              <text x={4} y={3} fill="#ef444499" fontSize="6" style={{ pointerEvents: 'none' }}>
+                ? {g.name}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Sensor range ring -- faint, just enough to show the player
+            "what I can see right now." Doesn't move with the ship in
+            the map's coord space because the ship is plotted at its
+            absolute system position. */}
+        {scannerData?.sensorRange > 0 && (
+          <circle
+            cx={shipScreenX} cy={shipScreenY}
+            r={scannerData.sensorRange * mapScale}
+            fill="none"
+            stroke="#22d3ee"
+            strokeWidth="0.4"
+            strokeDasharray="3,3"
+            opacity="0.25"
+          />
+        )}
+
         {/* Ship */}
         <g transform={`translate(${shipScreenX}, ${shipScreenY})`}>
           <circle r="6" fill="#00ff8822" />
@@ -319,7 +377,19 @@ const SystemMapSvg = ({ system, time, shipPosition, shipSpeed, autopilotTarget, 
 const PANE_WIDTH  = 700;   // ~MAP_SIZE 442 + ~220 bodies list + gaps
 const PANE_HEIGHT = 540;   // ~MAP_SIZE 442 + header + autopilot status
 
+// Re-renders host once a second; cheap, used here so ghost fade
+// opacities recompute smoothly without waiting on the parent's data
+// push cadence (~6Hz from SystemView).
+const useSecondTick = () => {
+  const [, setNow] = useState(Date.now());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+};
+
 export const SystemMapWindow = () => {
+  useSecondTick();
   const isOpen = useGameStore(state => state.windows.systemMap?.open);
   const closeWindow = useGameStore(state => state.closeWindow);
   const viewMode = useGameStore(state => state.viewMode);
@@ -329,6 +399,7 @@ export const SystemMapWindow = () => {
   const shipPosition = useGameStore(state => state.shipPosition);
   const shipSpeed = useGameStore(state => state.shipSpeed);
   const time = useGameStore(state => state.gameTime);
+  const scannerData = useGameStore(state => state.scannerData);
 
   const inSystem = viewMode === 'system';
 
@@ -455,6 +526,7 @@ export const SystemMapWindow = () => {
                 shipSpeed={shipSpeed}
                 autopilotTarget={autopilotTarget}
                 onClickBody={handleClickBody}
+                scannerData={scannerData}
               />
             </div>
 

@@ -1031,7 +1031,19 @@ export const SystemView = () => {
   const setAutopilotTarget = useGameStore(state => state.setAutopilotTarget);
   const updateShipPosition = useGameStore(state => state.updateShipPosition);
   const updateHud = useGameStore(state => state.updateHud);
+  const setScannerData = useGameStore(state => state.setScannerData);
   const autopilotTargetRef = useRef(null);
+
+  // Scanner tracking for the System Map pane.
+  //   enemyGhostsRef -- enemies that left sensor range: snapshot of
+  //     last-known pos, name, color, and the time we lost sight. Fades
+  //     over GHOST_TTL_MS then drops off the map.
+  //   seenBeforeRef -- set of enemy IDs we've ever spotted. Used to
+  //     distinguish "never seen" (no ghost) from "saw + lost" (ghost).
+  // Both clear on system change so we don't drag ghosts across jumps.
+  const enemyGhostsRef = useRef(new Map());
+  const seenBeforeRef = useRef(new Set());
+  const GHOST_TTL_MS = 30000;
   
   // Docked state - which body we're currently docked at
   const [dockedBody, setDockedBody] = useState(null);
@@ -1305,6 +1317,10 @@ export const SystemView = () => {
     activeScanRef.current = null; // cancel any pending scan on system change
     miningAssignmentsRef.current.clear(); // drop all per-laser targets on system change
     cargoFullRef.current = false; // re-check capacity in new system
+    // Scanner ghosts are per-system. Clearing here keeps the System
+    // Map clean of "last seen 2 systems ago" markers.
+    enemyGhostsRef.current.clear();
+    seenBeforeRef.current.clear();
     // Wingmen warp in with the leader: clear lagged positions so they
     // re-init at their slot on the first frame of the new system instead
     // of streaking across the map from the old position.
@@ -2813,6 +2829,70 @@ export const SystemView = () => {
           playerMaxShield: playerMaxShieldRef.current,
           enemyCount: visibleEnemies,
           followMode: followModeRef.current,
+        });
+
+        // Scanner snapshot for the System Map pane. Hybrid persistence
+        // model per design call:
+        //   * Asteroids -- show those the player has scanned (server-
+        //     persisted). Static; stays on the map forever.
+        //   * Live enemies -- currently inside sensor range. Real-time.
+        //   * Ghost enemies -- last-known position from the moment they
+        //     left sensor range. Fades over GHOST_TTL_MS then drops.
+        //     Mirrors EVE/Stellaris "fog of war" feel.
+        const px = shipPosRef.current.x, py = shipPosRef.current.y;
+        const liveEnemiesArr = [];
+        const ghosts = enemyGhostsRef.current;
+        const seenBefore = seenBeforeRef.current;
+        for (const e of enemies) {
+          if (e.hull <= 0) {
+            // Dead enemies clean up their tracking state so a respawn
+            // with the same id doesn't auto-promote to "seen before."
+            ghosts.delete(e.id);
+            seenBefore.delete(e.id);
+            continue;
+          }
+          const dx = e.x - px, dy = e.y - py;
+          const inRange = (dx * dx + dy * dy) <= sensorR2;
+          if (inRange) {
+            seenBefore.add(e.id);
+            ghosts.delete(e.id);
+            liveEnemiesArr.push({
+              id: e.id,
+              x: e.x, y: e.y,
+              name: e.name || 'Hostile',
+              color: e.engineColor || '#ef4444',
+            });
+          } else if (seenBefore.has(e.id) && !ghosts.has(e.id)) {
+            // Transition: was visible -> not visible. Snapshot now.
+            ghosts.set(e.id, {
+              id: e.id,
+              x: e.x, y: e.y,
+              name: e.name || 'Hostile',
+              color: e.engineColor || '#ef4444',
+              lastSeenMs: Date.now(),
+            });
+          }
+        }
+        // Age out stale ghosts.
+        const nowMs = Date.now();
+        for (const [id, g] of ghosts) {
+          if (nowMs - g.lastSeenMs > GHOST_TTL_MS) ghosts.delete(id);
+        }
+
+        // Scanned asteroids: lifted straight from asteroidsRef -- the
+        // server-side gate already filters /asteroids to only return
+        // scanned contents, so we further trust the `scanned` flag on
+        // each row. Pushing positions only; the map cares about
+        // location + size, not contents.
+        const scannedAst = (asteroidsRef.current || [])
+          .filter(a => a.scanned)
+          .map(a => ({ id: a.id, x: a.x, y: a.y, size: a.size || 4 }));
+
+        setScannerData({
+          scannedAsteroids: scannedAst,
+          liveEnemies: liveEnemiesArr,
+          enemyGhosts: [...ghosts.values()],
+          sensorRange: sensorR,
         });
       }
       

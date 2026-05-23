@@ -108,6 +108,22 @@ const initialState = {
   enemyCount: 0,
   followMode: true,
 
+  // Scanner snapshot pushed by SystemView every few frames, consumed
+  // by SystemMapWindow to draw pins on the map. Hybrid persistence:
+  //   * scannedAsteroids -- static, persisted server-side; client
+  //     pushes the subset for the current system.
+  //   * liveEnemies      -- currently in sensor range (real-time).
+  //   * enemyGhosts      -- last-known positions of enemies that left
+  //     sensor range, fade over GHOST_TTL_MS (~30s) then disappear.
+  // All coords are world-space, scaled to the map via SystemMapWindow's
+  // mapScale at render time.
+  scannerData: {
+    scannedAsteroids: [], // [{ id, x, y, size }]
+    liveEnemies: [],      // [{ id, x, y, name, color }]
+    enemyGhosts: [],      // [{ id, x, y, name, color, lastSeenMs }]
+    sensorRange: 0,       // current fleet sensor range in world units
+  },
+
   // Fleet aggregated stats (computed by SystemView, consumed by Outliner)
   fleetStats: null,
 
@@ -547,6 +563,13 @@ export const useGameStore = create(
       // Outliner: SystemView pushes the static body list when a system loads
       setSystemBodies: (bodies) => set(state => {
         state.systemBodies = bodies || [];
+      }),
+
+      // Scanner snapshot push from SystemView's game loop. Whole-object
+      // replacement (cheap; data is small + the consumer just diffs by
+      // re-render anyway).
+      setScannerData: (data) => set(state => {
+        state.scannerData = data;
       }),
 
       // Fleet stats: SystemView pushes aggregated stats when fleet changes
