@@ -90,6 +90,7 @@ const initialState = {
     planetInteraction: { open: false, x: 300, y: 100, minimized: false },
     galaxyMap: { open: false, x: 80, y: 60, minimized: false },
     questLog: { open: false, x: 250, y: 80, minimized: false },
+    systemMap: { open: true, x: 0, y: 0, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
@@ -121,9 +122,9 @@ const initialState = {
   // activate-ship, etc.) read this rather than re-resolving.
   dockedBodyDbId: null,
 
-  // Outliner state
-  systemBodies: [], // [{ id, name, type, planetType, color, parentBody }] — pushed by SystemView
-  outlinerVisible: true, // toggleable from top bar
+  // System bodies (planets / stations / warp / gate) for the current
+  // system. Pushed by SystemView. Consumed by SystemMapWindow.
+  systemBodies: [], // [{ id, name, type, planetType, color, parentBody }]
 
   // Toast notifications — global, ephemeral, stack at the bottom of screen.
   // Any component can call pushToast({ kind, text }) and the bottom-center
@@ -563,10 +564,6 @@ export const useGameStore = create(
         state.dockedBody = body || null;
       }),
 
-      toggleOutliner: () => set(state => {
-        state.outlinerVisible = !state.outlinerVisible;
-      }),
-
       // ==========================================
       // AUDIO CONTROLS
       // ==========================================
@@ -653,7 +650,6 @@ export const useGameStore = create(
       partialize: (state) => ({
         // Only persist UI state locally
         gameStarted: state.gameStarted,
-        outlinerVisible: state.outlinerVisible,
         audio: state.audio,
       }),
       // Merge persisted state with initial state. Window open/minimized

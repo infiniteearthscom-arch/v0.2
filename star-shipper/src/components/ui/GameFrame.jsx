@@ -7,7 +7,7 @@ import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
-import { Outliner } from '@/components/ui/Outliner';
+import { SystemMapWindow } from '@/components/system/SystemMapWindow';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 
 // ============================================
@@ -53,10 +53,6 @@ const TopBar = () => {
   const playerMaxShield = useGameStore(state => state.playerMaxShield);
   const enemyCount = useGameStore(state => state.enemyCount);
   const autopilotTarget = useGameStore(state => state.autopilotTarget);
-
-  // Outliner toggle
-  const outlinerVisible = useGameStore(state => state.outlinerVisible);
-  const toggleOutliner = useGameStore(state => state.toggleOutliner);
 
   // Audio mute toggle (volume sliders deferred to a settings UI later;
   // mute alone covers the "I'm in a quiet room" case).
@@ -230,18 +226,6 @@ const TopBar = () => {
         >✕</button>
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
-
-        {/* Outliner toggle */}
-        <button
-          onClick={() => { playSound('button_click'); toggleOutliner(); }}
-          className="text-[10px] px-1.5 py-0.5 rounded transition-colors"
-          style={{
-            color: outlinerVisible ? BLUE.light : '#3a4a5a',
-            border: `1px solid ${outlinerVisible ? `${BLUE.pri}55` : EDGE}`,
-            background: outlinerVisible ? `${BLUE.pri}10` : 'transparent',
-          }}
-          title={outlinerVisible ? 'Hide outliner' : 'Show outliner'}
-        >☰</button>
 
         {/* Audio mute toggle */}
         <button
@@ -425,12 +409,45 @@ const BottomBar = () => {
 // GAME FRAME (main export)
 // ============================================
 
+// SystemMapToggle -- standalone bottom-right button. Lives outside the
+// LeftToolbar because the user wants it visually separated; it's the
+// only persistent surface for the system map.
+const SystemMapToggle = () => {
+  const isOpen = useGameStore(state => state.windows.systemMap?.open);
+  const toggleWindow = useGameStore(state => state.toggleWindow);
+  return (
+    <button
+      onClick={() => { playSound('button_click'); toggleWindow('systemMap'); }}
+      title={isOpen ? 'Hide System Map' : 'Show System Map'}
+      className="fixed z-40 transition-all"
+      style={{
+        right: 8,
+        bottom: 40,                       // clears the BottomBar (height ~32)
+        width: 38,
+        height: 38,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: isOpen ? `${BLUE.pri}25` : 'rgba(8,14,28,0.92)',
+        border: `1px solid ${isOpen ? BLUE.pri : EDGE}`,
+        borderRadius: 4,
+        color: isOpen ? BLUE.light : '#7a8a9a',
+        fontSize: 18,
+        cursor: 'pointer',
+      }}
+    >
+      🗺️
+    </button>
+  );
+};
+
 export const GameFrame = ({ children }) => {
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#030610' }}>
       <TopBar />
       <LeftToolbar />
-      <Outliner />
+      <SystemMapWindow />
+      <SystemMapToggle />
       <BottomBar />
 
       {/* Game content area — fills space between top and bottom bars */}
