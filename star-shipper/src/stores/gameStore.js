@@ -84,7 +84,6 @@ const initialState = {
     systemView: { open: false, x: 50, y: 50, minimized: false },
     planetView: { open: false, x: 100, y: 100, minimized: false },
     inventory: { open: false, x: 400, y: 200, minimized: false },
-    navigation: { open: false, x: 50, y: 50, minimized: false },
     crafting: { open: false, x: 300, y: 100, minimized: false },
     research: { open: false, x: 200, y: 150, minimized: false },
     planetInteraction: { open: false, x: 300, y: 100, minimized: false },
@@ -95,7 +94,7 @@ const initialState = {
   windowZIndex: {},
   topZIndex: 10,
 
-  // Navigation / autopilot (shared between SystemView and NavigationWindow)
+  // Navigation / autopilot (shared between SystemView and SystemMapWindow)
   autopilotTarget: null, // { id, name, type } or null
   shipPosition: { x: 900, y: 0 }, // updated by SystemView game loop
   shipSpeed: 0,
@@ -435,7 +434,7 @@ export const useGameStore = create(
       // panels. Mirrors the behavior of the left toolbar's handleClick, but
       // callable from anywhere (e.g. SystemView's auto-open on dock).
       openContextPanel: (windowId) => set(state => {
-        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'navigation', 'planetInteraction'];
+        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
         for (const pid of CONTEXT_PANELS) {
           if (pid !== windowId && state.windows[pid]?.open) {
             state.windows[pid].open = false;

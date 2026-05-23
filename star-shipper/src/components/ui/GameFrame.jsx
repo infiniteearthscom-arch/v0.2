@@ -18,7 +18,6 @@ const TOOLBAR_BUTTONS = [
   { id: 'character', icon: '👤', label: 'Character', color: '#60a5fa' },
   { id: 'shipBuilder', icon: '🔧', label: 'Fitting', color: '#ff6622' },
   { id: 'fleet', icon: '🚀', label: 'Fleet', color: '#60a5fa' },
-  { id: 'navigation', icon: '🧭', label: 'Nav', color: '#60a5fa' },
   { id: 'inventory', icon: '📦', label: 'Cargo', color: '#f59e0b' },
   { id: 'crafting', icon: '🔨', label: 'Craft', color: '#aa66ff' },
   { id: 'questLog', icon: '📋', label: 'Missions', color: '#22d3ee' },
@@ -260,7 +259,7 @@ const TopBar = () => {
 // LEFT TOOLBAR
 // ============================================
 
-const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'navigation', 'planetInteraction'];
+const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
 const MODALS = ['shipBuilder', 'galaxyMap'];
 
 const LeftToolbar = () => {

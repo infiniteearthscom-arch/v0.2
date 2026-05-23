@@ -4,7 +4,6 @@ import { GameFrame } from '@/components/ui/GameFrame';
 import { ShipBuilderWindow } from '@/components/ship/ShipBuilderWindow';
 import { FleetWindow } from '@/components/ship/FleetWindow';
 import { InventoryWindow } from '@/components/ui/InventoryWindow';
-import { NavigationWindow } from '@/components/ui/NavigationWindow';
 import { CraftingWindow } from '@/components/ui/CraftingWindow';
 import { GalaxyMapWindow } from '@/components/ui/GalaxyMapWindow';
 import { GalaxyFlightView } from '@/components/galaxy/GalaxyFlightView';
@@ -185,7 +184,6 @@ function App() {
         {windows.character?.open && <CharacterPanel />}
         {windows.fleet?.open && <FleetWindow />}
         {windows.inventory?.open && <InventoryWindow />}
-        {windows.navigation?.open && viewMode === 'system' && <NavigationWindow />}
         {windows.crafting?.open && <CraftingWindow />}
         {windows.galaxyMap?.open && <GalaxyMapWindow />}
         {windows.questLog?.open && <QuestLogWindow />}
