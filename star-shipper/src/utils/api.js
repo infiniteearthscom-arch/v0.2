@@ -367,6 +367,12 @@ export const fittingAPI = {
     body: JSON.stringify({ ship_id: shipId }),
   }),
   resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
+  // Tops up every missile launcher on the ship to ammo_capacity from
+  // warheads in cargo. Server-authoritative on the loaded count.
+  reloadMissiles: (shipId) => request('/fitting/reload-missiles', {
+    method: 'POST',
+    body: JSON.stringify({ ship_id: shipId }),
+  }),
 };
 
 // ============================================

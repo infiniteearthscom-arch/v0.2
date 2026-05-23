@@ -542,6 +542,7 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       scanner_probe:          { price: 50,  display_name: 'Scanner Probe' },
       advanced_scanner_probe: { price: 150, display_name: 'Advanced Scanner Probe' },
       fuel_cell:              { price: 100, display_name: 'Fuel Cell' },
+      missile_warhead:        { price: 30,  display_name: 'Missile Warhead' },
     };
     if (SUPPLIES_CATALOG[module_type_id]) {
       const supply = SUPPLIES_CATALOG[module_type_id];
@@ -1279,6 +1280,130 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Reset account error:', error);
     res.status(500).json({ error: 'Failed to reset account' });
+  }
+});
+
+// ============================================
+// RELOAD MISSILE LAUNCHERS
+// ============================================
+// Tops up every missile launcher on a ship to its ammo_capacity by
+// consuming missile_warhead items from cargo. Per-launcher partial
+// reloads aren't worth the UI cost yet -- bulk "reload everything"
+// matches the EVE-ish pattern of dock-side rearming. Server-authoritative
+// on ammo: fitted_modules[slot].loaded is the source of truth, set here
+// when reloading. Client tracks decrements between reloads.
+//
+// Body: { ship_id }
+// Returns: { warheads_consumed, reloaded_slots, fitted_modules }
+
+router.post('/reload-missiles', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ship_id } = req.body;
+    if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
+
+    const result = await transaction(async (client) => {
+      // Fetch ship + fitted_modules (lock for atomicity).
+      const shipRes = await client.query(
+        `SELECT id, fitted_modules FROM ships
+         WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [ship_id, userId]
+      );
+      const ship = shipRes.rows[0];
+      if (!ship) throw Object.assign(new Error('Ship not found'), { statusCode: 404 });
+
+      const fitted = ship.fitted_modules || {};
+      // Find missile launchers (module_type_id matches weapon_missile_*).
+      // Look up their ammo_capacity from module_types.stats so each
+      // launcher tier can have its own magazine size.
+      const missileSlots = [];
+      for (const [slotKey, slot] of Object.entries(fitted)) {
+        const modId = slot?.module_type_id;
+        if (modId && modId.startsWith('weapon_missile')) {
+          missileSlots.push({ slotKey, modId, currentLoaded: slot.loaded || 0 });
+        }
+      }
+      if (missileSlots.length === 0) {
+        throw Object.assign(new Error('No missile launchers fitted on this ship'), { statusCode: 400 });
+      }
+
+      // Resolve ammo_capacity for each unique launcher type in one query.
+      const modIds = [...new Set(missileSlots.map(s => s.modId))];
+      const modRows = await client.query(
+        `SELECT id, stats FROM module_types WHERE id = ANY($1::TEXT[])`, [modIds]
+      );
+      const capacityByMod = {};
+      for (const r of modRows.rows) {
+        capacityByMod[r.id] = r.stats?.ammo_capacity || 6;
+      }
+
+      // Compute how many warheads are needed to top everyone up.
+      let warheadsNeeded = 0;
+      for (const s of missileSlots) {
+        const cap = capacityByMod[s.modId] || 6;
+        warheadsNeeded += Math.max(0, cap - s.currentLoaded);
+      }
+      if (warheadsNeeded === 0) {
+        return { warheads_consumed: 0, reloaded_slots: [], fitted_modules: fitted, already_full: true };
+      }
+
+      // Sum warhead stacks across cargo + verify enough are available.
+      const cargoRes = await client.query(
+        `SELECT id, quantity FROM player_resource_inventory
+         WHERE user_id = $1 AND item_type = 'item' AND item_id = 'missile_warhead'
+         ORDER BY quantity DESC FOR UPDATE`,
+        [userId]
+      );
+      const totalInCargo = cargoRes.rows.reduce((s, r) => s + parseInt(r.quantity), 0);
+      if (totalInCargo < warheadsNeeded) {
+        throw Object.assign(
+          new Error(`Not enough warheads (need ${warheadsNeeded}, have ${totalInCargo}). Buy at a vendor.`),
+          { statusCode: 400 }
+        );
+      }
+
+      // Consume warheads from cargo (greedy: drain the largest stacks first).
+      let toConsume = warheadsNeeded;
+      for (const row of cargoRes.rows) {
+        if (toConsume <= 0) break;
+        const take = Math.min(toConsume, parseInt(row.quantity));
+        const remaining = parseInt(row.quantity) - take;
+        if (remaining <= 0) {
+          await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [row.id]);
+        } else {
+          await client.query(
+            `UPDATE player_resource_inventory SET quantity = $1, updated_at = NOW() WHERE id = $2`,
+            [remaining, row.id]
+          );
+        }
+        toConsume -= take;
+      }
+
+      // Update fitted_modules[slot].loaded for each missile launcher.
+      const reloadedSlots = [];
+      for (const s of missileSlots) {
+        const cap = capacityByMod[s.modId] || 6;
+        if (!fitted[s.slotKey]) continue;
+        fitted[s.slotKey] = { ...fitted[s.slotKey], loaded: cap };
+        reloadedSlots.push({ slot_key: s.slotKey, loaded: cap, capacity: cap });
+      }
+      await client.query(
+        `UPDATE ships SET fitted_modules = $1, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(fitted), ship_id]
+      );
+
+      return {
+        warheads_consumed: warheadsNeeded,
+        reloaded_slots: reloadedSlots,
+        fitted_modules: fitted,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error reloading missiles:', error);
+    res.status(500).json({ error: 'Failed to reload missiles' });
   }
 });
 

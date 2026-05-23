@@ -1117,6 +1117,24 @@ export const SystemView = () => {
   const miningAssignmentsRef = useRef(new Map()); // laserKey -> { asteroidId, cooldownMs, inFlight }
   const cargoFullRef = useRef(false);             // pause mining when full; reset on system change
   const miningLoopActiveRef = useRef(false);      // tracks audio-loop on/off so transitions stay idempotent
+
+  // ============================================
+  // MISSILE STATE
+  // ============================================
+  // missileAmmoRef        -- current ammo per launcher keyed `${shipId}::${slotId}`.
+  //   Decremented client-side on fire (no per-shot server roundtrip).
+  //   Server's `loaded` value (in fitted_modules) is authoritative on
+  //   refill; sync effect below pulls it up only when it INCREASES
+  //   (reload) so we don't clobber tracked usage on routine refreshes.
+  // missileLockRef        -- per-ship lock state {targetId, startedAt}.
+  //   Shared across all missile launchers on the same ship; resets
+  //   when the ship's nearest enemy changes. Lock must persist for
+  //   weapon.lock_time seconds before fire is permitted.
+  // missileLastServerRef  -- last server-reported loaded value, used
+  //   above as the "did it just go up?" reference point.
+  const missileAmmoRef = useRef({});
+  const missileLockRef = useRef({});
+  const missileLastServerRef = useRef({});
   const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
   const MINE_CYCLE_MS = 2000; // matches mining_basic.stats.mine_cycle * 1000
 
@@ -1176,6 +1194,26 @@ export const SystemView = () => {
   // Viewport ref
   const svgRef = useRef(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
+
+  // Sync missile ammo from server when ships data changes. Only bump
+  // local ammo UP when the server's loaded value increased (reload
+  // happened) -- a routine refresh with the same/older loaded value
+  // must NOT clobber the per-fire decrements the client has tracked.
+  useEffect(() => {
+    for (const ship of ships) {
+      const fitted = ship.fitted_modules || {};
+      for (const [slotKey, slot] of Object.entries(fitted)) {
+        if (!slot?.module_type_id?.startsWith?.('weapon_missile')) continue;
+        const key = `${ship.id}::${slotKey}`;
+        const serverLoaded = slot.loaded ?? 0;
+        const lastServerLoaded = missileLastServerRef.current[key] ?? -1;
+        if (serverLoaded > lastServerLoaded) {
+          missileAmmoRef.current[key] = serverLoaded;
+        }
+        missileLastServerRef.current[key] = serverLoaded;
+      }
+    }
+  }, [ships]);
 
   // Pre-render fleet ship icons for system view (tiny silhouettes).
   // Stored ships (storage_body_id != null) are parked at stations and
@@ -2275,7 +2313,39 @@ export const SystemView = () => {
           }
           if (!nearest) {
             cooldowns.set(cooldownKey, 0); // ready to fire next frame
+            // No target = no lock. Drop any stale missile lock so a
+            // new target later starts the timer fresh.
+            if (w.type === 'missile') missileLockRef.current[fs.id] = null;
             continue;
+          }
+
+          // ----- Missile-specific gating (ammo + lock-on) -----
+          // Applied BEFORE consuming the fire-cooldown so we don't
+          // burn a cycle while still acquiring lock.
+          if (w.type === 'missile') {
+            const ammoKey = `${fs.id}::${w.slot_id}`;
+            const ammo = missileAmmoRef.current[ammoKey] ?? 0;
+            if (ammo <= 0) {
+              // Empty launcher: poll occasionally so a reload picks
+              // up quickly without slamming the loop.
+              cooldowns.set(cooldownKey, 0.5);
+              continue;
+            }
+            // Lock state per ship -- shared across launchers on the
+            // same ship so they fire together once locked.
+            let lock = missileLockRef.current[fs.id];
+            if (!lock || lock.targetId !== nearest.id) {
+              lock = { targetId: nearest.id, startedAt: Date.now() };
+              missileLockRef.current[fs.id] = lock;
+            }
+            const lockElapsed = (Date.now() - lock.startedAt) / 1000;
+            const lockTime = w.lock_time ?? 2;
+            if (lockElapsed < lockTime) {
+              // Still acquiring -- short re-check interval so the
+              // lock ring fills smoothly.
+              cooldowns.set(cooldownKey, 0.1);
+              continue;
+            }
           }
 
           // Fire!
@@ -2370,6 +2440,14 @@ export const SystemView = () => {
               speed,
               turn_rate: w.turn_rate || 4.0,
             });
+            // Decrement ammo client-side. Server's `loaded` field is
+            // authoritative only on reload; between reloads we trust
+            // the client to track per-fire usage so we don't pay a
+            // server roundtrip per missile.
+            const ammoKey = `${fs.id}::${w.slot_id}`;
+            if (missileAmmoRef.current[ammoKey] > 0) {
+              missileAmmoRef.current[ammoKey] -= 1;
+            }
           }
         }
       }
@@ -3356,6 +3434,59 @@ export const SystemView = () => {
                     {enemy.name}
                   </text>
                 )}
+                {/* Missile lock-on ring -- only if the PRIMARY ship is
+                    currently locking onto this enemy. Yellow dashed
+                    ring with a green progress arc that fills as the
+                    lock-time elapses. Once filled, the ring stays
+                    bright as a "weapons free" indicator until lock
+                    drops. */}
+                {(() => {
+                  const lock = missileLockRef.current[playerShip?.id];
+                  if (!lock || lock.targetId !== enemy.id) return null;
+                  // Find any missile weapon on the primary to read lock_time.
+                  // Use the first one (all missile launchers on a ship
+                  // share the same lock state).
+                  const missileWeapon = (playerShip?.fitted_modules
+                    ? Object.values(playerShip.fitted_modules).find(
+                        m => m?.module_type_id?.startsWith('weapon_missile')
+                      )
+                    : null);
+                  const lockTime = missileWeapon?.stats?.lock_time
+                    ?? WEAPON_DEFAULTS.missile.lock_time
+                    ?? 2;
+                  const elapsedSec = (Date.now() - lock.startedAt) / 1000;
+                  const pct = Math.min(1, elapsedSec / lockTime);
+                  const r = enemy.displaySize + 10;
+                  const circumference = 2 * Math.PI * r;
+                  const isLocked = pct >= 1;
+                  return (
+                    <g style={{ pointerEvents: 'none' }}>
+                      {/* Outer guide ring (always present) */}
+                      <circle cx={enemy.x} cy={enemy.y} r={r}
+                        fill="none" stroke="#fbbf24"
+                        strokeWidth={isLocked ? 0.9 : 0.5}
+                        strokeDasharray="3,2"
+                        opacity={isLocked ? 0.9 : 0.55} />
+                      {/* Progress arc that fills clockwise */}
+                      <circle cx={enemy.x} cy={enemy.y} r={r}
+                        fill="none"
+                        stroke={isLocked ? '#22c55e' : '#fbbf24'}
+                        strokeWidth={1.5}
+                        strokeDasharray={`${pct * circumference} ${circumference}`}
+                        transform={`rotate(-90, ${enemy.x}, ${enemy.y})`}
+                        opacity={0.95} />
+                      {/* Tag */}
+                      <text x={enemy.x} y={enemy.y + r + 6}
+                        textAnchor="middle"
+                        fill={isLocked ? '#22c55e' : '#fbbf24'}
+                        fontSize="4.5"
+                        fontFamily="monospace"
+                        letterSpacing="0.5">
+                        {isLocked ? 'LOCK' : `LOCKING ${Math.round(pct * 100)}%`}
+                      </text>
+                    </g>
+                  );
+                })()}
               </g>
             ))}
             

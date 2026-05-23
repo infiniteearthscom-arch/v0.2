@@ -2010,6 +2010,7 @@ const VendorTab = ({ body }) => {
         { id: 'fuel_cell', name: 'Fuel Cell', icon: '🔋', price: 100, desc: 'Powers a harvester for 6 hours.' },
         { id: 'scanner_probe', name: 'Scanner Probe', icon: '📡', price: 50, desc: 'Basic orbital scanner.' },
         { id: 'advanced_scanner_probe', name: 'Adv. Scanner Probe', icon: '🛰️', price: 150, desc: 'Ground-penetrating scanner.' },
+        { id: 'missile_warhead', name: 'Missile Warhead', icon: '🚀', price: 30, desc: 'Ammo for missile launchers. Buy in bulk.' },
       ]);
     } catch (err) {
       console.error('Vendor load error:', err);
@@ -2069,6 +2070,31 @@ const VendorTab = ({ body }) => {
       flash('error', err.message || 'Failed to buy supply');
     } finally {
       refreshCredits();
+    }
+  };
+
+  // Reload all missile launchers on the active ship from warheads in
+  // cargo. Server tops up every fitted launcher to its ammo_capacity
+  // in a single call, then we refresh ships so the client mirror picks
+  // up the new `loaded` value. Shown only when the active ship has a
+  // missile launcher fitted -- no point showing a no-op button.
+  const reloadMissiles = async () => {
+    try {
+      const active = (useGameStore.getState().ships || [])
+        .find(s => s.id === useGameStore.getState().activeShipId);
+      if (!active) {
+        flash('error', 'No active ship');
+        return;
+      }
+      const result = await fittingAPI.reloadMissiles(active.id);
+      if (result.already_full) {
+        flash('info', 'All missile launchers already loaded.');
+      } else {
+        flash('success', `Reloaded ${result.reloaded_slots.length} launcher${result.reloaded_slots.length === 1 ? '' : 's'} — ${result.warheads_consumed} warhead${result.warheads_consumed === 1 ? '' : 's'} used.`);
+      }
+      if (fetchShips) await fetchShips();
+    } catch (err) {
+      flash('error', err.message || 'Reload failed');
     }
   };
 
@@ -2333,6 +2359,45 @@ const VendorTab = ({ body }) => {
       {/* Supplies */}
       {section === 'supplies' && (
         <div>
+          {/* Reload All Missiles -- shown only when the active ship
+              actually has a missile launcher fitted. Consumes warheads
+              from cargo to top every launcher to capacity. */}
+          {(() => {
+            const active = (useGameStore.getState().ships || [])
+              .find(s => s.id === useGameStore.getState().activeShipId);
+            const hasLauncher = active && Object.values(active.fitted_modules || {})
+              .some(m => m?.module_type_id?.startsWith?.('weapon_missile'));
+            if (!hasLauncher) return null;
+            return (
+              <div style={{
+                background: `linear-gradient(135deg, #22c55e15, transparent)`,
+                border: `1px solid #22c55e44`,
+                borderLeft: `2px solid #22c55e`,
+                borderRadius: 3,
+                padding: 10,
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}>
+                <span style={{ fontSize: 18 }}>🚀</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontSize: 11, color: '#86efac', fontWeight: 800,
+                    fontFamily: F, letterSpacing: 0.5,
+                  }}>
+                    RELOAD ALL MISSILES
+                  </div>
+                  <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM }}>
+                    Tops up every launcher on your active ship from warheads in cargo.
+                  </div>
+                </div>
+                <PanelButton size="sm" accent="#22c55e" onClick={() => { playSound('button_click'); reloadMissiles(); }}>
+                  Reload
+                </PanelButton>
+              </div>
+            );
+          })()}
           {supplies.map(s => (
             <div key={s.id} style={{
               background: 'rgba(4,8,16,0.5)',

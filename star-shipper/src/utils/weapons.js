@@ -37,13 +37,15 @@ export const WEAPON_DEFAULTS = {
   },
   missile: {
     type: 'missile',
-    damage: 22,       // high damage, slow cycle
+    damage: 22,        // high damage, slow cycle
     fire_rate: 1.4,
-    range: 260,
+    range: 280,
     projectile_speed: 180,
-    turn_rate: 4.0,   // radians/sec, how fast missile can curve
+    turn_rate: 4.0,    // radians/sec, how fast missile can curve
+    lock_time: 2,      // seconds the launcher must hold target before firing
+    ammo_capacity: 6,  // max loaded warheads per launcher
     color: '#22c55e',
-    description: 'Tracking projectile, strong vs ECM',
+    description: 'Tracking projectile, requires lock-on + ammo',
   },
 };
 
@@ -130,11 +132,20 @@ export const getShipWeapons = (ship) => {
     const base = WEAPON_DEFAULTS[type];
     const qMult = getQualityMultiplier(fittedValue);
 
+    // Server-authoritative ammo count (`loaded`) for missile launchers;
+    // server module_types.stats.ammo_capacity / lock_time override the
+    // WEAPON_DEFAULTS so the migration row is source of truth.
+    const serverStats = fittedValue?.stats || fittedValue?.module_data?.stats;
+    const loaded = fittedValue?.loaded;
     weapons.push({
       ...base,
       damage: Math.round(base.damage * qMult),
       slot_id: slot.id,
       quality_mult: qMult,
+      // Pass through server-overrides for missile-only fields if present
+      lock_time: serverStats?.lock_time ?? base.lock_time,
+      ammo_capacity: serverStats?.ammo_capacity ?? base.ammo_capacity,
+      loaded,  // server's last-known loaded count (number) or undefined
     });
   }
   return weapons;
