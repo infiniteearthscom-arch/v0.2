@@ -29,7 +29,7 @@
 --   lock_time -- seconds the launcher must hold target before firing
 --   ammo_capacity -- max loaded warheads per launcher (refilled by reload)
 
-INSERT INTO module_types (id, name, slot_type, tier, description, stats, buy_price, build_recipe) VALUES
+INSERT INTO module_types (id, name, slot_type, tier, description, stats, buy_price, recipe) VALUES
   ('weapon_missile_basic', 'Missile Launcher', 'weapon', 2,
    'Slow-firing guided ordnance. Requires 2s target lock + loaded warheads. 6-round magazine; reload at any station vendor.',
    '{"damage":22,"range":280,"fire_rate":1.4,"projectile_speed":180,"turn_rate":4.0,"lock_time":2,"ammo_capacity":6}'::jsonb,
