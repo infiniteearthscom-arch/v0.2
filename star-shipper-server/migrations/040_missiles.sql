@@ -38,18 +38,34 @@ INSERT INTO module_types (id, name, slot_type, tier, description, stats, buy_pri
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
--- (2) Warhead ammo item
+-- (2) Item-definitions row for the launcher itself
+-- ============================================
+-- Every craftable module needs an item_definitions row because
+-- crafting_recipes.output_item_id FKs into item_definitions, and
+-- the crafted item lands in player_resource_inventory as an item
+-- (with item_data.slot_type so it can be fitted to a weapon slot).
+-- Mirrors the pattern from migrations 012 (laser/cannon) and 031
+-- (utility_scanner_adv / mining_laser_2).
+
+INSERT INTO item_definitions (id, name, description, category, icon, max_stack, item_data_defaults) VALUES
+  ('weapon_missile_basic', 'Missile Launcher',
+   'A guided-ordnance launcher with a 6-round magazine. Requires a 2s target lock before firing.',
+   'module', '🚀', 5, '{"slot_type":"weapon"}')
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- (3) Warhead ammo item
 -- ============================================
 -- One warhead = one missile in the magazine. Reload action at the
 -- vendor consumes warheads from cargo to top up loaded launchers.
 
 INSERT INTO item_definitions (id, name, description, category, icon, max_stack, item_data_defaults) VALUES
   ('missile_warhead', 'Missile Warhead', 'Ammunition for missile launchers. Each warhead loads one round into a launcher magazine.',
-   'ammo', '🚀', 50, '{}')
+   'ammo', '💥', 50, '{}')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
--- (3) Crafting recipes
+-- (4) Crafting recipes
 -- ============================================
 -- Warheads come in bulk (5 per craft) so the player isn't constantly
 -- crafting one-at-a-time. Launcher recipe scales with the laser/cannon
