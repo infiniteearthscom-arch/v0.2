@@ -2080,13 +2080,26 @@ const VendorTab = ({ body }) => {
   // missile launcher fitted -- no point showing a no-op button.
   const reloadMissiles = async () => {
     try {
-      const active = (useGameStore.getState().ships || [])
-        .find(s => s.id === useGameStore.getState().activeShipId);
+      const store = useGameStore.getState();
+      const active = (store.ships || []).find(s => s.id === store.activeShipId);
       if (!active) {
         flash('error', 'No active ship');
         return;
       }
-      const result = await fittingAPI.reloadMissiles(active.id);
+      // Build {slot_key: currentAmmo} for the active ship's launchers
+      // from the missileAmmo mirror SystemView keeps in the store.
+      // Server uses these counts (instead of its own stale `loaded`
+      // field) to compute warheads needed.
+      const ammoState = store.missileAmmo || {};
+      const currentLoaded = {};
+      for (const [key, ammo] of Object.entries(ammoState)) {
+        const sepIdx = key.indexOf('::');
+        if (sepIdx < 0) continue;
+        const sid = key.slice(0, sepIdx);
+        const slotKey = key.slice(sepIdx + 2);
+        if (sid === active.id) currentLoaded[slotKey] = ammo;
+      }
+      const result = await fittingAPI.reloadMissiles(active.id, currentLoaded);
       if (result.already_full) {
         flash('info', 'All missile launchers already loaded.');
       } else {

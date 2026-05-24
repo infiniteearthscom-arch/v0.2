@@ -368,10 +368,14 @@ export const fittingAPI = {
   }),
   resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
   // Tops up every missile launcher on the ship to ammo_capacity from
-  // warheads in cargo. Server-authoritative on the loaded count.
-  reloadMissiles: (shipId) => request('/fitting/reload-missiles', {
+  // warheads in cargo. Client passes the ACTUAL current loaded counts
+  // per slot -- server's own `loaded` field only tracks reload events
+  // (no per-shot decrement), so without this hint the server would
+  // think a freshly-emptied magazine was still full and refuse to
+  // refill it.
+  reloadMissiles: (shipId, currentLoaded) => request('/fitting/reload-missiles', {
     method: 'POST',
-    body: JSON.stringify({ ship_id: shipId }),
+    body: JSON.stringify({ ship_id: shipId, current_loaded: currentLoaded || {} }),
   }),
 };
 

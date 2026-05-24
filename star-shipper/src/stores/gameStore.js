@@ -108,6 +108,14 @@ const initialState = {
   enemyCount: 0,
   followMode: true,
 
+  // Missile ammo mirror: keyed by `${shipId}::${slotKey}`, written
+  // by SystemView whenever the local missileAmmoRef changes. Vendor
+  // reload reads this so it can pass the CLIENT'S actual current
+  // ammo to the server (the server's fitted_modules.loaded only
+  // tracks reload events, not per-fire decrements; without this the
+  // server thinks magazines are full forever and refuses to refill).
+  missileAmmo: {},
+
   // Scanner snapshot pushed by SystemView every few frames, consumed
   // by SystemMapWindow to draw pins on the map. Hybrid persistence:
   //   * scannedAsteroids -- static, persisted server-side; client
@@ -570,6 +578,12 @@ export const useGameStore = create(
       // re-render anyway).
       setScannerData: (data) => set(state => {
         state.scannerData = data;
+      }),
+
+      // Mirror of SystemView's missileAmmoRef. Whole-object replacement
+      // on each push.
+      setMissileAmmo: (data) => set(state => {
+        state.missileAmmo = data;
       }),
 
       // Fleet stats: SystemView pushes aggregated stats when fleet changes

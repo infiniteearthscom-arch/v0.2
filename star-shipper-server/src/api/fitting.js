@@ -1299,7 +1299,7 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
 router.post('/reload-missiles', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { ship_id } = req.body;
+    const { ship_id, current_loaded } = req.body;
     if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
 
     const result = await transaction(async (client) => {
@@ -1338,10 +1338,19 @@ router.post('/reload-missiles', authMiddleware, async (req, res) => {
       }
 
       // Compute how many warheads are needed to top everyone up.
+      // Trust the client's current_loaded value when provided -- our
+      // own `loaded` field only tracks reload events, not per-shot
+      // usage, so without the client hint we'd think a freshly-emptied
+      // magazine was still full. Player-supplied numbers can only
+      // cause more warheads to be consumed (wasted cargo), never less,
+      // so trusting them is safe.
       let warheadsNeeded = 0;
       for (const s of missileSlots) {
         const cap = capacityByMod[s.modId] || 6;
-        warheadsNeeded += Math.max(0, cap - s.currentLoaded);
+        const effectiveLoaded = (current_loaded && current_loaded[s.slotKey] != null)
+          ? Math.max(0, Math.min(cap, current_loaded[s.slotKey]))
+          : s.currentLoaded;
+        warheadsNeeded += Math.max(0, cap - effectiveLoaded);
       }
       if (warheadsNeeded === 0) {
         return { warheads_consumed: 0, reloaded_slots: [], fitted_modules: fitted, already_full: true };

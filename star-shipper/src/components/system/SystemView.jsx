@@ -1032,6 +1032,7 @@ export const SystemView = () => {
   const updateShipPosition = useGameStore(state => state.updateShipPosition);
   const updateHud = useGameStore(state => state.updateHud);
   const setScannerData = useGameStore(state => state.setScannerData);
+  const setMissileAmmoStore = useGameStore(state => state.setMissileAmmo);
   const autopilotTargetRef = useRef(null);
 
   // Scanner tracking for the System Map pane.
@@ -1199,7 +1200,11 @@ export const SystemView = () => {
   // local ammo UP when the server's loaded value increased (reload
   // happened) -- a routine refresh with the same/older loaded value
   // must NOT clobber the per-fire decrements the client has tracked.
+  // Mirror the post-sync state into the store so the vendor reload
+  // can read it (server-side `loaded` doesn't track per-fire usage
+  // so it'd see "magazine full" forever otherwise).
   useEffect(() => {
+    let changed = false;
     for (const ship of ships) {
       const fitted = ship.fitted_modules || {};
       for (const [slotKey, slot] of Object.entries(fitted)) {
@@ -1209,11 +1214,18 @@ export const SystemView = () => {
         const lastServerLoaded = missileLastServerRef.current[key] ?? -1;
         if (serverLoaded > lastServerLoaded) {
           missileAmmoRef.current[key] = serverLoaded;
+          changed = true;
+        } else if (!(key in missileAmmoRef.current)) {
+          // First sight: initialize from server even if it didn't
+          // technically "increase" from the -1 sentinel.
+          missileAmmoRef.current[key] = serverLoaded;
+          changed = true;
         }
         missileLastServerRef.current[key] = serverLoaded;
       }
     }
-  }, [ships]);
+    if (changed) setMissileAmmoStore({ ...missileAmmoRef.current });
+  }, [ships, setMissileAmmoStore]);
 
   // Pre-render fleet ship icons for system view (tiny silhouettes).
   // Stored ships (storage_body_id != null) are parked at stations and
@@ -2440,13 +2452,13 @@ export const SystemView = () => {
               speed,
               turn_rate: w.turn_rate || 4.0,
             });
-            // Decrement ammo client-side. Server's `loaded` field is
-            // authoritative only on reload; between reloads we trust
-            // the client to track per-fire usage so we don't pay a
-            // server roundtrip per missile.
+            // Decrement ammo client-side + mirror to store so the
+            // vendor's reload sees the true count. Server's `loaded`
+            // field only tracks reload events, not per-shot usage.
             const ammoKey = `${fs.id}::${w.slot_id}`;
             if (missileAmmoRef.current[ammoKey] > 0) {
               missileAmmoRef.current[ammoKey] -= 1;
+              setMissileAmmoStore({ ...missileAmmoRef.current });
             }
           }
         }
