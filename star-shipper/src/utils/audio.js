@@ -32,7 +32,7 @@ const SOUND_FILES = {
 // are scaled down (LOOP_GAIN_MULT) so the constant background doesn't
 // drown out one-shot SFX.
 const LOOP_FILES = {
-  fleet_engine: '/sounds/spaceEngine_000.ogg',
+  fleet_engine: '/sounds/freesound_community-mysterion-low-ship-humming-25686.mp3',
   system_music: '/sounds/placidplace-spaceship-ambience-with-effects-21420.mp3',
   // Continuous mining beam noise; started when the player locks a
   // mining target, stopped when the lock releases (range, depletion,
