@@ -1296,39 +1296,52 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
 // Body: { ship_id }
 // Returns: { warheads_consumed, reloaded_slots, fitted_modules }
 
+// Reloads every missile launcher on EVERY active fleet ship (anything
+// with storage_body_id IS NULL). Each launcher is an independent
+// magazine -- a 2-ship fleet with one launcher each gets 80 warheads
+// total reloaded (assuming both magazines are empty). Stored ships
+// are skipped because they're parked at a station and not in space.
+//
+// Body: { current_loaded: { [shipId]: { [slotKey]: count } } }
+// Client passes its actual per-launcher ammo (server's stored
+// `loaded` only tracks reload events, not per-shot decrements --
+// without the hint we'd think every magazine was still at full
+// capacity and refuse to refill).
 router.post('/reload-missiles', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { ship_id, current_loaded } = req.body;
-    if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
+    const { current_loaded } = req.body || {};
 
     const result = await transaction(async (client) => {
-      // Fetch ship + fitted_modules (lock for atomicity).
-      const shipRes = await client.query(
-        `SELECT id, fitted_modules FROM ships
-         WHERE id = $1 AND user_id = $2 FOR UPDATE`,
-        [ship_id, userId]
+      // Fetch every active fleet ship (stored ships skipped).
+      const shipsRes = await client.query(
+        `SELECT id, name, fitted_modules FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL FOR UPDATE`,
+        [userId]
       );
-      const ship = shipRes.rows[0];
-      if (!ship) throw Object.assign(new Error('Ship not found'), { statusCode: 404 });
+      const ships = shipsRes.rows;
 
-      const fitted = ship.fitted_modules || {};
-      // Find missile launchers (module_type_id matches weapon_missile_*).
-      // Look up their ammo_capacity from module_types.stats so each
-      // launcher tier can have its own magazine size.
-      const missileSlots = [];
-      for (const [slotKey, slot] of Object.entries(fitted)) {
-        const modId = slot?.module_type_id;
-        if (modId && modId.startsWith('weapon_missile')) {
-          missileSlots.push({ slotKey, modId, currentLoaded: slot.loaded || 0 });
+      // Enumerate missile launchers across the whole fleet.
+      const launchers = []; // [{ shipId, shipName, slotKey, modId, currentLoaded }]
+      for (const ship of ships) {
+        const fitted = ship.fitted_modules || {};
+        for (const [slotKey, slot] of Object.entries(fitted)) {
+          const modId = slot?.module_type_id;
+          if (modId && modId.startsWith('weapon_missile')) {
+            launchers.push({
+              shipId: ship.id, shipName: ship.name,
+              slotKey, modId,
+              currentLoaded: slot.loaded || 0,
+            });
+          }
         }
       }
-      if (missileSlots.length === 0) {
-        throw Object.assign(new Error('No missile launchers fitted on this ship'), { statusCode: 400 });
+      if (launchers.length === 0) {
+        throw Object.assign(new Error('No missile launchers fitted on any active fleet ship'), { statusCode: 400 });
       }
 
-      // Resolve ammo_capacity for each unique launcher type in one query.
-      const modIds = [...new Set(missileSlots.map(s => s.modId))];
+      // Resolve capacity per launcher type in one query.
+      const modIds = [...new Set(launchers.map(l => l.modId))];
       const modRows = await client.query(
         `SELECT id, stats FROM module_types WHERE id = ANY($1::TEXT[])`, [modIds]
       );
@@ -1337,26 +1350,21 @@ router.post('/reload-missiles', authMiddleware, async (req, res) => {
         capacityByMod[r.id] = r.stats?.ammo_capacity || 6;
       }
 
-      // Compute how many warheads are needed to top everyone up.
-      // Trust the client's current_loaded value when provided -- our
-      // own `loaded` field only tracks reload events, not per-shot
-      // usage, so without the client hint we'd think a freshly-emptied
-      // magazine was still full. Player-supplied numbers can only
-      // cause more warheads to be consumed (wasted cargo), never less,
-      // so trusting them is safe.
+      // Compute warheads needed across the whole fleet, using the
+      // client's per-launcher ammo when provided.
       let warheadsNeeded = 0;
-      for (const s of missileSlots) {
-        const cap = capacityByMod[s.modId] || 6;
-        const effectiveLoaded = (current_loaded && current_loaded[s.slotKey] != null)
-          ? Math.max(0, Math.min(cap, current_loaded[s.slotKey]))
-          : s.currentLoaded;
+      for (const l of launchers) {
+        const cap = capacityByMod[l.modId] || 6;
+        const clientCount = current_loaded?.[l.shipId]?.[l.slotKey];
+        const effectiveLoaded = clientCount != null
+          ? Math.max(0, Math.min(cap, clientCount))
+          : l.currentLoaded;
         warheadsNeeded += Math.max(0, cap - effectiveLoaded);
       }
       if (warheadsNeeded === 0) {
-        return { warheads_consumed: 0, reloaded_slots: [], fitted_modules: fitted, already_full: true };
+        return { warheads_consumed: 0, reloaded_slots: [], already_full: true, launcher_count: launchers.length };
       }
 
-      // Sum warhead stacks across cargo + verify enough are available.
       const cargoRes = await client.query(
         `SELECT id, quantity FROM player_resource_inventory
          WHERE user_id = $1 AND item_type = 'item' AND item_id = 'missile_warhead'
@@ -1366,12 +1374,12 @@ router.post('/reload-missiles', authMiddleware, async (req, res) => {
       const totalInCargo = cargoRes.rows.reduce((s, r) => s + parseInt(r.quantity), 0);
       if (totalInCargo < warheadsNeeded) {
         throw Object.assign(
-          new Error(`Not enough warheads (need ${warheadsNeeded}, have ${totalInCargo}). Buy at a vendor.`),
+          new Error(`Not enough warheads (need ${warheadsNeeded} across ${launchers.length} launcher${launchers.length === 1 ? '' : 's'}, have ${totalInCargo}). Buy more at the vendor.`),
           { statusCode: 400 }
         );
       }
 
-      // Consume warheads from cargo (greedy: drain the largest stacks first).
+      // Consume warheads greedy from largest stacks first.
       let toConsume = warheadsNeeded;
       for (const row of cargoRes.rows) {
         if (toConsume <= 0) break;
@@ -1388,23 +1396,37 @@ router.post('/reload-missiles', authMiddleware, async (req, res) => {
         toConsume -= take;
       }
 
-      // Update fitted_modules[slot].loaded for each missile launcher.
+      // Update each ship's fitted_modules. Group launchers by ship
+      // so each ship's row gets written once.
       const reloadedSlots = [];
-      for (const s of missileSlots) {
-        const cap = capacityByMod[s.modId] || 6;
-        if (!fitted[s.slotKey]) continue;
-        fitted[s.slotKey] = { ...fitted[s.slotKey], loaded: cap };
-        reloadedSlots.push({ slot_key: s.slotKey, loaded: cap, capacity: cap });
+      const byShip = {};
+      for (const l of launchers) {
+        if (!byShip[l.shipId]) byShip[l.shipId] = { ship: ships.find(s => s.id === l.shipId), launchers: [] };
+        byShip[l.shipId].launchers.push(l);
       }
-      await client.query(
-        `UPDATE ships SET fitted_modules = $1, updated_at = NOW() WHERE id = $2`,
-        [JSON.stringify(fitted), ship_id]
-      );
+      for (const shipId of Object.keys(byShip)) {
+        const { ship, launchers: shipLaunchers } = byShip[shipId];
+        const fitted = { ...(ship.fitted_modules || {}) };
+        for (const l of shipLaunchers) {
+          const cap = capacityByMod[l.modId] || 6;
+          if (!fitted[l.slotKey]) continue;
+          fitted[l.slotKey] = { ...fitted[l.slotKey], loaded: cap };
+          reloadedSlots.push({
+            ship_id: shipId, ship_name: l.shipName,
+            slot_key: l.slotKey, loaded: cap, capacity: cap,
+          });
+        }
+        await client.query(
+          `UPDATE ships SET fitted_modules = $1, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(fitted), shipId]
+        );
+      }
 
       return {
         warheads_consumed: warheadsNeeded,
         reloaded_slots: reloadedSlots,
-        fitted_modules: fitted,
+        launcher_count: launchers.length,
+        ship_count: Object.keys(byShip).length,
       };
     });
 

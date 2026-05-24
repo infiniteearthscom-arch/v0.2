@@ -2081,15 +2081,10 @@ const VendorTab = ({ body }) => {
   const reloadMissiles = async () => {
     try {
       const store = useGameStore.getState();
-      const active = (store.ships || []).find(s => s.id === store.activeShipId);
-      if (!active) {
-        flash('error', 'No active ship');
-        return;
-      }
-      // Build {slot_key: currentAmmo} for the active ship's launchers
-      // from the missileAmmo mirror SystemView keeps in the store.
-      // Server uses these counts (instead of its own stale `loaded`
-      // field) to compute warheads needed.
+      // Build { [shipId]: { [slotKey]: currentAmmo } } across the
+      // whole fleet from the missileAmmo mirror SystemView keeps in
+      // the store. Server uses these counts (instead of its own
+      // stale `loaded` field) to compute warheads needed per launcher.
       const ammoState = store.missileAmmo || {};
       const currentLoaded = {};
       for (const [key, ammo] of Object.entries(ammoState)) {
@@ -2097,13 +2092,15 @@ const VendorTab = ({ body }) => {
         if (sepIdx < 0) continue;
         const sid = key.slice(0, sepIdx);
         const slotKey = key.slice(sepIdx + 2);
-        if (sid === active.id) currentLoaded[slotKey] = ammo;
+        if (!currentLoaded[sid]) currentLoaded[sid] = {};
+        currentLoaded[sid][slotKey] = ammo;
       }
-      const result = await fittingAPI.reloadMissiles(active.id, currentLoaded);
+      const result = await fittingAPI.reloadMissiles(currentLoaded);
       if (result.already_full) {
-        flash('info', 'All missile launchers already loaded.');
+        flash('info', `All ${result.launcher_count} launcher${result.launcher_count === 1 ? '' : 's'} already loaded.`);
       } else {
-        flash('success', `Reloaded ${result.reloaded_slots.length} launcher${result.reloaded_slots.length === 1 ? '' : 's'} — ${result.warheads_consumed} warhead${result.warheads_consumed === 1 ? '' : 's'} used.`);
+        const shipsTxt = result.ship_count > 1 ? ` across ${result.ship_count} ships` : '';
+        flash('success', `Reloaded ${result.reloaded_slots.length} launcher${result.reloaded_slots.length === 1 ? '' : 's'}${shipsTxt} — ${result.warheads_consumed} warhead${result.warheads_consumed === 1 ? '' : 's'} used.`);
       }
       if (fetchShips) await fetchShips();
     } catch (err) {
@@ -2372,15 +2369,18 @@ const VendorTab = ({ body }) => {
       {/* Supplies */}
       {section === 'supplies' && (
         <div>
-          {/* Reload All Missiles -- shown only when the active ship
-              actually has a missile launcher fitted. Consumes warheads
-              from cargo to top every launcher to capacity. */}
+          {/* Reload All Missiles -- shown when ANY active fleet ship
+              has a missile launcher. Server endpoint refills every
+              launcher across the whole fleet in one transaction,
+              consuming warheads from cargo. Each launcher has its
+              own independent magazine (40 rounds at T1). */}
           {(() => {
-            const active = (useGameStore.getState().ships || [])
-              .find(s => s.id === useGameStore.getState().activeShipId);
-            const hasLauncher = active && Object.values(active.fitted_modules || {})
-              .some(m => m?.module_type_id?.startsWith?.('weapon_missile'));
-            if (!hasLauncher) return null;
+            const ships = useGameStore.getState().ships || [];
+            const fleetLaunchers = ships
+              .filter(s => s.storage_body_id == null)
+              .flatMap(s => Object.values(s.fitted_modules || {})
+                .filter(m => m?.module_type_id?.startsWith?.('weapon_missile')));
+            if (fleetLaunchers.length === 0) return null;
             return (
               <div style={{
                 background: `linear-gradient(135deg, #22c55e15, transparent)`,
@@ -2399,10 +2399,10 @@ const VendorTab = ({ body }) => {
                     fontSize: 11, color: '#86efac', fontWeight: 800,
                     fontFamily: F, letterSpacing: 0.5,
                   }}>
-                    RELOAD ALL MISSILES
+                    RELOAD ALL FLEET MISSILES
                   </div>
                   <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM }}>
-                    Tops up every launcher on your active ship from warheads in cargo.
+                    Tops up every launcher across your active fleet ({fleetLaunchers.length} launcher{fleetLaunchers.length === 1 ? '' : 's'}) from warheads in cargo.
                   </div>
                 </div>
                 <PanelButton size="sm" accent="#22c55e" onClick={() => { playSound('button_click'); reloadMissiles(); }}>
