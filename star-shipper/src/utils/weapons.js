@@ -43,7 +43,7 @@ export const WEAPON_DEFAULTS = {
     projectile_speed: 180,
     turn_rate: 4.0,    // radians/sec, how fast missile can curve
     lock_time: 2,      // seconds the launcher must hold target before firing
-    ammo_capacity: 6,  // max loaded warheads per launcher
+    ammo_capacity: 40, // max loaded warheads per launcher
     color: '#22c55e',
     description: 'Tracking projectile, requires lock-on + ammo',
   },
