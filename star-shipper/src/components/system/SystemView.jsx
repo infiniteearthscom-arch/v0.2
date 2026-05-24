@@ -2467,9 +2467,14 @@ export const SystemView = () => {
               weapon_type: 'kinetic',
             });
           } else if (w.type === 'missile') {
-            // Tracking projectile — re-aims toward target each frame
+            // Tracking projectile — re-aims toward target each frame.
+            // Lifetime sized to weapon range / speed (plus 50% buffer
+            // for curving paths toward moving targets). Without this
+            // the global PROJECTILE_LIFETIME=0.8s despawned missiles
+            // long before they reached their nominal max range.
             const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
             const speed = w.projectile_speed || 180;
+            const lifetime = ((w.range || 1120) / speed) * 1.5;
             projectiles.push({
               x: sx, y: sy,
               vx: Math.cos(aimAngle) * speed,
@@ -2481,6 +2486,7 @@ export const SystemView = () => {
               target_id: nearest.id,
               speed,
               turn_rate: w.turn_rate || 4.0,
+              lifetime,
             });
             // Decrement ammo client-side + mirror to store so the
             // vendor's reload sees the true count. Server's `loaded`
@@ -2536,7 +2542,10 @@ export const SystemView = () => {
         p.y += p.vy * delta;
         p.age += delta;
         
-        if (p.age > PROJECTILE_LIFETIME) {
+        // Per-projectile lifetime override (used by missiles so they
+        // can fly long enough to reach their full nominal range);
+        // falls back to the global default for everything else.
+        if (p.age > (p.lifetime ?? PROJECTILE_LIFETIME)) {
           projectiles.splice(i, 1);
           continue;
         }
@@ -3810,7 +3819,7 @@ export const SystemView = () => {
 
             {/* Projectiles */}
             {projectilesRef.current.map((p, i) => {
-              const opacity = 1 - p.age / PROJECTILE_LIFETIME;
+              const opacity = 1 - p.age / (p.lifetime ?? PROJECTILE_LIFETIME);
               if (p.weapon_type === 'missile') {
                 // Triangle oriented to velocity direction
                 const angle = Math.atan2(p.vy, p.vx) * 180 / Math.PI;
