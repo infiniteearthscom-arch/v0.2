@@ -78,7 +78,7 @@ async function loadAndCommit(client, userId) {
 
   // Player progress + queue.
   const skillsRes = await client.query(
-    `SELECT skill_id, sp, level FROM player_skills WHERE user_id = $1`, [userId]
+    `SELECT skill_id, sp, level, last_leveled_at FROM player_skills WHERE user_id = $1`, [userId]
   );
   const skills = new Map(skillsRes.rows.map(r => [r.skill_id, r]));
 
@@ -98,19 +98,26 @@ async function loadAndCommit(client, userId) {
     const rankMult = def?.rank_multiplier || 1;
     const newSp = spAtLevel(entry.target_level, rankMult);
 
-    // Upsert the player_skills row.
+    // Upsert the player_skills row. last_leveled_at gets set to NOW
+    // on every commit so the "↩ LAST TRAINED" badge in the Skills
+    // tab can mark where the player left off after a break.
     if (skills.has(entry.skill_id)) {
       await client.query(
-        `UPDATE player_skills SET sp = $1, level = $2 WHERE user_id = $3 AND skill_id = $4`,
+        `UPDATE player_skills SET sp = $1, level = $2, last_leveled_at = NOW()
+         WHERE user_id = $3 AND skill_id = $4`,
         [newSp, entry.target_level, userId, entry.skill_id]
       );
     } else {
       await client.query(
-        `INSERT INTO player_skills (user_id, skill_id, sp, level) VALUES ($1, $2, $3, $4)`,
+        `INSERT INTO player_skills (user_id, skill_id, sp, level, last_leveled_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
         [userId, entry.skill_id, newSp, entry.target_level]
       );
     }
-    skills.set(entry.skill_id, { skill_id: entry.skill_id, sp: newSp, level: entry.target_level });
+    skills.set(entry.skill_id, {
+      skill_id: entry.skill_id, sp: newSp, level: entry.target_level,
+      last_leveled_at: now.toISOString(),
+    });
 
     // Remove the entry from the queue.
     await client.query(
@@ -183,6 +190,7 @@ router.get('/', authMiddleware, async (req, res) => {
           sort_order: d.sort_order,
           level: ps?.level || 0,
           sp: ps?.sp || 0,
+          last_leveled_at: ps?.last_leveled_at || null,
           sp_for_next_level: ps?.level >= MAX_LEVEL ? null : spAtLevel((ps?.level || 0) + 1, d.rank_multiplier),
           sp_at_current_level: spAtLevel(ps?.level || 0, d.rank_multiplier),
         };

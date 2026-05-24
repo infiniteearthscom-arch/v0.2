@@ -87,14 +87,24 @@ export const ActiveTrainingIndicator = ({ variant = 'compact', onOpenSkills }) =
   // pill becomes a quiet "idle" prompt.
   let skillNode;
   if (!head || !skill) {
+    // Red + bold so it visibly nags the player instead of blending
+    // into the rest of the muted HUD chrome. This bar shows up
+    // wherever the indicator mounts (top bar + window header).
     skillNode = (
       <span style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '1px 8px',
         fontSize: variant === 'expanded' ? 12 : 10,
-        color: '#5a7080',
+        color: '#fca5a5',
+        background: 'rgba(127,29,29,0.35)',
+        border: '1px solid rgba(239,68,68,0.5)',
+        borderRadius: 2,
         fontFamily: "'Share Tech Mono', monospace",
-        fontStyle: 'italic',
+        fontWeight: 700,
+        letterSpacing: 0.5,
       }}>
-        Idle — queue a skill
+        <span style={{ color: '#ef4444' }}>⚠</span>
+        IDLE — QUEUE A SKILL
       </span>
     );
   } else {

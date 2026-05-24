@@ -148,9 +148,30 @@ const SkillsTab = () => {
           <div style={{ padding: '8px 12px', fontSize: 9, fontFamily: FM, color: '#3a5a6a', letterSpacing: 1.5, textTransform: 'uppercase' }}>
             {selectedCategory || 'Skills'}
           </div>
-          {listed.map(s => {
+          {(() => {
+            // Find the most recently leveled-up skill in this category
+            // so the list can mark it with a "↩ LAST TRAINED" badge --
+            // helps the player remember where they left off after a
+            // break. Sort gives us the freshest timestamp.
+            let lastTrainedId = null;
+            let lastTrainedTs = 0;
+            for (const s of listed) {
+              const t = s.last_leveled_at ? new Date(s.last_leveled_at).getTime() : 0;
+              if (t > lastTrainedTs) { lastTrainedTs = t; lastTrainedId = s.id; }
+            }
+            return listed.map(s => {
             const active = s.id === selectedSkillId;
             const isTraining = queue[0]?.skill_id === s.id;
+            const isCompleted = s.level > 0;
+            const isLastTrained = s.id === lastTrainedId;
+            const isMaxed = s.level >= maxLevel;
+            // Subtitle text -- describes current progress instead of
+            // the (confusing) rank multiplier. Rank still shows in the
+            // detail panel where it's labeled correctly.
+            let subtitleText;
+            if (isMaxed) subtitleText = '★ MAX LEVEL';
+            else if (s.level > 0) subtitleText = `Lv ${ROMAN[s.level]} · ${maxLevel - s.level} more level${maxLevel - s.level === 1 ? '' : 's'}`;
+            else subtitleText = `Untrained · ${maxLevel} levels available`;
             return (
               <div
                 key={s.id}
@@ -158,26 +179,67 @@ const SkillsTab = () => {
                 style={{
                   padding: '8px 14px',
                   cursor: 'pointer',
-                  background: active ? `${BLUE.pri}10` : 'transparent',
-                  borderLeft: active ? `2px solid ${BLUE.light}` : '2px solid transparent',
+                  background: active
+                    ? `${BLUE.pri}18`
+                    : isCompleted
+                      ? `${GREEN.pri}10`     // green tint for trained skills
+                      : 'transparent',
+                  borderLeft: active
+                    ? `2px solid ${BLUE.light}`
+                    : isCompleted
+                      ? `2px solid ${GREEN.pri}55`
+                      : '2px solid transparent',
                   borderBottom: `1px solid ${EDGE}40`,
                 }}
               >
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  fontSize: 11, fontFamily: F, color: '#cbd5e1', fontWeight: 600,
+                  fontSize: 11, fontFamily: F, color: isCompleted ? '#e2e8f0' : '#cbd5e1', fontWeight: 600,
                 }}>
-                  <span>{s.name}</span>
-                  <span style={{ fontSize: 9, color: isTraining ? GREEN.light : (s.level > 0 ? BLUE.light : '#3a5a6a'), fontFamily: FM, fontWeight: 700 }}>
+                  <span>
+                    {isCompleted && <span style={{ color: GREEN.light, marginRight: 4 }}>✓</span>}
+                    {s.name}
+                  </span>
+                  <span style={{
+                    fontSize: 9,
+                    color: isTraining
+                      ? GREEN.light
+                      : isMaxed
+                        ? GOLD.light
+                        : isCompleted
+                          ? GREEN.light
+                          : '#3a5a6a',
+                    fontFamily: FM, fontWeight: 700,
+                  }}>
                     {ROMAN[s.level] || '—'}
                   </span>
                 </div>
-                <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM, marginTop: 2, letterSpacing: 0.3 }}>
-                  Rank {s.rank_multiplier}{isTraining && <span style={{ color: GREEN.light, marginLeft: 6 }}>· training</span>}
+                <div style={{
+                  fontSize: 9,
+                  color: isMaxed ? GOLD.light : (isCompleted ? '#86efac' : '#4a6580'),
+                  fontFamily: FM, marginTop: 2, letterSpacing: 0.3,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span>{subtitleText}</span>
+                  {isTraining && <span style={{ color: GREEN.light }}>· training</span>}
+                  {isLastTrained && !isTraining && (
+                    <span style={{
+                      color: GOLD.light,
+                      background: `${GOLD.pri}20`,
+                      border: `1px solid ${GOLD.pri}55`,
+                      padding: '1px 5px',
+                      borderRadius: 2,
+                      fontSize: 8,
+                      letterSpacing: 0.5,
+                    }}>
+                      ↩ LAST TRAINED
+                    </span>
+                  )}
                 </div>
               </div>
             );
-          })}
+            });
+          })()}
         </div>
 
         {/* Detail */}
