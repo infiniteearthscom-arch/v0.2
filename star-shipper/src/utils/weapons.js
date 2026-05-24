@@ -39,7 +39,7 @@ export const WEAPON_DEFAULTS = {
     type: 'missile',
     damage: 22,        // high damage, slow cycle
     fire_rate: 1.4,
-    range: 280,
+    range: 1120,       // standoff weapon -- ~4x laser optimal
     projectile_speed: 180,
     turn_rate: 4.0,    // radians/sec, how fast missile can curve
     lock_time: 2,      // seconds the launcher must hold target before firing
