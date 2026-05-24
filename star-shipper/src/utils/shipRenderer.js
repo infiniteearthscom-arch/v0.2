@@ -72,6 +72,129 @@ export const HULL_SHAPES = {
 // starter_scout uses the same shape as scout
 HULL_SHAPES.starter_scout = HULL_SHAPES.scout;
 
+// ============================================
+// MINING BARGE FAMILY (Industrial class)
+// ============================================
+// Three tiers of dedicated mining ships. Shared warm-industrial
+// palette (brown hull + orange accents) so they read as a family at
+// a glance, with progressively brighter accents and bigger frames
+// per tier. Grids match the slot layouts in migration 041 exactly.
+//
+//   Prospector (T1) -- 9x12, single engine, modest hull
+//   Excavator  (T2) -- 13x18, triple engine, H-pattern cargo
+//   Leviathan  (T3) -- 17x24, quad engine, capital-class mass
+
+HULL_SHAPES.prospector = {
+  gridW: 9, gridH: 12,
+  // 0 = empty space, 1 = armor edge, 2 = hull interior
+  shape: [
+    [0,0,0,1,1,1,0,0,0],
+    [0,1,2,2,2,2,2,1,0],
+    [1,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,1],
+    [1,1,2,2,2,2,2,1,1],
+    [0,1,2,2,2,2,2,1,0],
+    [0,0,1,2,2,2,1,0,0],
+  ],
+  bridgeRow: 1, bridgeWidth: 3, bridgeX: 3,
+  engines: [{ x: 3, w: 3 }],
+  palette: {
+    hull:    [0x6c, 0x58, 0x3c],
+    armor:   [0x4a, 0x38, 0x24],
+    accent:  '#d97a1f',
+    engine:  '#ff8833',
+    viewport:'#ffcc88',
+    stripe:  '#d97a1f',
+    detail:  [0x52, 0x40, 0x2a],
+  },
+  displaySize: 9,
+};
+
+HULL_SHAPES.excavator = {
+  gridW: 13, gridH: 18,
+  shape: [
+    [0,0,0,0,0,1,1,1,0,0,0,0,0],
+    [0,0,0,0,1,2,2,2,1,0,0,0,0],
+    [0,0,1,1,2,2,2,2,2,1,1,0,0],
+    [0,1,2,2,2,2,2,2,2,2,2,1,0],
+    [0,1,2,2,2,2,2,2,2,2,2,1,0],
+    [1,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,1],
+    [0,1,1,2,2,2,2,2,2,2,1,1,0],
+    [0,0,0,1,1,2,2,2,1,1,0,0,0],
+  ],
+  bridgeRow: 3, bridgeWidth: 3, bridgeX: 5,
+  // Triple engine block: side burners + wide center
+  engines: [{ x: 3, w: 1 }, { x: 5, w: 3 }, { x: 9, w: 1 }],
+  palette: {
+    hull:    [0x6e, 0x5c, 0x38],
+    armor:   [0x48, 0x38, 0x20],
+    accent:  '#e69022',
+    engine:  '#ff9933',
+    viewport:'#ffdd99',
+    stripe:  '#cc7722',
+    detail:  [0x55, 0x42, 0x28],
+  },
+  displaySize: 12,
+};
+
+HULL_SHAPES.leviathan = {
+  gridW: 17, gridH: 24,
+  shape: [
+    [0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,2,2,2,2,1,1,0,0,0,0],
+    [0,0,0,1,1,2,2,2,2,2,2,2,2,1,1,0,0],
+    [0,0,1,2,2,2,2,2,2,2,2,2,2,2,2,1,0],
+    [0,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [0,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0],
+    [0,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0],
+    [0,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0],
+    [0,1,1,2,2,2,2,2,2,2,2,2,2,2,1,1,0],
+    [0,0,0,1,1,2,2,2,2,2,2,2,1,1,0,0,0],
+    [0,0,0,0,0,1,2,2,2,2,2,1,0,0,0,0,0],
+  ],
+  bridgeRow: 4, bridgeWidth: 5, bridgeX: 6,
+  // Quad-engine cluster -- outboard burners + wide center pair
+  engines: [{ x: 5, w: 1 }, { x: 7, w: 1 }, { x: 9, w: 1 }, { x: 11, w: 1 }],
+  palette: {
+    hull:    [0x60, 0x52, 0x30],
+    armor:   [0x3c, 0x30, 0x1c],
+    accent:  '#ffaa44',
+    engine:  '#ffbb44',
+    viewport:'#ffee99',
+    stripe:  '#ddaa44',
+    detail:  [0x48, 0x38, 0x22],
+  },
+  displaySize: 16,
+};
+
 // Escape Pod -- tiny emergency capsule. Spawned by /enter-pod when the
 // player's active ship is destroyed. Untargetable by pirates (handled
 // in SystemView via isPodRef). Distinct orange palette signals "in
