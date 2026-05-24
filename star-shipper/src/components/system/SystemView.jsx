@@ -1033,6 +1033,14 @@ export const SystemView = () => {
   const updateHud = useGameStore(state => state.updateHud);
   const setScannerData = useGameStore(state => state.setScannerData);
   const setMissileAmmoStore = useGameStore(state => state.setMissileAmmo);
+  const designatedEnemyId = useGameStore(state => state.designatedEnemyId);
+  const setDesignatedEnemy = useGameStore(state => state.setDesignatedEnemy);
+  const clearDesignatedEnemy = useGameStore(state => state.clearDesignatedEnemy);
+  // Ref mirror -- combat loop reads this each frame to pick targets.
+  // The store selector above triggers re-renders for the SVG reticle;
+  // the ref keeps the game loop's empty-deps closure current.
+  const designatedEnemyIdRef = useRef(null);
+  designatedEnemyIdRef.current = designatedEnemyId;
   const autopilotTargetRef = useRef(null);
 
   // Scanner tracking for the System Map pane.
@@ -2316,12 +2324,29 @@ export const SystemView = () => {
             continue;
           }
 
-          // Find nearest enemy in range
+          // Target selection: designated enemy wins if it's alive AND
+          // within weapon range. Otherwise fall back to nearest-in-
+          // range (the legacy behavior). This stops missile-lock
+          // thrashing in dense clusters and lets the player pin all
+          // weapons on a specific high-priority target.
           let nearest = null, nearestDist = w.range;
-          for (const e of enemies) {
-            if (e.hull <= 0) continue;
-            const d = Math.sqrt((e.x - sx) ** 2 + (e.y - sy) ** 2);
-            if (d < nearestDist) { nearest = e; nearestDist = d; }
+          const designId = designatedEnemyIdRef.current;
+          if (designId) {
+            const d = enemies.find(e => e.id === designId && e.hull > 0);
+            if (d) {
+              const dist = Math.sqrt((d.x - sx) ** 2 + (d.y - sy) ** 2);
+              if (dist < w.range) {
+                nearest = d;
+                nearestDist = dist;
+              }
+            }
+          }
+          if (!nearest) {
+            for (const e of enemies) {
+              if (e.hull <= 0) continue;
+              const dist = Math.sqrt((e.x - sx) ** 2 + (e.y - sy) ** 2);
+              if (dist < nearestDist) { nearest = e; nearestDist = dist; }
+            }
           }
           if (!nearest) {
             cooldowns.set(cooldownKey, 0); // ready to fire next frame
@@ -2417,6 +2442,11 @@ export const SystemView = () => {
                 contents: { credits: loot },
                 expires_at_ms: Date.now() + 5 * 60 * 1000, // 5 min local TTL
               });
+              // Clear designation if this was the designated target
+              // so the fleet doesn't keep "trying" to lock a corpse.
+              if (designatedEnemyIdRef.current === nearest.id) {
+                clearDesignatedEnemy();
+              }
             }
           } else if (w.type === 'kinetic') {
             // Bullet with slight aim spread. Gunnery skill damage
@@ -2536,6 +2566,9 @@ export const SystemView = () => {
               // table is still busted; local-only is the workaround).
               if (e.hull <= 0) {
                 e.hull = 0;
+                if (designatedEnemyIdRef.current === e.id) {
+                  clearDesignatedEnemy();
+                }
                 effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
                 playSound('ship_destroyed');
                 playSound('ship_destroyed_metal');
@@ -3399,13 +3432,57 @@ export const SystemView = () => {
                 const dx = e.x - px, dy = e.y - py;
                 return dx * dx + dy * dy <= sensorR2;
               });
-            })().map(enemy => (
-              <g key={enemy.id}>
+            })().map(enemy => {
+              const isDesignated = designatedEnemyId === enemy.id;
+              return (
+              <g key={enemy.id}
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   playSound('button_click');
+                   setDesignatedEnemy(enemy.id);
+                   if (pushToast) pushToast({
+                     kind: 'info',
+                     text: isDesignated
+                       ? `Cleared target lock on ${enemy.name}`
+                       : `Targeting ${enemy.name} — fleet weapons + missile lock prioritize this enemy`,
+                     duration: 2200,
+                   });
+                 }}
+                 style={{ cursor: 'pointer' }}>
                 {/* Aggro ring when attacking */}
                 {(enemy.state === 'attack' || enemy.state === 'chase') && (
                   <circle cx={enemy.x} cy={enemy.y} r={enemy.displaySize + 8}
                     fill="none" stroke="#ff444444" strokeWidth="0.5" strokeDasharray="3,3" />
                 )}
+                {/* Designated-target reticle: 4 corner brackets that
+                    pulse subtly. Persists at any distance so the
+                    player can see "this is my pick" even at sensor
+                    range, well before missiles can reach. */}
+                {isDesignated && (() => {
+                  const r = enemy.displaySize + 6;
+                  const tick = 3;
+                  return (
+                    <g style={{ pointerEvents: 'none' }}>
+                      {/* TL bracket */}
+                      <polyline points={`${enemy.x-r+tick},${enemy.y-r} ${enemy.x-r},${enemy.y-r} ${enemy.x-r},${enemy.y-r+tick}`}
+                        fill="none" stroke="#ef4444" strokeWidth="1.2" />
+                      {/* TR */}
+                      <polyline points={`${enemy.x+r-tick},${enemy.y-r} ${enemy.x+r},${enemy.y-r} ${enemy.x+r},${enemy.y-r+tick}`}
+                        fill="none" stroke="#ef4444" strokeWidth="1.2" />
+                      {/* BL */}
+                      <polyline points={`${enemy.x-r+tick},${enemy.y+r} ${enemy.x-r},${enemy.y+r} ${enemy.x-r},${enemy.y+r-tick}`}
+                        fill="none" stroke="#ef4444" strokeWidth="1.2" />
+                      {/* BR */}
+                      <polyline points={`${enemy.x+r-tick},${enemy.y+r} ${enemy.x+r},${enemy.y+r} ${enemy.x+r},${enemy.y+r-tick}`}
+                        fill="none" stroke="#ef4444" strokeWidth="1.2" />
+                      <text x={enemy.x} y={enemy.y - r - 1.5}
+                        textAnchor="middle" fill="#ef4444" fontSize="4"
+                        fontFamily="monospace" letterSpacing="0.5">
+                        TARGET
+                      </text>
+                    </g>
+                  );
+                })()}
                 {/* Enemy glow */}
                 <circle cx={enemy.x} cy={enemy.y} r={enemy.displaySize + 3}
                   fill={enemy.engineColor + '15'} />
@@ -3500,8 +3577,9 @@ export const SystemView = () => {
                   );
                 })()}
               </g>
-            ))}
-            
+              );
+            })}
+
             {/* Mining beams (green, constant while assigned). One beam
                 per laser, from its ship to its assigned asteroid. Multi-
                 target Phase A4: different lasers can be on different

@@ -108,6 +108,14 @@ const initialState = {
   enemyCount: 0,
   followMode: true,
 
+  // Designated enemy: set by clicking an enemy in SystemView's
+  // gameplay canvas. The whole fleet's combat targeting prefers this
+  // enemy (instead of just "nearest in range") -- solves the missile
+  // lock thrashing problem in dense clusters and lets the player pick
+  // priority targets at sensor-range distance, well before missiles
+  // can reach. Cleared automatically when the target dies.
+  designatedEnemyId: null,
+
   // Missile ammo mirror: keyed by `${shipId}::${slotKey}`, written
   // by SystemView whenever the local missileAmmoRef changes. Vendor
   // reload reads this so it can pass the CLIENT'S actual current
@@ -584,6 +592,15 @@ export const useGameStore = create(
       // on each push.
       setMissileAmmo: (data) => set(state => {
         state.missileAmmo = data;
+      }),
+
+      // Set / clear the fleet-wide designated enemy. Passing the same
+      // id twice toggles it off.
+      setDesignatedEnemy: (enemyId) => set(state => {
+        state.designatedEnemyId = (state.designatedEnemyId === enemyId) ? null : enemyId;
+      }),
+      clearDesignatedEnemy: () => set(state => {
+        state.designatedEnemyId = null;
       }),
 
       // Fleet stats: SystemView pushes aggregated stats when fleet changes
