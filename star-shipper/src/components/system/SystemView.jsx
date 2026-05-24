@@ -971,10 +971,21 @@ export const SystemView = () => {
   const isPod = playerShip?.hull_type_id === 'pod';
   const shipHullSize = playerShip?.hull_size || 30;
 
-  // Derive flight physics from active ship stats
-  // base_speed 50 = 1.0x multiplier (baseline), 120 = 2.4x, 25 = 0.5x
-  const speedMult = (playerShip?.base_speed || 50) / 50;
-  const maneuverMult = (playerShip?.base_maneuver || 50) / 50;
+  // Derive flight physics from the SLOWEST + LEAST MANEUVERABLE
+  // ship in the active fleet. Wingmen lag-lerp to their formation
+  // slot so visually they always catch up, but capping the primary
+  // at the slowest hull means a Leviathan tagging along actually
+  // slows the fleet down. Makes the ship-loadout decision real.
+  // base 50 = 1.0x multiplier (baseline), 120 = 2.4x, 25 = 0.5x.
+  const activeFleet = (ships || []).filter(s => s.storage_body_id == null);
+  const minBaseSpeed = activeFleet.length > 0
+    ? Math.min(...activeFleet.map(s => s.base_speed ?? 50))
+    : (playerShip?.base_speed ?? 50);
+  const minBaseManeuver = activeFleet.length > 0
+    ? Math.min(...activeFleet.map(s => s.base_maneuver ?? 50))
+    : (playerShip?.base_maneuver ?? 50);
+  const speedMult = minBaseSpeed / 50;
+  const maneuverMult = minBaseManeuver / 50;
   const SHIP_MAX_SPEED = BASE_SHIP_MAX_SPEED * Math.max(0.3, Math.min(3, speedMult));
   const SHIP_ACCELERATION = BASE_SHIP_ACCELERATION * Math.max(0.3, Math.min(3, speedMult));
   const SHIP_ROTATION_SPEED = BASE_SHIP_ROTATION_SPEED * Math.max(0.3, Math.min(3, maneuverMult));
