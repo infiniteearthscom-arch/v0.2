@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-25 (Scanner depth phases 1+2 + mid-tier area-scan backlog note)
+**Last updated:** 2026-05-25 (Scanner depth phase 1: timed planet scans + ast_scanning wired)
 
 ---
 

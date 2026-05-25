@@ -228,7 +228,7 @@ const SurveyStatus = ({ status }) => {
   );
 };
 
-const OrbitalScanResults = ({ resources }) => {
+const OrbitalScanResults = ({ resources, probeQuality }) => {
   if (!resources || resources.length === 0) {
     return <p style={{ color: '#4a6580', fontSize: 11, fontFamily: F }}>No resources detected</p>;
   }
@@ -262,6 +262,13 @@ const OrbitalScanResults = ({ resources }) => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, fontFamily: FM }}>
             <span style={{ color: '#4a6580' }}>{resource.deposit_count}×</span>
+            {/* Numeric estimate when probe quality > 50 (Phase 2). The
+                server omits this field on baseline probes so the player
+                sees the bucket label only -- buying/crafting a better
+                probe is what reveals the number. */}
+            {resource.quantity_estimate != null && (
+              <span style={{ color: '#a0c860' }}>~{resource.quantity_estimate.toLocaleString()}u</span>
+            )}
             <span style={{
               padding: '1px 6px',
               borderRadius: 2,
@@ -289,11 +296,39 @@ const OrbitalScanResults = ({ resources }) => {
           </div>
         </div>
       ))}
+      {probeQuality != null && <ProbeQualityFooter q={probeQuality} />}
     </div>
   );
 };
 
-const GroundScanResults = ({ deposits }) => {
+// Probe-quality footer rendered under both scan result panels.
+// At Q50 it tells the player a baseline probe was used and hints that
+// crafting a better probe would tighten the data.
+const ProbeQualityFooter = ({ q }) => {
+  const tier = getQualityTier(q, q, q, q);
+  const hint = q <= 50
+    ? 'Baseline probe. Craft a higher-quality probe for tighter readings.'
+    : q >= 90
+      ? 'Pristine probe — exact readings.'
+      : 'Higher-quality probes tighten the numbers further.';
+  return (
+    <div style={{
+      marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EDGE}`,
+      display: 'flex', alignItems: 'baseline', gap: 8,
+      fontSize: 9, fontFamily: FM, color: '#5a6a7a',
+    }}>
+      <span>Scanned with</span>
+      <span style={{ color: tier.color, fontWeight: 700 }}>
+        {tier.name} (Q{q})
+      </span>
+      <span>probe</span>
+      <span style={{ flex: 1 }} />
+      <span style={{ color: '#3a4a5a', fontStyle: 'italic' }}>{hint}</span>
+    </div>
+  );
+};
+
+const GroundScanResults = ({ deposits, probeQuality }) => {
   if (!deposits || deposits.length === 0) {
     return <p style={{ color: '#4a6580', fontSize: 11, fontFamily: F }}>No deposit data available</p>;
   }
@@ -374,12 +409,15 @@ const GroundScanResults = ({ deposits }) => {
                 letterSpacing: 0.3,
               }}>
                 <span style={{ color: '#4a6580', textTransform: 'uppercase' }}>{stat}</span>
-                <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{range.min}-{range.max}</span>
+                <span style={{ color: '#a0b0c0', fontWeight: 700 }}>
+                  {range.min === range.max ? range.min : `${range.min}-${range.max}`}
+                </span>
               </div>
             ))}
           </div>
         </div>
       ))}
+      {probeQuality != null && <ProbeQualityFooter q={probeQuality} />}
     </div>
   );
 };
@@ -3303,7 +3341,10 @@ export const PlanetInteractionWindow = ({ body }) => {
                 }}>
                   {surveyStatus.orbital_scanned && orbitalResults ? (
                     <>
-                      <OrbitalScanResults resources={orbitalResults.resources_detected} />
+                      <OrbitalScanResults
+                        resources={orbitalResults.resources_detected}
+                        probeQuality={orbitalResults.probe_quality}
+                      />
                       <HazardWarning hazards={orbitalResults.hazards} />
                     </>
                   ) : surveyStatus.orbital_scanned ? (
@@ -3366,7 +3407,10 @@ export const PlanetInteractionWindow = ({ body }) => {
                   {!surveyStatus.orbital_scanned ? (
                     <p style={{ color: '#4a5a6a', fontSize: 11, margin: 0 }}>Requires orbital scan first.</p>
                   ) : surveyStatus.ground_scanned && groundResults ? (
-                    <GroundScanResults deposits={groundResults.deposits} />
+                    <GroundScanResults
+                      deposits={groundResults.deposits}
+                      probeQuality={groundResults.probe_quality}
+                    />
                   ) : surveyStatus.ground_scanned ? (
                     <p style={{ color: '#64748b', fontSize: 11, margin: 0 }}>Detailed scan data available.</p>
                   ) : scanning?.kind === 'ground' ? (

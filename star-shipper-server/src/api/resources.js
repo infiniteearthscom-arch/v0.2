@@ -1377,9 +1377,11 @@ function getQualityTier(purity, stability, potency, density) {
   return { name: 'Pristine', color: '#aa44ff' };
 }
 
-// Generate stat range for ground scan (shows range, not exact value)
-function getStatRange(exactValue) {
-  const variance = 10;
+// Generate stat range for ground scan (shows range, not exact value).
+// Phase 2 quality pass: variance shrinks with probe quality. precision
+// is 0..1 (Q50 -> 0.0 = current ±10 variance; Q100 -> 1.0 = exact).
+function getStatRange(exactValue, precision = 0) {
+  const variance = Math.round(10 * (1 - precision));
   const min = Math.max(0, exactValue - variance);
   const max = Math.min(100, exactValue + variance);
   return { min, max };
@@ -1390,6 +1392,44 @@ function getAbundance(totalQuantity) {
   if (totalQuantity < 200) return 'Scarce';
   if (totalQuantity < 500) return 'Moderate';
   return 'Abundant';
+}
+
+// ============================================
+// PROBE QUALITY -- Phase 2 scanner depth.
+// Probes crafted from high-quality minerals reveal scan data with
+// tighter ranges + numeric quantity estimates. Vendor-bought probes
+// (no .quality field) default to Q50 (baseline = current behavior).
+// `precision` = 0..1, derived from avg probe quality:
+//   Q<=50 -> 0.0  (no bonus, current bucket / range behavior)
+//   Q100  -> 1.0  (maximum tightness, exact values)
+// ============================================
+function probeAvgQuality(itemData) {
+  const q = itemData?.quality;
+  if (!q) return 50;
+  return ((q.purity ?? 50) + (q.stability ?? 50) + (q.potency ?? 50) + (q.density ?? 50)) / 4;
+}
+function probePrecision(avgQ) {
+  return Math.max(0, Math.min(1, (avgQ - 50) / 50));
+}
+
+// Pick the highest-quality probe stack from the player's inventory.
+// Returns { id, quantity, qAvg, precision } or null if no probes.
+// Ties on quality break to lowest slot_index (deterministic).
+async function pickBestProbe(userId, probeItemId) {
+  const rows = await queryAll(`
+    SELECT id, quantity, item_data, slot_index FROM player_resource_inventory
+    WHERE user_id = $1 AND item_type = 'item' AND item_id = $2 AND quantity > 0
+    ORDER BY slot_index ASC
+  `, [userId, probeItemId]);
+  if (!rows || rows.length === 0) return null;
+  let best = null;
+  for (const s of rows) {
+    const qAvg = probeAvgQuality(s.item_data);
+    if (!best || qAvg > best.qAvg) {
+      best = { id: s.id, quantity: s.quantity, qAvg };
+    }
+  }
+  return { ...best, precision: probePrecision(best.qAvg) };
 }
 
 // ============================================
@@ -1510,23 +1550,20 @@ router.post('/survey/orbital/:bodyId', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Already orbital scanned' });
     }
     
-    const probeStack = await queryOne(`
-      SELECT id, quantity FROM player_resource_inventory 
-      WHERE user_id = $1 AND item_type = 'item' AND item_id = 'scanner_probe' AND quantity > 0
-      ORDER BY slot_index ASC LIMIT 1
-    `, [userId]);
-    
+    // Phase 2: pick the highest-quality probe so players see real
+    // value in burning a hand-crafted q90 probe on a key world.
+    const probeStack = await pickBestProbe(userId, 'scanner_probe');
     if (!probeStack) {
       return res.status(400).json({ error: 'No scanner probes available' });
     }
-    
-    // Consume one probe
+
+    // Consume one probe (highest-Q stack)
     if (probeStack.quantity <= 1) {
       await query(`DELETE FROM player_resource_inventory WHERE id = $1`, [probeStack.id]);
     } else {
       await query(`UPDATE player_resource_inventory SET quantity = quantity - 1 WHERE id = $1`, [probeStack.id]);
     }
-    
+
     const deposits = await ensureDepositsExist(resolvedBodyId);
     
     if (existingSurvey) {
@@ -1561,19 +1598,35 @@ router.post('/survey/orbital/:bodyId', authMiddleware, async (req, res) => {
       resourceSummary[deposit.resource_name].total_quantity += deposit.quantity_remaining;
     }
     
-    const resources_detected = Object.values(resourceSummary).map(r => ({
-      name: r.name,
-      category: r.category,
-      rarity: r.rarity,
-      deposit_count: r.deposit_count,
-      abundance: getAbundance(r.total_quantity),
-    }));
-    
+    // Phase 2: probe precision adds a numeric quantity_estimate
+    // alongside the abundance bucket when the probe was high-q.
+    // Rounding granularity tightens with precision -- Q60 rounds to
+    // nearest 40, Q100 rounds to nearest 0 (exact).
+    const precision = probeStack.precision;
+    const roundTo = Math.max(1, Math.round(100 * (1 - precision)));
+    const roundQty = (n) => Math.round(n / roundTo) * roundTo;
+    const resources_detected = Object.values(resourceSummary).map(r => {
+      const row = {
+        name: r.name,
+        category: r.category,
+        rarity: r.rarity,
+        deposit_count: r.deposit_count,
+        abundance: getAbundance(r.total_quantity),
+      };
+      // Only attach numeric estimate when probe precision is meaningful.
+      // Q50 baseline = 0 precision = no extra field; the abundance bucket
+      // alone is what the player has always seen.
+      if (precision > 0) {
+        row.quantity_estimate = roundQty(r.total_quantity);
+      }
+      return row;
+    });
+
     const hazards = [];
     if (body.planet_type === 'lava') hazards.push('Extreme heat detected');
     if (body.planet_type === 'ice') hazards.push('Extreme cold detected');
     if (body.body_type === 'gas_giant') hazards.push('Toxic atmosphere detected');
-    
+
     res.json({
       success: true,
       scan_type: 'orbital',
@@ -1582,6 +1635,9 @@ router.post('/survey/orbital/:bodyId', authMiddleware, async (req, res) => {
         resources_detected,
         total_deposits: deposits.length,
         hazards: hazards.length > 0 ? hazards : null,
+        // Carries the probe quality used so the client can show a
+        // "Scanned with Q73 probe" footer + drive UI precision hints.
+        probe_quality: Math.round(probeStack.qAvg),
       },
       message: `Orbital scan complete. Detected ${resources_detected.length} resource type(s) across ${deposits.length} deposit(s).`,
     });
@@ -1615,53 +1671,55 @@ router.post('/survey/ground/:bodyId', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Must perform orbital scan first' });
     }
     
-    const probeStack = await queryOne(`
-      SELECT id, quantity FROM player_resource_inventory 
-      WHERE user_id = $1 AND item_type = 'item' AND item_id = 'advanced_scanner_probe' AND quantity > 0
-      ORDER BY slot_index ASC LIMIT 1
-    `, [userId]);
-    
+    // Phase 2: highest-quality probe chosen first.
+    const probeStack = await pickBestProbe(userId, 'advanced_scanner_probe');
     if (!probeStack) {
       return res.status(400).json({ error: 'No advanced scanner probes available' });
     }
-    
-    // Consume one probe
+
+    // Consume one probe (highest-Q stack)
     if (probeStack.quantity <= 1) {
       await query(`DELETE FROM player_resource_inventory WHERE id = $1`, [probeStack.id]);
     } else {
       await query(`UPDATE player_resource_inventory SET quantity = quantity - 1 WHERE id = $1`, [probeStack.id]);
     }
-    
+
     await query(`
-      UPDATE player_surveys 
+      UPDATE player_surveys
       SET ground_scanned = TRUE, scanned_at = NOW()
       WHERE id = $1
     `, [existingSurvey.id]);
-    
+
     const deposits = await getDepositsForBody(resolvedBodyId);
-    
+
     const body = await queryOne(`
       SELECT name FROM celestial_bodies WHERE id = $1
     `, [resolvedBodyId]);
-    
-    const detailed_deposits = deposits.map((d) => ({
-      id: d.id,
-      slot_number: d.slot_number,
-      resource_name: d.resource_name,
-      category: d.category,
-      rarity: d.rarity,
-      quantity_range: {
-        min: Math.floor(d.quantity_remaining * 0.9),
-        max: Math.ceil(d.quantity_remaining * 1.1),
-      },
-      stat_ranges: {
-        purity: getStatRange(d.stat_purity),
-        stability: getStatRange(d.stat_stability),
-        potency: getStatRange(d.stat_potency),
-        density: getStatRange(d.stat_density),
-      },
-      estimated_tier: getQualityTier(d.stat_purity, d.stat_stability, d.stat_potency, d.stat_density),
-    }));
+
+    // Phase 2: probe precision tightens both the quantity range AND
+    // the per-stat ranges. Q50 probe -> ±10% quantity + ±10 stat (current
+    // baseline). Q100 probe -> exact quantity + exact stats.
+    const precision = probeStack.precision;
+    const qtyVariancePct = 0.1 * (1 - precision); // 10% -> 0%
+    const detailed_deposits = deposits.map((d) => {
+      const qtyMin = Math.floor(d.quantity_remaining * (1 - qtyVariancePct));
+      const qtyMax = Math.ceil(d.quantity_remaining * (1 + qtyVariancePct));
+      return {
+        id: d.id,
+        slot_number: d.slot_number,
+        resource_name: d.resource_name,
+        category: d.category,
+        rarity: d.rarity,
+        quantity_range: { min: qtyMin, max: qtyMax },
+        stat_ranges: {
+          purity:    getStatRange(d.stat_purity,    precision),
+          stability: getStatRange(d.stat_stability, precision),
+          potency:   getStatRange(d.stat_potency,   precision),
+          density:   getStatRange(d.stat_density,   precision),
+        },
+        estimated_tier: getQualityTier(d.stat_purity, d.stat_stability, d.stat_potency, d.stat_density),
+      };
+    });
     
     res.json({
       success: true,
@@ -1669,6 +1727,9 @@ router.post('/survey/ground/:bodyId', authMiddleware, async (req, res) => {
       body_name: body.name,
       results: {
         deposits: detailed_deposits,
+        // Probe quality flows through so the client can show a
+        // "Scanned with Q73 probe" footer.
+        probe_quality: Math.round(probeStack.qAvg),
       },
       message: `Ground scan complete. Analyzed ${detailed_deposits.length} deposit(s) with detailed composition data.`,
     });
