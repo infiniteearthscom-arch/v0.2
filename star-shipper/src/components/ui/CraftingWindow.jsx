@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
+import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
 
@@ -311,10 +312,12 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
 
 const OutputPreview = ({ recipe, assignedIngredients }) => {
   if (!recipe) return null;
-  
-  // Calculate weighted average quality from all assigned resources
+
+  // Calculate weighted average quality from all assigned resources.
+  // Matches the server's /craft math at resources.js:719-723 so what
+  // the preview promises is what the server delivers.
   let totalPurity = 0, totalStability = 0, totalPotency = 0, totalDensity = 0, totalWeight = 0;
-  
+
   for (const ing of Object.values(assignedIngredients)) {
     for (const stack of (ing?.stacks || [])) {
       if (stack.stats) {
@@ -326,19 +329,42 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
       }
     }
   }
-  
+
   const avgQuality = totalWeight > 0
     ? Math.round((totalPurity + totalStability + totalPotency + totalDensity) / (totalWeight * 4))
     : 0;
-  
-  const qualityMultiplier = totalWeight > 0 ? ((totalPurity + totalStability + totalPotency + totalDensity) / (totalWeight * 4)) / 50 : 1;
-  
-  // Preview item stats
+
+  // Build a synthetic "fitted-module" shape for the shared quality
+  // helper. The helper reads .quality so we mirror what the server
+  // will stamp on the crafted item. Per-stat scaling rules then
+  // come straight from STAT_META (same source ShipBuilderWindow uses
+  // for the post-craft fitted view -- no drift between projection and
+  // reality).
+  const fakeFitted = totalWeight > 0
+    ? { quality: {
+        purity:    totalPurity / totalWeight,
+        stability: totalStability / totalWeight,
+        potency:   totalPotency / totalWeight,
+        density:   totalDensity / totalWeight,
+      } }
+    : null;
+
+  // Iterate every numeric field on item_data_defaults so weapon recipes
+  // (damage, range, fire_rate) and harvester recipes (harvest_rate,
+  // storage_capacity, fuel_hours) both render correctly. Non-numeric
+  // fields (slot_type, etc.) are skipped.
   const baseData = recipe.item_data_defaults || {};
-  const previewStats = {};
-  if (baseData.harvest_rate) previewStats['Harvest Rate'] = `${Math.round(baseData.harvest_rate * Math.max(0.5, qualityMultiplier))}/hr`;
-  if (baseData.storage_capacity) previewStats['Storage'] = Math.round(baseData.storage_capacity * Math.max(0.5, qualityMultiplier));
-  if (baseData.fuel_hours) previewStats['Duration'] = `${(Math.round(baseData.fuel_hours * Math.max(0.5, qualityMultiplier) * 10) / 10)}h`;
+  const previewRows = Object.entries(baseData)
+    .filter(([, v]) => typeof v === 'number')
+    .map(([key, val]) => {
+      const meta = STAT_META[key];
+      const label = meta?.label || key.replace(/_/g, ' ').toUpperCase();
+      const mult = fakeFitted
+        ? qualityMultiplier(fakeFitted, { power: meta?.power ?? 1, invert: meta?.invert ?? false })
+        : 1.0;
+      const scaled = val * mult;
+      return { key, label, val, scaled, mult, meta };
+    });
   
   return (
     <div style={{
@@ -419,19 +445,38 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
             }}>{avgQuality}</span>
           </div>
 
-          {Object.entries(previewStats).map(([key, val]) => (
-            <div key={key} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: 10,
-              fontFamily: FONT.mono,
-              padding: '2px 0',
-              borderBottom: '1px solid rgba(26,48,80,0.3)',
-            }}>
-              <span style={{ color: COLORS.TEXT.muted, letterSpacing: 0.5 }}>{key.toUpperCase()}</span>
-              <span style={{ color: COLORS.BLUE.light, fontWeight: 700 }}>{val}</span>
-            </div>
-          ))}
+          {previewRows.map(({ key, label, val, scaled, mult, meta }) => {
+            const differs = Math.abs(scaled - val) > 0.005;
+            const multColor = statModifierColor(scaled, val, meta);
+            return (
+              <div key={key} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                fontSize: 10,
+                fontFamily: FONT.mono,
+                padding: '2px 0',
+                borderBottom: '1px solid rgba(26,48,80,0.3)',
+              }}>
+                <span style={{ color: COLORS.TEXT.muted, letterSpacing: 0.5 }}>{label.toUpperCase()}</span>
+                <span>
+                  <span style={{ color: COLORS.BLUE.light, fontWeight: 700 }}>
+                    {fmtStatValue(scaled, meta)}
+                  </span>
+                  {differs && (
+                    <>
+                      <span style={{ color: COLORS.TEXT.dim, marginLeft: 6 }}>
+                        (base {fmtStatValue(val, meta)})
+                      </span>
+                      <span style={{ color: multColor, marginLeft: 6, fontWeight: 700 }}>
+                        ×{mult.toFixed(2)}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </>
       )}
     </div>

@@ -716,11 +716,18 @@ router.post('/craft', authMiddleware, async (req, res) => {
         }
       }
       
-      // Calculate output quality from weighted average of input stats
-      const avgPurity = totalStatWeight > 0 ? Math.round(totalStatPurity / totalStatWeight) : 0;
-      const avgStability = totalStatWeight > 0 ? Math.round(totalStatStability / totalStatWeight) : 0;
-      const avgPotency = totalStatWeight > 0 ? Math.round(totalStatPotency / totalStatWeight) : 0;
-      const avgDensity = totalStatWeight > 0 ? Math.round(totalStatDensity / totalStatWeight) : 0;
+      // Calculate output quality from weighted average of input stats.
+      // Phase 5: Manufacturing Excellence skill (`crafted_quality_flat`)
+      // adds N to each output stat per level, clamped at 100. Lets a
+      // maxed crafter push mid-q ingredients into superior-tier output
+      // without obsoleting the value of finding high-q resources.
+      const craftBonuses = await getPlayerBonuses(userId);
+      const qBonus = craftBonuses.crafted_quality_flat || 0;
+      const clampQ = (n) => Math.min(100, Math.max(0, n + qBonus));
+      const avgPurity    = totalStatWeight > 0 ? clampQ(Math.round(totalStatPurity    / totalStatWeight)) : clampQ(0);
+      const avgStability = totalStatWeight > 0 ? clampQ(Math.round(totalStatStability / totalStatWeight)) : clampQ(0);
+      const avgPotency   = totalStatWeight > 0 ? clampQ(Math.round(totalStatPotency   / totalStatWeight)) : clampQ(0);
+      const avgDensity   = totalStatWeight > 0 ? clampQ(Math.round(totalStatDensity   / totalStatWeight)) : clampQ(0);
       
       // Build item_data with quality-modified stats
       const baseData = recipe.item_data_defaults || {};
@@ -2487,17 +2494,43 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         );
       }
 
-      // 7. Add to player inventory using THIS asteroid's quality stats.
-      // The unique constraint on (user_id, resource_type_id, stat_*)
-      // means q47 iron and q63 iron land in separate stacks -- the
-      // inventory UI's quality-tier rendering kicks in automatically.
-      // Volume math (GREATEST(stat_density, 1)/100) still works because
-      // every asteroid post-migration-046 has non-zero stat_density.
-      const astQ = {
+      // 7. Add to player inventory using THIS asteroid's quality stats
+      // SHAPED by the firing laser's quality. Phase 5: a great laser
+      // pulls the extracted stack toward q100; a poor laser drags it
+      // down. q50 laser (or no quality data) = exact asteroid stats.
+      //
+      // Formula per stat:
+      //   laserBoost = (avgLaserQ - 50) / 100  in [-0.5, +0.5]
+      //   boost > 0: output = astStat + (100 - astStat) * boost   (pulls toward 100)
+      //   boost < 0: output = astStat * (1 + boost * 2)           (pulls toward 0)
+      // Example: q60 asteroid + q100 laser -> q80 output.
+      //          q60 asteroid + q25 laser  -> q30 output.
+      //
+      // The stack-find / insert that follows uses the SHAPED values,
+      // so high-q lasers create higher-tier inventory stacks even from
+      // mid-tier rocks. The unique constraint on (user, resource_type,
+      // stat_*) still keeps them in separate stacks from baseline.
+      const astStats = {
         purity:    ast.rows[0].stat_purity,
         stability: ast.rows[0].stat_stability,
         potency:   ast.rows[0].stat_potency,
         density:   ast.rows[0].stat_density,
+      };
+      const shapeByLaser = (astStat) => {
+        const laserQ = slot.quality;
+        if (!laserQ) return astStat;
+        const avgLaser = (laserQ.purity + laserQ.stability + laserQ.potency + laserQ.density) / 4;
+        const boost = (avgLaser - 50) / 100;
+        const shaped = boost >= 0
+          ? astStat + (100 - astStat) * boost
+          : astStat * (1 + boost * 2);
+        return Math.min(100, Math.max(0, Math.round(shaped)));
+      };
+      const astQ = {
+        purity:    shapeByLaser(astStats.purity),
+        stability: shapeByLaser(astStats.stability),
+        potency:   shapeByLaser(astStats.potency),
+        density:   shapeByLaser(astStats.density),
       };
       const existing = await client.query(
         `SELECT id, quantity FROM player_resource_inventory
