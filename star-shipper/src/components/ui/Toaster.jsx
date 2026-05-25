@@ -50,6 +50,11 @@ const KIND_STYLES = {
 const ToastCard = ({ toast, onDismiss }) => {
   const [visible, setVisible] = useState(false);
   const mountedRef = useRef(false);
+  // Settings -> Interface -> UI font scale. Toast text was a hard 13px
+  // inline so the root font-size hook didn't catch it; multiplying
+  // here keeps the accessibility setting effective for the surface
+  // the user explicitly called out.
+  const uiScale = useGameStore(state => state.uiScale ?? 1.0);
 
   // Fade in on first mount.
   useEffect(() => {
@@ -111,7 +116,7 @@ const ToastCard = ({ toast, onDismiss }) => {
       <div
         style={{
           color: '#e2e8f0',
-          fontSize: 13,
+          fontSize: 13 * uiScale,
           lineHeight: 1.35,
           fontFamily: "'Rajdhani', sans-serif",
           fontWeight: 500,

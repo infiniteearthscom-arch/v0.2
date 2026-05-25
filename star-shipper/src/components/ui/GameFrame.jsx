@@ -53,10 +53,12 @@ const TopBar = () => {
   const enemyCount = useGameStore(state => state.enemyCount);
   const autopilotTarget = useGameStore(state => state.autopilotTarget);
 
-  // Audio mute toggle (volume sliders deferred to a settings UI later;
-  // mute alone covers the "I'm in a quiet room" case).
-  const audioMuted = useGameStore(state => state.audio?.muted ?? false);
-  const toggleAudioMuted = useGameStore(state => state.toggleAudioMuted);
+  // Settings window opens from the gear button in the top bar. The
+  // legacy 🔊/🔇 mute button moved into the settings panel itself so
+  // the top bar stays uncluttered and volume sliders + UI scale live
+  // alongside the mute toggle.
+  const settingsOpen = useGameStore(state => state.windows.settings?.open);
+  const toggleWindow = useGameStore(state => state.toggleWindow);
 
   // Matches MAX_FLEET_SIZE in shipRenderer.js (the in-system formation
   // cap). Was stuck at 3 here while SystemView already rendered 5 -- so
@@ -226,17 +228,17 @@ const TopBar = () => {
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
-        {/* Audio mute toggle */}
+        {/* Settings */}
         <button
-          onClick={() => { playSound('button_click'); toggleAudioMuted(); }}
+          onClick={() => { playSound('button_click'); toggleWindow('settings'); }}
           className="text-[10px] px-1.5 py-0.5 rounded transition-colors ml-1"
           style={{
-            color: audioMuted ? '#3a4a5a' : BLUE.light,
-            border: `1px solid ${audioMuted ? EDGE : `${BLUE.pri}55`}`,
-            background: audioMuted ? 'transparent' : `${BLUE.pri}10`,
+            color: settingsOpen ? BLUE.light : '#7a8a9a',
+            border: `1px solid ${settingsOpen ? `${BLUE.pri}55` : EDGE}`,
+            background: settingsOpen ? `${BLUE.pri}10` : 'transparent',
           }}
-          title={audioMuted ? 'Unmute' : 'Mute'}
-        >{audioMuted ? '🔇' : '🔊'}</button>
+          title="Settings (audio, interface, ...)"
+        >⚙️</button>
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
@@ -262,13 +264,21 @@ const TopBar = () => {
 const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
 const MODALS = ['shipBuilder', 'galaxyMap'];
 
+// Width of the toolbar in each state. Kept in sync with the ContextPanel
+// left-anchor math (see ContextPanel.jsx -- imports nothing, just reads
+// `toolbarExpanded` from the store and applies the same numbers).
+const TOOLBAR_ICON_SIZE = 38;
+const TOOLBAR_WIDTH_COLLAPSED = TOOLBAR_ICON_SIZE;       // icon-only
+const TOOLBAR_WIDTH_EXPANDED  = 160;                     // icon + label
+
 const LeftToolbar = () => {
   const windows = useGameStore(state => state.windows);
-  const toggleWindow = useGameStore(state => state.toggleWindow);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
   const openContextPanel = useGameStore(state => state.openContextPanel);
   const dockedBody = useGameStore(state => state.dockedBody);
+  const expanded = useGameStore(state => state.toolbarExpanded ?? true);
+  const toggleToolbar = useGameStore(state => state.toggleToolbar);
 
   const handleClick = (id) => {
     playSound('button_click');
@@ -288,34 +298,92 @@ const LeftToolbar = () => {
 
   // Build the button list — append the Planet button only while docked
   const buttons = dockedBody ? [...TOOLBAR_BUTTONS, PLANET_BUTTON] : TOOLBAR_BUTTONS;
+  const width = expanded ? TOOLBAR_WIDTH_EXPANDED : TOOLBAR_WIDTH_COLLAPSED;
 
   return (
-    <div className="fixed left-1.5 z-40 flex flex-col gap-0.5" style={{ top: 46 }}>
-      {buttons.map(btn => {
-        const isOpen = windows[btn.id]?.open && !windows[btn.id]?.minimized;
-        return (
-          <button
-            key={btn.id}
-            onClick={() => handleClick(btn.id)}
-            title={btn.label}
-            className="flex items-center justify-center transition-all"
-            style={{
-              width: 38,
-              height: 38,
-              background: isOpen
-                ? `linear-gradient(135deg, ${btn.color}25, ${btn.color}0a)`
-                : 'rgba(8,14,28,0.9)',
-              border: `1px solid ${isOpen ? btn.color + '55' : EDGE}`,
-              clipPath: 'polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px)',
-              cursor: 'pointer',
-              fontSize: 16,
-              filter: isOpen ? `drop-shadow(0 0 6px ${btn.color}44)` : 'none',
-            }}
-          >
-            {btn.icon}
-          </button>
-        );
-      })}
+    // Outer wrapper holds the button stack + the floating chevron so
+    // the chevron can be vertically centered against the button column
+    // without measuring its height.
+    <div
+      className="fixed left-1.5 z-40"
+      style={{ top: 46, width, transition: 'width 0.18s ease' }}
+    >
+      <div className="flex flex-col gap-0.5">
+        {buttons.map(btn => {
+          const isOpen = windows[btn.id]?.open && !windows[btn.id]?.minimized;
+          return (
+            <button
+              key={btn.id}
+              onClick={() => handleClick(btn.id)}
+              title={btn.label}
+              className="transition-all"
+              style={{
+                width: '100%',
+                height: TOOLBAR_ICON_SIZE,
+                display: 'flex',
+                alignItems: 'center',
+                // Label-left / icon-right when expanded; just icon centered when collapsed.
+                justifyContent: expanded ? 'space-between' : 'center',
+                paddingLeft: expanded ? 10 : 0,
+                paddingRight: expanded ? 8 : 0,
+                background: isOpen
+                  ? `linear-gradient(135deg, ${btn.color}25, ${btn.color}0a)`
+                  : 'rgba(8,14,28,0.9)',
+                border: `1px solid ${isOpen ? btn.color + '55' : EDGE}`,
+                clipPath: 'polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px)',
+                cursor: 'pointer',
+                filter: isOpen ? `drop-shadow(0 0 6px ${btn.color}44)` : 'none',
+              }}
+            >
+              {expanded && (
+                <span style={{
+                  fontSize: 11,
+                  fontFamily: "'Rajdhani', sans-serif",
+                  fontWeight: 700,
+                  color: isOpen ? btn.color : '#a0b0c0',
+                  letterSpacing: 1,
+                  textTransform: 'uppercase',
+                  // ellipsis if a future button label ever overflows
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  marginRight: 8,
+                }}>{btn.label}</span>
+              )}
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{btn.icon}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Right-edge chevron -- vertically centered against the button
+          column. Half-overlaps the toolbar so it reads as "the side
+          handle." Clicking flips toolbarExpanded; the toolbar width
+          animates and ContextPanel shifts to clear the new chrome. */}
+      <button
+        onClick={() => { playSound('button_click'); toggleToolbar(); }}
+        title={expanded ? 'Collapse menu to icons' : 'Show menu labels'}
+        style={{
+          position: 'absolute',
+          top: '50%',
+          right: -10,
+          transform: 'translateY(-50%)',
+          width: 18,
+          height: 36,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(8,14,28,0.95)',
+          border: `1px solid ${EDGE}`,
+          borderRadius: 3,
+          color: BLUE.light,
+          fontSize: 10,
+          fontFamily: "'Share Tech Mono', monospace",
+          cursor: 'pointer',
+          padding: 0,
+          lineHeight: 1,
+        }}
+      >{expanded ? '◀' : '▶'}</button>
     </div>
   );
 };

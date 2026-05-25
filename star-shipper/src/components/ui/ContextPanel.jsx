@@ -11,6 +11,12 @@ const diagMix = (c = 8) => `polygon(${c}px 0, 100% 0, 100% calc(100% - ${c}px), 
 export const ContextPanel = ({ windowId, title, icon, accent = '#60a5fa', width = 400, children }) => {
   const isOpen = useGameStore(state => state.windows[windowId]?.open && !state.windows[windowId]?.minimized);
   const closeWindow = useGameStore(state => state.closeWindow);
+  // Shift the panel right when the left toolbar shows labels. Numbers
+  // mirror TOOLBAR_WIDTH_{COLLAPSED,EXPANDED} in GameFrame.jsx -- 56 =
+  // toolbar (38) + left gutter (6) + small gap (12); 178 = expanded
+  // toolbar (160) + same gutters.
+  const toolbarExpanded = useGameStore(state => state.toolbarExpanded ?? true);
+  const leftAnchor = toolbarExpanded ? 178 : 56;
 
   if (!isOpen) return null;
 
@@ -19,9 +25,10 @@ export const ContextPanel = ({ windowId, title, icon, accent = '#60a5fa', width 
       className="fixed z-30"
       style={{
         top: 46,
-        left: 56,
+        left: leftAnchor,
         bottom: 44,
         width,
+        transition: 'left 0.18s ease',
       }}
     >
       {/* Border layer */}

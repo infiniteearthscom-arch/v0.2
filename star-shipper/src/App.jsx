@@ -15,6 +15,7 @@ import { QuestLogWindow } from '@/components/ui/QuestLogWindow';
 import { SkillsResearchWindow } from '@/components/research/SkillsResearchWindow';
 import { PinnedQuestsOverlay } from '@/components/ui/PinnedQuestsOverlay';
 import { CharacterPanel } from '@/components/ui/CharacterPanel';
+import { SettingsWindow } from '@/components/ui/SettingsWindow';
 import { TooltipProvider } from '@/components/ui/TooltipProvider';
 import { Toaster } from '@/components/ui/Toaster';
 
@@ -101,9 +102,19 @@ function App() {
   const setResources = useGameStore(state => state.setResources);
   const viewMode = useGameStore(state => state.viewMode);
 
+  const uiScale = useGameStore(state => state.uiScale ?? 1.0);
+
   const { isLoggedIn, isLoading, user, resources, checkSession, logout } = useAuthStore();
 
   useEffect(() => { checkSession(); }, [checkSession]);
+
+  // Apply UI scale to the document root. Tailwind text utilities + any
+  // CSS `rem` units in the codebase scale with this. Inline pixel font
+  // sizes do NOT (the Toaster opts in explicitly by multiplying its
+  // own fontSize by uiScale -- see Toaster.jsx).
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${16 * uiScale}px`;
+  }, [uiScale]);
 
   useEffect(() => {
     if (isLoggedIn && resources) {
@@ -193,6 +204,7 @@ function App() {
         {windows.galaxyMap?.open && <GalaxyMapWindow />}
         {windows.questLog?.open && <QuestLogWindow />}
         {windows.research?.open && <SkillsResearchWindow />}
+        {windows.settings?.open && <SettingsWindow />}
 
         {/* Pinned quests -- persistent top overlay, replaces the old
             "Current Quest" Outliner section. */}

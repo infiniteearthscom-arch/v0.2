@@ -745,7 +745,6 @@ export const useGameStore = create(
         gameStarted: state.gameStarted,
         audio: state.audio,
         uiScale: state.uiScale,
-        toolbarExpanded: state.toolbarExpanded,
       }),
       // Merge persisted state with initial state. Window open/minimized
       // state is NOT persisted — we always start with all panels closed
