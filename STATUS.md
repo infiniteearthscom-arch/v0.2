@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-25 (Scanner depth phases 1+2 + mid-tier area-scan backlog note)
+**Last updated:** 2026-05-25 (Scanner depth Tier B: area / bulk-belt / system sweep)
 
 ---
 
@@ -154,11 +154,21 @@ Implementation: migration 049 adds `computed_scan_time` to ships; recalcShipStat
 - **Ground**: stat range variance (was hardcoded ±10) shrinks to `±10*(1-precision)`. Quantity range (±10%) shrinks to `±10%*(1-precision)`. At Q100 both are exact (`min === max`, rendered as a single value instead of a range).
 - Scan response carries `probe_quality` (0-100 avg). The ProbeQualityFooter component shows it under each result panel with a tier color + a hint nudging the player to craft a better probe when q50 was used.
 
-**Backlog (Tier B+) -- previously listed:**
-- **Mid-tier "scan all in range" scanner** (user-requested 2026-05-25) -- A middle ground between single-asteroid scan (T1/T2 today) and full-belt scan (T3 elite, below). New `utility_scanner_mk2` or `utility_scanner_pro` tier sits between T2 and T3: one click scans every asteroid currently inside the fleet's scan range (NOT the whole belt — only what's already in range of the player's position). Pairs with a matching new skill (e.g. `ast_area_scanning`) that extends the area-scan radius or shortens its cooldown. Server endpoint variant: `POST /asteroids/scan_area` takes the player position + sensor radius, returns scans for every unscanned asteroid in that radius in a single transaction. UI: one button in the asteroid HUD that lights up when the mid-tier module is fitted. Critically this is the tier that makes belts feel "explored" without being trivially one-click consumed -- the player still has to fly TO the belt edges to widen what gets revealed.
-- **Scanner tier upgrades** -- `utility_scanner_elite` (T3) with `bulk_scan: true` flag.
-- **Bulk-scan-belt action** -- when elite scanner is fitted, one click scans every asteroid in the current belt.
-- **System-wide sensor sweep** -- late-game module (`utility_systemscan` or similar) with a cooldown that reveals every enemy in the system regardless of proximity.
+**Scanner Depth Tier B (SHIPPED 2026-05-25)**
+
+Three new modules + research nodes + activation UI. All three buttons live in a bottom-right "scan abilities" tray that only appears when at least one of the matching modules is fitted (no clutter for a starter fleet).
+
+- **Wide-Field Sensor Array (T2.5)** -- `utility_scanner_area`, stats `{sensor_range:700, scan_range:200, scan_time:5, area_scan:true}`. Gated by new `tech_sensor_array` research (250 RP, prereq Sensor Refinement). One click → `POST /asteroids/scan_area` scans every unscanned asteroid in the fleet's sensor range. Player still has to fly to widen what gets revealed.
+- **Elite Survey Grid (T3)** -- `utility_scanner_elite`, stats `{sensor_range:1400, scan_range:320, scan_time:2.5, area_scan:true, bulk_scan:true}`. Gated by `tech_sensor_grid` (400 RP, prereq Sensor Array Networking). One click → `POST /asteroids/scan_belt` scans every asteroid in the nearest belt.
+- **System Telemetry Array (utility, active ability)** -- `utility_systemscan`, stats `{system_sweep:true, sweep_duration:30, sweep_cooldown:120}`. Gated by `tech_system_telemetry` (350 RP, prereq Sensor Array Networking -- branches alongside Sensor Grid Mastery for spec choice). Click → 30s window where `fleetSensorRange()` returns `Number.MAX_SAFE_INTEGER` (all enemies revealed regardless of proximity). 120s cooldown. State resets on system change.
+
+Server endpoints validate the fleet has the right module fitted (`area_scan` / `bulk_scan` stat flag in `module_types.stats`); both endpoints bulk-insert scan rows + return enriched asteroid records so the client mutates `asteroidsRef` in place without re-listing.
+
+**Tier C+ (not yet specced)**
+
+- New skills paired with the area/bulk modules (e.g. `ast_area_scanning` to widen area-scan radius, `ast_bulk_scanning` to shorten cooldown). Today the modules use static stats from migration 050.
+- Stationary scanner emplacements / drone-based exploration probes.
+- Galaxy-map fog of war (system contents hidden until first warp-in).
 
 ### Combat + death loop
 

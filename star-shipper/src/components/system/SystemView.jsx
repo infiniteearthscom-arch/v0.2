@@ -1154,6 +1154,19 @@ export const SystemView = () => {
   const cargoFullRef = useRef(false);             // pause mining when full; reset on system change
   const miningLoopActiveRef = useRef(false);      // tracks audio-loop on/off so transitions stay idempotent
 
+  // Tier B System Telemetry Array (utility_systemscan): active ability
+  // that reveals every enemy in the system for N seconds regardless of
+  // sensor range. Pure client-side render override -- enemy AI already
+  // runs on out-of-range targets, this just lifts the visibility gate.
+  //   sweepActiveUntilMs > now  -> sensor range is treated as Infinity
+  //   sweepCooldownUntilMs > now -> button disabled
+  // [tick, setTick] forces 1Hz re-render so the HUD button can show its
+  // countdown text; useEffect below keeps it spinning while either timer
+  // is live, then stops to avoid background work.
+  const sweepActiveUntilRef = useRef(0);
+  const sweepCooldownUntilRef = useRef(0);
+  const [sweepTick, setSweepTick] = useState(0);
+
   // ============================================
   // MISSILE STATE
   // ============================================
@@ -1402,6 +1415,10 @@ export const SystemView = () => {
     activeScanRef.current = null; // cancel any pending scan on system change
     miningAssignmentsRef.current.clear(); // drop all per-laser targets on system change
     cargoFullRef.current = false; // re-check capacity in new system
+    // Tier B sweep state resets on system change. Cooldown doesn't
+    // carry across systems and an active sweep ends with warp-out.
+    sweepActiveUntilRef.current = 0;
+    sweepCooldownUntilRef.current = 0;
     // Scanner ghosts are per-system. Clearing here keeps the System
     // Map clean of "last seen 2 systems ago" markers.
     enemyGhostsRef.current.clear();
@@ -1461,6 +1478,12 @@ export const SystemView = () => {
     return false;
   };
   const fleetSensorRange = () => {
+    // Tier B sensor sweep: while the active-ability window is live,
+    // treat sensor range as effectively infinite. Returns Number.MAX_SAFE_INTEGER
+    // so squared-distance checks elsewhere don't overflow into NaN.
+    if (sweepActiveUntilRef.current > Date.now()) {
+      return Number.MAX_SAFE_INTEGER;
+    }
     // 1. Best computed value across the active fleet (Phase 3 path).
     const fleet = fleetShipsRef.current || [];
     let best = 0;
@@ -1479,6 +1502,27 @@ export const SystemView = () => {
     const bonusPct = activeBonusesRef.current?.sensor_range_pct || 0;
     return Math.round(best * (1 + bonusPct / 100));
   };
+
+  // Tier B module detection helpers. Each walks every active fleet
+  // ship's fitted_modules and matches against a server-stamped module
+  // type id. Fleet-wide per CLAUDE.md pitfall #15.
+  const fleetHasModuleId = (predicateId) => {
+    for (const s of (fleetShipsRef.current || [])) {
+      const fitted = s?.fitted_modules || {};
+      for (const slot of Object.values(fitted)) {
+        if (slot?.module_type_id === predicateId) return true;
+      }
+    }
+    return false;
+  };
+  // Area scan: utility_scanner_area OR utility_scanner_elite both
+  // carry `area_scan: true`. Bulk scan: only utility_scanner_elite.
+  // Sweep: only utility_systemscan. Module-type checks are by id
+  // since fitted slots don't carry the type's stats payload.
+  const fleetHasAreaScan = () =>
+    fleetHasModuleId('utility_scanner_area') || fleetHasModuleId('utility_scanner_elite');
+  const fleetHasBulkScan = () => fleetHasModuleId('utility_scanner_elite');
+  const fleetHasSystemSweep = () => fleetHasModuleId('utility_systemscan');
 
   // Enumerate every fitted mining laser across the active fleet, with
   // a stable laserKey for the multi-target assignment map. Excludes
@@ -1627,6 +1671,138 @@ export const SystemView = () => {
     activeScanRef.current = { asteroidId: asteroid.id, startMs: Date.now(), durationMs };
     if (pushToast) pushToast({ kind: 'info', text: 'Scanning asteroid...', duration: 2000 });
   };
+
+  // ============================================
+  // TIER B SCAN ABILITIES -- area / belt / sweep handlers
+  // ============================================
+  // All three are one-shot triggers (no per-frame state to maintain),
+  // so they live as plain async handlers wired to the ScanAbilityTray
+  // buttons rendered in the HUD overlay. Each enforces its own module
+  // gate client-side; the server re-validates as a backstop.
+
+  const applyScanResultsToLocal = (asteroids) => {
+    // Server returns the freshly-scanned asteroids with contents + stats.
+    // Mutate asteroidsRef in place so the render picks up the new
+    // `scanned` flag without a re-list round trip.
+    if (!asteroids?.length) return;
+    const byId = new Map(asteroids.map(a => [a.id, a]));
+    for (const a of asteroidsRef.current) {
+      const fresh = byId.get(a.id);
+      if (fresh) {
+        a.scanned = true;
+        a.contents = fresh.contents;
+        a.stat_purity = fresh.stat_purity;
+        a.stat_stability = fresh.stat_stability;
+        a.stat_potency = fresh.stat_potency;
+        a.stat_density = fresh.stat_density;
+      }
+    }
+  };
+
+  const handleAreaScan = async () => {
+    if (!fleetHasAreaScan()) {
+      if (pushToast) pushToast({ kind: 'error', text: 'No Wide-Field Sensor Array (or higher) fitted', duration: 3000 });
+      return;
+    }
+    playSound('button_click');
+    const radius = fleetSensorRange();
+    try {
+      const { scanned_count, asteroids } = await asteroidsAPI.scanArea(
+        currentSystemId,
+        shipPosRef.current.x, shipPosRef.current.y,
+        radius
+      );
+      applyScanResultsToLocal(asteroids);
+      if (pushToast) pushToast({
+        kind: scanned_count > 0 ? 'success' : 'info',
+        text: scanned_count > 0
+          ? `Area scan complete -- ${scanned_count} asteroid${scanned_count === 1 ? '' : 's'} surveyed`
+          : 'Area scan -- no unscanned asteroids in range',
+        duration: 3500,
+      });
+    } catch (err) {
+      if (pushToast) pushToast({ kind: 'error', text: `Area scan failed: ${err.message}`, duration: 4000 });
+    }
+  };
+
+  const handleBeltScan = async () => {
+    if (!fleetHasBulkScan()) {
+      if (pushToast) pushToast({ kind: 'error', text: 'No Elite Survey Grid fitted', duration: 3000 });
+      return;
+    }
+    // Find the closest belt to the player. Belts are celestial bodies
+    // in systemBodies with body_type === 'asteroid_belt'.
+    const bodies = useGameStore.getState().systemBodies || [];
+    const belts = bodies.filter(b => b.body_type === 'asteroid_belt');
+    if (belts.length === 0) {
+      if (pushToast) pushToast({ kind: 'error', text: 'No asteroid belt in this system', duration: 3000 });
+      return;
+    }
+    const px = shipPosRef.current.x, py = shipPosRef.current.y;
+    let closest = null, closestD2 = Infinity;
+    for (const b of belts) {
+      const dx = (b.x ?? 0) - px, dy = (b.y ?? 0) - py;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < closestD2) { closest = b; closestD2 = d2; }
+    }
+    if (!closest?.id) {
+      if (pushToast) pushToast({ kind: 'error', text: 'No belt found to scan', duration: 3000 });
+      return;
+    }
+    playSound('button_click');
+    try {
+      const { scanned_count, asteroids } = await asteroidsAPI.scanBelt(closest.id);
+      applyScanResultsToLocal(asteroids);
+      if (pushToast) pushToast({
+        kind: scanned_count > 0 ? 'success' : 'info',
+        text: scanned_count > 0
+          ? `Belt scan complete -- ${scanned_count} asteroid${scanned_count === 1 ? '' : 's'} surveyed`
+          : 'Belt scan -- nothing new to scan',
+        duration: 3500,
+      });
+    } catch (err) {
+      if (pushToast) pushToast({ kind: 'error', text: `Belt scan failed: ${err.message}`, duration: 4000 });
+    }
+  };
+
+  const handleSystemSweep = () => {
+    if (!fleetHasSystemSweep()) {
+      if (pushToast) pushToast({ kind: 'error', text: 'No System Telemetry Array fitted', duration: 3000 });
+      return;
+    }
+    const now = Date.now();
+    if (sweepCooldownUntilRef.current > now) {
+      const remain = Math.ceil((sweepCooldownUntilRef.current - now) / 1000);
+      if (pushToast) pushToast({ kind: 'error', text: `System sweep on cooldown (${remain}s)`, duration: 2500 });
+      return;
+    }
+    playSound('button_click');
+    // Hardcoded to the migration-050 baseline stats. Could pull from
+    // module_types.stats via a server payload extension; not worth the
+    // wire today since the module is one-of-a-kind.
+    const durationMs = 30 * 1000;
+    const cooldownMs = 120 * 1000;
+    sweepActiveUntilRef.current = now + durationMs;
+    sweepCooldownUntilRef.current = now + cooldownMs;
+    setSweepTick(t => t + 1); // force immediate render
+    if (pushToast) pushToast({
+      kind: 'success',
+      text: 'System sweep active -- all enemies visible for 30s',
+      duration: 4000,
+    });
+  };
+
+  // Tick HUD once a second while sweep is active OR cooling down so the
+  // countdown text repaints. Stops automatically when both timers expire.
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const now = Date.now();
+      if (sweepActiveUntilRef.current > now || sweepCooldownUntilRef.current > now) {
+        setSweepTick(t => t + 1);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   // Wreck polling DISABLED while wrecks table issue is unresolved.
   // Re-enable by restoring the useEffect body once /wrecks/list stops
@@ -4044,11 +4220,83 @@ export const SystemView = () => {
 
           {/* Controls hint */}
           <div className="absolute bottom-3 left-3 text-xs text-cyan-400/50 bg-slate-900/70 px-2 py-1 rounded">
-            {autopilotTarget 
+            {autopilotTarget
               ? 'WASD/Esc: Cancel Autopilot | Click: New Destination'
               : 'W: Thrust | A/D: Turn | S: Brake | Click: Autopilot'
             }
           </div>
+
+          {/* Tier B scan-ability tray. Each button only renders when
+              the matching module is fitted. Empty fleet -> nothing
+              shows -- no clutter for a Starter Scout. */}
+          {(fleetHasAreaScan() || fleetHasBulkScan() || fleetHasSystemSweep()) && (() => {
+            const now = Date.now();
+            const sweepActive = sweepActiveUntilRef.current > now;
+            const sweepCooldownRemain = Math.max(0, Math.ceil((sweepCooldownUntilRef.current - now) / 1000));
+            return (
+              <div className="absolute bottom-3 right-3 flex gap-2" style={{ zIndex: 20 }}>
+                {fleetHasAreaScan() && (
+                  <button
+                    onClick={handleAreaScan}
+                    title="Scan every unscanned asteroid currently in your fleet sensor range"
+                    style={{
+                      padding: '6px 12px',
+                      background: 'linear-gradient(180deg, #22d3ee22, #22d3ee08)',
+                      border: '1px solid #22d3ee55',
+                      color: '#22d3ee',
+                      fontSize: 10, fontWeight: 800, letterSpacing: 1,
+                      textTransform: 'uppercase', cursor: 'pointer',
+                      borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
+                    }}
+                  >📡 Area Scan</button>
+                )}
+                {fleetHasBulkScan() && (
+                  <button
+                    onClick={handleBeltScan}
+                    title="Scan every asteroid in the nearest belt"
+                    style={{
+                      padding: '6px 12px',
+                      background: 'linear-gradient(180deg, #a855f722, #a855f708)',
+                      border: '1px solid #a855f755',
+                      color: '#c084fc',
+                      fontSize: 10, fontWeight: 800, letterSpacing: 1,
+                      textTransform: 'uppercase', cursor: 'pointer',
+                      borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
+                    }}
+                  >📡 Bulk Belt</button>
+                )}
+                {fleetHasSystemSweep() && (
+                  <button
+                    onClick={handleSystemSweep}
+                    disabled={sweepCooldownRemain > 0 && !sweepActive}
+                    title={sweepActive
+                      ? `System sweep active -- all enemies visible (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`
+                      : sweepCooldownRemain > 0
+                        ? `System sweep cooling down (${sweepCooldownRemain}s)`
+                        : 'Reveal every enemy in the system for 30s (120s cooldown)'}
+                    style={{
+                      padding: '6px 12px',
+                      background: sweepActive
+                        ? 'linear-gradient(180deg, #f59e0b44, #f59e0b14)'
+                        : (sweepCooldownRemain > 0
+                          ? 'rgba(30,41,59,0.5)'
+                          : 'linear-gradient(180deg, #f59e0b22, #f59e0b08)'),
+                      border: `1px solid ${sweepActive ? '#fbbf24' : (sweepCooldownRemain > 0 ? '#1e293b' : '#f59e0b55')}`,
+                      color: sweepActive ? '#fde68a' : (sweepCooldownRemain > 0 ? '#475569' : '#f59e0b'),
+                      fontSize: 10, fontWeight: 800, letterSpacing: 1,
+                      textTransform: 'uppercase',
+                      cursor: sweepCooldownRemain > 0 && !sweepActive ? 'not-allowed' : 'pointer',
+                      borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
+                    }}
+                  >
+                    🛰️ Sweep
+                    {sweepActive && ` (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`}
+                    {!sweepActive && sweepCooldownRemain > 0 && ` ${sweepCooldownRemain}s`}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
       </div>
     </div>
     <PlanetInteractionWindow body={dockedBody} />

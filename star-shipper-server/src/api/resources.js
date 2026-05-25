@@ -2419,6 +2419,182 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================
+// AREA SCAN (Tier B) -- scan every unscanned asteroid currently inside
+// the player's position + radius. Requires a fitted scanner module with
+// `area_scan: true` (utility_scanner_area or utility_scanner_elite).
+// Client passes its position + the fleet sensor radius; server picks
+// every non-depleted asteroid in that radius and records one scan per
+// rock in a single transaction. Trusts client position the same way
+// the single-asteroid scan trusts client distance.
+// ============================================
+router.post('/asteroids/scan_area', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { system_procedural_id, player_x, player_y, radius } = req.body;
+    if (!system_procedural_id || player_x == null || player_y == null || !radius) {
+      return res.status(400).json({ error: 'system_procedural_id, player_x, player_y, radius required' });
+    }
+
+    const out = await transaction(async (client) => {
+      // Fleet-wide module gate -- mirrors the /asteroids/scan check.
+      const fleetShips = await client.query(
+        `SELECT fitted_modules FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL`,
+        [userId]
+      );
+      let hasAreaScanner = false;
+      outer: for (const ship of fleetShips.rows) {
+        const fitted = ship.fitted_modules || {};
+        for (const slot of Object.values(fitted)) {
+          const id = slot?.module_type_id;
+          if (!id || !id.startsWith('utility_scanner')) continue;
+          const mt = await client.query(`SELECT stats FROM module_types WHERE id = $1`, [id]);
+          if (mt.rows[0]?.stats?.area_scan) { hasAreaScanner = true; break outer; }
+        }
+      }
+      if (!hasAreaScanner) {
+        throw Object.assign(new Error('No Wide-Field Sensor Array (or higher) fitted'), { statusCode: 400 });
+      }
+
+      // Resolve system id (Sol special-case mirrors /asteroids list).
+      let systemId;
+      if (system_procedural_id === 'sol') {
+        systemId = SOL_SYSTEM_ID;
+      } else {
+        const sys = await client.query(`SELECT id FROM star_systems WHERE procedural_id = $1`, [system_procedural_id]);
+        if (!sys.rows[0]) throw Object.assign(new Error('System not found'), { statusCode: 404 });
+        systemId = sys.rows[0].id;
+      }
+
+      // Find every non-depleted asteroid in the system that the player
+      // hasn't scanned yet AND is within radius of the player position.
+      // Distance compared squared to skip the sqrt per row.
+      const r2 = radius * radius;
+      const targets = await client.query(`
+        SELECT a.id, a.x, a.y, a.contents,
+               a.stat_purity, a.stat_stability, a.stat_potency, a.stat_density
+        FROM asteroids a
+        LEFT JOIN player_asteroid_scans s ON s.asteroid_id = a.id AND s.user_id = $2
+        WHERE a.system_id = $1
+          AND a.depleted_at IS NULL
+          AND s.asteroid_id IS NULL
+          AND (a.x - $3) * (a.x - $3) + (a.y - $4) * (a.y - $4) <= $5
+      `, [systemId, userId, player_x, player_y, r2]);
+
+      if (targets.rows.length === 0) {
+        return { scanned_count: 0, asteroids: [] };
+      }
+
+      // Bulk insert scans (ON CONFLICT skips ones somehow already scanned).
+      const ids = targets.rows.map(r => r.id);
+      await client.query(`
+        INSERT INTO player_asteroid_scans (user_id, asteroid_id)
+        SELECT $1, UNNEST($2::UUID[])
+        ON CONFLICT (user_id, asteroid_id) DO NOTHING
+      `, [userId, ids]);
+
+      // Return enriched contents + stats so the client can update
+      // its in-memory asteroid records in one shot, no re-fetch needed.
+      const enriched = [];
+      for (const row of targets.rows) {
+        enriched.push({
+          id: row.id,
+          contents: await enrichContentsWithNames(client, row.contents),
+          stat_purity: row.stat_purity,
+          stat_stability: row.stat_stability,
+          stat_potency: row.stat_potency,
+          stat_density: row.stat_density,
+        });
+      }
+      return { scanned_count: targets.rows.length, asteroids: enriched };
+    });
+
+    res.json({ success: true, ...out });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error in area scan:', error);
+    res.status(500).json({ error: 'Failed to area scan' });
+  }
+});
+
+// ============================================
+// BULK BELT SCAN (Tier B) -- scan every non-depleted asteroid in a
+// specific belt. Requires a fitted scanner module with `bulk_scan: true`
+// (utility_scanner_elite). Body shape mirrors /scan_area: client picks
+// the belt to target (typically the closest one to the player).
+// ============================================
+router.post('/asteroids/scan_belt', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { belt_body_id } = req.body;
+    if (!belt_body_id) {
+      return res.status(400).json({ error: 'belt_body_id required' });
+    }
+
+    const out = await transaction(async (client) => {
+      const fleetShips = await client.query(
+        `SELECT fitted_modules FROM ships
+         WHERE user_id = $1 AND storage_body_id IS NULL`,
+        [userId]
+      );
+      let hasBulkScanner = false;
+      outer: for (const ship of fleetShips.rows) {
+        const fitted = ship.fitted_modules || {};
+        for (const slot of Object.values(fitted)) {
+          const id = slot?.module_type_id;
+          if (!id || !id.startsWith('utility_scanner')) continue;
+          const mt = await client.query(`SELECT stats FROM module_types WHERE id = $1`, [id]);
+          if (mt.rows[0]?.stats?.bulk_scan) { hasBulkScanner = true; break outer; }
+        }
+      }
+      if (!hasBulkScanner) {
+        throw Object.assign(new Error('No Elite Survey Grid fitted'), { statusCode: 400 });
+      }
+
+      const targets = await client.query(`
+        SELECT a.id, a.contents,
+               a.stat_purity, a.stat_stability, a.stat_potency, a.stat_density
+        FROM asteroids a
+        LEFT JOIN player_asteroid_scans s ON s.asteroid_id = a.id AND s.user_id = $2
+        WHERE a.belt_body_id = $1
+          AND a.depleted_at IS NULL
+          AND s.asteroid_id IS NULL
+      `, [belt_body_id, userId]);
+
+      if (targets.rows.length === 0) {
+        return { scanned_count: 0, asteroids: [] };
+      }
+
+      const ids = targets.rows.map(r => r.id);
+      await client.query(`
+        INSERT INTO player_asteroid_scans (user_id, asteroid_id)
+        SELECT $1, UNNEST($2::UUID[])
+        ON CONFLICT (user_id, asteroid_id) DO NOTHING
+      `, [userId, ids]);
+
+      const enriched = [];
+      for (const row of targets.rows) {
+        enriched.push({
+          id: row.id,
+          contents: await enrichContentsWithNames(client, row.contents),
+          stat_purity: row.stat_purity,
+          stat_stability: row.stat_stability,
+          stat_potency: row.stat_potency,
+          stat_density: row.stat_density,
+        });
+      }
+      return { scanned_count: targets.rows.length, asteroids: enriched };
+    });
+
+    res.json({ success: true, ...out });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error in belt scan:', error);
+    res.status(500).json({ error: 'Failed to belt scan' });
+  }
+});
+
 // Mine a single tick from an asteroid. Validates fitted mining laser,
 // non-depleted asteroid, available cargo. Picks the first resource
 // with remaining > 0 (round-robin / player choice deferred to a

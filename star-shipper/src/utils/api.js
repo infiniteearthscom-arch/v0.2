@@ -230,6 +230,24 @@ export const asteroidsAPI = {
     method: 'POST',
     body: JSON.stringify({ asteroid_id: asteroidId, ship_id: shipId, slot_key: slotKey }),
   }),
+  // Tier B area scan: scans every unscanned asteroid in `radius` of the
+  // player's current position. Requires a fitted scanner module with
+  // `area_scan: true` (Wide-Field Sensor Array or Elite Survey Grid).
+  scanArea: (systemProceduralId, playerX, playerY, radius) =>
+    request('/resources/asteroids/scan_area', {
+      method: 'POST',
+      body: JSON.stringify({
+        system_procedural_id: systemProceduralId,
+        player_x: playerX, player_y: playerY, radius,
+      }),
+    }),
+  // Tier B bulk-belt scan: scans every unscanned asteroid in a specific
+  // belt. Requires Elite Survey Grid (`bulk_scan: true`).
+  scanBelt: (beltBodyId) =>
+    request('/resources/asteroids/scan_belt', {
+      method: 'POST',
+      body: JSON.stringify({ belt_body_id: beltBodyId }),
+    }),
 };
 
 // Wrecks — lootable spatial entities. Replaces the old direct-credit
