@@ -32,12 +32,17 @@ const SLOT_COLORS = {
 // ============================================
 // SHIP CARD
 // ============================================
-// Active ships: shown normally, can Set Active / Store (if docked) / Fitting.
+// Active ships: shown normally, can Set Active / Fitting.
 // Stored ships: dimmed, show storage location, can Activate (if docked HERE
 // and fleet has room).
+// Storing ships happens from the station-side Ships sub-tab in
+// PlanetInteractionWindow -- the FleetWindow store button was removed
+// since it depended on dockedBodyDbId which only populated while the
+// planet window was open (broken every time the player opened Fleet
+// after closing the planet panel).
 const ShipCard = ({
-  ship, isActive, fleetPos, isStored, storedHere, canActivateForCap, dockedSomewhere,
-  onSetActive, onOpenFitting, onStore, onActivate,
+  ship, isActive, fleetPos, isStored, storedHere, canActivateForCap,
+  onSetActive, onOpenFitting, onActivate,
   renamingId, renameVal, setRenameVal, startRename, finishRename,
 }) => {
   const fittedMods = ship.fitted_modules || {};
@@ -212,17 +217,6 @@ const ShipCard = ({
                   Set Active
                 </PanelButton>
               )}
-              {!isActive && (
-                <PanelButton
-                  size="sm"
-                  accent={dockedSomewhere ? COLORS.GOLD.light : COLORS.TEXT.muted}
-                  disabled={!dockedSomewhere}
-                  onClick={() => dockedSomewhere && onStore(ship.id)}
-                  title={dockedSomewhere ? 'Store this ship at the current station' : 'Dock at a station to store ships'}
-                >
-                  Store
-                </PanelButton>
-              )}
               <PanelButton size="sm" accent="#ff6622" onClick={onOpenFitting}>
                 Fitting
               </PanelButton>
@@ -248,7 +242,6 @@ export const FleetWindow = () => {
   const [renameVal, setRenameVal] = useState('');
   const openWindow = useGameStore(state => state.openWindow);
   const dockedBody = useGameStore(state => state.dockedBody);
-  const dockedBodyDbId = useGameStore(state => state.dockedBodyDbId);
   const pushToast = useGameStore(state => state.pushToast);
 
   useEffect(() => { loadFleet(); }, []);
@@ -278,20 +271,6 @@ export const FleetWindow = () => {
         flash('success', `${result.ship_name} is now your active ship`);
       }
     } catch (err) { flash('error', err.message || 'Failed to set active ship'); }
-  };
-
-  const handleStore = async (shipId) => {
-    if (!dockedBodyDbId) {
-      flash('error', 'Dock at a station to store ships');
-      return;
-    }
-    try {
-      const result = await fittingAPI.storeShip(shipId, dockedBodyDbId);
-      if (result.success) {
-        flash('success', `${result.ship_name} stored at ${result.storage_body_name}`);
-        await loadFleet();
-      }
-    } catch (err) { flash('error', err.message || 'Failed to store ship'); }
   };
 
   const handleActivate = async (shipId) => {
@@ -385,7 +364,7 @@ export const FleetWindow = () => {
             lineHeight: 1.4,
           }}>
             You have {activeFleetCount} active ships, over the {fleetCap}-ship fleet cap.
-            Dock at a station and Store ships to bring it down.
+            Dock at a station and use the Ships tab there to store ships.
           </div>
         )}
 
@@ -434,9 +413,7 @@ export const FleetWindow = () => {
                     isStored={false}
                     storedHere={false}
                     canActivateForCap={canActivateForCap}
-                    dockedSomewhere={!!dockedBodyDbId}
                     onSetActive={handleSetActive}
-                    onStore={handleStore}
                     onActivate={handleActivate}
                     onOpenFitting={() => openWindow('shipBuilder')}
                     renamingId={renamingId}
@@ -473,9 +450,7 @@ export const FleetWindow = () => {
                   isStored={true}
                   storedHere={isStoredHere(ship)}
                   canActivateForCap={canActivateForCap}
-                  dockedSomewhere={!!dockedBodyDbId}
                   onSetActive={handleSetActive}
-                  onStore={handleStore}
                   onActivate={handleActivate}
                   onOpenFitting={() => openWindow('shipBuilder')}
                   renamingId={renamingId}
