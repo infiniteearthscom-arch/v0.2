@@ -2442,10 +2442,19 @@ const VendorTab = ({ body }) => {
                         alignItems: 'center',
                         gap: 8,
                         opacity: locked ? 0.75 : 1,
+                        // Reserve a fixed row height so 1-line and 2-line
+                        // descriptions land at the same row height -- the
+                        // description block below clamps to 2 lines and
+                        // reserves the same vertical space regardless of
+                        // content length.
+                        minHeight: 52,
                       }}>
                         <div style={{
                           width: 3,
-                          height: 32,
+                          // Match the description's reserved 2-line height
+                          // so the accent bar visually spans the same
+                          // vertical extent as the text it labels.
+                          height: 40,
                           background: color,
                           boxShadow: `0 0 4px ${color}66`,
                           flexShrink: 0,
@@ -2462,9 +2471,19 @@ const VendorTab = ({ body }) => {
                             color: '#4a6580',
                             fontFamily: FM,
                             letterSpacing: 0.3,
-                            whiteSpace: 'nowrap',
+                            lineHeight: 1.35,
+                            // Always reserve 2 lines of height (line-height
+                            // 1.35 * font 9 * 2 ≈ 24px) so a short
+                            // description doesn't shrink the row -- keeps
+                            // all module rows aligned vertically.
+                            height: '2.7em',
+                            // Clamp to 2 lines with ellipsis on overflow.
+                            // -webkit-line-clamp is supported in every
+                            // browser we ship to.
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
-                            textOverflow: 'ellipsis',
                           }}>T{m.tier} • {m.description}</div>
                         </div>
 
