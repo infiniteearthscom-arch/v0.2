@@ -35,6 +35,58 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 - **System map changes** — user flagged the in-system SVG view needs work (specifics TBD).
 - **Grow the research tree as we build systems** — every new gameplay system (colonies, factions, advanced combat, etc.) should land with new tech nodes that gate it. The skill catalog (165 entries) is already broad — research nodes should expand to match. Per pitfall #15, check `skill_definitions.bonus_per_level->>'type'` for existing bonus contracts before inventing new ones.
 
+### Module + resource quality pass
+
+Designed in chat 2026-05-25 with user. Goal: make ingredient quality a real lever -- a q90 rare resource should produce a tangibly better module than the same recipe with q40 commons. Today the math half-exists (crafting averages ingredient stats and stamps `.quality` on the output) but most consumers don't read it.
+
+**Locked design decisions:**
+- **Backfill Sol** with quality variance from day one -- training-wheels q50 deposits hide the core economic mechanic from new players.
+- **Weighted random distribution** -- triangular (avg of 3 uniform rolls), centered at 50, q90+ rolls are rare (~1-2%). Makes high-quality finds a reward, not a flat expectation.
+- **No quality decay** -- modules don't erode in combat. Simpler, less bookkeeping.
+- **`.quality` is the authoritative field on fitted module instances.** Anything reading from `.stats` for instance quality is a bug (that's the base type's defaults).
+
+**Phase 1 (shipping now) -- visible variance + weapons fix:**
+- Migration 046: add `stat_*` columns to `asteroids`, backfill Sol deposits + existing asteroids using triangular distribution.
+- `deposits.js`: switch `generateStat` to the weighted distribution so procedural systems match.
+- Asteroid generation + respawn rolls stats per rock. Asteroid mining uses the asteroid's actual stats (remove `ASTEROID_BASELINE` hardcode).
+- `/asteroids` + `/asteroids/scan` responses surface the per-rock quality so the scanner tooltip can show it.
+- `weapons.js` quality-multiplier bug fix: read `.quality` not `.stats`. Immediately makes high-quality crafted weapons hit harder.
+
+**Phase 2 -- single source of truth for quality math:**
+- New `lib/quality.js` (server) + `utils/quality.js` (client) exporting `qualityMultiplier(fittedValue, { invert?: bool })`. Reads `.quality`, clamped 0.4×-2.5×.
+- Replace the scattered implementations in weapons.js, harvesters.js, recalcShipStats with the shared helper.
+
+**Phase 3 -- every module reads quality:**
+
+| Slot | Stats that scale |
+|---|---|
+| Weapon (laser/kinetic/missile) | damage ×Q, range ×√Q, fire_rate ÷√Q |
+| Mining laser | mining yield per cycle ×Q (in addition to weapon damage) |
+| Scanner | scan_range ×Q, scan_time ÷Q |
+| Engine | top speed ×Q, maneuver ×√Q |
+| Reactor | power output ×Q, recharge ×Q |
+| Shield | max shield HP ×Q, regen ×Q |
+| Cargo | capacity ×Q (already wired) |
+| Harvester | fuel efficiency ×Q (already wired) |
+| Probe (consumable) | uses_remaining ×⌈Q⌉ |
+
+"More-is-better" stats multiply by Q; "less-is-better" (scan_time, lock_time, cycle_time) divide.
+
+**Phase 4 -- UI signaling:**
+- Ship Builder shows "Effective" stats per fitted module (`Damage: 11 (base 6 × Q88 → 1.8×)`), modifier color-coded.
+- Crafting projection: before clicking Craft, show projected output quality + resulting stats so the player decides whether to burn a high-q stack on this craft.
+- Asteroid scanner tooltip shows the rock's quality tier so the player picks which rock to mine.
+
+**Phase 5 (optional follow-up) -- skill hooks:**
+- New skill: **Manufacturing Excellence** (Industry tree) -- +N% to crafted output quality per level.
+- Mining laser quality narrows extracted variance toward the high end of the rock's roll (so a great laser on a great rock = consistently great output).
+
+**Open items for later:**
+- Do we want belt-level bias (outer-system belts roll higher averages)? Adds travel incentive but complicates the spawn math. Defer.
+- Quality cap on procedural rolls (true 0-100 vs hard cap at 95)? Default to 0-100 with the triangular distribution making 95+ self-limiting.
+
+---
+
 ### Player-owned orbital stations
 
 Greenfield system. Designed in chat 2026-05-25 with user.

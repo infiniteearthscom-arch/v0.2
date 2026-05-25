@@ -102,11 +102,16 @@ export const detectWeaponType = (fittedValue) => {
 // Module quality (avg of purity/stability/potency/density, 0-100)
 // becomes a damage multiplier: Q50 = 1.0×, Q100 = 2.0×, Q25 = 0.5×.
 // If no quality data is available, returns 1.0.
+//
+// Reads `.quality` -- the crafted-instance roll that resources.js writes
+// onto fitted modules. (Was reading `.stats` which is the module *type*
+// defaults, so this multiplier was silently always 1.0 regardless of
+// what ingredients you crafted with. Phase 1 quality pass fix.)
 const getQualityMultiplier = (fittedValue) => {
-  const stats = fittedValue?.stats || fittedValue?.item_data?.stats;
-  if (!stats) return 1.0;
-  const avg = ((stats.purity || 0) + (stats.stability || 0) +
-               (stats.potency || 0) + (stats.density || 0)) / 4;
+  const q = fittedValue?.quality || fittedValue?.item_data?.quality;
+  if (!q) return 1.0;
+  const avg = ((q.purity || 0) + (q.stability || 0) +
+               (q.potency || 0) + (q.density || 0)) / 4;
   if (avg <= 0) return 1.0;
   return Math.max(0.4, Math.min(2.5, avg / 50));
 };

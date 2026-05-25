@@ -41,9 +41,13 @@ const randomInt = (min, max) => {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
-// Generate a single stat (0-100) with optional bonus
+// Generate a single stat (0-100) with optional bonus. Uses a triangular
+// distribution (avg of 3 uniform rolls) so the curve centers around 50
+// and rolls of q90+ are rare (~1-2%). High-quality deposits stay a
+// meaningful find instead of a flat expectation. Matches migration 046's
+// backfill math so procedural systems and Sol use the same shape.
 const generateStat = (bonus = 0) => {
-  const base = randomInt(0, 100);
+  const base = Math.round((randomInt(0, 100) + randomInt(0, 100) + randomInt(0, 100)) / 3);
   return Math.min(100, Math.max(0, base + bonus));
 };
 

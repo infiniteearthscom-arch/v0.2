@@ -2044,6 +2044,24 @@ const mathRng = {
   int: (a, b) => Math.floor(a + Math.random() * (b - a + 1)),
 };
 
+// Roll one stat (0-100) using a triangular distribution (avg of 3
+// uniform draws). Centers at 50, makes q90+ rare (~1-2%). Mirrors the
+// curve in deposits.js generateStat + migration 046 backfill so every
+// quality roll in the game uses the same shape.
+function rollQualityStat(rng) {
+  const avg = (rng.int(0, 100) + rng.int(0, 100) + rng.int(0, 100)) / 3;
+  return Math.min(100, Math.max(0, Math.round(avg)));
+}
+
+function rollAsteroidQuality(rng) {
+  return {
+    purity:    rollQualityStat(rng),
+    stability: rollQualityStat(rng),
+    potency:   rollQualityStat(rng),
+    density:   rollQualityStat(rng),
+  };
+}
+
 // Generates the asteroid set for a belt body. Returns rows ready for
 // bulk INSERT. Uses SRng for determinism so re-runs would produce the
 // same field (though in practice we only generate once per belt).
@@ -2066,6 +2084,7 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
     const radius = beltRadius + rng.range(-beltSize * 0.4, beltSize * 0.4);
     const size = rng.int(2, 6);
 
+    const quality = rollAsteroidQuality(rng);
     rows.push({
       system_id: belt.system_id,
       belt_body_id: belt.id,
@@ -2074,6 +2093,10 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
       size,
       rotation: rng.range(0, Math.PI * 2),
       contents: rollAsteroidContents(rng, resByRarity, size),
+      stat_purity:    quality.purity,
+      stat_stability: quality.stability,
+      stat_potency:   quality.potency,
+      stat_density:   quality.density,
     });
   }
   return rows;
@@ -2161,9 +2184,15 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         // Bulk insert. JSONB contents passed as stringified JSON per row.
         for (const r of rows) {
           await client.query(`
-            INSERT INTO asteroids (system_id, belt_body_id, x, y, size, rotation, contents)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-          `, [r.system_id, r.belt_body_id, r.x, r.y, r.size, r.rotation, JSON.stringify(r.contents)]);
+            INSERT INTO asteroids (
+              system_id, belt_body_id, x, y, size, rotation, contents,
+              stat_purity, stat_stability, stat_potency, stat_density
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          `, [
+            r.system_id, r.belt_body_id, r.x, r.y, r.size, r.rotation,
+            JSON.stringify(r.contents),
+            r.stat_purity, r.stat_stability, r.stat_potency, r.stat_density,
+          ]);
         }
       }
 
@@ -2180,11 +2209,21 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         const resByRarity = await loadResByRarity(client);
         for (const a of respawnable.rows) {
           const newContents = rollAsteroidContents(mathRng, resByRarity, a.size);
+          // Fresh asteroid = fresh quality roll. Use mathRng (non-seeded)
+          // so successive respawns at the same coordinates vary.
+          const q = rollAsteroidQuality(mathRng);
           await client.query(`
             UPDATE asteroids
-            SET contents = $1, depleted_at = NULL, respawn_at = NULL, spawned_at = NOW()
+            SET contents = $1,
+                depleted_at = NULL,
+                respawn_at = NULL,
+                spawned_at = NOW(),
+                stat_purity = $3,
+                stat_stability = $4,
+                stat_potency = $5,
+                stat_density = $6
             WHERE id = $2
-          `, [JSON.stringify(newContents), a.id]);
+          `, [JSON.stringify(newContents), a.id, q.purity, q.stability, q.potency, q.density]);
         }
         // Wipe ALL prior scans on respawned asteroids so every player
         // (including this one) has to rescan before mining. New roll =
@@ -2204,9 +2243,16 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
       // information reveal at the data layer so a tampered client can't
       // see contents without a scan.
       const userId = req.user.id;
+      // Quality stats are scan-gated alongside contents -- a player who
+      // hasn't scanned a rock shouldn't see its quality either, otherwise
+      // they could shop for the best-q rock without spending a scan.
       const result = await client.query(`
         SELECT a.id, a.belt_body_id, a.x, a.y, a.size, a.rotation,
                CASE WHEN s.asteroid_id IS NOT NULL THEN a.contents ELSE NULL END AS contents,
+               CASE WHEN s.asteroid_id IS NOT NULL THEN a.stat_purity    ELSE NULL END AS stat_purity,
+               CASE WHEN s.asteroid_id IS NOT NULL THEN a.stat_stability ELSE NULL END AS stat_stability,
+               CASE WHEN s.asteroid_id IS NOT NULL THEN a.stat_potency   ELSE NULL END AS stat_potency,
+               CASE WHEN s.asteroid_id IS NOT NULL THEN a.stat_density   ELSE NULL END AS stat_density,
                (s.asteroid_id IS NOT NULL) AS scanned
         FROM asteroids a
         LEFT JOIN player_asteroid_scans s
@@ -2267,9 +2313,11 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
         throw Object.assign(new Error('Sensor Suite required to scan'), { statusCode: 400 });
       }
 
-      // Verify asteroid exists + is not depleted; fetch contents to return.
+      // Verify asteroid exists + is not depleted; fetch contents +
+      // quality stats so the scan response can show both.
       const ast = await client.query(
-        `SELECT contents FROM asteroids WHERE id = $1 AND depleted_at IS NULL`,
+        `SELECT contents, stat_purity, stat_stability, stat_potency, stat_density
+         FROM asteroids WHERE id = $1 AND depleted_at IS NULL`,
         [asteroid_id]
       );
       if (!ast.rows[0]) {
@@ -2285,7 +2333,13 @@ router.post('/asteroids/scan', authMiddleware, async (req, res) => {
       `, [userId, asteroid_id]);
 
       const enriched = await enrichContentsWithNames(client, ast.rows[0].contents);
-      return { contents: enriched };
+      return {
+        contents: enriched,
+        stat_purity:    ast.rows[0].stat_purity,
+        stat_stability: ast.rows[0].stat_stability,
+        stat_potency:   ast.rows[0].stat_potency,
+        stat_density:   ast.rows[0].stat_density,
+      };
     });
 
     res.json({ success: true, ...out });
@@ -2368,9 +2422,14 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
       const skillMult = 1 + (bonuses.mining_yield_pct || 0) / 100;
       const totalYield = Math.max(1, Math.round(baseYield * qMult * skillMult));
 
-      // 2. Lock + load the asteroid.
+      // 2. Lock + load the asteroid. Includes the asteroid's per-rock
+      // quality stats so the mined stack inherits them (replacing the
+      // old hardcoded q50 baseline -- this is what makes mineral
+      // variance actually visible to the player).
       const ast = await client.query(
-        `SELECT id, contents, system_id FROM asteroids
+        `SELECT id, contents, system_id,
+                stat_purity, stat_stability, stat_potency, stat_density
+         FROM asteroids
          WHERE id = $1 AND depleted_at IS NULL FOR UPDATE`,
         [asteroid_id]
       );
@@ -2433,24 +2492,25 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         );
       }
 
-      // 7. Add to player inventory. Asteroid-mined resources get
-      // baseline 50/50/50/50 stats (the q50 convention used across
-      // modules + planet mining), so they consume cargo on the same
-      // scale as planet-mined stacks -- ~0.5 volume per unit instead
-      // of the 0.01-per-unit "free cargo" bug that came from NULL
-      // stat_density falling through GREATEST(stat_density, 1)/100.
-      // Stack-find query also matches on stats so asteroid mines
-      // don't accidentally merge into a planet-mined stack (which
-      // has its own quality numbers from the deposit).
-      const ASTEROID_BASELINE = { purity: 50, stability: 50, potency: 50, density: 50 };
+      // 7. Add to player inventory using THIS asteroid's quality stats.
+      // The unique constraint on (user_id, resource_type_id, stat_*)
+      // means q47 iron and q63 iron land in separate stacks -- the
+      // inventory UI's quality-tier rendering kicks in automatically.
+      // Volume math (GREATEST(stat_density, 1)/100) still works because
+      // every asteroid post-migration-046 has non-zero stat_density.
+      const astQ = {
+        purity:    ast.rows[0].stat_purity,
+        stability: ast.rows[0].stat_stability,
+        potency:   ast.rows[0].stat_potency,
+        density:   ast.rows[0].stat_density,
+      };
       const existing = await client.query(
         `SELECT id, quantity FROM player_resource_inventory
          WHERE user_id = $1 AND item_type = 'resource' AND resource_type_id = $2
            AND stat_purity = $3 AND stat_stability = $4
            AND stat_potency = $5 AND stat_density = $6
          LIMIT 1`,
-        [userId, resId, ASTEROID_BASELINE.purity, ASTEROID_BASELINE.stability,
-         ASTEROID_BASELINE.potency, ASTEROID_BASELINE.density]
+        [userId, resId, astQ.purity, astQ.stability, astQ.potency, astQ.density]
       );
       if (existing.rows[0]) {
         await client.query(
@@ -2476,8 +2536,7 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
              stat_purity, stat_stability, stat_potency, stat_density)
            VALUES ($1, 'resource', $2, $3, $4, $5, $6, $7, $8)`,
           [userId, resId, minable, nextSlot,
-           ASTEROID_BASELINE.purity, ASTEROID_BASELINE.stability,
-           ASTEROID_BASELINE.potency, ASTEROID_BASELINE.density]
+           astQ.purity, astQ.stability, astQ.potency, astQ.density]
         );
       }
 
