@@ -63,18 +63,23 @@ export const GalaxyMapWindow = () => {
   const galaxy = useMemo(() => getGalaxy(), []);
   const systems = galaxy.systems;
 
-  // Jump connections
+  // Jump connections (Tier C fog of war: only render if at least one
+  // endpoint is discovered, so the player can see "I can jump there
+  // from here" but undiscovered far-side systems stay implicit).
+  const discoveredSet = useMemo(() => new Set(discoveredSystems), [discoveredSystems]);
   const connections = useMemo(() => {
     const conns = [];
     for (const sys of systems) {
       if (!sys.hasJumpGate) continue;
       for (const tid of sys.jumpConnections) {
         const t = galaxy.systemMap[tid];
-        if (t && sys.id < tid) conns.push([sys, t]);
+        if (t && sys.id < tid && (discoveredSet.has(sys.id) || discoveredSet.has(tid))) {
+          conns.push([sys, t]);
+        }
       }
     }
     return conns;
-  }, [systems, galaxy.systemMap]);
+  }, [systems, galaxy.systemMap, discoveredSet]);
 
   // Background stars
   const bgStars = useMemo(() => {
@@ -222,15 +227,21 @@ export const GalaxyMapWindow = () => {
 
             {/* Star systems */}
             {systems.map(sys => {
-              const color = STAR_COLORS[sys.starType] || '#ffdd44';
-              const size = (STAR_SIZES[sys.starType] || 5) * uiScale;
-              const factionColor = FACTION_COLORS[sys.faction] || '#666';
+              const discovered = discoveredSet.has(sys.id);
+              // Tier C fog of war: undiscovered systems render as a
+              // generic small gray dot with no faction halo, no star
+              // glow, no name. Hovering an undiscovered system reveals
+              // "Unknown System" so the player can still target it for
+              // exploration (jump planning still works -- the player
+              // just doesn't know what's there).
+              const color = discovered ? (STAR_COLORS[sys.starType] || '#ffdd44') : '#5a6678';
+              const size = (discovered ? (STAR_SIZES[sys.starType] || 5) : 3) * uiScale;
+              const factionColor = discovered ? (FACTION_COLORS[sys.faction] || '#666') : null;
               const isCurrent = sys.id === currentSystemId;
               const isSelected = selectedSys?.id === sys.id;
               const isHovered = hoveredSystem?.id === sys.id;
               const isTarget = galaxyAutopilotTarget?.id === sys.id;
-              const discovered = discoveredSystems.includes(sys.id);
-              const showLabel = zoom > 0.12 || isCurrent || isSelected || isHovered || isTarget;
+              const showLabel = (discovered && zoom > 0.12) || isCurrent || isSelected || isHovered || isTarget;
 
               return (
                 <g key={sys.id}
@@ -239,9 +250,12 @@ export const GalaxyMapWindow = () => {
                   onMouseLeave={() => setHoveredSystem(null)}
                   style={{ cursor: 'pointer' }}
                 >
-                  {/* Faction halo */}
-                  <circle cx={sys.x} cy={sys.y} r={size * 3}
-                    fill="none" stroke={factionColor} strokeWidth={1 * uiScale} opacity={0.15} />
+                  {/* Faction halo -- only on discovered systems
+                      (fog of war hides faction allegiance). */}
+                  {discovered && factionColor && (
+                    <circle cx={sys.x} cy={sys.y} r={size * 3}
+                      fill="none" stroke={factionColor} strokeWidth={1 * uiScale} opacity={0.15} />
+                  )}
 
                   {/* Current system marker */}
                   {isCurrent && (
@@ -275,15 +289,21 @@ export const GalaxyMapWindow = () => {
                       fill="none" stroke={color} strokeWidth={1 * uiScale} opacity={0.5} />
                   )}
 
-                  {/* Star glow */}
-                  <circle cx={sys.x} cy={sys.y} r={size * 2}
-                    fill={color} opacity={0.15} filter="url(#gm-glow)" />
+                  {/* Star glow -- discovered systems only. Undiscovered
+                      stay as the bare gray dot. */}
+                  {discovered && (
+                    <circle cx={sys.x} cy={sys.y} r={size * 2}
+                      fill={color} opacity={0.15} filter="url(#gm-glow)" />
+                  )}
 
                   {/* Star dot */}
                   <circle cx={sys.x} cy={sys.y} r={size}
                     fill={color} opacity={discovered ? 1 : 0.4} />
 
-                  {/* Label */}
+                  {/* Label -- discovered systems show their real name;
+                      undiscovered show "Unknown" only when hovered /
+                      selected / autopilot-targeted (no static label
+                      noise filling the map). */}
                   {showLabel && (
                     <text x={sys.x} y={sys.y + size + 10 * uiScale}
                       textAnchor="middle"
@@ -291,7 +311,7 @@ export const GalaxyMapWindow = () => {
                       fontSize={9 * uiScale} fontFamily="monospace"
                       opacity={isCurrent || isSelected || isHovered ? 0.9 : 0.5}
                     >
-                      {sys.name}
+                      {discovered ? sys.name : 'Unknown'}
                     </text>
                   )}
 
@@ -351,51 +371,61 @@ export const GalaxyMapWindow = () => {
 
         {/* Info panel */}
         <div className="w-[200px] border-l border-slate-700/50 bg-slate-900/50 p-3 overflow-y-auto flex-shrink-0">
-          {selectedSys ? (
+          {selectedSys ? (() => {
+            const isDiscovered = discoveredSet.has(selectedSys.id);
+            const refPos = viewMode === 'galaxy' ? galaxyShipPosition : (currentSys || { x: 0, y: 0 });
+            const dist = Math.round(Math.sqrt(
+              (selectedSys.x - refPos.x) ** 2 + (selectedSys.y - refPos.y) ** 2
+            ));
+            return (
             <div className="space-y-2">
-              <div className="text-sm font-medium text-cyan-200">{selectedSys.name}</div>
-
-              <div className="space-y-1 text-[10px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Star Type</span>
-                  <span style={{ color: STAR_COLORS[selectedSys.starType] }}>
-                    {selectedSys.starType.replace('_', ' ')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Faction</span>
-                  <span style={{ color: FACTION_COLORS[selectedSys.faction] }}>
-                    {FACTIONS[selectedSys.faction]?.name || selectedSys.faction}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Danger</span>
-                  <span className="text-yellow-400">
-                    {'★'.repeat(selectedSys.dangerLevel)}{'☆'.repeat(5 - selectedSys.dangerLevel)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Jump Gate</span>
-                  <span className={selectedSys.hasJumpGate ? 'text-green-400' : 'text-slate-600'}>
-                    {selectedSys.hasJumpGate ? `Yes (${selectedSys.jumpConnections.length} links)` : 'None'}
-                  </span>
-                </div>
-                {(() => {
-                  const refPos = viewMode === 'galaxy' ? galaxyShipPosition : (currentSys || { x: 0, y: 0 });
-                  const dist = Math.round(Math.sqrt(
-                    (selectedSys.x - refPos.x) ** 2 + (selectedSys.y - refPos.y) ** 2
-                  ));
-                  return (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Distance</span>
-                      <span className="text-slate-300">{dist} ly</span>
-                    </div>
-                  );
-                })()}
+              <div className="text-sm font-medium text-cyan-200">
+                {isDiscovered ? selectedSys.name : 'Unknown System'}
               </div>
 
-              {/* Resource profile */}
-              {selectedSys.resourceProfile && (
+              {!isDiscovered && (
+                <div className="text-[10px] text-slate-500 italic">
+                  Unsurveyed. Warp in to reveal star type, faction, resources, and jump connections.
+                </div>
+              )}
+
+              <div className="space-y-1 text-[10px]">
+                {isDiscovered && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Star Type</span>
+                      <span style={{ color: STAR_COLORS[selectedSys.starType] }}>
+                        {selectedSys.starType.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Faction</span>
+                      <span style={{ color: FACTION_COLORS[selectedSys.faction] }}>
+                        {FACTIONS[selectedSys.faction]?.name || selectedSys.faction}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Danger</span>
+                      <span className="text-yellow-400">
+                        {'★'.repeat(selectedSys.dangerLevel)}{'☆'.repeat(5 - selectedSys.dangerLevel)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Jump Gate</span>
+                      <span className={selectedSys.hasJumpGate ? 'text-green-400' : 'text-slate-600'}>
+                        {selectedSys.hasJumpGate ? `Yes (${selectedSys.jumpConnections.length} links)` : 'None'}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Distance</span>
+                  <span className="text-slate-300">{dist} ly</span>
+                </div>
+              </div>
+
+              {/* Resource profile -- discovered only. */}
+              {isDiscovered && selectedSys.resourceProfile && (
                 <div className="space-y-1 pt-1 border-t border-slate-700/30">
                   <div className="text-[9px] text-slate-600 uppercase tracking-wider">Resources</div>
                   {Object.entries(selectedSys.resourceProfile).map(([key, val]) => (
@@ -410,19 +440,20 @@ export const GalaxyMapWindow = () => {
                 </div>
               )}
 
-              {/* Jump connections */}
-              {selectedSys.hasJumpGate && selectedSys.jumpConnections.length > 0 && (
+              {/* Jump connections -- discovered only. */}
+              {isDiscovered && selectedSys.hasJumpGate && selectedSys.jumpConnections.length > 0 && (
                 <div className="space-y-1 pt-1 border-t border-slate-700/30">
                   <div className="text-[9px] text-slate-600 uppercase tracking-wider">Jump Connections</div>
                   {selectedSys.jumpConnections.map(connId => {
                     const conn = galaxy.systemMap[connId];
                     if (!conn) return null;
+                    const connDiscovered = discoveredSet.has(connId);
                     return (
                       <div key={connId}
                         className="text-[10px] text-slate-400 hover:text-cyan-300 cursor-pointer"
                         onClick={() => setSelectedSystem(conn)}
                       >
-                        → {conn.name}
+                        → {connDiscovered ? conn.name : 'Unknown'}
                       </div>
                     );
                   })}
@@ -463,7 +494,8 @@ export const GalaxyMapWindow = () => {
                 )}
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             <div className="text-center py-8">
               <div className="text-xs text-slate-500 mb-2">Click a system to inspect</div>
               <div className="text-[10px] text-slate-600 space-y-1">

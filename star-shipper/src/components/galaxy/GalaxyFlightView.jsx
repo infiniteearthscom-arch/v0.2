@@ -498,13 +498,17 @@ export const GalaxyFlightView = () => {
             
             {/* Star systems */}
             {systems.map(sys => {
-              const color = STAR_COLORS[sys.starType] || '#ffdd44';
-              const size = (STAR_SIZES[sys.starType] || 5) * uiScale;
-              const factionColor = FACTION_COLORS[sys.faction] || '#666';
               const isTarget = galaxyAutopilotTarget?.id === sys.id;
               const isHovered = hoveredSystem?.id === sys.id;
               const isCurrent = sys.id === currentSystemId;
               const discovered = discoveredSystems.includes(sys.id);
+              // Tier C fog of war: undiscovered systems render as a
+              // small gray dot with no faction halo / star glow / name
+              // until the player warps in. Same treatment as the galaxy
+              // map's overview, kept consistent so the two views agree.
+              const color = discovered ? (STAR_COLORS[sys.starType] || '#ffdd44') : '#5a6678';
+              const size = (discovered ? (STAR_SIZES[sys.starType] || 5) : 3) * uiScale;
+              const factionColor = discovered ? (FACTION_COLORS[sys.faction] || '#666') : null;
               const showLabel = true; // Always show — we're always zoomed in enough
               
               return (
@@ -514,9 +518,11 @@ export const GalaxyFlightView = () => {
                   onMouseLeave={() => setHoveredSystem(null)}
                   style={{ cursor: 'pointer' }}
                 >
-                  {/* Faction halo */}
-                  <circle cx={sys.x} cy={sys.y} r={size * 3}
-                    fill="none" stroke={factionColor} strokeWidth={1.5 * uiScale} opacity={0.2} />
+                  {/* Faction halo -- discovered only. */}
+                  {discovered && factionColor && (
+                    <circle cx={sys.x} cy={sys.y} r={size * 3}
+                      fill="none" stroke={factionColor} strokeWidth={1.5 * uiScale} opacity={0.2} />
+                  )}
                   
                   {/* Current system marker */}
                   {isCurrent && (
@@ -544,28 +550,32 @@ export const GalaxyFlightView = () => {
                       fill="none" stroke={color} strokeWidth={1.5 * uiScale} opacity={0.5} />
                   )}
                   
-                  {/* Star glow */}
-                  <circle cx={sys.x} cy={sys.y} r={size * 2}
-                    fill={color} opacity={0.2} filter="url(#systemGlow)" />
+                  {/* Star glow -- discovered only. */}
+                  {discovered && (
+                    <circle cx={sys.x} cy={sys.y} r={size * 2}
+                      fill={color} opacity={0.2} filter="url(#systemGlow)" />
+                  )}
                   
                   {/* Star dot */}
                   <circle cx={sys.x} cy={sys.y} r={size}
                     fill={color} opacity={discovered ? 1 : 0.4} />
                   
-                  {/* Label */}
-                  {showLabel && (
+                  {/* Label -- discovered shows real name; undiscovered
+                      shows "Unknown" only on hover/target so static
+                      noise doesn't clutter the view. */}
+                  {showLabel && (discovered || isHovered || isTarget) && (
                     <text x={sys.x} y={sys.y + size + 12 * uiScale}
                       textAnchor="middle"
                       fill={isCurrent ? '#44ff88' : isTarget ? '#00ff88' : discovered ? '#aabbcc' : '#556677'}
                       fontSize={14 * uiScale} fontFamily="monospace"
                       opacity={isCurrent || isHovered ? 0.9 : 0.6}
                     >
-                      {sys.name}
+                      {discovered ? sys.name : 'Unknown'}
                     </text>
                   )}
-                  
-                  {/* Danger indicator */}
-                  {showLabel && sys.dangerLevel >= 3 && (
+
+                  {/* Danger indicator -- discovered only (it's intel). */}
+                  {discovered && showLabel && sys.dangerLevel >= 3 && (
                     <text x={sys.x} y={sys.y + size + 24 * uiScale}
                       textAnchor="middle" fill="#ff4444"
                       fontSize={10 * uiScale} fontFamily="monospace"

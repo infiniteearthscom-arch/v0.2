@@ -250,6 +250,17 @@ export const asteroidsAPI = {
     }),
 };
 
+// Galaxy -- player-scoped state about the wider map. Today: visited
+// systems (drives fog of war in GalaxyMapWindow + GalaxyFlightView).
+export const galaxyAPI = {
+  visits: () => request('/galaxy/visits'),
+  recordVisit: (systemProceduralId) =>
+    request('/galaxy/visit', {
+      method: 'POST',
+      body: JSON.stringify({ system_procedural_id: systemProceduralId }),
+    }),
+};
+
 // Wrecks — lootable spatial entities. Replaces the old direct-credit
 // awardLoot flow: enemy kills now spawn a wreck the player flies to.
 export const wrecksAPI = {

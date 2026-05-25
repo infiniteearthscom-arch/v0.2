@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { shipsAPI, questsAPI } from '@/utils/api';
+import { shipsAPI, questsAPI, galaxyAPI } from '@/utils/api';
 
 // ============================================
 // INITIAL STATE
@@ -236,8 +236,29 @@ export const useGameStore = create(
         state.pendingJump = null; // Clear any pending jump
         if (!state.discoveredSystems.includes(systemId)) {
           state.discoveredSystems.push(systemId);
+          // Fire-and-forget server-side record so fog of war survives
+          // login on a different device. Failures are harmless -- next
+          // visit retries; local state is the working copy.
+          galaxyAPI.recordVisit(systemId).catch(() => {});
         }
       }),
+
+      // Seed discoveredSystems from the server's visit table. Called on
+      // app-load (App.jsx) so the galaxy map renders with correct fog
+      // of war on first paint, not just after the next system change.
+      hydrateDiscoveredSystems: async () => {
+        try {
+          const { visits } = await galaxyAPI.visits();
+          set(state => {
+            const merged = new Set(state.discoveredSystems || ['sol']);
+            for (const v of visits) merged.add(v);
+            state.discoveredSystems = Array.from(merged);
+          });
+        } catch (e) {
+          // Network blip on cold start -- local state retains 'sol' so
+          // the player can still play; next system change syncs.
+        }
+      },
 
       tick: (deltaTime) => set(state => {
         if (state.gamePaused) return;
@@ -574,6 +595,7 @@ export const useGameStore = create(
         state.pendingJump = null;
         if (!state.discoveredSystems.includes(systemId)) {
           state.discoveredSystems.push(systemId);
+          galaxyAPI.recordVisit(systemId).catch(() => {});
         }
       }),
 

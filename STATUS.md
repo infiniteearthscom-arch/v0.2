@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-25 (Scanner depth Tier B: area / bulk-belt / system sweep)
+**Last updated:** 2026-05-25 (Scanner depth Tier C: skills + galaxy fog of war)
 
 ---
 
@@ -164,11 +164,27 @@ Three new modules + research nodes + activation UI. All three buttons live in a 
 
 Server endpoints validate the fleet has the right module fitted (`area_scan` / `bulk_scan` stat flag in `module_types.stats`); both endpoints bulk-insert scan rows + return enriched asteroid records so the client mutates `asteroidsRef` in place without re-listing.
 
-**Tier C+ (not yet specced)**
+**Scanner Depth Tier C (SHIPPED 2026-05-25)**
 
-- New skills paired with the area/bulk modules (e.g. `ast_area_scanning` to widen area-scan radius, `ast_bulk_scanning` to shorten cooldown). Today the modules use static stats from migration 050.
-- Stationary scanner emplacements / drone-based exploration probes.
-- Galaxy-map fog of war (system contents hidden until first warp-in).
+Two coordinated changes: skills paired with the Tier B abilities, and galaxy-map fog of war.
+
+- **Three new Astrometrics skills (migration 051):**
+  - `ast_area_scanning` (rank 3) -- +10%/level area-scan radius. Multiplies the radius passed to /scan_area. L5 = 1.5× effective sweep.
+  - `ast_bulk_belt_efficiency` (rank 4) -- -10%/level bulk-belt cooldown. **Adds a 90s base cooldown to bulk belt** (was instant in Tier B); L5 trims to 45s.
+  - `ast_telemetry_ops` (rank 4) -- -5%/level sweep cooldown. 120s base → 90s at L5.
+- All three bonuses read from `activeBonuses` in the relevant SystemView handler and apply in the standard `time * (1 + pct/100)` form (negative pct shortens). Bulk + sweep cooldowns track in refs (`bulkBeltCooldownUntilRef`, `sweepCooldownUntilRef`); the HUD buttons show live countdowns and disable while cooling. Both reset on system change.
+
+- **Galaxy-map fog of war:**
+  - Migration 051 adds `player_system_visits` (user_id + system_procedural_id PK, first_visited_at).
+  - New `/api/galaxy` router with `GET /visits` and `POST /visit` (idempotent). Client `enterSystem` + `setCurrentSystemId` fire-and-forget the visit.
+  - `App.jsx` calls `hydrateDiscoveredSystems` on login to seed local state from the server table, so fog of war persists across reloads + devices.
+  - GalaxyMapWindow + GalaxyFlightView render undiscovered systems as bare gray dots: no star type color, no faction halo, no glow, no name (label only on hover/target). Jump connection lines render only when at least one endpoint is discovered. Info panel hides star type / faction / danger / resources / jump connections for undiscovered systems -- just "Unknown System" + distance + Fly To button so exploration is still actionable.
+
+**Phase D backlog (not started)**
+
+- **Drone / probe exploration**: Autonomous scanner drones the player deploys system-wide. Each drone navigates to unscanned asteroids on its own, scans, returns. Big system -- needs new entity type, autonomy AI, deploy/recall UI, drone hangar slot type. Own future spec session.
+- **Stationary scanner emplacements**: Pairs with the player-stations system once that lands.
+- **Cosmic signature / hidden-site mechanic**: EVE-style probe-down-the-anomaly mechanic. Activates the inert `ast_probing`, `ast_astrometric_acq/_pin/_range`, `ast_signal_acquisition` skills.
 
 ### Combat + death loop
 

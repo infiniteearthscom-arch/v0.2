@@ -1165,6 +1165,10 @@ export const SystemView = () => {
   // is live, then stops to avoid background work.
   const sweepActiveUntilRef = useRef(0);
   const sweepCooldownUntilRef = useRef(0);
+  // Tier C: bulk belt scan also has a cooldown (90s base, shortened by
+  // ast_bulk_belt_efficiency at -10%/level). Tracked the same way as
+  // sweep so the HUD button reflects the same countdown semantics.
+  const bulkBeltCooldownUntilRef = useRef(0);
   const [sweepTick, setSweepTick] = useState(0);
 
   // ============================================
@@ -1419,6 +1423,7 @@ export const SystemView = () => {
     // carry across systems and an active sweep ends with warp-out.
     sweepActiveUntilRef.current = 0;
     sweepCooldownUntilRef.current = 0;
+    bulkBeltCooldownUntilRef.current = 0;
     // Scanner ghosts are per-system. Clearing here keeps the System
     // Map clean of "last seen 2 systems ago" markers.
     enemyGhostsRef.current.clear();
@@ -1705,7 +1710,12 @@ export const SystemView = () => {
       return;
     }
     playSound('button_click');
-    const radius = fleetSensorRange();
+    // Tier C: `ast_area_scanning` widens the effective radius by
+    // area_scan_radius_pct (+10%/level). Multiplies on top of the
+    // fleet sensor range so a high-tier scanner + skilled captain
+    // sweeps a much larger zone.
+    const radiusBonusPct = activeBonusesRef.current?.area_scan_radius_pct || 0;
+    const radius = Math.round(fleetSensorRange() * (1 + radiusBonusPct / 100));
     try {
       const { scanned_count, asteroids } = await asteroidsAPI.scanArea(
         currentSystemId,
@@ -1728,6 +1738,14 @@ export const SystemView = () => {
   const handleBeltScan = async () => {
     if (!fleetHasBulkScan()) {
       if (pushToast) pushToast({ kind: 'error', text: 'No Elite Survey Grid fitted', duration: 3000 });
+      return;
+    }
+    // Tier C: bulk-belt is now cooldown-gated (90s base shortened by
+    // bulk_belt_cooldown_pct, -10%/level). Mirror of sweep's pattern.
+    const nowCd = Date.now();
+    if (bulkBeltCooldownUntilRef.current > nowCd) {
+      const remain = Math.ceil((bulkBeltCooldownUntilRef.current - nowCd) / 1000);
+      if (pushToast) pushToast({ kind: 'error', text: `Bulk-belt scan on cooldown (${remain}s)`, duration: 2500 });
       return;
     }
     // Find the closest belt to the player. Belts are celestial bodies
@@ -1753,6 +1771,13 @@ export const SystemView = () => {
     try {
       const { scanned_count, asteroids } = await asteroidsAPI.scanBelt(closest.id);
       applyScanResultsToLocal(asteroids);
+      // Start the cooldown only on a successful call (failed network
+      // = no penalty). cooldown_pct is negative (-10/level via skill);
+      // formula (1 + pct/100) shrinks the base accordingly.
+      const cdPct = activeBonusesRef.current?.bulk_belt_cooldown_pct || 0;
+      const cdMs = Math.max(5_000, Math.round(90_000 * (1 + cdPct / 100)));
+      bulkBeltCooldownUntilRef.current = Date.now() + cdMs;
+      setSweepTick(t => t + 1);
       if (pushToast) pushToast({
         kind: scanned_count > 0 ? 'success' : 'info',
         text: scanned_count > 0
@@ -1777,11 +1802,11 @@ export const SystemView = () => {
       return;
     }
     playSound('button_click');
-    // Hardcoded to the migration-050 baseline stats. Could pull from
-    // module_types.stats via a server payload extension; not worth the
-    // wire today since the module is one-of-a-kind.
+    // Tier B baseline + Tier C `ast_telemetry_ops` skill reduction
+    // (-5% cooldown per level, max -25% at L5 → 90s).
     const durationMs = 30 * 1000;
-    const cooldownMs = 120 * 1000;
+    const cdPct = activeBonusesRef.current?.sweep_cooldown_pct || 0;
+    const cooldownMs = Math.max(15_000, Math.round(120_000 * (1 + cdPct / 100)));
     sweepActiveUntilRef.current = now + durationMs;
     sweepCooldownUntilRef.current = now + cooldownMs;
     setSweepTick(t => t + 1); // force immediate render
@@ -1792,12 +1817,14 @@ export const SystemView = () => {
     });
   };
 
-  // Tick HUD once a second while sweep is active OR cooling down so the
-  // countdown text repaints. Stops automatically when both timers expire.
+  // Tick HUD once a second while ANY ability is active/cooling so the
+  // countdown text repaints. Stops automatically when all timers expire.
   useEffect(() => {
     const tick = setInterval(() => {
       const now = Date.now();
-      if (sweepActiveUntilRef.current > now || sweepCooldownUntilRef.current > now) {
+      if (sweepActiveUntilRef.current > now
+        || sweepCooldownUntilRef.current > now
+        || bulkBeltCooldownUntilRef.current > now) {
         setSweepTick(t => t + 1);
       }
     }, 1000);
@@ -4250,21 +4277,31 @@ export const SystemView = () => {
                     }}
                   >📡 Area Scan</button>
                 )}
-                {fleetHasBulkScan() && (
-                  <button
-                    onClick={handleBeltScan}
-                    title="Scan every asteroid in the nearest belt"
-                    style={{
-                      padding: '6px 12px',
-                      background: 'linear-gradient(180deg, #a855f722, #a855f708)',
-                      border: '1px solid #a855f755',
-                      color: '#c084fc',
-                      fontSize: 10, fontWeight: 800, letterSpacing: 1,
-                      textTransform: 'uppercase', cursor: 'pointer',
-                      borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
-                    }}
-                  >📡 Bulk Belt</button>
-                )}
+                {fleetHasBulkScan() && (() => {
+                  const remain = Math.max(0, Math.ceil((bulkBeltCooldownUntilRef.current - now) / 1000));
+                  const disabled = remain > 0;
+                  return (
+                    <button
+                      onClick={handleBeltScan}
+                      disabled={disabled}
+                      title={disabled
+                        ? `Bulk-belt scan cooling down (${remain}s)`
+                        : 'Scan every asteroid in the nearest belt (90s cooldown)'}
+                      style={{
+                        padding: '6px 12px',
+                        background: disabled
+                          ? 'rgba(30,41,59,0.5)'
+                          : 'linear-gradient(180deg, #a855f722, #a855f708)',
+                        border: `1px solid ${disabled ? '#1e293b' : '#a855f755'}`,
+                        color: disabled ? '#475569' : '#c084fc',
+                        fontSize: 10, fontWeight: 800, letterSpacing: 1,
+                        textTransform: 'uppercase',
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
+                      }}
+                    >📡 Bulk Belt{disabled && ` ${remain}s`}</button>
+                  );
+                })()}
                 {fleetHasSystemSweep() && (
                   <button
                     onClick={handleSystemSweep}

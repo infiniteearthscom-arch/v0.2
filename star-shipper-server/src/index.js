@@ -18,6 +18,7 @@ import fittingRoutes from './api/fitting.js';
 import questRoutes from './api/quests.js';
 import skillsRoutes from './api/skills.js';
 import researchRoutes from './api/research.js';
+import galaxyRoutes from './api/galaxy.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -70,6 +71,7 @@ app.use('/api/fitting', fittingRoutes);
 app.use('/api/quests', questRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/research', researchRoutes);
+app.use('/api/galaxy', galaxyRoutes);
 
 // 404 handler
 app.use('/api/*', (req, res) => {

@@ -101,6 +101,7 @@ function App() {
   const fetchQuests = useGameStore(state => state.fetchQuests);
   const setResources = useGameStore(state => state.setResources);
   const viewMode = useGameStore(state => state.viewMode);
+  const hydrateDiscoveredSystems = useGameStore(state => state.hydrateDiscoveredSystems);
 
   const uiScale = useGameStore(state => state.uiScale ?? 1.0);
 
@@ -121,8 +122,12 @@ function App() {
       setResources(resources);
       fetchShips();
       fetchQuests();
+      // Pull visited systems from server so the galaxy-map fog of war
+      // renders correctly on first paint instead of reverting to "only
+      // Sol is discovered" after a reload.
+      hydrateDiscoveredSystems();
     }
-  }, [isLoggedIn, resources, setResources, fetchShips, fetchQuests]);
+  }, [isLoggedIn, resources, setResources, fetchShips, fetchQuests, hydrateDiscoveredSystems]);
 
   // Loading screen
   if (isLoading) {
