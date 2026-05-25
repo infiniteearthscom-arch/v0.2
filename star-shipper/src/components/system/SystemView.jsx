@@ -1495,12 +1495,59 @@ export const SystemView = () => {
     const dy = asteroid.y - shipPosRef.current.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Already scanned → try to assign or release a laser on this rock.
-    // (Per Phase A4: each fitted laser is independently click-assigned.)
+    // Already scanned → try to ADD a laser to this rock first, only
+    // release when no idle lasers are available. Earlier behavior
+    // (release on every click of a rock already being mined) made
+    // it impossible to stack multiple lasers on the same target -- a
+    // multi-laser barge could only ever mine with 1 laser at a time.
+    //
+    // Updated rule:
+    //   1. No lasers fitted anywhere -> contents-reveal fallback.
+    //   2. Cargo full / out of range -> error toast.
+    //   3. Idle laser exists -> ASSIGN it to this rock (stacks).
+    //   4. No idle + rock has assignments -> RELEASE most-recent (LIFO).
+    //   5. No idle + no assignments here -> "all assigned elsewhere" toast.
     if (asteroid.scanned) {
-      // If any laser is already mining this asteroid, treat the click
-      // as "release one of them" (LIFO -- the most-recent assignment
-      // detaches). Repeated clicks peel lasers off one by one.
+      const allLasers = enumerateFleetLasers();
+      if (allLasers.length === 0) {
+        if (pushToast) pushToast({
+          kind: 'info',
+          text: `Asteroid contents: ${formatContents(asteroid.contents)}. Equip a Mining Laser to mine.`,
+          duration: 5000,
+        });
+        return;
+      }
+      // Cargo + range gates apply BEFORE assignment so the player
+      // gets the actionable error instead of a stack/release toast.
+      if (cargoFullRef.current) {
+        if (pushToast) pushToast({ kind: 'error', text: 'Cargo full — sell or jettison first.', duration: 3000 });
+        return;
+      }
+      if (dist > MINE_RANGE) {
+        if (pushToast) pushToast({ kind: 'error', text: 'Too far to mine — get closer.', duration: 3000 });
+        return;
+      }
+
+      // Pick the first idle laser (one not currently assigned anywhere).
+      const idle = allLasers.find(l => !miningAssignmentsRef.current.has(l.laserKey));
+      if (idle) {
+        miningAssignmentsRef.current.set(idle.laserKey, {
+          asteroidId: asteroid.id,
+          cooldownMs: 0,
+          inFlight: false,
+        });
+        const onThisRock = [...miningAssignmentsRef.current.values()]
+          .filter(a => a.asteroidId === asteroid.id).length;
+        if (pushToast) pushToast({
+          kind: 'success',
+          text: `Mining: ${onThisRock} laser${onThisRock === 1 ? '' : 's'} on this rock (${miningAssignmentsRef.current.size}/${allLasers.length} fleet-wide).`,
+          duration: 2000,
+        });
+        return;
+      }
+
+      // No idle laser. If THIS rock has assignments, peel one off (LIFO);
+      // gives the player a way to disengage when they run out of headroom.
       const assignedHere = [];
       for (const [laserKey, a] of miningAssignmentsRef.current) {
         if (a.asteroidId === asteroid.id) assignedHere.push(laserKey);
@@ -1512,53 +1559,18 @@ export const SystemView = () => {
         if (pushToast) pushToast({
           kind: 'info',
           text: remaining > 0
-            ? `Released 1 laser. ${remaining} still mining this asteroid.`
-            : 'Mining stopped on this asteroid.',
-          duration: 2000,
+            ? `Released 1 laser (no idle lasers to add). ${remaining} still mining this rock.`
+            : 'Mining stopped on this rock — all lasers free again.',
+          duration: 2500,
         });
         return;
       }
 
-      // No laser assigned to this rock yet -- try to assign one.
-      const allLasers = enumerateFleetLasers();
-      if (allLasers.length === 0) {
-        // No laser fitted -- fall back to a contents reveal so the
-        // click still does something useful.
-        if (pushToast) pushToast({
-          kind: 'info',
-          text: `Asteroid contents: ${formatContents(asteroid.contents)}. Equip a Mining Laser to mine.`,
-          duration: 5000,
-        });
-        return;
-      }
-      if (dist > MINE_RANGE) {
-        if (pushToast) pushToast({ kind: 'error', text: 'Too far to mine — get closer.', duration: 3000 });
-        return;
-      }
-      if (cargoFullRef.current) {
-        if (pushToast) pushToast({ kind: 'error', text: 'Cargo full — sell or jettison first.', duration: 3000 });
-        return;
-      }
-      // Pick the first idle laser (one not currently assigned anywhere).
-      const idle = allLasers.find(l => !miningAssignmentsRef.current.has(l.laserKey));
-      if (!idle) {
-        if (pushToast) pushToast({
-          kind: 'error',
-          text: `All ${allLasers.length} mining lasers already assigned. Click a mined target to free one.`,
-          duration: 3500,
-        });
-        return;
-      }
-      miningAssignmentsRef.current.set(idle.laserKey, {
-        asteroidId: asteroid.id,
-        cooldownMs: 0, // fire immediately on next loop tick
-        inFlight: false,
-      });
-      const totalAssigned = miningAssignmentsRef.current.size;
+      // All lasers on OTHER rocks -- can't add, can't release here.
       if (pushToast) pushToast({
-        kind: 'success',
-        text: `Mining locked (${totalAssigned}/${allLasers.length} lasers active).`,
-        duration: 2000,
+        kind: 'error',
+        text: `All ${allLasers.length} mining lasers already assigned to other rocks. Click a mining rock to free one.`,
+        duration: 3500,
       });
       return;
     }
