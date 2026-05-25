@@ -41,8 +41,13 @@ const QuestToast = () => {
 
   return (
     <div
-      className="fixed top-12 left-1/2 -translate-x-1/2 z-[100] pointer-events-none"
+      className="fixed top-12 left-1/2 -translate-x-1/2 pointer-events-none"
       style={{
+        // 99999 to stay above the generic Toaster (zIndex 9000) AND
+        // any DraggableWindow that climbed past z-100 via windowZIndex
+        // bumping. Quest completion is high-priority feedback -- the
+        // banner should NEVER be hidden behind anything.
+        zIndex: 99999,
         transition: 'opacity 0.4s ease, transform 0.4s ease',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(-20px)',
