@@ -3795,6 +3795,27 @@ export const SystemView = () => {
                       }}>
                         Asteroid Contents
                       </div>
+                      {/* Quality tier (Phase 4 polish). Shown only when
+                          the asteroid has scanned stats -- legacy rows
+                          from before migration 046 may not. Tier color
+                          comes from getQualityTier so it visually
+                          matches the inventory tile chrome. */}
+                      {a.stat_purity != null && (() => {
+                        const tier = getQualityTier(a.stat_purity, a.stat_stability, a.stat_potency, a.stat_density);
+                        const avg = Math.round((a.stat_purity + a.stat_stability + a.stat_potency + a.stat_density) / 4);
+                        return (
+                          <div style={{
+                            display: 'flex', justifyContent: 'space-between', gap: 16,
+                            marginBottom: 6, paddingBottom: 6,
+                            borderBottom: '1px solid #2a3a4a',
+                          }}>
+                            <span style={{ color: '#8a99aa', fontSize: 10 }}>Quality</span>
+                            <span style={{ color: tier.color, fontWeight: 700 }}>
+                              {tier.name} <span style={{ color: '#7a8a9a', fontWeight: 400 }}>(Q{avg})</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
                       {(() => {
                         const entries = Object.values(a.contents || {}).filter(v => (v?.remaining || 0) > 0);
                         if (entries.length === 0) {
@@ -3939,7 +3960,12 @@ export const SystemView = () => {
               );
             })}
 
-            {/* Combat Effects */}
+            {/* Combat Effects -- ALL fx are decorative. Wrapper is
+                pointer-events:none so mining sparkles spawning under
+                the cursor don't capture mouseenter (which would fire
+                mouseleave on the asteroid + drop its tooltip), and
+                don't intercept clicks the player aimed at the rock. */}
+            <g style={{ pointerEvents: 'none' }}>
             {combatEffectsRef.current.map((fx, i) => {
               const lifetime = fx.lifetime || 0.5;
               const t = fx.age / lifetime; // 0→1 over lifetime
@@ -3992,6 +4018,7 @@ export const SystemView = () => {
               }
               return null;
             })}
+            </g>
           </svg>
 
           {/* Navigation moved to NavigationWindow */}
