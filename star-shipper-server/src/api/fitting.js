@@ -653,6 +653,24 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       if (!mod) throw Object.assign(new Error('Module not found'), { statusCode: 404 });
       if (!mod.buy_price) throw Object.assign(new Error('Module not available for purchase'), { statusCode: 400 });
 
+      // Migration 053: research-gated modules check player_research
+      // before allowing the buy. Tech name surfaces in the error so the
+      // client can show a useful "Locked: research X first" message.
+      if (mod.requires_tech) {
+        const techRow = await client.query(
+          `SELECT 1 FROM player_research WHERE user_id = $1 AND tech_id = $2`,
+          [userId, mod.requires_tech]
+        );
+        if (!techRow.rows[0]) {
+          const techDef = await client.query(`SELECT name FROM tech_definitions WHERE id = $1`, [mod.requires_tech]);
+          const techName = techDef.rows[0]?.name || mod.requires_tech;
+          throw Object.assign(
+            new Error(`Requires research: ${techName}`),
+            { statusCode: 403, requires_tech: mod.requires_tech }
+          );
+        }
+      }
+
       // Check and deduct credits
       const userRow = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
       const credits = parseInt(userRow.rows[0]?.credits || 0);

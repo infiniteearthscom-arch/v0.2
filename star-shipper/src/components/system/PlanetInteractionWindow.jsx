@@ -2017,6 +2017,7 @@ const VendorTab = ({ body }) => {
   const [hulls, setHulls] = useState([]);
   const [modules, setModules] = useState([]);
   const [supplies, setSupplies] = useState([]);
+  const [recipes, setRecipes] = useState([]); // Migration 053: needed so "Craft this" button can route to the right recipe
   const [sellInventory, setSellInventory] = useState({ resources: [], items: [] });
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState('hulls'); // 'hulls', 'modules', 'supplies', 'sell'
@@ -2030,6 +2031,12 @@ const VendorTab = ({ body }) => {
   const openWindow = useGameStore(state => state.openWindow);
   const completeQuest = useGameStore(state => state.completeQuest);
   const pushToast = useGameStore(state => state.pushToast);
+  // Tech-gate awareness: subscribe to techs so locked modules render
+  // with a "Research X to unlock" badge instead of a buy button.
+  const techs = useGameStore(state => state.techs);
+  const setCraftingTargetRecipe = useGameStore(state => state.setCraftingTargetRecipe);
+  const setResearchTargetTech = useGameStore(state => state.setResearchTargetTech);
+  const closeWindow = useGameStore(state => state.closeWindow);
 
   // Call after any vendor tx to immediately pull the authoritative balance
   // from the server (the 3s poll would catch it eventually, but we want it
@@ -2083,13 +2090,17 @@ const VendorTab = ({ body }) => {
   const loadVendorData = async () => {
     setLoading(true);
     try {
-      const [hullsRes, modsRes] = await Promise.all([
+      const [hullsRes, modsRes, recipesRes] = await Promise.all([
         fittingAPI.getHulls(),
         fittingAPI.getModuleTypes(),
+        resourcesAPI.getRecipes(),
       ]);
       setHulls(hullsRes.hulls || []);
+      setRecipes(recipesRes.recipes || []);
 
-      // Group modules by slot type
+      // Group modules by slot type. Filter by buy_price > 0 so
+      // craft-only modules don't appear in the vendor (their recipe
+      // is still discoverable via the Crafting window).
       const mods = modsRes.modules || [];
       setModules(mods.filter(m => m.buy_price));
 
@@ -2409,46 +2420,107 @@ const VendorTab = ({ body }) => {
                   }}>{type}</span>
                 </div>
                 <div>
-                  {mods.map(m => (
-                    <div key={m.id} style={{
-                      background: 'rgba(4,8,16,0.5)',
-                      border: `1px solid ${EDGE}`,
-                      borderRadius: 3,
-                      padding: 8,
-                      marginBottom: 4,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}>
-                      <div style={{
-                        width: 3,
-                        height: 32,
-                        background: color,
-                        boxShadow: `0 0 4px ${color}66`,
-                        flexShrink: 0,
-                      }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
+                  {mods.map(m => {
+                    // Look up recipe (so "Craft this" button can route)
+                    // and tech-lock status (research not yet unlocked).
+                    const recipe = recipes.find(r => r.output_item_id === m.id);
+                    const techId = m.requires_tech;
+                    const tech = techId ? techs.find(t => t.id === techId) : null;
+                    const locked = !!techId && tech?.status !== 'researched';
+                    return (
+                      <div key={m.id} style={{
+                        background: 'rgba(4,8,16,0.5)',
+                        border: `1px solid ${EDGE}`,
+                        borderRadius: 3,
+                        padding: 8,
+                        marginBottom: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        opacity: locked ? 0.75 : 1,
+                      }}>
                         <div style={{
-                          fontSize: 11,
-                          color: '#e2e8f0',
-                          fontWeight: 700,
-                          fontFamily: F,
-                        }}>{m.name}</div>
-                        <div style={{
-                          fontSize: 9,
-                          color: '#4a6580',
-                          fontFamily: FM,
-                          letterSpacing: 0.3,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}>T{m.tier} • {m.description}</div>
+                          width: 3,
+                          height: 32,
+                          background: color,
+                          boxShadow: `0 0 4px ${color}66`,
+                          flexShrink: 0,
+                        }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontSize: 11,
+                            color: '#e2e8f0',
+                            fontWeight: 700,
+                            fontFamily: F,
+                          }}>{m.name}</div>
+                          <div style={{
+                            fontSize: 9,
+                            color: '#4a6580',
+                            fontFamily: FM,
+                            letterSpacing: 0.3,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>T{m.tier} • {m.description}</div>
+                        </div>
+
+                        {/* Action cluster: locked → link to research +
+                            "Craft this" if a recipe exists (craft window
+                            shows the lock too, but the button is still
+                            useful for ingredient review). Unlocked → buy
+                            button + craft button. */}
+                        {locked ? (
+                          <button
+                            onClick={() => {
+                              playSound('button_click');
+                              setResearchTargetTech(techId);
+                              openWindow('research');
+                            }}
+                            title={`Click to jump to ${tech?.name || techId} in the research tree`}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                              textTransform: 'uppercase',
+                              fontFamily: F,
+                              color: '#fbbf24',
+                              background: 'rgba(133,77,14,0.25)',
+                              border: '1px solid rgba(251,191,36,0.5)',
+                              borderRadius: 2,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >🔒 {tech?.name || 'Research Required'}</button>
+                        ) : (
+                          <PanelButton size="sm" accent={GOLD.pri} onClick={() => { playSound('button_click'); buyModule(m.id); }}>
+                            {m.buy_price.toLocaleString()} CR
+                          </PanelButton>
+                        )}
+                        {recipe && (
+                          <button
+                            onClick={() => {
+                              playSound('button_click');
+                              setCraftingTargetRecipe(recipe.id);
+                              openWindow('crafting');
+                              closeWindow('planetInteraction');
+                            }}
+                            title={`Open Crafting with ${recipe.name} preselected`}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                              textTransform: 'uppercase',
+                              fontFamily: F,
+                              color: '#a855f7',
+                              background: 'rgba(88,28,135,0.25)',
+                              border: '1px solid rgba(168,85,247,0.4)',
+                              borderRadius: 2,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >⚒ Craft</button>
+                        )}
                       </div>
-                      <PanelButton size="sm" accent={GOLD.pri} onClick={() => { playSound('button_click'); buyModule(m.id); }}>
-                        {m.buy_price.toLocaleString()} CR
-                      </PanelButton>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

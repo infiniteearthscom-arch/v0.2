@@ -639,7 +639,25 @@ router.post('/craft', authMiddleware, async (req, res) => {
       );
       const recipe = recipeResult.rows[0];
       if (!recipe) throw Object.assign(new Error('Recipe not found'), { statusCode: 404 });
-      
+
+      // Migration 053: research-gated recipes check player_research
+      // before allowing the craft. Same mechanism + error shape as
+      // /buy-module so the client can show a unified "Locked" UI.
+      if (recipe.requires_tech) {
+        const techRow = await client.query(
+          `SELECT 1 FROM player_research WHERE user_id = $1 AND tech_id = $2`,
+          [userId, recipe.requires_tech]
+        );
+        if (!techRow.rows[0]) {
+          const techDef = await client.query(`SELECT name FROM tech_definitions WHERE id = $1`, [recipe.requires_tech]);
+          const techName = techDef.rows[0]?.name || recipe.requires_tech;
+          throw Object.assign(
+            new Error(`Requires research: ${techName}`),
+            { statusCode: 403, requires_tech: recipe.requires_tech }
+          );
+        }
+      }
+
       const requiredIngredients = recipe.ingredients; // [{resource_name, quantity}]
       
       // Build a map of what resources are needed

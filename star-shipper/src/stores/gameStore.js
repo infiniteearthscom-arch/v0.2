@@ -60,6 +60,16 @@ const initialState = {
   // it directly so the UI updates the moment a level finishes.
   researchPoints: 0,
   techs: [],                   // [{ id, tree, tier, name, description, rp_cost, prerequisites, unlocks, status }]
+
+  // Cross-window deep-link targets. Vendor "Craft this" button sets
+  // craftingTargetRecipeId before opening the crafting window, which
+  // reads + auto-selects the matching recipe on mount. CraftingWindow's
+  // "research X to unlock" link sets researchTargetTechId before
+  // opening the SkillsResearchWindow, which switches to the Research
+  // tab and scrolls/highlights the node. Both clear after consumption
+  // so they don't re-fire on subsequent opens.
+  craftingTargetRecipeId: null,
+  researchTargetTechId: null,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
   skillSpPerMin: 30,
@@ -259,6 +269,15 @@ export const useGameStore = create(
           // the player can still play; next system change syncs.
         }
       },
+
+      // Cross-window deep-link helpers (Tier B vendor / craft / research
+      // integration). Callers should setTarget then openWindow; the
+      // destination component picks up the target on its next render
+      // and clears it so a re-open doesn't re-fire the navigation.
+      setCraftingTargetRecipe: (recipeId) => set(state => { state.craftingTargetRecipeId = recipeId; }),
+      clearCraftingTargetRecipe: () => set(state => { state.craftingTargetRecipeId = null; }),
+      setResearchTargetTech:    (techId)   => set(state => { state.researchTargetTechId = techId; }),
+      clearResearchTargetTech:  () => set(state => { state.researchTargetTechId = null; }),
 
       tick: (deltaTime) => set(state => {
         if (state.gamePaused) return;

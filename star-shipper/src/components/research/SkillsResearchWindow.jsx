@@ -428,13 +428,20 @@ const TREES = [
 
 const RP_PER_MIN = 1;
 
-const ResearchTab = () => {
+const ResearchTab = ({ initialTree }) => {
   useSecondTick();
   const techs = useGameStore(s => s.techs);
   const rpStored = useGameStore(s => s.researchPoints);
   const unlockTech = useGameStore(s => s.unlockTech);
-  const [activeTree, setActiveTree] = useState(TREES[0].id);
+  const [activeTree, setActiveTree] = useState(initialTree || TREES[0].id);
   const [confirmTechId, setConfirmTechId] = useState(null);
+
+  // Deep-link parent (SkillsResearchWindow) flips initialTree when the
+  // vendor "Research X" button is clicked. Adopt it on prop change so
+  // the player lands on the right tree page.
+  useEffect(() => {
+    if (initialTree) setActiveTree(initialTree);
+  }, [initialTree]);
 
   // Live RP -- the server's snapshot is from the last fetch; advance
   // it locally so the bar doesn't look frozen between refreshes.
@@ -748,7 +755,14 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
 export const SkillsResearchWindow = () => {
   const closeWindow = useGameStore(s => s.closeWindow);
   const fetchSkillsAndResearch = useGameStore(s => s.fetchSkillsAndResearch);
+  // Cross-window deep link: when researchTargetTechId is set we switch
+  // to the Research tab + jump to the target's tree, then clear so a
+  // re-open doesn't replay the navigation.
+  const researchTarget = useGameStore(s => s.researchTargetTechId);
+  const clearResearchTarget = useGameStore(s => s.clearResearchTargetTech);
+  const techs = useGameStore(s => s.techs);
   const [tab, setTab] = useState('skills');
+  const [initialResearchTree, setInitialResearchTree] = useState(null);
 
   // Fetch on open; also poll once every 30s so the queue progress bars
   // and RP bar reflect server truth without manual refresh.
@@ -757,6 +771,18 @@ export const SkillsResearchWindow = () => {
     const t = setInterval(fetchSkillsAndResearch, 30000);
     return () => clearInterval(t);
   }, [fetchSkillsAndResearch]);
+
+  // Resolve the deep-link target once techs have loaded. Switch tab +
+  // tell ResearchTab which tree to open via initialResearchTree.
+  useEffect(() => {
+    if (!researchTarget || techs.length === 0) return;
+    const tech = techs.find(t => t.id === researchTarget);
+    if (tech) {
+      setTab('research');
+      setInitialResearchTree(tech.tree);
+    }
+    clearResearchTarget();
+  }, [researchTarget, techs, clearResearchTarget]);
 
   return (
     <div
@@ -840,7 +866,7 @@ export const SkillsResearchWindow = () => {
 
         {/* Body */}
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-          {tab === 'skills' ? <SkillsTab /> : <ResearchTab />}
+          {tab === 'skills' ? <SkillsTab /> : <ResearchTab initialTree={initialResearchTree} />}
         </div>
       </div>
     </div>

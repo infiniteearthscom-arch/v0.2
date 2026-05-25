@@ -723,6 +723,18 @@ export const CraftingWindow = () => {
   const windows = useGameStore(state => state.windows);
   const completeQuest = useGameStore(state => state.completeQuest);
   const isOpen = windows.crafting?.open;
+  // Tier B vendor → crafting deep link: when the vendor's "Craft this"
+  // button is clicked it sets craftingTargetRecipeId then opens this
+  // window. We watch the target, select the matching recipe on the
+  // first render that has it loaded, and clear so re-opens don't
+  // re-fire.
+  const craftingTarget = useGameStore(state => state.craftingTargetRecipeId);
+  const clearCraftingTarget = useGameStore(state => state.clearCraftingTargetRecipe);
+  // Tech list drives the locked-recipe UI; clicking the lock badge
+  // sets researchTargetTechId and opens the research window.
+  const techs = useGameStore(state => state.techs);
+  const setResearchTargetTech = useGameStore(state => state.setResearchTargetTech);
+  const openWindow = useGameStore(state => state.openWindow);
 
   const [recipes, setRecipes] = useState([]);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
@@ -754,6 +766,20 @@ export const CraftingWindow = () => {
     const interval = setInterval(fetchRecipes, 10000);
     return () => clearInterval(interval);
   }, [isOpen, fetchRecipes]);
+
+  // Vendor → crafting deep link: when craftingTarget is set + recipes
+  // have loaded, auto-select the matching recipe + clear the target.
+  useEffect(() => {
+    if (!craftingTarget || recipes.length === 0) return;
+    const target = recipes.find(r => r.id === craftingTarget);
+    if (target) {
+      setSelectedRecipe(target);
+      setAssignedIngredients({});
+      setError(null);
+      setSuccess(null);
+    }
+    clearCraftingTarget();
+  }, [craftingTarget, recipes, clearCraftingTarget]);
 
   const selectRecipe = (recipe) => {
     setSelectedRecipe(recipe);
@@ -1168,33 +1194,85 @@ export const CraftingWindow = () => {
                 </div>
               )}
 
-              {/* Craft button */}
-              <button
-                onClick={handleCraft}
-                disabled={!canCraftNow || crafting}
-                style={{
-                  marginTop: 12,
-                  padding: '10px 18px',
-                  width: '100%',
-                  borderRadius: 3,
-                  fontFamily: FONT.ui,
-                  fontWeight: 800,
-                  fontSize: 12,
-                  letterSpacing: 1.5,
-                  textTransform: 'uppercase',
-                  cursor: (canCraftNow && !crafting) ? 'pointer' : 'not-allowed',
-                  background: (canCraftNow && !crafting)
-                    ? `linear-gradient(180deg, ${COLORS.GOLD.pri}33, ${COLORS.GOLD.pri}0a)`
-                    : 'rgba(30,41,59,0.5)',
-                  border: `1px solid ${(canCraftNow && !crafting) ? `${COLORS.GOLD.pri}88` : '#1e293b'}`,
-                  borderLeft: `3px solid ${(canCraftNow && !crafting) ? COLORS.GOLD.pri : '#1e293b'}`,
-                  color: (canCraftNow && !crafting) ? COLORS.GOLD.light : '#475569',
-                  transition: 'all 0.15s',
-                  boxShadow: (canCraftNow && !crafting) ? glow(COLORS.GOLD.pri, 0.2) : 'none',
-                }}
-              >
-                {crafting ? 'Crafting...' : `⚒ Craft ${selectedRecipe.name}`}
-              </button>
+              {/* Research lock (Migration 053). If the recipe is gated
+                  by a tech the player hasn't researched, the craft
+                  button is replaced by a lock badge that jumps to the
+                  research node in the tree. Server enforces the gate
+                  too -- this is purely a UX prompt to point the player
+                  at the right action. */}
+              {(() => {
+                const techId = selectedRecipe.requires_tech;
+                if (!techId) return null;
+                const tech = techs.find(t => t.id === techId);
+                if (tech?.status === 'researched') return null;
+                return (
+                  <div style={{
+                    marginTop: 12,
+                    padding: '10px 14px',
+                    borderRadius: 3,
+                    background: 'rgba(133,77,14,0.18)',
+                    border: '1px solid rgba(251,191,36,0.4)',
+                    borderLeft: '3px solid #fbbf24',
+                  }}>
+                    <div style={{
+                      fontSize: 10, color: '#fbbf24', fontFamily: FONT.ui,
+                      fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase',
+                      marginBottom: 4,
+                    }}>🔒 Research Required</div>
+                    <div style={{ fontSize: 11, color: '#e2e8f0', fontFamily: FONT.ui, marginBottom: 8 }}>
+                      Unlock <span style={{ color: '#fbbf24', fontWeight: 700 }}>{tech?.name || techId}</span> in the research tree first.
+                    </div>
+                    <button
+                      onClick={() => {
+                        setResearchTargetTech(techId);
+                        openWindow('research');
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: 10, fontWeight: 800, letterSpacing: 1,
+                        textTransform: 'uppercase', fontFamily: FONT.ui,
+                        color: '#fbbf24',
+                        background: 'rgba(133,77,14,0.35)',
+                        border: '1px solid #fbbf24',
+                        borderRadius: 2,
+                        cursor: 'pointer',
+                      }}
+                    >→ Open Research</button>
+                  </div>
+                );
+              })()}
+
+              {/* Craft button -- hidden when research-locked since the
+                  lock panel above takes its slot. Server will reject
+                  anyway, so showing a disabled button would be redundant. */}
+              {!(selectedRecipe.requires_tech && techs.find(t => t.id === selectedRecipe.requires_tech)?.status !== 'researched') && (
+                <button
+                  onClick={handleCraft}
+                  disabled={!canCraftNow || crafting}
+                  style={{
+                    marginTop: 12,
+                    padding: '10px 18px',
+                    width: '100%',
+                    borderRadius: 3,
+                    fontFamily: FONT.ui,
+                    fontWeight: 800,
+                    fontSize: 12,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    cursor: (canCraftNow && !crafting) ? 'pointer' : 'not-allowed',
+                    background: (canCraftNow && !crafting)
+                      ? `linear-gradient(180deg, ${COLORS.GOLD.pri}33, ${COLORS.GOLD.pri}0a)`
+                      : 'rgba(30,41,59,0.5)',
+                    border: `1px solid ${(canCraftNow && !crafting) ? `${COLORS.GOLD.pri}88` : '#1e293b'}`,
+                    borderLeft: `3px solid ${(canCraftNow && !crafting) ? COLORS.GOLD.pri : '#1e293b'}`,
+                    color: (canCraftNow && !crafting) ? COLORS.GOLD.light : '#475569',
+                    transition: 'all 0.15s',
+                    boxShadow: (canCraftNow && !crafting) ? glow(COLORS.GOLD.pri, 0.2) : 'none',
+                  }}
+                >
+                  {crafting ? 'Crafting...' : `⚒ Craft ${selectedRecipe.name}`}
+                </button>
+              )}
 
               {/* DEV CHEAT: Craft without resources */}
               <button
