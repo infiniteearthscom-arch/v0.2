@@ -12,6 +12,8 @@
 // the module's name / item_id for keywords. This will be replaced with
 // proper module metadata once the server-side blueprint chain lands.
 
+import { qualityMultiplier } from './quality';
+
 // ============================================
 // DEFAULTS — base stats per weapon type
 // ============================================
@@ -99,22 +101,9 @@ export const detectWeaponType = (fittedValue) => {
 // QUALITY MODIFIER
 // ============================================
 
-// Module quality (avg of purity/stability/potency/density, 0-100)
-// becomes a damage multiplier: Q50 = 1.0×, Q100 = 2.0×, Q25 = 0.5×.
-// If no quality data is available, returns 1.0.
-//
-// Reads `.quality` -- the crafted-instance roll that resources.js writes
-// onto fitted modules. (Was reading `.stats` which is the module *type*
-// defaults, so this multiplier was silently always 1.0 regardless of
-// what ingredients you crafted with. Phase 1 quality pass fix.)
-const getQualityMultiplier = (fittedValue) => {
-  const q = fittedValue?.quality || fittedValue?.item_data?.quality;
-  if (!q) return 1.0;
-  const avg = ((q.purity || 0) + (q.stability || 0) +
-               (q.potency || 0) + (q.density || 0)) / 4;
-  if (avg <= 0) return 1.0;
-  return Math.max(0.4, Math.min(2.5, avg / 50));
-};
+// Quality multiplier moved to utils/quality.js (Phase 2 quality pass).
+// All quality math now flows through that single helper.
+const getQualityMultiplier = (fittedValue) => qualityMultiplier(fittedValue);
 
 // ============================================
 // MAIN: build weapon descriptors for a ship
@@ -135,20 +124,29 @@ export const getShipWeapons = (ship) => {
 
     const type = detectWeaponType(fittedValue);
     const base = WEAPON_DEFAULTS[type];
-    const qMult = getQualityMultiplier(fittedValue);
+    // Quality scales different stats by different powers (Phase 3 spec):
+    //   damage ×Q       -- linear, biggest payoff for high-q crafts
+    //   range  ×sqrt(Q) -- soft; q100 = 1.41x reach, not 2x
+    //   fire_rate /sqrt(Q) -- inverted because lower = faster cycle
+    const qMult       = qualityMultiplier(fittedValue);
+    const qRangeMult  = qualityMultiplier(fittedValue, { power: 0.5 });
+    const qCycleMult  = qualityMultiplier(fittedValue, { power: 0.5, invert: true });
 
     // Server-authoritative ammo count (`loaded`) for missile launchers;
     // server module_types.stats.ammo_capacity / lock_time override the
-    // WEAPON_DEFAULTS so the migration row is source of truth.
+    // WEAPON_DEFAULTS so the migration row is source of truth. These
+    // are type-level defaults so they stay on `.stats`, NOT `.quality`.
     const serverStats = fittedValue?.stats || fittedValue?.module_data?.stats;
     const loaded = fittedValue?.loaded;
     weapons.push({
       ...base,
-      damage: Math.round(base.damage * qMult),
+      damage:    Math.round(base.damage * qMult),
+      range:     Math.round((serverStats?.range ?? base.range) * qRangeMult),
+      fire_rate: base.fire_rate * qCycleMult,
       slot_id: slot.id,
       quality_mult: qMult,
       // Pass through server-overrides for missile-only fields if present
-      lock_time: serverStats?.lock_time ?? base.lock_time,
+      lock_time: (serverStats?.lock_time ?? base.lock_time) * qCycleMult,
       ammo_capacity: serverStats?.ammo_capacity ?? base.ammo_capacity,
       loaded,  // server's last-known loaded count (number) or undefined
     });

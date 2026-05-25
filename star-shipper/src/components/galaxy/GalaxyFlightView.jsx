@@ -144,8 +144,16 @@ export const GalaxyFlightView = () => {
   
   useEffect(() => {
     if (activeShip) {
-      const speedMult = (activeShip.max_speed || 100) / 100;
-      const agilityMult = (activeShip.agility || 100) / 100;
+      // Prefer computed_max_speed (server-aggregated from base hull +
+      // engine module thrust × quality). Falls back to legacy max_speed
+      // then to base_speed for ships not re-fitted post-migration 047.
+      // Divisor 50 matches the hull-base convention (base 50 = 1.0x).
+      const speedSource = activeShip.computed_max_speed
+                       ?? activeShip.max_speed
+                       ?? activeShip.base_speed
+                       ?? 50;
+      const speedMult = speedSource / 50;
+      const agilityMult = (activeShip.agility || activeShip.base_maneuver || 50) / 50;
       shipPhysicsRef.current = {
         SHIP_MAX_SPEED: BASE_SHIP_MAX_SPEED * speedMult,
         SHIP_ACCELERATION: BASE_SHIP_ACCELERATION * speedMult,

@@ -4,6 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
+import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
@@ -977,10 +978,16 @@ export const SystemView = () => {
   // at the slowest hull means a Leviathan tagging along actually
   // slows the fleet down. Makes the ship-loadout decision real.
   // base 50 = 1.0x multiplier (baseline), 120 = 2.4x, 25 = 0.5x.
+  // Read computed_max_speed (server-aggregated from base hull + engine
+  // module thrust * quality) when present; fall back to base_speed for
+  // ships that haven't been re-fitted since migration 047. Same for
+  // maneuver, which today has no engine-module contribution so it
+  // always uses the hull base.
   const activeFleet = (ships || []).filter(s => s.storage_body_id == null);
+  const shipSpeed = (s) => s.computed_max_speed ?? s.base_speed ?? 50;
   const minBaseSpeed = activeFleet.length > 0
-    ? Math.min(...activeFleet.map(s => s.base_speed ?? 50))
-    : (playerShip?.base_speed ?? 50);
+    ? Math.min(...activeFleet.map(shipSpeed))
+    : shipSpeed(playerShip || {});
   const minBaseManeuver = activeFleet.length > 0
     ? Math.min(...activeFleet.map(s => s.base_maneuver ?? 50))
     : (playerShip?.base_maneuver ?? 50);
@@ -1430,16 +1437,14 @@ export const SystemView = () => {
     return false;
   };
   // Sensor range: max scanner reach across the fitted fleet (NOT a
-  // sum -- stacking scanners doesn't add range, you only need one
-  // good eye). Returns 0 if no scanner is fitted anywhere.
-  // BASIC_SCANNER_SENSOR_RANGE mirrors migration 030's stat on
-  // utility_scanner -- kept as a constant on the client because
-  // fitted_modules don't carry the module_types.stats payload, and
-  // every Sensor Suite tier today is the basic one. When tiered
-  // scanners ship, replace the constant with a per-slot lookup.
-  // INNATE_SENSOR_RANGE is what you get with NO scanner: enough to
-  // see whoever is currently shooting you (matches PIRATE_ATTACK_RANGE)
-  // so combat isn't with invisible enemies.
+  // sum -- stacking scanners doesn't add range, you only need one good
+  // eye). Server's recalcShipStats writes `computed_sensor_range` per
+  // ship: max(scanner_module.sensor_range * quality). Fallback chain:
+  //   computed_sensor_range > 0      -> use it (post-Phase-3, quality aware)
+  //   has scanner module fitted      -> BASIC_SCANNER_SENSOR_RANGE (legacy)
+  //   nothing fitted                 -> INNATE_SENSOR_RANGE
+  // The legacy step exists because ships that haven't re-fitted since
+  // migration 047 still have computed_sensor_range NULL/0.
   const BASIC_SCANNER_SENSOR_RANGE = 500;
   const INNATE_SENSOR_RANGE = 150;
   const hasUtilityScannerFitted = (ship) => {
@@ -1451,12 +1456,23 @@ export const SystemView = () => {
     return false;
   };
   const fleetSensorRange = () => {
-    const base = fleetHas(hasUtilityScannerFitted) ? BASIC_SCANNER_SENSOR_RANGE : INNATE_SENSOR_RANGE;
+    // 1. Best computed value across the active fleet (Phase 3 path).
+    const fleet = fleetShipsRef.current || [];
+    let best = 0;
+    for (const s of fleet) {
+      if (s?.computed_sensor_range && s.computed_sensor_range > best) {
+        best = s.computed_sensor_range;
+      }
+    }
+    // 2. Legacy fallback for ships not yet re-fitted post-migration 047.
+    if (best === 0) {
+      best = fleetHas(hasUtilityScannerFitted) ? BASIC_SCANNER_SENSOR_RANGE : INNATE_SENSOR_RANGE;
+    }
     // Astrometrics skill: sensor_range_pct from store bonuses (Sensor
     // Linking = +5%/level, so L5 = +25%). Innate range is also boosted
     // -- the bonus is "captain's awareness," not just "better gear."
     const bonusPct = activeBonusesRef.current?.sensor_range_pct || 0;
-    return Math.round(base * (1 + bonusPct / 100));
+    return Math.round(best * (1 + bonusPct / 100));
   };
 
   // Enumerate every fitted mining laser across the active fleet, with
@@ -1494,6 +1510,17 @@ export const SystemView = () => {
       .filter(Boolean);
     return parts.length ? parts.join(', ') : 'empty';
   };
+  // Asteroid quality tier label from the four stat columns (Phase 4
+  // tooltip surface). Returns something like "Superior (Q73)" so the
+  // scan toast tells the player whether this rock is worth mining.
+  // Returns null if the asteroid hasn't been scanned (stats nulled out
+  // server-side until a scan is recorded).
+  const formatAsteroidQuality = (ast) => {
+    if (!ast || ast.stat_purity == null) return null;
+    const tier = getQualityTier(ast.stat_purity, ast.stat_stability, ast.stat_potency, ast.stat_density);
+    const avg = Math.round((ast.stat_purity + ast.stat_stability + ast.stat_potency + ast.stat_density) / 4);
+    return `${tier.name} (Q${avg})`;
+  };
   const handleAsteroidClick = (asteroid) => {
     const dx = asteroid.x - shipPosRef.current.x;
     const dy = asteroid.y - shipPosRef.current.y;
@@ -1516,7 +1543,7 @@ export const SystemView = () => {
       if (allLasers.length === 0) {
         if (pushToast) pushToast({
           kind: 'info',
-          text: `Asteroid contents: ${formatContents(asteroid.contents)}. Equip a Mining Laser to mine.`,
+          text: `${formatAsteroidQuality(asteroid) ? formatAsteroidQuality(asteroid) + ' — ' : ''}contents: ${formatContents(asteroid.contents)}. Equip a Mining Laser to mine.`,
           duration: 5000,
         });
         return;
@@ -2895,13 +2922,24 @@ export const SystemView = () => {
             const astId = scan.asteroidId;
             activeScanRef.current = null;
             asteroidsAPI.scan(astId)
-              .then(({ contents }) => {
+              .then(({ contents, stat_purity, stat_stability, stat_potency, stat_density }) => {
                 const a = asteroidsRef.current.find(x => x.id === astId);
-                if (a) { a.scanned = true; a.contents = contents; }
+                if (a) {
+                  a.scanned = true;
+                  a.contents = contents;
+                  // Phase 1 quality pass: server returns the asteroid's
+                  // rolled stats on scan. Store them so the click-to-mine
+                  // tooltip can show the quality tier going forward.
+                  a.stat_purity = stat_purity;
+                  a.stat_stability = stat_stability;
+                  a.stat_potency = stat_potency;
+                  a.stat_density = stat_density;
+                }
                 const pt = useGameStore.getState().pushToast;
+                const qLabel = formatAsteroidQuality({ stat_purity, stat_stability, stat_potency, stat_density });
                 if (pt) pt({
                   kind: 'success',
-                  text: `Scan complete: ${formatContents(contents)}`,
+                  text: `Scan complete — ${qLabel || 'unknown quality'}: ${formatContents(contents)}`,
                   duration: 5000,
                 });
                 // Tutorial: first successful asteroid scan completes

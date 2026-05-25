@@ -12,6 +12,7 @@
 // server, this can become stricter.
 
 import { getShipWeapons } from './weapons';
+import { qualityMultiplier } from './quality';
 
 // ============================================
 // MODULE TYPE KEYWORDS
@@ -48,17 +49,13 @@ const readModuleFields = (fittedValue) => {
   return fields;
 };
 
-// Quality multiplier (Q50 = 1.0×, Q100 = 2.0×, Q25 = 0.5×). Mirrors
-// the same formula used in weapons.js so module quality matters
-// uniformly across all stat contributions.
-const getQualityMultiplier = (fittedValue) => {
-  const stats = fittedValue?.stats || fittedValue?.item_data?.stats;
-  if (!stats) return 1.0;
-  const avg = ((stats.purity || 0) + (stats.stability || 0) +
-               (stats.potency || 0) + (stats.density || 0)) / 4;
-  if (avg <= 0) return 1.0;
-  return Math.max(0.4, Math.min(2.5, avg / 50));
-};
+// Quality multiplier now flows through the shared helper (Phase 2
+// quality pass). Same math as weapons.js + server-side mining endpoint.
+// Pre-Phase-2 this function read `.stats` instead of `.quality`, so
+// the multiplier was silently always 1.0 -- every fleetStats number
+// the Fleet panel rendered ignored module quality. Fixed by routing
+// through utils/quality.js's authoritative qualityMultiplier.
+const getQualityMultiplier = (fittedValue) => qualityMultiplier(fittedValue);
 
 // ============================================
 // MODULE BONUS TABLE

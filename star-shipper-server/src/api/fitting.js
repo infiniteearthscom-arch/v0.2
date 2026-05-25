@@ -4,6 +4,7 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
+import { qualityMultiplier } from '../lib/quality.js';
 
 const router = express.Router();
 
@@ -427,30 +428,54 @@ const recalcShipStats = async (client, shipId, userId) => {
 
   const fitted = ship.fitted_modules || {};
   let totalCargo = 0;
+  let engineSpeedBonus = 0;       // sum of engine module thrust * Q
+  let totalShield = 0;            // sum of shield module hp * Q
+  let maxSensorRange = 0;         // max scanner range * Q across slots
 
   for (const [slotId, modInfo] of Object.entries(fitted)) {
     const modResult = await client.query(
       `SELECT stats FROM module_types WHERE id = $1`, [modInfo.module_type_id]
     );
     const modStats = modResult.rows[0]?.stats || {};
-
-    // Quality scaling: average quality / 50 as multiplier (50 = baseline 1.0)
-    let qualityMult = 1.0;
-    if (modInfo.quality) {
-      const q = modInfo.quality;
-      const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
-      qualityMult = avg / 50;
-    }
+    const qMult = qualityMultiplier(modInfo);
 
     if (modStats.cargo_capacity) {
-      totalCargo += Math.round(modStats.cargo_capacity * qualityMult);
+      totalCargo += Math.round(modStats.cargo_capacity * qMult);
+    }
+    // Engine modules contribute additive speed. The stat field varies
+    // by hull/module convention -- accept either `thrust` or `speed`.
+    // Quality scales linearly per the Phase 3 spec.
+    const engineThrust = modStats.thrust ?? modStats.speed;
+    if (engineThrust) {
+      engineSpeedBonus += engineThrust * qMult;
+    }
+    // Shield modules: max shield HP, sum × Q.
+    if (modStats.shield_hp) {
+      totalShield += modStats.shield_hp * qMult;
+    }
+    // Scanner modules: sensor range, max across slots (you don't stack
+    // scanners for double the range; one good eye is enough).
+    if (modStats.sensor_range) {
+      const r = modStats.sensor_range * qMult;
+      if (r > maxSensorRange) maxSensorRange = r;
     }
   }
 
-  // Update computed_cargo on the ship itself (used for fleet-wide cargo calculation)
+  // Effective max speed = hull base + engine bonuses. Floors at hull
+  // base so a ship with no engines still moves at its intrinsic rate.
+  const computedMaxSpeed = Math.round((ship.base_speed ?? 50) + engineSpeedBonus);
+  const computedMaxShield = Math.round(totalShield);
+  const computedSensorRange = Math.round(maxSensorRange);
+
+  // Single UPDATE for all four computed values.
   await client.query(
-    `UPDATE ships SET computed_cargo = $1 WHERE id = $2`,
-    [totalCargo, shipId]
+    `UPDATE ships
+     SET computed_cargo = $1,
+         computed_max_speed = $2,
+         computed_max_shield = $3,
+         computed_sensor_range = $4
+     WHERE id = $5`,
+    [totalCargo, computedMaxSpeed, computedMaxShield, computedSensorRange, shipId]
   );
 
   // Also update legacy ship_designs if it exists (backward compat)

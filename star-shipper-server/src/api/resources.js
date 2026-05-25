@@ -12,6 +12,7 @@ import {
 } from '../game/deposits.js';
 import { isCityPlanet, SRng } from '../util/seed.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
+import { qualityMultiplier } from '../lib/quality.js';
 
 const router = express.Router();
 
@@ -2405,15 +2406,9 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         return (typeof y === 'number' && y > 0) ? y : 5;
       })();
 
-      // qMult: average-of-stats / 50, same convention as the rest of
-      // the module system. q50 = 1.0x. Per-laser quality lives on
-      // the fitted slot.
-      let qMult = 1.0;
-      if (slot.quality) {
-        const q = slot.quality;
-        const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
-        qMult = avg / 50;
-      }
+      // Per-laser quality via the shared helper. q50 = 1.0x, q100 = 2x,
+      // clamped 0.4..2.5. Phase 2 refactor -- this used to be inline math.
+      const qMult = qualityMultiplier(slot);
       // Industry skill multiplier: +5% per level on "Mining Operations"
       // (skill id ind_mining_ops). Pulled from the player_bonuses
       // aggregate so any future skill / research that emits a
