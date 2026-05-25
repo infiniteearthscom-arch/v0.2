@@ -1176,29 +1176,56 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
               fontFamily: F,
             }}>No available deposits</div>
           ) : (
-            availableDeposits.map(d => (
-              <button
-                key={d.id}
-                onClick={() => { onAssignDeposit(harvester.id, d.id); setShowDepositPicker(false); }}
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '4px 7px',
-                  marginBottom: 2,
-                  borderRadius: 2,
-                  background: 'rgba(4,8,16,0.6)',
-                  border: `1px solid ${EDGE}`,
-                  fontSize: 10,
-                  fontFamily: F,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <span style={{ color: '#a0b0c0' }}>{d.resource_name} (slot {d.slot_number})</span>
-                <span style={{ color: '#3a5a6a', fontFamily: FM }}>{d.quantity_remaining}</span>
-              </button>
-            ))
+            availableDeposits.map(d => {
+              // Deposit quality tier -- server already SELECTs all
+              // stat_* columns on the deposit row, so we just read +
+              // bucket. Players picking which deposit to attach a
+              // harvester to should see the quality so they don't
+              // sink an Auto into a Q15 dud.
+              const tier = (d.stat_purity != null)
+                ? getQualityTier(d.stat_purity, d.stat_stability, d.stat_potency, d.stat_density)
+                : null;
+              return (
+                <button
+                  key={d.id}
+                  onClick={() => { onAssignDeposit(harvester.id, d.id); setShowDepositPicker(false); }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '4px 7px',
+                    marginBottom: 2,
+                    borderRadius: 2,
+                    background: 'rgba(4,8,16,0.6)',
+                    border: `1px solid ${EDGE}`,
+                    fontSize: 10,
+                    fontFamily: F,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span style={{ color: '#a0b0c0', flex: 1 }}>
+                    {d.resource_name} (slot {d.slot_number})
+                  </span>
+                  {tier && (
+                    <span style={{
+                      fontSize: 8,
+                      padding: '1px 5px',
+                      borderRadius: 2,
+                      fontWeight: 800,
+                      fontFamily: F,
+                      letterSpacing: 0.5,
+                      textTransform: 'uppercase',
+                      color: tier.color,
+                      background: `${tier.color}1a`,
+                      border: `1px solid ${tier.color}55`,
+                    }}>{tier.name}</span>
+                  )}
+                  <span style={{ color: '#3a5a6a', fontFamily: FM }}>{d.quantity_remaining}</span>
+                </button>
+              );
+            })
           )}
           <button
             onClick={() => setShowDepositPicker(false)}
