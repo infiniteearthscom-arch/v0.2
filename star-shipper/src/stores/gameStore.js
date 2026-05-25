@@ -108,6 +108,13 @@ const initialState = {
   enemyCount: 0,
   followMode: true,
 
+  // Range overlay toggle: when true, SystemView draws sensor + scan
+  // range rings around the fleet's primary ship on the gameplay
+  // canvas. Toggled by the "View Scan Range" button in the System Map
+  // header. Useful for judging "is that asteroid close enough to scan?"
+  // and "will that pirate become visible if I move 100 px closer?"
+  showRangeOverlay: false,
+
   // Designated enemy: set by clicking an enemy in SystemView's
   // gameplay canvas. The whole fleet's combat targeting prefers this
   // enemy (instead of just "nearest in range") -- solves the missile
@@ -601,6 +608,10 @@ export const useGameStore = create(
       }),
       clearDesignatedEnemy: () => set(state => {
         state.designatedEnemyId = null;
+      }),
+
+      toggleRangeOverlay: () => set(state => {
+        state.showRangeOverlay = !state.showRangeOverlay;
       }),
 
       // Fleet stats: SystemView pushes aggregated stats when fleet changes

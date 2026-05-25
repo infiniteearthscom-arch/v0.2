@@ -400,6 +400,8 @@ export const SystemMapWindow = () => {
   const shipSpeed = useGameStore(state => state.shipSpeed);
   const time = useGameStore(state => state.gameTime);
   const scannerData = useGameStore(state => state.scannerData);
+  const showRangeOverlay = useGameStore(state => state.showRangeOverlay);
+  const toggleRangeOverlay = useGameStore(state => state.toggleRangeOverlay);
 
   const inSystem = viewMode === 'system';
 
@@ -475,14 +477,39 @@ export const SystemMapWindow = () => {
           borderBottom: `1px solid ${EDGE}`,
           background: `linear-gradient(90deg, ${BLUE.pri}25, transparent)`,
           flexShrink: 0,
+          gap: 8,
         }}>
-          <span style={{ marginRight: 6, fontSize: 12 }}>🗺️</span>
+          <span style={{ fontSize: 12 }}>🗺️</span>
           <span style={{
             fontSize: 11, fontWeight: 800, color: BLUE.light,
             letterSpacing: 2, flex: 1, textTransform: 'uppercase',
           }}>
             System Map{system ? ` · ${system.name}` : ''}
           </span>
+          {/* Scan / sensor range overlay toggle. Draws dashed rings
+              around the primary ship on the main gameplay canvas --
+              blue = sensor range, green = asteroid scan range. Useful
+              for judging "can I scan that asteroid from here?" + "will
+              that pirate become visible if I close another 100 px?" */}
+          <button
+            onClick={toggleRangeOverlay}
+            title={showRangeOverlay ? 'Hide range overlay on gameplay canvas' : 'Show sensor + scan range rings on gameplay canvas'}
+            style={{
+              background: showRangeOverlay ? `${BLUE.pri}25` : 'transparent',
+              border: `1px solid ${showRangeOverlay ? BLUE.pri : EDGE}`,
+              color: showRangeOverlay ? BLUE.light : '#7a8a9a',
+              padding: '3px 9px',
+              cursor: 'pointer',
+              borderRadius: 2,
+              fontSize: 9,
+              fontFamily: F,
+              fontWeight: 700,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+            }}
+          >
+            {showRangeOverlay ? '◉ Range Visible' : '◎ View Scan Range'}
+          </button>
           <button
             onClick={() => closeWindow('systemMap')}
             style={{

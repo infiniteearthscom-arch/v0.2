@@ -1047,6 +1047,10 @@ export const SystemView = () => {
   const designatedEnemyId = useGameStore(state => state.designatedEnemyId);
   const setDesignatedEnemy = useGameStore(state => state.setDesignatedEnemy);
   const clearDesignatedEnemy = useGameStore(state => state.clearDesignatedEnemy);
+  // Range overlay toggle (driven by the "View Scan Range" button in the
+  // System Map header). When true, we draw dashed sensor + scan rings
+  // centered on the active ship below the fleet icons.
+  const showRangeOverlay = useGameStore(state => state.showRangeOverlay);
   // Ref mirror -- combat loop reads this each frame to pick targets.
   // The store selector above triggers re-renders for the SVG reticle;
   // the ref keeps the game loop's empty-deps closure current.
@@ -3377,6 +3381,38 @@ export const SystemView = () => {
               }
               return <g key={`trail-${ship.id}`}>{segments}</g>;
             })}
+
+            {/* Range overlay -- dashed rings centered on the active
+                ship showing what the fleet can "see" (sensor range,
+                gates enemy + wreck visibility) and what it can scan
+                (asteroid contents). Toggled by the System Map header
+                button. Drawn before fleet ships so icons sit on top.
+                Centers on shipPosRef.current; the rings live in world
+                coordinates and pan with the camera naturally. */}
+            {showRangeOverlay && (() => {
+              const px = shipPosRef.current.x, py = shipPosRef.current.y;
+              const sensorR = fleetSensorRange();
+              return (
+                <g style={{ pointerEvents: 'none' }}>
+                  <circle cx={px} cy={py} r={sensorR}
+                    fill="none" stroke="#60a5fa" strokeWidth="0.8"
+                    strokeDasharray="6,4" opacity="0.45" />
+                  <text x={px} y={py - sensorR - 2} textAnchor="middle"
+                    fill="#60a5fa" fontSize="4" fontFamily="monospace"
+                    letterSpacing="0.5" opacity="0.7">
+                    SENSOR {Math.round(sensorR)}
+                  </text>
+                  <circle cx={px} cy={py} r={SCAN_RANGE}
+                    fill="none" stroke="#22c55e" strokeWidth="0.8"
+                    strokeDasharray="6,4" opacity="0.55" />
+                  <text x={px} y={py - SCAN_RANGE - 2} textAnchor="middle"
+                    fill="#22c55e" fontSize="4" fontFamily="monospace"
+                    letterSpacing="0.5" opacity="0.75">
+                    SCAN {SCAN_RANGE}
+                  </text>
+                </g>
+              );
+            })()}
 
             {/* Fleet Ships — Flying V formation. Active ship reads
                 directly from shipPosRef + shipRotationRef. Wingmen read
