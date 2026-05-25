@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-25 (Quality pass phases 1-3 + asteroid scan tooltip)
+**Last updated:** 2026-05-25 (Quality pass phases 1-3 + ship-builder effective stats)
 
 ---
 
@@ -73,7 +73,7 @@ Designed in chat 2026-05-25 with user. Goal: make ingredient quality a real leve
 
 **Phase 4 -- UI signaling:**
 - Asteroid scanner tooltip shows quality tier (`Superior (Q73)`) -- SHIPPED 2026-05-25.
-- Ship Builder shows "Effective" stats per fitted module (`Damage: 11 (base 6 × Q88 → 1.8×)`), modifier color-coded -- TODO.
+- Ship Builder slot info shows effective stats per fitted module with per-stat scaling (linear/√/inverted) and color-coded multiplier (`Damage  11 (base 6) ×1.83` in green) -- SHIPPED 2026-05-25. Uses the same `STAT_META` mapping as weapons.js so what the panel shows matches what the engine does.
 - Crafting projection: before clicking Craft, show projected output quality + resulting stats so the player decides whether to burn a high-q stack -- TODO.
 
 **Phase 5 (optional follow-up) -- skill hooks:**

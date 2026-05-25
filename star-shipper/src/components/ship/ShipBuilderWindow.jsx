@@ -6,6 +6,7 @@ import { useTooltip } from '@/components/ui/TooltipProvider';
 import { ItemCell, ItemIcon, EmptySlotCell } from '@/components/items';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 import { normalizeItem, normalizeFittedModule, SLOT_TYPE_META } from '@/utils/itemShape';
+import { qualityMultiplier } from '@/utils/quality';
 // Single source of truth for hull shape data (pitfall #11 in CLAUDE.md).
 // ShipBuilderWindow used to inline its own HULL_SHAPES const which
 // drifted from shipRenderer.js -- the mining barges (Prospector,
@@ -423,6 +424,44 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
 };
 
 // ============================================
+// STAT META -- how each module-stat key scales with quality, plus
+// display formatting. `power` matches the Phase 3 scaling spec:
+//   1.0 -> linear x Q (damage, cargo, shield_hp, thrust, sensor_range,
+//                       mine_yield, ammo_capacity, ...)
+//   0.5 -> sqrt(Q) (range, maneuver -- soft scaling)
+// `invert: true` means lower is better (cycle/lock/scan times). The
+// multiplier is then 1/Q^power so high quality shortens the time.
+// Unknown stat keys default to linear x Q (matches pre-refactor behavior).
+// ============================================
+const STAT_META = {
+  // Linear "more is better"
+  damage:           { label: 'Damage',          power: 1 },
+  shield_hp:        { label: 'Shield HP',       power: 1 },
+  cargo_capacity:   { label: 'Cargo',           power: 1 },
+  thrust:           { label: 'Thrust',          power: 1 },
+  speed:            { label: 'Speed',           power: 1 },
+  sensor_range:     { label: 'Sensor Range',    power: 1 },
+  mine_yield:       { label: 'Mining Yield',    power: 1 },
+  ammo_capacity:    { label: 'Ammo Capacity',   power: 1, integer: true },
+  // Soft (sqrt) -- big bonuses don't double range
+  range:            { label: 'Range',           power: 0.5 },
+  maneuver:         { label: 'Maneuver',        power: 0.5 },
+  // Inverted (lower is better)
+  fire_rate:        { label: 'Cycle Time',      power: 0.5, invert: true, unit: 's', decimals: 2 },
+  lock_time:        { label: 'Lock Time',       power: 1,   invert: true, unit: 's', decimals: 2 },
+  scan_time:        { label: 'Scan Time',       power: 1,   invert: true, unit: 's', decimals: 1 },
+};
+
+const fmtStat = (val, meta) => {
+  if (val == null) return '—';
+  if (meta?.integer) return Math.round(val).toString();
+  if (meta?.decimals != null) return `${val.toFixed(meta.decimals)}${meta?.unit || ''}`;
+  // Default: integer for >= 10, 1 decimal under
+  if (Math.abs(val) >= 10) return `${Math.round(val)}${meta?.unit || ''}`;
+  return `${val.toFixed(1)}${meta?.unit || ''}`;
+};
+
+// ============================================
 // SLOT INFO PANEL
 // ============================================
 const SlotInfo = ({ slot, module }) => {
@@ -470,13 +509,38 @@ const SlotInfo = ({ slot, module }) => {
           {module.base_stats && (
             <div className="mt-1.5 pt-1.5 border-t border-slate-700/30">
               {Object.entries(module.base_stats).map(([key, val]) => {
-                const scaled = avgQ !== null ? Math.round(val * (avgQ / 50)) : val;
+                if (typeof val !== 'number') return null; // skip non-numeric (flags etc.)
+                const meta = STAT_META[key];
+                const label = meta?.label || key.replace(/_/g, ' ');
+                // Per-stat quality multiplier via the shared helper.
+                // Matches weapons.js / recalcShipStats so what the player
+                // sees here is what they get in combat / flight.
+                const mult = qualityMultiplier(module, {
+                  power: meta?.power ?? 1,
+                  invert: meta?.invert ?? false,
+                });
+                const scaled = val * mult;
+                const differs = Math.abs(scaled - val) > 0.005;
+                // Color the modifier by "is effective BETTER than base?"
+                // For inverted stats (cycle time), smaller = better.
+                let multColor = '#94a3b8'; // slate-400 neutral
+                if (differs) {
+                  const better = meta?.invert ? scaled < val : scaled > val;
+                  multColor = better ? '#4ade80' : '#f87171'; // green-400 / red-400
+                }
                 return (
-                  <div key={key} className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">{key.replace(/_/g, ' ')}</span>
-                    <span className="text-slate-300">
-                      {scaled}
-                      {scaled !== val && <span className="text-slate-600 ml-1">({val})</span>}
+                  <div key={key} className="flex justify-between text-[10px] py-px">
+                    <span className="text-slate-500">{label}</span>
+                    <span>
+                      <span className="text-slate-200 font-medium">{fmtStat(scaled, meta)}</span>
+                      {differs && (
+                        <>
+                          <span className="text-slate-600 ml-1.5">(base {fmtStat(val, meta)})</span>
+                          <span className="ml-1.5 font-medium" style={{ color: multColor }}>
+                            ×{mult.toFixed(2)}
+                          </span>
+                        </>
+                      )}
                     </span>
                   </div>
                 );
