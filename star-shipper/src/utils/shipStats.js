@@ -48,6 +48,29 @@ export const getFleetScanTimeMs = (ships, bonuses) => {
 // module check pattern from CLAUDE.md pitfall #15 -- a scanner on a
 // wingman gates the action just like one on the primary.
 
+// ============================================
+// SCAN RANGE (asteroid click reach)
+// ============================================
+// Best (max) computed_scan_range across the active fleet, then the
+// `ast_survey` skill's survey_scanner_range_pct bonus on top (+5%/level,
+// catalog default). Falls back to DEFAULT_SCAN_RANGE when no ship has
+// computed_scan_range filled in yet (post-migration-052 ships not
+// re-fitted) -- mirrors the sensor-range fallback pattern.
+
+export const DEFAULT_SCAN_RANGE = 80;
+
+export const getFleetScanRange = (ships, bonuses) => {
+  let best = 0;
+  for (const s of (ships || [])) {
+    if (s?.computed_scan_range && s.computed_scan_range > best) {
+      best = s.computed_scan_range;
+    }
+  }
+  const base = best > 0 ? best : DEFAULT_SCAN_RANGE;
+  const bonusPct = bonuses?.survey_scanner_range_pct || 0;
+  return Math.round(base * (1 + bonusPct / 100));
+};
+
 export const fleetHasScanner = (ships) => {
   for (const s of (ships || [])) {
     const fitted = s?.fitted_modules || {};

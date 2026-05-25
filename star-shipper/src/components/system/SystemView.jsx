@@ -4,7 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
-import { getFleetScanTimeMs } from '@/utils/shipStats';
+import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
@@ -1127,7 +1127,15 @@ export const SystemView = () => {
   // checks range each frame; if player flies out, cancels. On time
   // elapsed, fires the server scan endpoint to record + reveal.
   const activeScanRef = useRef(null); // { asteroidId, startMs, durationMs } | null
-  const SCAN_RANGE = 80;     // matches utility_scanner.stats.scan_range
+  // Scan range -- the click-to-scan reach for asteroids -- is no
+  // longer a constant. Effective value comes from the best fitted
+  // scanner's computed_scan_range (T1=80, T2=160, T3=320, x quality)
+  // plus the ast_survey skill's survey_scanner_range_pct bonus.
+  // Helper reads the live refs so re-fits + skill ticks take effect
+  // without a re-render dependency. The legacy DEFAULT_SCAN_RANGE
+  // (80) acts as a floor for ships not yet re-fitted post-migration-052.
+  const fleetScanRange = () =>
+    getFleetScanRange(fleetShipsRef.current, activeBonusesRef.current);
   // Scan duration is no longer a constant -- derived per-scan from the
   // best fitted scanner's computed_scan_time and the ast_scanning skill
   // bonus via getFleetScanTimeMs(). The asteroid scan loop reads
@@ -1666,7 +1674,7 @@ export const SystemView = () => {
       if (pushToast) pushToast({ kind: 'error', text: 'Sensor Suite required to scan asteroids.', duration: 3000 });
       return;
     }
-    if (dist > SCAN_RANGE) {
+    if (dist > fleetScanRange()) {
       if (pushToast) pushToast({ kind: 'error', text: 'Too far to scan — get closer to the asteroid.', duration: 3000 });
       return;
     }
@@ -3123,7 +3131,7 @@ export const SystemView = () => {
         } else {
           const sdx = ast.x - playerPos.x;
           const sdy = ast.y - playerPos.y;
-          if (sdx * sdx + sdy * sdy > (SCAN_RANGE * 1.2) ** 2) {
+          if (sdx * sdx + sdy * sdy > (fleetScanRange() * 1.2) ** 2) {
             // Out of range -- cancel
             activeScanRef.current = null;
             const pt = useGameStore.getState().pushToast;
@@ -3651,14 +3659,21 @@ export const SystemView = () => {
                     letterSpacing="0.5" opacity="0.7">
                     SENSOR {Math.round(sensorR)}
                   </text>
-                  <circle cx={px} cy={py} r={SCAN_RANGE}
-                    fill="none" stroke="#22c55e" strokeWidth="0.8"
-                    strokeDasharray="6,4" opacity="0.55" />
-                  <text x={px} y={py - SCAN_RANGE - 2} textAnchor="middle"
-                    fill="#22c55e" fontSize="4" fontFamily="monospace"
-                    letterSpacing="0.5" opacity="0.75">
-                    SCAN {SCAN_RANGE}
-                  </text>
+                  {(() => {
+                    const scanR = fleetScanRange();
+                    return (
+                      <>
+                        <circle cx={px} cy={py} r={scanR}
+                          fill="none" stroke="#22c55e" strokeWidth="0.8"
+                          strokeDasharray="6,4" opacity="0.55" />
+                        <text x={px} y={py - scanR - 2} textAnchor="middle"
+                          fill="#22c55e" fontSize="4" fontFamily="monospace"
+                          letterSpacing="0.5" opacity="0.75">
+                          SCAN {scanR}
+                        </text>
+                      </>
+                    );
+                  })()}
                 </g>
               );
             })()}
