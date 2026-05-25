@@ -7,6 +7,7 @@ import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
 import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
+import { getFleetScanTimeMs, fleetHasScanner } from '@/utils/shipStats';
 import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
 
 // ============================================
@@ -2870,6 +2871,58 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
 };
 
 // ============================================
+// SCAN PROGRESS PANEL
+// Used by the Scan tab for both orbital + ground in-flight scans.
+// Reads scanTick from props (mom-and-pop -- the parent's timer effect
+// bumps state every 100ms which re-renders us with a fresh Date.now()).
+// ============================================
+const ScanProgressPanel = ({ label, accent, startMs, durationMs, onCancel }) => {
+  const elapsed = Math.min(durationMs, Date.now() - startMs);
+  const pct = elapsed / durationMs;
+  const remainSec = Math.max(0, (durationMs - elapsed) / 1000);
+  return (
+    <>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8,
+      }}>
+        <span style={{
+          fontSize: 11, color: accent, fontFamily: F, fontWeight: 700,
+          letterSpacing: 1, textTransform: 'uppercase', flex: 1,
+        }}>{label}</span>
+        <span style={{ fontSize: 10, color: '#7a8a9a', fontFamily: FM }}>
+          {remainSec.toFixed(1)}s
+        </span>
+      </div>
+      <div style={{
+        height: 8, background: '#0a1528',
+        border: `1px solid ${EDGE}`, borderRadius: 2, overflow: 'hidden',
+        marginBottom: 10,
+      }}>
+        <div style={{
+          height: '100%', width: `${pct * 100}%`,
+          background: `linear-gradient(90deg, ${accent}66, ${accent})`,
+          transition: 'width 0.1s linear',
+        }} />
+      </div>
+      <button
+        onClick={onCancel}
+        style={{
+          padding: '5px 14px',
+          background: 'transparent',
+          border: `1px solid ${EDGE}`,
+          color: '#7a8a9a',
+          fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+          textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
+        }}
+      >Cancel</button>
+      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
+        Probe consumed on completion · cancel to preserve.
+      </div>
+    </>
+  );
+};
+
+// ============================================
 // MAIN PLANET INTERACTION WINDOW
 // ============================================
 
@@ -2879,7 +2932,14 @@ export const PlanetInteractionWindow = ({ body }) => {
   const isOpen = windows.planetInteraction?.open;
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
   const completeQuest = useGameStore(state => state.completeQuest);
-  
+  // Active fleet + skill bonuses feed the timed-scan duration calculation.
+  // ships subscription drives re-render when the player re-fits between
+  // scans (so the "DEPLOY PROBE" button enables/disables live as scanner
+  // status changes).
+  const ships = useGameStore(state => state.ships);
+  const activeBonuses = useGameStore(state => state.activeBonuses);
+  const hasScanner = fleetHasScanner(ships);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [probes, setProbes] = useState({ scanner_probes: 0, advanced_scanner_probes: 0 });
@@ -2888,6 +2948,12 @@ export const PlanetInteractionWindow = ({ body }) => {
   const [groundResults, setGroundResults] = useState(null);
   const [activeTab, setActiveTab] = useState('scan');
   const [resolvedBodyId, setResolvedBodyId] = useState(null);
+  // Timed-scan state. `kind` is 'orbital' or 'ground'. startMs +
+  // durationMs are snapshotted at scan-start so re-fits mid-scan don't
+  // yank the timer. scanTick is a render-trigger -- the interval bumps
+  // it every 100ms so the progress bar repaints.
+  const [scanning, setScanning] = useState(null);
+  const [scanTick, setScanTick] = useState(0);
   // Phase A city seeding -- comes from /ensure-body for procedural bodies,
   // hardcoded for Sol. Drives the City tab visibility below. Stations are
   // populated regardless and use body.type, not this flag.
@@ -2974,11 +3040,60 @@ export const PlanetInteractionWindow = ({ body }) => {
     setGroundResults(null);
     setSurveyStatus({ orbital_scanned: false, ground_scanned: false });
     setError(null);
+    // Body change cancels any in-flight scan -- the probe stays
+    // unconsumed since we only call the server endpoint on completion.
+    setScanning(null);
     // Reset to the always-available Scan tab on body change. Otherwise a
     // user with the City tab selected at Earth would land on Mars (no
     // city) with activeTab='populated', which renders nothing.
     setActiveTab('scan');
   }, [body?.id]);
+
+  // Scan timer: ticks every 100ms to advance the progress bar; on
+  // completion calls the server scan endpoint (which is what actually
+  // consumes the probe + records the scan). Cancellation paths:
+  //   - body change          -> setScanning(null) above
+  //   - explicit Cancel btn  -> handler below
+  //   - window close/unmount -> useEffect cleanup
+  // In all cancel cases the probe is preserved.
+  useEffect(() => {
+    if (!scanning) return;
+    const tickInterval = setInterval(() => {
+      const elapsed = Date.now() - scanning.startMs;
+      if (elapsed >= scanning.durationMs) {
+        clearInterval(tickInterval);
+        // Closure-capture kind before we null out scanning.
+        const kind = scanning.kind;
+        setScanning(null);
+        (async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            if (kind === 'orbital') {
+              const data = await resourcesAPI.orbitalScan(effectiveBodyId);
+              setOrbitalResults(data.results);
+              setSurveyStatus(prev => ({ ...prev, orbital_scanned: true }));
+              setProbes(prev => ({ ...prev, scanner_probes: prev.scanner_probes - 1 }));
+            } else if (kind === 'ground') {
+              const data = await resourcesAPI.groundScan(effectiveBodyId);
+              setGroundResults(data.results);
+              setSurveyStatus(prev => ({ ...prev, ground_scanned: true }));
+              setProbes(prev => ({ ...prev, advanced_scanner_probes: prev.advanced_scanner_probes - 1 }));
+              // Tutorial: completing a ground scan completes "Look Down"
+              if (completeQuest) completeQuest('tutorial_survey_planet');
+            }
+          } catch (err) {
+            setError(err.message);
+          } finally {
+            setLoading(false);
+          }
+        })();
+      } else {
+        setScanTick(t => t + 1);
+      }
+    }, 100);
+    return () => clearInterval(tickInterval);
+  }, [scanning, effectiveBodyId, completeQuest]);
 
   // Quest trigger: fly to Luna Station
   useEffect(() => {
@@ -3005,41 +3120,23 @@ export const PlanetInteractionWindow = ({ body }) => {
     }
   };
   
-  const performOrbitalScan = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const data = await resourcesAPI.orbitalScan(effectiveBodyId);
-      setOrbitalResults(data.results);
-      setSurveyStatus(prev => ({ ...prev, orbital_scanned: true }));
-      setProbes(prev => ({ ...prev, scanner_probes: prev.scanner_probes - 1 }));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  // Scan starters now KICK OFF the timer instead of calling the API
+  // directly. The useEffect timer above handles completion + probe
+  // consumption. Duration is derived per-scan from the fleet's
+  // computed_scan_time + ast_scanning skill bonus, snapshotted so
+  // mid-scan re-fits don't disrupt the in-flight scan.
+  const startScan = (kind) => {
+    if (!hasScanner) {
+      setError('No Sensor Suite fitted. Equip a scanner module in the Fitting window first.');
+      return;
     }
-  };
-  
-  const performGroundScan = async () => {
-    setLoading(true);
+    const durationMs = getFleetScanTimeMs(ships, activeBonuses);
     setError(null);
-
-    try {
-      const data = await resourcesAPI.groundScan(effectiveBodyId);
-      setGroundResults(data.results);
-      setSurveyStatus(prev => ({ ...prev, ground_scanned: true }));
-      setProbes(prev => ({ ...prev, advanced_scanner_probes: prev.advanced_scanner_probes - 1 }));
-      // Tutorial: completing a ground scan completes "Look Down"
-      // (orbital is a prereq, so ground scan = the player surveyed
-      // the full pipeline).
-      if (completeQuest) completeQuest('tutorial_survey_planet');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    setScanning({ kind, startMs: Date.now(), durationMs });
   };
+  const performOrbitalScan = () => startScan('orbital');
+  const performGroundScan  = () => startScan('ground');
+  const cancelScan = () => setScanning(null);
   
   if (!isOpen || !body) return null;
 
@@ -3211,6 +3308,14 @@ export const PlanetInteractionWindow = ({ body }) => {
                     </>
                   ) : surveyStatus.orbital_scanned ? (
                     <p style={{ color: '#64748b', fontSize: 11, margin: 0 }}>Scan data available. View deposits in the Mine tab.</p>
+                  ) : scanning?.kind === 'orbital' ? (
+                    <ScanProgressPanel
+                      label="Orbital scan in progress"
+                      accent="#22d3ee"
+                      startMs={scanning.startMs}
+                      durationMs={scanning.durationMs}
+                      onCancel={cancelScan}
+                    />
                   ) : (
                     <>
                       <p style={{ color: '#4a5a6a', fontSize: 11, margin: '0 0 10px', lineHeight: 1.5 }}>
@@ -3218,26 +3323,30 @@ export const PlanetInteractionWindow = ({ body }) => {
                       </p>
                       <button
                         onClick={performOrbitalScan}
-                        disabled={loading || probes.scanner_probes < 1}
+                        disabled={loading || !hasScanner || probes.scanner_probes < 1 || scanning != null}
                         style={{
                           padding: '8px 20px',
-                          background: (loading || probes.scanner_probes < 1)
+                          background: (loading || !hasScanner || probes.scanner_probes < 1 || scanning != null)
                             ? 'rgba(30,41,59,0.5)'
                             : 'linear-gradient(180deg, #22d3ee22, #22d3ee08)',
-                          border: `1px solid ${(loading || probes.scanner_probes < 1) ? '#1e293b' : '#22d3ee55'}`,
-                          color: (loading || probes.scanner_probes < 1) ? '#475569' : '#22d3ee',
+                          border: `1px solid ${(loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? '#1e293b' : '#22d3ee55'}`,
+                          color: (loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? '#475569' : '#22d3ee',
                           fontSize: 11,
                           fontFamily: F,
                           fontWeight: 800,
-                          cursor: (loading || probes.scanner_probes < 1) ? 'not-allowed' : 'pointer',
+                          cursor: (loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? 'not-allowed' : 'pointer',
                           borderRadius: 3,
                           letterSpacing: 1,
-                          boxShadow: (loading || probes.scanner_probes < 1) ? 'none' : glow('#22d3ee', 0.12),
+                          boxShadow: (loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? 'none' : glow('#22d3ee', 0.12),
                         }}
                       >
                         {loading ? 'SCANNING...' : 'DEPLOY PROBE'}
                       </button>
-                      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>Requires 1 Scanner Probe</div>
+                      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
+                        {!hasScanner
+                          ? 'Requires a Sensor Suite fitted to any active ship'
+                          : `Requires 1 Scanner Probe · ${Math.round(getFleetScanTimeMs(ships, activeBonuses) / 100) / 10}s scan`}
+                      </div>
                     </>
                   )}
                 </div>
@@ -3260,6 +3369,14 @@ export const PlanetInteractionWindow = ({ body }) => {
                     <GroundScanResults deposits={groundResults.deposits} />
                   ) : surveyStatus.ground_scanned ? (
                     <p style={{ color: '#64748b', fontSize: 11, margin: 0 }}>Detailed scan data available.</p>
+                  ) : scanning?.kind === 'ground' ? (
+                    <ScanProgressPanel
+                      label="Ground scan in progress"
+                      accent="#8b5cf6"
+                      startMs={scanning.startMs}
+                      durationMs={scanning.durationMs}
+                      onCancel={cancelScan}
+                    />
                   ) : (
                     <>
                       <p style={{ color: '#4a5a6a', fontSize: 11, margin: '0 0 10px', lineHeight: 1.5 }}>
@@ -3267,26 +3384,30 @@ export const PlanetInteractionWindow = ({ body }) => {
                       </p>
                       <button
                         onClick={performGroundScan}
-                        disabled={loading || probes.advanced_scanner_probes < 1}
+                        disabled={loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null}
                         style={{
                           padding: '8px 20px',
-                          background: (loading || probes.advanced_scanner_probes < 1)
+                          background: (loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null)
                             ? 'rgba(30,41,59,0.5)'
                             : 'linear-gradient(180deg, #8b5cf622, #8b5cf608)',
-                          border: `1px solid ${(loading || probes.advanced_scanner_probes < 1) ? '#1e293b' : '#8b5cf655'}`,
-                          color: (loading || probes.advanced_scanner_probes < 1) ? '#475569' : '#8b5cf6',
+                          border: `1px solid ${(loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? '#1e293b' : '#8b5cf655'}`,
+                          color: (loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? '#475569' : '#8b5cf6',
                           fontSize: 11,
                           fontFamily: F,
                           fontWeight: 800,
-                          cursor: (loading || probes.advanced_scanner_probes < 1) ? 'not-allowed' : 'pointer',
+                          cursor: (loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? 'not-allowed' : 'pointer',
                           borderRadius: 3,
                           letterSpacing: 1,
-                          boxShadow: (loading || probes.advanced_scanner_probes < 1) ? 'none' : glow('#8b5cf6', 0.12),
+                          boxShadow: (loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? 'none' : glow('#8b5cf6', 0.12),
                         }}
                       >
                         {loading ? 'SCANNING...' : 'DEPLOY PROBE'}
                       </button>
-                      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>Requires 1 Advanced Scanner Probe</div>
+                      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
+                        {!hasScanner
+                          ? 'Requires a Sensor Suite fitted to any active ship'
+                          : `Requires 1 Advanced Scanner Probe · ${Math.round(getFleetScanTimeMs(ships, activeBonuses) / 100) / 10}s scan`}
+                      </div>
                     </>
                   )}
                 </div>

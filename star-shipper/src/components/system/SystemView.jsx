@@ -4,6 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
+import { getFleetScanTimeMs } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
@@ -1125,9 +1126,13 @@ export const SystemView = () => {
   // A2 scan state: at most one scan in flight at a time. Game loop
   // checks range each frame; if player flies out, cancels. On time
   // elapsed, fires the server scan endpoint to record + reveal.
-  const activeScanRef = useRef(null); // { asteroidId, startMs } | null
+  const activeScanRef = useRef(null); // { asteroidId, startMs, durationMs } | null
   const SCAN_RANGE = 80;     // matches utility_scanner.stats.scan_range
-  const SCAN_TIME_MS = 8000; // matches utility_scanner.stats.scan_time * 1000
+  // Scan duration is no longer a constant -- derived per-scan from the
+  // best fitted scanner's computed_scan_time and the ast_scanning skill
+  // bonus via getFleetScanTimeMs(). The asteroid scan loop reads
+  // activeScanRef.durationMs (snapshotted at scan-start) so mid-scan
+  // re-fits don't change the in-flight scan's timing.
 
   // A4 mining state. Per-laser click-to-mine: every fitted mining
   // laser across the active fleet can be independently assigned to
@@ -1616,7 +1621,10 @@ export const SystemView = () => {
       if (pushToast) pushToast({ kind: 'error', text: 'Too far to scan — get closer to the asteroid.', duration: 3000 });
       return;
     }
-    activeScanRef.current = { asteroidId: asteroid.id, startMs: Date.now() };
+    // Snapshot scan duration at start so re-fits / skill ticks mid-scan
+    // don't yank the timer out from under the player.
+    const durationMs = getFleetScanTimeMs(fleetShipsRef.current, activeBonusesRef.current);
+    activeScanRef.current = { asteroidId: asteroid.id, startMs: Date.now(), durationMs };
     if (pushToast) pushToast({ kind: 'info', text: 'Scanning asteroid...', duration: 2000 });
   };
 
@@ -2917,7 +2925,7 @@ export const SystemView = () => {
             activeScanRef.current = null;
             const pt = useGameStore.getState().pushToast;
             if (pt) pt({ kind: 'error', text: 'Scan cancelled — flew out of range.', duration: 2500 });
-          } else if (Date.now() - scan.startMs >= SCAN_TIME_MS) {
+          } else if (Date.now() - scan.startMs >= scan.durationMs) {
             // Time complete -- record server-side and reveal
             const astId = scan.asteroidId;
             activeScanRef.current = null;
@@ -3773,7 +3781,7 @@ export const SystemView = () => {
               }
               const isMineTarget = assignedLaserCount > 0;
               const scanPct = isScanning
-                ? Math.min(1, (Date.now() - activeScanRef.current.startMs) / SCAN_TIME_MS)
+                ? Math.min(1, (Date.now() - activeScanRef.current.startMs) / activeScanRef.current.durationMs)
                 : 0;
               const ringR = a.size + 4;
               const circumference = 2 * Math.PI * ringR;

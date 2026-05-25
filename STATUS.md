@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-25 (Quality pass phases 1-5 complete)
+**Last updated:** 2026-05-25 (Scanner depth phase 1: timed planet scans + ast_scanning wired)
 
 ---
 
@@ -137,9 +137,23 @@ Greenfield system. Designed in chat 2026-05-25 with user.
 
 ### Sensor + scanner depth
 
-- **Scanner tier upgrades (Phase A2 follow-up)** — `utility_scanner_adv` (T2) already exists from migration 031 (unlocked via Sensor Refinement research). Still pending: `utility_scanner_elite` (T3) with `bulk_scan: true` flag.
-- **Bulk-scan-belt action** — when elite scanner is fitted, one click scans every asteroid in the current belt. UI button + server endpoint variant.
-- **System-wide sensor sweep** — late-game module that reveals all enemies in the system regardless of proximity. Likely a new module type (`utility_systemscan` or similar) with a cooldown. Now that `sensor_range` gates enemy visibility, this becomes meaningful as a capability tier.
+**Scanner Depth Phase 1 (Tier A) -- specced 2026-05-25, in progress**
+
+Goal: make scanning feel like a real action (not a button-click), make the fitted scanner module + Astrometrics skill matter for every scan surface, and remove the most-visible "catalog promises but code ignores" gap. Three coordinated changes:
+
+1. **Asteroid scan time becomes dynamic** -- pull from the best fitted scanner's `scan_time` stat (T1=8s, T2=4s) instead of the hardcoded 8000ms, scaled by scanner quality and Astrometrics `ast_scanning` skill bonus (`scan_time_pct`, -5%/level). Q90 T2 scanner + L5 ast_scanning = ~3s asteroid scan.
+2. **Planet scans become timed + module-gated** -- both orbital and ground scans now require a fitted scanner module, display a progress bar in the Scan tab, can be cancelled (close window / undock / explicit cancel), and consume the probe only on completion. Duration uses the SAME formula as asteroid scan, so all three scan surfaces feel consistent.
+3. **Wire `ast_scanning` skill** -- the bonus contract already exists in migration 031 but no code reads it. This change makes the skill the natural training path for a player who scans a lot.
+
+Implementation: migration 049 adds `computed_scan_time` to ships; recalcShipStats fills it (best scanner's scan_time × quality). New `utils/shipStats.js` client helper `getFleetScanTimeMs(ships, bonuses)` returns the effective duration, applying the skill bonus on top. Both SystemView (asteroid scan) and PlanetInteractionWindow (planet scans) call it.
+
+**Phase 2 (deferred)** — probe quality affects scan output:
+- Currently the orbital/ground endpoints pick any probe stack and decrement. Phase 2: pick the highest-quality stack, return probe quality with the scan result, scale reveal precision by it (low-q probe shows ranges; high-q shows exact values). Needs the orbital and ground scan endpoints to pass the probe quality through into the response payload, plus client UI tweaks.
+
+**Backlog (Tier B+) -- previously listed:**
+- **Scanner tier upgrades** -- `utility_scanner_elite` (T3) with `bulk_scan: true` flag.
+- **Bulk-scan-belt action** -- when elite scanner is fitted, one click scans every asteroid in the current belt.
+- **System-wide sensor sweep** -- late-game module (`utility_systemscan` or similar) with a cooldown that reveals every enemy in the system regardless of proximity.
 
 ### Combat + death loop
 

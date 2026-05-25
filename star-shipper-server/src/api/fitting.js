@@ -431,6 +431,7 @@ const recalcShipStats = async (client, shipId, userId) => {
   let engineSpeedBonus = 0;       // sum of engine module thrust * Q
   let totalShield = 0;            // sum of shield module hp * Q
   let maxSensorRange = 0;         // max scanner range * Q across slots
+  let bestScanTimeSec = null;     // min scan_time * (1/Q) across scanners; null if none fitted
 
   for (const [slotId, modInfo] of Object.entries(fitted)) {
     const modResult = await client.query(
@@ -459,6 +460,14 @@ const recalcShipStats = async (client, shipId, userId) => {
       const r = modStats.sensor_range * qMult;
       if (r > maxSensorRange) maxSensorRange = r;
     }
+    // Scan time: best (lowest) across fitted scanners, with quality
+    // inverted so high-Q shortens the scan. Stored in SECONDS to match
+    // module_types.stats convention -- client multiplies by 1000.
+    if (modStats.scan_time) {
+      const qInvMult = qualityMultiplier(modInfo, { invert: true });
+      const t = modStats.scan_time * qInvMult;
+      if (bestScanTimeSec === null || t < bestScanTimeSec) bestScanTimeSec = t;
+    }
   }
 
   // Effective max speed = hull base + engine bonuses. Floors at hull
@@ -466,16 +475,21 @@ const recalcShipStats = async (client, shipId, userId) => {
   const computedMaxSpeed = Math.round((ship.base_speed ?? 50) + engineSpeedBonus);
   const computedMaxShield = Math.round(totalShield);
   const computedSensorRange = Math.round(maxSensorRange);
+  // Persist as ms so the client doesn't need to multiply.
+  const computedScanTime = bestScanTimeSec !== null
+    ? Math.max(500, Math.round(bestScanTimeSec * 1000))  // floor 0.5s -- ultra-Q scanners shouldn't be instant
+    : null;
 
-  // Single UPDATE for all four computed values.
+  // Single UPDATE for all five computed values.
   await client.query(
     `UPDATE ships
      SET computed_cargo = $1,
          computed_max_speed = $2,
          computed_max_shield = $3,
-         computed_sensor_range = $4
-     WHERE id = $5`,
-    [totalCargo, computedMaxSpeed, computedMaxShield, computedSensorRange, shipId]
+         computed_sensor_range = $4,
+         computed_scan_time = $5
+     WHERE id = $6`,
+    [totalCargo, computedMaxSpeed, computedMaxShield, computedSensorRange, computedScanTime, shipId]
   );
 
   // Also update legacy ship_designs if it exists (backward compat)
