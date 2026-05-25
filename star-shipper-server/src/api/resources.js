@@ -2186,6 +2186,15 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
             WHERE id = $2
           `, [JSON.stringify(newContents), a.id]);
         }
+        // Wipe ALL prior scans on respawned asteroids so every player
+        // (including this one) has to rescan before mining. New roll =
+        // new asteroid as far as scanner state is concerned. Single
+        // DELETE keyed on the respawned-id list.
+        const respawnedIds = respawnable.rows.map(r => r.id);
+        await client.query(
+          `DELETE FROM player_asteroid_scans WHERE asteroid_id = ANY($1::UUID[])`,
+          [respawnedIds]
+        );
       }
 
       // Return all non-depleted asteroids in the system. JOIN to
