@@ -1107,39 +1107,63 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
 
       {/* Deposit assignment */}
       <div style={{ marginBottom: 6 }}>
-        {harvester.deposit_id ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'rgba(4,8,16,0.6)',
-            border: `1px solid ${EDGE}`,
-            borderRadius: 2,
-            padding: '5px 8px',
-          }}>
-            <div style={{ fontSize: 10, fontFamily: F }}>
-              <span style={{ color: '#4a6580' }}>Mining: </span>
-              <span style={{ color: '#22d3ee', fontWeight: 700 }}>{harvester.resource_name}</span>
-              <span style={{ color: '#3a5a6a', fontFamily: FM, fontSize: 9 }}> (slot {harvester.deposit_slot})</span>
+        {harvester.deposit_id ? (() => {
+          // Server attaches deposit_stats {purity, stability, potency,
+          // density} when the harvester is assigned to a deposit; bucket
+          // to a tier for the same colored badge the assignment picker
+          // and inventory grid use.
+          const ds = harvester.deposit_stats;
+          const tier = ds
+            ? getQualityTier(ds.purity, ds.stability, ds.potency, ds.density)
+            : null;
+          return (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(4,8,16,0.6)',
+              border: `1px solid ${EDGE}`,
+              borderRadius: 2,
+              padding: '5px 8px',
+            }}>
+              <div style={{ fontSize: 10, fontFamily: F, flex: 1 }}>
+                <span style={{ color: '#4a6580' }}>Mining: </span>
+                <span style={{ color: '#22d3ee', fontWeight: 700 }}>{harvester.resource_name}</span>
+                <span style={{ color: '#3a5a6a', fontFamily: FM, fontSize: 9 }}> (slot {harvester.deposit_slot})</span>
+              </div>
+              {tier && (
+                <span style={{
+                  fontSize: 8,
+                  padding: '1px 5px',
+                  borderRadius: 2,
+                  fontWeight: 800,
+                  fontFamily: F,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                  color: tier.color,
+                  background: `${tier.color}1a`,
+                  border: `1px solid ${tier.color}55`,
+                }}>{tier.name}</span>
+              )}
+              <button
+                onClick={() => setShowDepositPicker(true)}
+                style={{
+                  fontSize: 9,
+                  color: '#4a6580',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: F,
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Change
+              </button>
             </div>
-            <button
-              onClick={() => setShowDepositPicker(true)}
-              style={{
-                fontSize: 9,
-                color: '#4a6580',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontFamily: F,
-                fontWeight: 700,
-                letterSpacing: 0.5,
-                textTransform: 'uppercase',
-              }}
-            >
-              Change
-            </button>
-          </div>
-        ) : (
+          );
+        })() : (
           <PanelButton
             size="sm"
             accent="#22d3ee"

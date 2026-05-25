@@ -4,6 +4,7 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
+import { getPlayerCargoInfo } from './resources.js';
 
 const router = express.Router();
 
@@ -527,27 +528,17 @@ router.post('/collect', authMiddleware, async (req, res) => {
         return { units_collected: 0, message: 'Hopper is empty.' };
       }
       
-      // Check cargo space
-      const cargoResult = await client.query(`
-        SELECT 
-          COALESCE(SUM(
-            CASE 
-              WHEN pri.item_type = 'resource' THEN pri.quantity * GREATEST(pri.stat_density, 1) / 100.0
-              ELSE pri.quantity * COALESCE(idef.volume_per_unit, 1)
-            END
-          ), 0) as total_volume
-        FROM player_resource_inventory pri
-        LEFT JOIN item_definitions idef ON pri.item_id = idef.id
-        WHERE pri.user_id = $1
-      `, [userId]);
-      const shipResult = await client.query(
-        `SELECT d.total_cargo FROM ships s JOIN ship_designs d ON s.design_id = d.id
-         WHERE s.user_id = $1 ORDER BY s.created_at ASC LIMIT 1`, [userId]
-      );
-      
-      const cargoUsedVol = parseFloat(cargoResult.rows[0].total_volume) || 0;
-      const cargoCapacity = shipResult.rows[0]?.total_cargo || 0;
-      const cargoRemaining = Math.max(0, cargoCapacity - cargoUsedVol);
+      // Cargo space via the shared fleet-wide helper. Was previously
+      // a one-off query that read `ship_designs.total_cargo` from the
+      // OLDEST ship only -- so a Starter-Scout-first player whose
+      // actual cargo lived on later ships saw capacity 0 -> "Cargo is
+      // full" even with an empty hold. Same helper the asteroid-mining
+      // endpoint uses; sums computed_cargo across the whole fleet and
+      // computes used volume from the same density math as the UI.
+      const cargoInfo = await getPlayerCargoInfo(userId, client);
+      const cargoCapacity = cargoInfo.capacity;
+      const cargoUsedVol = cargoInfo.used;
+      const cargoRemaining = cargoInfo.remaining;
       
       const density = harvester.hopper_stat_density || 50;
       const volPerUnit = Math.max(density, 1) / 100.0;

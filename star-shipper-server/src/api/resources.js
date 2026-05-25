@@ -56,7 +56,7 @@ const resolveBodyId = async (bodyIdOrName) => {
 // Capacity = sum of computed_cargo across ALL player's ships
 // ============================================
 
-const getPlayerCargoInfo = async (userId, client = null) => {
+export const getPlayerCargoInfo = async (userId, client = null) => {
   const q = client
     ? async (sql, params) => { const r = await client.query(sql, params); return r.rows[0]; }
     : queryOne;
