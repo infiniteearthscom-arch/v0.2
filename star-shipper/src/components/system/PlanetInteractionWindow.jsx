@@ -2426,7 +2426,11 @@ const VendorTab = ({ body }) => {
                     const recipe = recipes.find(r => r.output_item_id === m.id);
                     const techId = m.requires_tech;
                     const tech = techId ? techs.find(t => t.id === techId) : null;
-                    const locked = !!techId && tech?.status !== 'researched';
+                    // Server returns status: 'unlocked' for completed
+                    // research (see research.js:76). Anything else
+                    // ('locked' / 'available') means the player can't
+                    // use this module yet.
+                    const locked = !!techId && tech?.status !== 'unlocked';
                     return (
                       <div key={m.id} style={{
                         background: 'rgba(4,8,16,0.5)',

@@ -1204,7 +1204,10 @@ export const CraftingWindow = () => {
                 const techId = selectedRecipe.requires_tech;
                 if (!techId) return null;
                 const tech = techs.find(t => t.id === techId);
-                if (tech?.status === 'researched') return null;
+                // Server returns status 'unlocked' for completed
+                // research (see research.js:76). Bail early when the
+                // player has already learned it -- no lock to show.
+                if (tech?.status === 'unlocked') return null;
                 return (
                   <div style={{
                     marginTop: 12,
@@ -1245,7 +1248,7 @@ export const CraftingWindow = () => {
               {/* Craft button -- hidden when research-locked since the
                   lock panel above takes its slot. Server will reject
                   anyway, so showing a disabled button would be redundant. */}
-              {!(selectedRecipe.requires_tech && techs.find(t => t.id === selectedRecipe.requires_tech)?.status !== 'researched') && (
+              {!(selectedRecipe.requires_tech && techs.find(t => t.id === selectedRecipe.requires_tech)?.status !== 'unlocked') && (
                 <button
                   onClick={handleCraft}
                   disabled={!canCraftNow || crafting}
