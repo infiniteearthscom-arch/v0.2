@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-22 (Skills/Research framework + harvester quest chain + cargo panes)
+**Last updated:** 2026-05-25 (Settings window + UI scale + expandable toolbar + station spec)
 
 ---
 
@@ -34,6 +34,55 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 - **Outliner restructure** — user flagged it's due for changes (specifics TBD when work starts). Density, section priority, what shows when, etc.
 - **System map changes** — user flagged the in-system SVG view needs work (specifics TBD).
 - **Grow the research tree as we build systems** — every new gameplay system (colonies, factions, advanced combat, etc.) should land with new tech nodes that gate it. The skill catalog (165 entries) is already broad — research nodes should expand to match. Per pitfall #15, check `skill_definitions.bonus_per_level->>'type'` for existing bonus contracts before inventing new ones.
+
+### Player-owned orbital stations
+
+Greenfield system. Designed in chat 2026-05-25 with user.
+
+**Architecture decisions (locked):**
+- **Modular fitting grid like a ship hull** — re-uses `module_types`, `fleetHas`-style stat aggregation, the fitting UI pattern from ShipBuilderWindow, and the harvester slot-panel pattern from PlanetInteractionWindow. New module types ship as data, not new tables.
+- **Anchored to a body, not free-floating** — orbits an existing stellar body or sits on a planet surface. Re-uses `bodies` for coordinates + dock logic.
+- **Many stations per player, gated hard by skills/research** — start with one allowed; subsequent slots unlock via high-rank `pln_cc_upgrades` + `pln_interplanetary` (both already in the catalog from migration 032) plus matching research nodes.
+- **Tiered construction** — Framework → Outpost → Station → Hub (or similar). Each tier costs a meaningful resource sink and unlocks more slots + higher-tier module fittings. Upgrading takes real time.
+- **Vulnerable to pirate raids** (Phase 2) — undefended stations get raided; raids damage modules, take stations partially offline, and require repair. Drives the reason to fit defense slots.
+
+**Slot type categories:**
+- Industry (refinery, reprocessing, manufacturing queue)
+- Research (RP/min boost, blueprint research)
+- Trade (local market, automated trade-route runners, cargo depot)
+- Military (defense turrets, shield, hull plating)
+- Utility (sensor array, med bay forward-respawn, comms)
+
+**Capability list (greenlit + bucketed by phase):**
+
+*Phase 1 — Framework tier, single station, two industrial modules to prove the loop:*
+- Migration: `player_stations` table (id, owner_id, body_id, tier, fitted_modules JSONB, hull_hp, armor, max_slots_by_type JSONB, name, created_at, last_tick_at)
+- New `station_*` module types in `module_types` (or a flag column)
+- "Build Station" action on a planet/asteroid scan tab, gated by `pln_cc_upgrades` L1
+- Refinery module — converts low-q ore stack into base materials at a yield rate; reads `prc_reprocessing` skill bonuses
+- Research Lab module — passive RP/min boost while undocked from the station's owner
+- StationWindow UI (mirror PlanetInteractionWindow's tab structure)
+
+*Phase 2 — Tier upgrades + defense + raids:*
+- Outpost + Station tiers; tier-up requires resource feeding over time
+- Defense slot type + basic turret module (laser/kinetic options)
+- Shield generator + hull plating
+- Pirate-raid scheduler (server-side cron); raid intent broadcast to the owner; damaged modules go offline until repaired
+- Med Bay module — overrides Luna as the player's respawn point when fitted
+
+*Phase 3 — Multiplayer + advanced trade:*
+- Automated trade-route runners (NPC hauler ships the player assigns to routes between owned stations + vendor bodies)
+- Local market / trade post — NPC traders dock with different prices; in multiplayer, other players can buy/sell
+- Manufacturing queue (passive crafting jobs)
+- Cargo depot (overflow storage the player can pull from)
+- Sensor array — passive system-wide reveal within X of the station
+- Influence radius / system claim — first-priority harvester slots in claimed systems, multiplayer reveal on galaxy map
+
+**Open design questions to settle when work starts:**
+- Where does the player physically interact with the station — dock-into-it (treat as a body) or open the StationWindow from anywhere they own it?
+- Does the station have its own inventory pool, or share the player's cargo?
+- Construction-feed mechanic: drop materials into a feed queue (passive over hours/days) or bulk-pay once + wait?
+- What happens to fitted modules if a higher tier slot count *decreases* one of the type buckets? (Probably can't — only increases.)
 
 ### Sensor + scanner depth
 
