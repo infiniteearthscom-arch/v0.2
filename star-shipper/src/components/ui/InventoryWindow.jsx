@@ -8,6 +8,8 @@ import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO, RESOURCE_TYPES } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar } from '@/components/ui/panelStyles';
+import { normalizeItem } from '@/utils/itemShape';
+import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 
 // ============================================
 // CONSTANTS
@@ -58,79 +60,33 @@ const canMerge = (a, b) => {
 
 const ItemTooltip = ({ stack, screenX, screenY }) => {
   const isItem = stack.item_type === 'item';
-  
+
   let left = screenX + SLOT_SIZE + 8;
   let top = screenY - 20;
   if (left + 200 > window.innerWidth) left = screenX - 208;
   if (top + 210 > window.innerHeight) top = window.innerHeight - 220;
   if (top < 0) top = 4;
 
+  // For items (modules + consumables), defer entirely to the shared
+  // ItemTooltipContent via normalizeItem -- same renderer the Fittable
+  // Modules pane uses, so the cargo tooltip + the fitting tooltip now
+  // show identical fields (name, icon, description, quality, stats).
+  // The previous custom implementation was missing the stats table
+  // entirely because it iterated item_data directly + base_stats was
+  // never populated there.
   if (isItem) {
-    const q = stack.item_data?.quality;
-    const itemStats = Object.entries(stack.item_data || {}).filter(([k]) => k !== 'quality');
-    
+    const normalized = normalizeItem(stack);
     return (
       <div className="fixed z-[9999] pointer-events-none" style={{ left, top }}>
         <div
-          className="rounded-lg p-3 shadow-xl min-w-[190px]"
+          className="rounded-lg shadow-xl min-w-[220px]"
           style={{
             background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
             border: '2px solid #ffaa00',
             boxShadow: '0 0 12px #ffaa0033',
           }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">{stack.item_icon || '📦'}</span>
-            <div>
-              <div className="font-medium text-sm text-amber-300">{stack.item_name || stack.item_id}</div>
-              <div className="text-xs text-slate-400">
-                {stack.item_data?.slot_type ? (
-                  <span className="capitalize">{stack.item_data.slot_type} module</span>
-                ) : (
-                  stack.item_category
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {stack.item_data?.quality && (
-            <div className="flex gap-2 text-[10px] mb-2">
-              <span className="text-slate-500">Q: </span>
-              <span className="text-cyan-400">{Math.round((stack.item_data.quality.purity + stack.item_data.quality.stability + stack.item_data.quality.potency + stack.item_data.quality.density) / 4)}</span>
-            </div>
-          )}
-          
-          {stack.item_description && (
-            <>
-              <div className="h-px bg-slate-600/50 mb-2" />
-              <div className="text-xs text-slate-300 mb-2">{stack.item_description}</div>
-            </>
-          )}
-          
-          {itemStats.length > 0 && (
-            <>
-              <div className="h-px bg-slate-600/50 mb-2" />
-              {itemStats.map(([key, value]) => (
-                <div key={key} className="flex justify-between text-xs mb-0.5">
-                  <span className="text-slate-400">{key.replace(/_/g, ' ')}</span>
-                  <span className="text-cyan-300">{value}</span>
-                </div>
-              ))}
-            </>
-          )}
-          
-          {/* Per-stat quality bars deliberately omitted for modules.
-              The avg Q chip above is what drives every per-stat
-              scaling in weapons.js / recalcShipStats; the individual
-              purity/stability/potency/density splits aren't gameplay-
-              relevant on a fitted module. Resources keep their bars
-              in the resource-tooltip branch below. */}
-          
-          <div className="h-px bg-slate-600/50 my-2" />
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Quantity</span>
-            <span className="text-cyan-300 font-medium">{stack.quantity}</span>
-          </div>
+          <ItemTooltipContent item={normalized} />
         </div>
       </div>
     );

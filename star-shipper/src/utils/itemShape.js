@@ -11,6 +11,7 @@
 // ============================================
 
 import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
+import { qualityMultiplier, STAT_META, fmtStatValue } from '@/utils/quality';
 
 // Slot-type metadata — mirrors SLOT_TYPES in ShipBuilderWindow, kept here
 // so the normalizer can resolve fallback icons/colors without importing
@@ -153,17 +154,31 @@ export function normalizeItem(source, context = {}) {
     const q = data.quality;
     const avg = avgQuality(q);
 
-    // Build a stats table if the item has base_stats (module) or loose numeric fields
+    // Build a stats table if the item has base_stats. Uses the same
+    // STAT_META map + qualityMultiplier helper as ShipBuilderWindow's
+    // SlotInfo so the scaling rules (linear / sqrt / inverted) and
+    // formatting (decimals, units) match across all three module-
+    // tooltip surfaces (cargo hover, fittable modules pane, fitted
+    // slot info). The synthetic `{quality}` lets the helper read
+    // straight off this normalized item.
     let stats = null;
     if (data.base_stats && typeof data.base_stats === 'object') {
-      stats = Object.entries(data.base_stats).map(([key, val]) => {
-        const scaled = avg != null ? Math.round(val * (avg / 50)) : val;
-        return {
-          label: key.replace(/_/g, ' '),
-          value: scaled,
-          baseValue: scaled !== val ? val : null,
-        };
-      });
+      const fakeFitted = q ? { quality: q } : null;
+      stats = Object.entries(data.base_stats)
+        .filter(([, v]) => typeof v === 'number')
+        .map(([key, val]) => {
+          const meta = STAT_META[key];
+          const label = meta?.label || key.replace(/_/g, ' ');
+          const mult = fakeFitted
+            ? qualityMultiplier(fakeFitted, { power: meta?.power ?? 1, invert: meta?.invert ?? false })
+            : 1.0;
+          const scaled = val * mult;
+          return {
+            label,
+            value: fmtStatValue(scaled, meta),
+            baseValue: Math.abs(scaled - val) > 0.005 ? fmtStatValue(val, meta) : null,
+          };
+        });
     }
 
     return {

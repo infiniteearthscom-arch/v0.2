@@ -289,8 +289,17 @@ router.get('/inventory', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     
+    // JOIN module_types so module items carry their canonical stats
+    // (damage / range / cargo_capacity / etc.) through to the client.
+    // Without this, normalizeItem reads data.base_stats and finds
+    // nothing, so the cargo + Fittable Modules tooltips render with
+    // no stat table even though SlotInfo (which uses /ship/:shipId's
+    // JOINed moduleDetails) does. mt.id matches pri.item_id for any
+    // row that's a fitted module (module_types.id mirrors
+    // item_definitions.id). idef.tier doubles as a hint for "is this
+    // a module?" but the actual gate is `mt.id IS NOT NULL` below.
     const inventory = await queryAll(`
-      SELECT 
+      SELECT
         pri.*,
         rt.name as resource_name,
         rt.category,
@@ -301,10 +310,13 @@ router.get('/inventory', authMiddleware, async (req, res) => {
         idef.description as item_description,
         idef.category as item_category,
         idef.icon as item_icon,
-        idef.max_stack as item_max_stack
+        idef.max_stack as item_max_stack,
+        mt.stats as module_stats,
+        mt.tier as module_tier
       FROM player_resource_inventory pri
       LEFT JOIN resource_types rt ON pri.resource_type_id = rt.id
       LEFT JOIN item_definitions idef ON pri.item_id = idef.id
+      LEFT JOIN module_types mt ON pri.item_id = mt.id
       WHERE pri.user_id = $1
       ORDER BY pri.slot_index ASC NULLS LAST
     `, [userId]);
@@ -315,6 +327,15 @@ router.get('/inventory', authMiddleware, async (req, res) => {
     
     for (const row of inventory) {
       if (row.item_type === 'item') {
+        // For module-type items, fold module_types.stats into
+        // item_data.base_stats + item_data.tier so the existing
+        // normalizeItem path (which reads data.base_stats + data.tier)
+        // produces stats for the tooltip with no client changes.
+        // Non-module items (probes, fuel cells, etc.) pass through
+        // unchanged because module_stats is NULL via the LEFT JOIN.
+        const itemData = { ...(row.item_data || {}) };
+        if (row.module_stats) itemData.base_stats = row.module_stats;
+        if (row.module_tier != null) itemData.tier = row.module_tier;
         items.push({
           id: row.id,
           item_type: 'item',
@@ -323,7 +344,7 @@ router.get('/inventory', authMiddleware, async (req, res) => {
           item_description: row.item_description,
           item_category: row.item_category,
           item_icon: row.item_icon,
-          item_data: row.item_data || {},
+          item_data: itemData,
           item_max_stack: row.item_max_stack || 1,
           quantity: row.quantity,
           slot_index: row.slot_index,
