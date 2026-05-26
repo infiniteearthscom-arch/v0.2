@@ -463,6 +463,17 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
           {previewRows.map(({ key, label, val, scaled, mult, meta }) => {
             const differs = Math.abs(scaled - val) > 0.005;
             const multColor = statModifierColor(scaled, val, meta);
+            // Additive bonus framing: "base 6 +5 from quality → 11".
+            // For "lower is better" stats (cycle / lock / scan time),
+            // a faster (lower) value is the improvement, so the delta
+            // is negative; fmtStatValue keeps the minus sign and
+            // statModifierColor still picks green because the helper
+            // knows the stat is inverted.
+            const delta = scaled - val;
+            const deltaFormatted = fmtStatValue(delta, meta);
+            const deltaText = delta === 0
+              ? null
+              : delta > 0 ? `+${deltaFormatted}` : deltaFormatted;
             return (
               <div key={key} style={{
                 display: 'flex',
@@ -472,21 +483,34 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
                 fontFamily: FONT.mono,
                 padding: '2px 0',
                 borderBottom: '1px solid rgba(26,48,80,0.3)',
+                gap: 8,
               }}>
-                <span style={{ color: COLORS.TEXT.muted, letterSpacing: 0.5 }}>{label.toUpperCase()}</span>
-                <span>
-                  <span style={{ color: COLORS.BLUE.light, fontWeight: 700 }}>
-                    {fmtStatValue(scaled, meta)}
+                <span style={{ color: COLORS.TEXT.muted, letterSpacing: 0.5, flexShrink: 0 }}>
+                  {label.toUpperCase()}
+                </span>
+                <span style={{ textAlign: 'right' }}>
+                  {/* Base value -- always shown so the recipe's
+                      intrinsic stat is visible regardless of what the
+                      player feeds in. */}
+                  <span style={{ color: COLORS.TEXT.secondary }}>
+                    {fmtStatValue(val, meta)}
                   </span>
+                  {/* Quality bonus -- color-coded by direction (green
+                      = improvement, red = worse). Reads as "+5 from
+                      quality" or "-0.13s from quality" so the player
+                      sees directly how their ingredient choice maps to
+                      the output. */}
                   {differs && (
-                    <>
-                      <span style={{ color: COLORS.TEXT.dim, marginLeft: 6 }}>
-                        (base {fmtStatValue(val, meta)})
-                      </span>
-                      <span style={{ color: multColor, marginLeft: 6, fontWeight: 700 }}>
-                        ×{mult.toFixed(2)}
-                      </span>
-                    </>
+                    <span style={{ color: multColor, marginLeft: 4, fontWeight: 700 }}>
+                      {deltaText} from quality
+                    </span>
+                  )}
+                  {/* Effective total -- the actual number the crafted
+                      module will carry. */}
+                  {differs && (
+                    <span style={{ color: COLORS.BLUE.light, marginLeft: 6, fontWeight: 700 }}>
+                      → {fmtStatValue(scaled, meta)}
+                    </span>
                   )}
                 </span>
               </div>
