@@ -6,7 +6,7 @@ import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
-import { fittingAPI, wrecksAPI, asteroidsAPI } from '@/utils/api';
+import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
@@ -1036,6 +1036,50 @@ export const SystemView = () => {
     setSystemBodies(bodies);
     return () => setSystemBodies([]);
   }, [currentSystem, setSystemBodies]);
+
+  // Register procedural-system asteroid belts server-side. /ensure-body
+  // only fires when the player docks at a body (PlanetInteractionWindow)
+  // -- and you can't dock at a belt -- so belts in procedural systems
+  // would never get a celestial_bodies row, which meant /asteroids
+  // returned [] and the system had visible-but-empty belts. This effect
+  // fires-and-forgets one ensureBody per belt on system entry. The
+  // endpoint is idempotent ((system_id, name) lookup before insert), so
+  // re-firing on every entry is safe + cheap.
+  useEffect(() => {
+    if (!currentSystemId || currentSystemId === 'sol') return;
+    const belts = (currentSystem?.bodies || []).filter(b => b.type === 'asteroid_belt');
+    if (belts.length === 0) return;
+    (async () => {
+      try {
+        // Galaxy + system info passed through so the server can populate
+        // star_systems on first call. system_planet_count is required by
+        // the city-seeding code path but isn't relevant for belts; pass
+        // the real count for consistency.
+        const galaxy = generateGalaxy(12345, 200);
+        const galaxySys = galaxy.systemMap[currentSystemId];
+        const planetCount = (currentSystem.bodies || []).filter(b => b.type === 'planet').length;
+        // Fire-and-forget; failures are harmless (next visit retries +
+        // /asteroids just stays empty until persistence catches up).
+        // Promise.all so multiple belts in one system register in
+        // parallel rather than serially.
+        await Promise.all(belts.map(belt =>
+          resourcesAPI.ensureBody({
+            system_procedural_id: currentSystemId,
+            system_name: galaxySys?.name || currentSystemId,
+            star_type: galaxySys?.starType || 'yellow_star',
+            body_client_id: belt.id,
+            body_name: belt.name,
+            body_type: 'asteroid_belt',
+            size: belt.width || 100,
+            orbit_radius: belt.orbitRadius || 1000,
+            danger_level: galaxySys?.dangerLevel || 0,
+            system_seed: galaxySys?.seed,
+            system_planet_count: planetCount,
+          }).catch(() => {})
+        ));
+      } catch (e) { /* fire-and-forget */ }
+    })();
+  }, [currentSystemId, currentSystem]);
   
   const starConfig = STAR_TYPES[currentSystem.starType] || STAR_TYPES.yellow_star;
   
