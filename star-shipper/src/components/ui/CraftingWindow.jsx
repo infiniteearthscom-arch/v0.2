@@ -34,16 +34,31 @@ const CATEGORY_LABELS = {
 
 // Module subcategories based on output item_id prefix
 const MODULE_SUBCATEGORIES = {
-  engine: { label: 'Engines', icon: '🔥', color: '#ff6622' },
+  engine:  { label: 'Engines',  icon: '🔥', color: '#ff6622' },
   reactor: { label: 'Reactors', icon: '⚛️', color: '#00ddff' },
-  cargo: { label: 'Cargo', icon: '📦', color: '#ddaa22' },
-  weapon: { label: 'Weapons', icon: '🔫', color: '#ff2244' },
-  shield: { label: 'Shields', icon: '🛡️', color: '#8844ff' },
-  utility: { label: 'Utility', icon: '🔧', color: '#22ccaa' },
-  mining: { label: 'Mining', icon: '⛏️', color: '#aa66ff' },
+  cargo:   { label: 'Cargo',    icon: '📦', color: '#ddaa22' },
+  weapon:  { label: 'Weapons',  icon: '🔫', color: '#ff2244' },
+  shield:  { label: 'Shields',  icon: '🛡️', color: '#8844ff' },
+  scanner: { label: 'Scanners', icon: '📡', color: '#22d3ee' },
+  utility: { label: 'Utility',  icon: '🔧', color: '#22ccaa' },
+  mining:  { label: 'Mining',   icon: '⛏️', color: '#aa66ff' },
 };
 
-const MODULE_SUBCAT_ORDER = ['engine', 'reactor', 'cargo', 'weapon', 'shield', 'utility', 'mining'];
+const MODULE_SUBCAT_ORDER = ['engine', 'reactor', 'cargo', 'weapon', 'shield', 'scanner', 'utility', 'mining'];
+
+// Bucket a module recipe into a subcategory. Most modules use the
+// output_item_id prefix (engine_/reactor_/etc.) but scanners + the
+// system telemetry array split out of the catch-all "utility" bucket
+// into a dedicated "Scanners" group so the player can find them by
+// what they DO instead of by which slot they fit -- the probes section
+// is "Scanners" too, so colocating builds intuition.
+const getModuleSubcategory = (outputItemId) => {
+  if (!outputItemId) return 'other';
+  if (outputItemId.startsWith('utility_scanner') || outputItemId === 'utility_systemscan') {
+    return 'scanner';
+  }
+  return outputItemId.split('_')[0] || 'other';
+};
 
 // Map resource names to their RESOURCE_TYPES colors
 const RESOURCE_COLORS = {};
@@ -908,13 +923,16 @@ export const CraftingWindow = () => {
     grouped[r.category].push(r);
   }
 
-  // Sub-group modules by prefix (engine_, reactor_, etc.)
+  // Sub-group modules. Most go by prefix (engine_, reactor_, etc.);
+  // scanner-related utilities split into their own "Scanners" bucket
+  // via getModuleSubcategory so the player can find them where they'd
+  // expect, alongside the probes (top-level Scanners category).
   const moduleSubgroups = {};
   if (grouped.module) {
     for (const r of grouped.module) {
-      const prefix = r.output_item_id?.split('_')[0] || 'other';
-      if (!moduleSubgroups[prefix]) moduleSubgroups[prefix] = [];
-      moduleSubgroups[prefix].push(r);
+      const sub = getModuleSubcategory(r.output_item_id);
+      if (!moduleSubgroups[sub]) moduleSubgroups[sub] = [];
+      moduleSubgroups[sub].push(r);
     }
   }
 
