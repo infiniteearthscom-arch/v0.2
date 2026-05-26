@@ -1847,59 +1847,69 @@ export const SystemView = () => {
     });
   };
 
-  const handleBeltScan = async () => {
+  // Bulk belt scan uses the SAME parallel-scan pattern as area scan:
+  // queue every unscanned asteroid in the closest belt into
+  // activeScansRef with viaArea:true. The existing scan loop runs them
+  // all in parallel, all complete after one scan_time interval, and
+  // the "Sweep scan complete" toast fires when the counter hits zero.
+  // Server-side /asteroids/scan_belt bulk endpoint is no longer called
+  // from the client (kept around for a future "instant elite" tier).
+  const handleBeltScan = () => {
     if (!fleetHasBulkScan()) {
       if (pushToast) pushToast({ kind: 'error', text: 'No Elite Survey Grid fitted', duration: 3000 });
       return;
     }
-    // Tier C: bulk-belt is now cooldown-gated (90s base shortened by
-    // bulk_belt_cooldown_pct, -10%/level). Mirror of sweep's pattern.
+    // Cooldown gate (Tier C: bulk_belt_cooldown_pct shortens; base 90s).
     const nowCd = Date.now();
     if (bulkBeltCooldownUntilRef.current > nowCd) {
       const remain = Math.ceil((bulkBeltCooldownUntilRef.current - nowCd) / 1000);
       if (pushToast) pushToast({ kind: 'error', text: `Bulk-belt scan on cooldown (${remain}s)`, duration: 2500 });
       return;
     }
-    // Find the closest belt to the player. Belts are celestial bodies
-    // in systemBodies with body_type === 'asteroid_belt'.
-    const bodies = useGameStore.getState().systemBodies || [];
-    const belts = bodies.filter(b => b.body_type === 'asteroid_belt');
-    if (belts.length === 0) {
-      if (pushToast) pushToast({ kind: 'error', text: 'No asteroid belt in this system', duration: 3000 });
+    // Identify the target belt via the closest asteroid's belt_body_id
+    // (server already provides the UUID on every asteroid row).
+    const px = shipPosRef.current.x, py = shipPosRef.current.y;
+    let closestAst = null, closestD2 = Infinity;
+    for (const a of (asteroidsRef.current || [])) {
+      const dx = a.x - px, dy = a.y - py;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < closestD2) { closestAst = a; closestD2 = d2; }
+    }
+    if (!closestAst?.belt_body_id) {
+      if (pushToast) pushToast({ kind: 'error', text: 'No asteroids in this system to scan', duration: 3000 });
       return;
     }
-    const px = shipPosRef.current.x, py = shipPosRef.current.y;
-    let closest = null, closestD2 = Infinity;
-    for (const b of belts) {
-      const dx = (b.x ?? 0) - px, dy = (b.y ?? 0) - py;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < closestD2) { closest = b; closestD2 = d2; }
-    }
-    if (!closest?.id) {
-      if (pushToast) pushToast({ kind: 'error', text: 'No belt found to scan', duration: 3000 });
+    const beltId = closestAst.belt_body_id;
+    // Every unscanned rock in that belt that isn't already in a scan.
+    const candidates = (asteroidsRef.current || []).filter(a =>
+      a.belt_body_id === beltId
+      && !a.scanned
+      && !activeScansRef.current.has(a.id)
+    );
+    if (candidates.length === 0) {
+      if (pushToast) pushToast({ kind: 'info', text: 'Bulk-belt scan: nothing new to scan in the nearest belt', duration: 3000 });
       return;
     }
     playSound('button_click');
-    try {
-      const { scanned_count, asteroids } = await asteroidsAPI.scanBelt(closest.id);
-      applyScanResultsToLocal(asteroids);
-      // Start the cooldown only on a successful call (failed network
-      // = no penalty). cooldown_pct is negative (-10/level via skill);
-      // formula (1 + pct/100) shrinks the base accordingly.
-      const cdPct = activeBonusesRef.current?.bulk_belt_cooldown_pct || 0;
-      const cdMs = Math.max(5_000, Math.round(90_000 * (1 + cdPct / 100)));
-      bulkBeltCooldownUntilRef.current = Date.now() + cdMs;
-      setSweepTick(t => t + 1);
-      if (pushToast) pushToast({
-        kind: scanned_count > 0 ? 'success' : 'info',
-        text: scanned_count > 0
-          ? `Belt scan complete -- ${scanned_count} asteroid${scanned_count === 1 ? '' : 's'} surveyed`
-          : 'Belt scan -- nothing new to scan',
-        duration: 3500,
-      });
-    } catch (err) {
-      if (pushToast) pushToast({ kind: 'error', text: `Belt scan failed: ${err.message}`, duration: 4000 });
+    // All timers share the same window so completion lands in one
+    // visual beat. scan_time uses the standard fleet helper.
+    const durationMs = getFleetScanTimeMs(fleetShipsRef.current, activeBonusesRef.current);
+    const startMs = Date.now();
+    for (const a of candidates) {
+      activeScansRef.current.set(a.id, { startMs, durationMs, viaArea: true });
     }
+    areaScanExpectedRef.current += candidates.length;
+    // Cooldown commits on activation -- if the player cancels via the
+    // Area Scan tray button, the cooldown stays (action is committed).
+    const cdPct = activeBonusesRef.current?.bulk_belt_cooldown_pct || 0;
+    const cdMs = Math.max(5_000, Math.round(90_000 * (1 + cdPct / 100)));
+    bulkBeltCooldownUntilRef.current = Date.now() + cdMs;
+    setSweepTick(t => t + 1);
+    if (pushToast) pushToast({
+      kind: 'success',
+      text: `Bulk-belt scan started -- ${candidates.length} asteroid${candidates.length === 1 ? '' : 's'} in parallel (${(durationMs / 1000).toFixed(1)}s)`,
+      duration: 3500,
+    });
   };
 
   const handleSystemSweep = () => {
@@ -3303,8 +3313,11 @@ export const SystemView = () => {
               } else if (areaScanExpectedRef.current > 0) {
                 areaScanExpectedRef.current -= 1;
                 if (areaScanExpectedRef.current === 0) {
+                  // Single neutral completion message for both area scan
+                  // and bulk-belt -- both feed the same counter, and the
+                  // player triggered whichever they triggered.
                   const pt = useGameStore.getState().pushToast;
-                  if (pt) pt({ kind: 'success', text: 'Area scan complete', duration: 2500 });
+                  if (pt) pt({ kind: 'success', text: 'Sweep scan complete', duration: 2500 });
                 }
               }
               if (completeQuest) completeQuest('tutorial_scan_asteroid');
