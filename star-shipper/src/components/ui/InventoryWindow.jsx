@@ -119,25 +119,12 @@ const ItemTooltip = ({ stack, screenX, screenY }) => {
             </>
           )}
           
-          {q && (
-            <>
-              <div className="h-px bg-slate-600/50 my-2" />
-              <div className="text-xs text-slate-500 mb-1">Craft Quality</div>
-              {['purity', 'stability', 'potency', 'density'].map(stat => {
-                const pct = q[stat] || 0;
-                const barColor = pct >= 80 ? '#aa44ff' : pct >= 60 ? '#4488ff' : pct >= 40 ? '#44ff44' : pct >= 20 ? '#ffffff' : '#666666';
-                return (
-                  <div key={stat} className="flex items-center gap-2 text-xs mb-1">
-                    <span className="text-slate-500 w-14 capitalize">{stat}</span>
-                    <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: barColor }} />
-                    </div>
-                    <span className="text-slate-300 w-6 text-right">{pct}</span>
-                  </div>
-                );
-              })}
-            </>
-          )}
+          {/* Per-stat quality bars deliberately omitted for modules.
+              The avg Q chip above is what drives every per-stat
+              scaling in weapons.js / recalcShipStats; the individual
+              purity/stability/potency/density splits aren't gameplay-
+              relevant on a fitted module. Resources keep their bars
+              in the resource-tooltip branch below. */}
           
           <div className="h-px bg-slate-600/50 my-2" />
           <div className="flex justify-between text-xs">

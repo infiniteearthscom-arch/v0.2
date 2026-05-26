@@ -121,8 +121,14 @@ export const ItemTooltipContent = ({ item }) => {
         </div>
       </div>
 
-      {/* Quality breakdown (4 bars) */}
-      {hasQuality && (
+      {/* Quality breakdown (4 bars). Only shown for resources -- module
+          tooltips deliberately consolidate to the avg Q chip in the
+          header since the individual stat splits aren't gameplay-
+          relevant for crafted modules (the average is what drives the
+          per-stat scaling in weapons.js / recalcShipStats). Resources
+          keep the bars because density / purity / etc. directly drive
+          cargo volume, refining yield, etc. */}
+      {hasQuality && kind !== 'module' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
           <QualityBar label="Pur" value={quality.purity}    color={qColor} />
           <QualityBar label="Stb" value={quality.stability} color={qColor} />

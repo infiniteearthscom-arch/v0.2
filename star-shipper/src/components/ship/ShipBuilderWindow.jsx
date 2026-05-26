@@ -447,27 +447,39 @@ const SlotInfo = ({ slot, module }) => {
       <div className="text-[10px] text-slate-500">Size: {slot.w}×{slot.h}</div>
       {module ? (
         <div className="mt-1.5">
-          <div className="text-slate-300">
-            <span className="text-cyan-300 font-medium">{module.name}</span>
-            {module.tier && <span className="text-slate-500 ml-1.5">T{module.tier}</span>}
+          {/* Name + icon row -- matches the inventory tooltip + the
+              fittable-modules pane so all three module surfaces share
+              the same "name, icon, quality" header pattern. */}
+          <div className="flex items-center gap-2">
+            {module.icon && (
+              <span className="text-base" style={{ lineHeight: 1 }}>{module.icon}</span>
+            )}
+            <div className="flex-1 min-w-0">
+              <span className="text-cyan-300 font-medium">{module.name}</span>
+              {module.tier && <span className="text-slate-500 ml-1.5">T{module.tier}</span>}
+            </div>
           </div>
+          {/* Description -- pulled from module_types via the JOINed
+              server response. Matches what the inventory + fittable
+              tooltips show. */}
+          {module.description && (
+            <div className="text-[10px] text-slate-400 mt-1 leading-snug italic">
+              {module.description}
+            </div>
+          )}
           {avgQ !== null && (
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1.5">
               <span className="text-[10px] text-slate-500">Quality:</span>
               <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${avgQ}%`, backgroundColor: qColor }} />
               </div>
-              <span className="text-[10px] font-medium" style={{ color: qColor }}>{avgQ}</span>
+              <span className="text-[10px] font-medium" style={{ color: qColor }}>Q{avgQ}</span>
             </div>
           )}
-          {module.quality && (
-            <div className="flex gap-2 mt-1 text-[9px] text-slate-500">
-              <span>Pur <span className="text-slate-400">{module.quality.purity}</span></span>
-              <span>Stb <span className="text-slate-400">{module.quality.stability}</span></span>
-              <span>Pot <span className="text-slate-400">{module.quality.potency}</span></span>
-              <span>Den <span className="text-slate-400">{module.quality.density}</span></span>
-            </div>
-          )}
+          {/* Per-stat purity/stability/potency/density values
+              deliberately omitted -- avg Q above is the value that
+              drives every stat multiplier; the individual splits
+              aren't gameplay-relevant on a fitted module. */}
           {module.base_stats && (
             <div className="mt-1.5 pt-1.5 border-t border-slate-700/30">
               {Object.entries(module.base_stats).map(([key, val]) => {

@@ -85,12 +85,19 @@ router.get('/ship/:shipId', authMiddleware, async (req, res) => {
 
     if (!ship) return res.status(404).json({ error: 'Ship not found' });
 
-    // Resolve fitted module details
+    // Resolve fitted module details. JOIN to item_definitions so the
+    // client SlotInfo can show description + icon alongside name --
+    // unified tooltip surface across the inventory, fittable-modules
+    // pane, and the equipped-slot hover.
     const fittedModules = ship.fitted_modules || {};
     const moduleDetails = {};
     for (const [slotId, modInfo] of Object.entries(fittedModules)) {
       const modType = await queryOne(
-        `SELECT * FROM module_types WHERE id = $1`, [modInfo.module_type_id]
+        `SELECT mt.*, idef.icon as item_icon, idef.description as item_description
+           FROM module_types mt
+           LEFT JOIN item_definitions idef ON idef.id = mt.id
+          WHERE mt.id = $1`,
+        [modInfo.module_type_id]
       );
       if (modType) {
         moduleDetails[slotId] = {
@@ -103,6 +110,10 @@ router.get('/ship/:shipId', authMiddleware, async (req, res) => {
           slot_type: modType.slot_type,
           tier: modType.tier,
           base_stats: modType.stats,
+          // Prefer module_types.description; fall back to item_definitions
+          // for older modules that left description on the item row.
+          description: modType.description || modType.item_description || null,
+          icon: modType.item_icon || null,
         };
       }
     }
