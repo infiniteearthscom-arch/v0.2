@@ -68,68 +68,98 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
   const enemies = [];
   let nextId = 1;
   
-  // Number of pirates scales hard with danger level. Tuned up from
-  // the old `* 1.5 + rng(0..d)` (which capped a 5-star system at
-  // 7-12 pirates -- felt populated, not "dangerous"). New curve:
+  // Aggressive scaling. 5-star systems should feel "full to the brim"
+  // (player-direction 2026-05-25). Curve:
   //   danger 0: 0
-  //   danger 1: 3-5
-  //   danger 3: 9-15
-  //   danger 5: 15-25  (5-star systems now feel like a real fight)
-  // Spawn is still one-shot at entry -- kills stay dead until the
-  // player warps out + back in, so high-danger systems naturally
-  // get "cleared" over a long campaign.
-  const pirateCount = Math.floor(dangerLevel * 3 + rng.range(0, dangerLevel * 2));
+  //   danger 1: 5-8
+  //   danger 3: 15-24
+  //   danger 5: 25-40
+  // Spawn is still one-shot per system entry; kills stay dead until
+  // the player warps out + back in.
+  const pirateCount = Math.floor(dangerLevel * 5 + rng.range(0, dangerLevel * 3));
   if (pirateCount <= 0) return enemies;
-  
-  const hullPool = dangerLevel >= 4
-    ? ['pirate_interceptor', 'pirate_marauder', 'pirate_destroyer']
-    : dangerLevel >= 2
-      ? ['pirate_interceptor', 'pirate_marauder', 'pirate_interceptor']
-      : ['pirate_interceptor', 'pirate_interceptor'];
-  
-  // Find the outermost orbit to place pirates near
+
+  // Higher-danger systems get richer hull mixes biased toward heavies.
+  const hullPool = dangerLevel >= 5
+    ? ['pirate_destroyer', 'pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor']
+    : dangerLevel >= 4
+      ? ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor']
+      : dangerLevel >= 3
+        ? ['pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_destroyer']
+        : dangerLevel >= 2
+          ? ['pirate_marauder', 'pirate_interceptor', 'pirate_interceptor']
+          : ['pirate_interceptor', 'pirate_interceptor'];
+
+  // Per-tier stat boosts that approximate "better modules fitted" --
+  // higher-danger pirates hit harder and cycle weapons faster than the
+  // hull's baseline numbers. Phase 2 will swap this for a real
+  // pirate module-fitting system; for now a flat scalar.
+  const dmgMult   = 1 + Math.max(0, dangerLevel - 1) * 0.15;  // d1=1.0, d3=1.3, d5=1.6
+  const cycleMult = 1 / (1 + Math.max(0, dangerLevel - 1) * 0.10);  // faster firing
+  const hullMult  = 1 + Math.max(0, dangerLevel - 1) * 0.10;  // d5 = +40% HP
+
+  // Find the outermost orbit to place fleets near.
   const maxOrbit = Math.max(800, ...bodies.filter(b => b.orbitRadius).map(b => b.orbitRadius));
-  
-  for (let i = 0; i < pirateCount; i++) {
-    const hullId = hullPool[rng.int(0, hullPool.length - 1)];
-    const hull = PIRATE_HULLS[hullId];
-    if (!hull) continue;
-    
+
+  // Group pirates into fleets that share a patrol center and rally
+  // together. Fleet size scales with danger -- 5-star systems run
+  // gangs of 3-4 vs solo patrols in 1-2 star systems.
+  let remaining = pirateCount;
+  let fleetIdx = 0;
+  while (remaining > 0) {
+    const fleetSize = Math.min(
+      remaining,
+      dangerLevel >= 5 ? rng.int(3, 4)
+        : dangerLevel >= 3 ? rng.int(2, 3)
+        : rng.int(1, 2)
+    );
+    const fleetId = `fleet_${fleetIdx++}`;
+    // Shared patrol center -- all members of this fleet orbit it.
     const angle = rng.range(0, Math.PI * 2);
     const dist = rng.range(maxOrbit * 0.3, maxOrbit * 0.9);
-    const icon = getShipIcon(hullId);
-    
-    enemies.push({
-      id: `pirate_${nextId++}`,
-      hullId,
-      icon,
-      faction: 'pirate',
-      name: `${FACTIONS.pirate.name} ${hull.displaySize > 9 ? 'Destroyer' : hull.displaySize > 7 ? 'Marauder' : 'Interceptor'}`,
-      x: Math.cos(angle) * dist,
-      y: Math.sin(angle) * dist,
-      vx: 0, vy: 0,
-      rotation: rng.range(-180, 180),
-      hull: hull.stats.maxHull,
-      maxHull: hull.stats.maxHull,
-      shield: hull.stats.maxShield,
-      maxShield: hull.stats.maxShield,
-      speed: hull.stats.speed,
-      damage: hull.stats.damage,
-      fireRate: hull.stats.fireRate,
-      range: hull.stats.range,
-      fireCooldown: 0,
-      shieldRegenTimer: 0,
-      engineColor: hull.palette.engine,
-      displaySize: hull.displaySize,
-      state: 'patrol',
-      patrolCenter: { x: Math.cos(angle) * dist, y: Math.sin(angle) * dist },
-      patrolAngle: rng.range(0, Math.PI * 2),
-      patrolRadius: rng.range(50, 150),
-      targetId: null,
-      lootCredits: Math.round(rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX) * (hull.displaySize / 6) * (1 + dangerLevel * 0.3)),
-    });
+    const patrolCenter = { x: Math.cos(angle) * dist, y: Math.sin(angle) * dist };
+    const patrolRadius = rng.range(80, 180);
+    for (let m = 0; m < fleetSize; m++) {
+      const hullId = hullPool[rng.int(0, hullPool.length - 1)];
+      const hull = PIRATE_HULLS[hullId];
+      if (!hull) continue;
+      // Spawn close to the patrol center so the fleet appears grouped.
+      const memberA = rng.range(0, Math.PI * 2);
+      const memberD = rng.range(0, 40);
+      const startX = patrolCenter.x + Math.cos(memberA) * memberD;
+      const startY = patrolCenter.y + Math.sin(memberA) * memberD;
+      const icon = getShipIcon(hullId);
+      enemies.push({
+        id: `pirate_${nextId++}`,
+        hullId, icon, faction: 'pirate',
+        name: `${FACTIONS.pirate.name} ${hull.displaySize > 9 ? 'Destroyer' : hull.displaySize > 7 ? 'Marauder' : 'Interceptor'}`,
+        x: startX, y: startY,
+        vx: 0, vy: 0,
+        rotation: rng.range(-180, 180),
+        hull: Math.round(hull.stats.maxHull * hullMult),
+        maxHull: Math.round(hull.stats.maxHull * hullMult),
+        shield: Math.round(hull.stats.maxShield * hullMult),
+        maxShield: Math.round(hull.stats.maxShield * hullMult),
+        speed: hull.stats.speed,
+        damage: Math.max(1, Math.round(hull.stats.damage * dmgMult)),
+        fireRate: Math.max(0.3, hull.stats.fireRate * cycleMult),
+        range: hull.stats.range,
+        fireCooldown: 0,
+        shieldRegenTimer: 0,
+        engineColor: hull.palette.engine,
+        displaySize: hull.displaySize,
+        state: 'patrol',
+        patrolCenter,
+        patrolAngle: rng.range(0, Math.PI * 2) + m * (Math.PI * 2 / fleetSize), // fan out around the orbit
+        patrolRadius,
+        targetId: null,
+        fleetId,
+        lootCredits: Math.round(rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX) * (hull.displaySize / 6) * (1 + dangerLevel * 0.3)),
+      });
+    }
+    remaining -= fleetSize;
   }
-  
+
   return enemies;
 };
 
@@ -2589,6 +2619,18 @@ export const SystemView = () => {
       const effects = combatEffectsRef.current;
       
       // --- Enemy AI ---
+      // Fleet rally pre-pass: collect every fleetId that has at least
+      // one member currently engaging the player (chase / attack). On
+      // the main loop below, any patrol/returning member of those
+      // fleets is force-switched to chase so wingmen don't sit idle
+      // while a fleet-mate fights. Cheap O(N) scan; built once per
+      // frame so all members see a consistent set.
+      const engagedFleets = new Set();
+      for (const e of enemies) {
+        if (e.hull > 0 && e.fleetId && (e.state === 'chase' || e.state === 'attack')) {
+          engagedFleets.add(e.fleetId);
+        }
+      }
       for (const enemy of enemies) {
         if (enemy.hull <= 0) continue; // dead
         
@@ -2609,6 +2651,17 @@ export const SystemView = () => {
         if ((dockedBodyRef.current || isPodRef.current) &&
             (enemy.state === 'chase' || enemy.state === 'attack' || enemy.state === 'flee')) {
           enemy.state = 'returning';
+        }
+
+        // Fleet rally: if any fleet-mate is engaged + player is a
+        // valid target, this pirate joins the fight regardless of
+        // aggro range. Wingmen pour in from across the patrol when
+        // one of them spots the player. Skipped while the player is
+        // docked / podded (those overrides happened above).
+        if (!dockedBodyRef.current && !isPodRef.current
+            && enemy.fleetId && engagedFleets.has(enemy.fleetId)
+            && (enemy.state === 'patrol' || enemy.state === 'returning')) {
+          enemy.state = 'chase';
         }
 
         // State transitions
