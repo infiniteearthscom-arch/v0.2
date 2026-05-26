@@ -249,7 +249,9 @@ router.get('/', authMiddleware, async (req, res) => {
         // level. The per-skill max_level lives on each skill row
         // (above) so the UI can iterate Training Discipline's 7
         // levels even though the global default is 5.
-        max_queue: BASE_QUEUE + (skills.get(TRAINING_DISCIPLINE_ID)?.level || 0),
+        // `skills` here is the response ARRAY (defs decorated above).
+        // The per-player Map lives in `skillsById` from loadAndCommit.
+        max_queue: BASE_QUEUE + (skillsById.get(TRAINING_DISCIPLINE_ID)?.level || 0),
         now: new Date().toISOString(),
       };
     });
