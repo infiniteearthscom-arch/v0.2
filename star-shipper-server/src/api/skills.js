@@ -34,30 +34,54 @@ const router = express.Router();
 const SP_BASE = 250;
 const SP_MULT = 5.66;
 const SP_PER_MIN = 30;
-const MAX_QUEUE = 10;
+// Base skill queue size for a fresh player. Each level of the
+// Leadership skill `lead_training_discipline` adds one more slot
+// (max queue = 3 + level, capped at 10 once the skill is L7).
+const BASE_QUEUE = 3;
+const TRAINING_DISCIPLINE_ID = 'lead_training_discipline';
 const MAX_LEVEL = 5;
+
+// Migration 054: per-skill `sp_per_level_override` (JSONB array of SP
+// costs) lets a single skill define exact SP per level, overriding the
+// smooth exponential curve. Array length implicitly defines that
+// skill's max level (overrides MAX_LEVEL=5). Used by Training
+// Discipline to hit specific real-time training durations (L1=7d,
+// L7=60d) the rank_multiplier curve can't reach exactly.
+function maxLevelFor(def) {
+  if (def?.sp_per_level_override && Array.isArray(def.sp_per_level_override)) {
+    return def.sp_per_level_override.length;
+  }
+  return MAX_LEVEL;
+}
 
 // SP required to advance from (level-1) to level for a skill of the
 // given rank multiplier. NOT cumulative; this is one level's cost.
-function spForLevel(level, rankMult) {
+// When `override` (array) is provided, reads from index level-1.
+function spForLevel(level, rankMult, override = null) {
+  if (override && Array.isArray(override) && level >= 1 && level <= override.length) {
+    return Math.round(override[level - 1]);
+  }
   if (level <= 0 || level > MAX_LEVEL) return 0;
   return Math.round(SP_BASE * Math.pow(SP_MULT, level - 1) * rankMult);
 }
 
-// Cumulative SP from 0 to `level`. spAtLevel(0) = 0, spAtLevel(5) =
-// the total SP a maxed skill has banked.
-function spAtLevel(level, rankMult) {
+// Cumulative SP from 0 to `level`. spAtLevel(0) = 0, spAtLevel(N) =
+// the total SP a player has banked at level N (where N can be up to
+// the skill's effective max).
+function spAtLevel(level, rankMult, override = null) {
+  const max = (override && Array.isArray(override)) ? override.length : MAX_LEVEL;
   let sum = 0;
-  for (let i = 1; i <= level; i++) sum += spForLevel(i, rankMult);
+  for (let i = 1; i <= Math.min(level, max); i++) sum += spForLevel(i, rankMult, override);
   return sum;
 }
 
 // Highest level the player has "earned" with this SP total. Used when
 // committing a queue entry that may have actually advanced multiple
 // levels by the time we look (e.g., player offline for a week).
-function levelFromSp(sp, rankMult) {
-  for (let L = MAX_LEVEL; L >= 0; L--) {
-    if (sp >= spAtLevel(L, rankMult)) return L;
+function levelFromSp(sp, rankMult, override = null) {
+  const max = (override && Array.isArray(override)) ? override.length : MAX_LEVEL;
+  for (let L = max; L >= 0; L--) {
+    if (sp >= spAtLevel(L, rankMult, override)) return L;
   }
   return 0;
 }
@@ -96,7 +120,8 @@ async function loadAndCommit(client, userId) {
     const entry = queue[0];
     const def = defById[entry.skill_id];
     const rankMult = def?.rank_multiplier || 1;
-    const newSp = spAtLevel(entry.target_level, rankMult);
+    const override = def?.sp_per_level_override || null;
+    const newSp = spAtLevel(entry.target_level, rankMult, override);
 
     // Upsert the player_skills row. last_leveled_at gets set to NOW
     // on every commit so the "↩ LAST TRAINED" badge in the Skills
@@ -147,11 +172,12 @@ async function loadAndCommit(client, userId) {
     const head = queue[0];
     const def = defById[head.skill_id];
     const rankMult = def?.rank_multiplier || 1;
+    const override = def?.sp_per_level_override || null;
     const startedAt = new Date(head.started_at);
     const elapsedMs = now.getTime() - startedAt.getTime();
     const elapsedMin = Math.max(0, elapsedMs / 60000);
-    const startSp = spAtLevel(head.target_level - 1, rankMult);
-    const targetSp = spAtLevel(head.target_level, rankMult);
+    const startSp = spAtLevel(head.target_level - 1, rankMult, override);
+    const targetSp = spAtLevel(head.target_level, rankMult, override);
     liveHeadSp = Math.min(targetSp, Math.round(startSp + elapsedMin * SP_PER_MIN));
     liveHeadAtLevel = head.skill_id;
   }
@@ -191,8 +217,14 @@ router.get('/', authMiddleware, async (req, res) => {
           level: ps?.level || 0,
           sp: ps?.sp || 0,
           last_leveled_at: ps?.last_leveled_at || null,
-          sp_for_next_level: ps?.level >= MAX_LEVEL ? null : spAtLevel((ps?.level || 0) + 1, d.rank_multiplier),
-          sp_at_current_level: spAtLevel(ps?.level || 0, d.rank_multiplier),
+          sp_for_next_level: ps?.level >= maxLevelFor(d) ? null : spAtLevel((ps?.level || 0) + 1, d.rank_multiplier, d.sp_per_level_override),
+          sp_at_current_level: spAtLevel(ps?.level || 0, d.rank_multiplier, d.sp_per_level_override),
+          // Per-skill max level so client UIs can iterate the right
+          // number of levels (Training Discipline has 7 instead of 5).
+          max_level: maxLevelFor(d),
+          // Pass override through so any client-side cost preview can
+          // mirror the server's math without re-deriving from rank.
+          sp_per_level_override: d.sp_per_level_override || null,
         };
       });
 
@@ -213,7 +245,11 @@ router.get('/', authMiddleware, async (req, res) => {
         queue: queueOut,
         sp_per_min: SP_PER_MIN,
         max_level: MAX_LEVEL,
-        max_queue: MAX_QUEUE,
+        // Effective queue cap = BASE_QUEUE (3) + Training Discipline
+        // level. The per-skill max_level lives on each skill row
+        // (above) so the UI can iterate Training Discipline's 7
+        // levels even though the global default is 5.
+        max_queue: BASE_QUEUE + (skills.get(TRAINING_DISCIPLINE_ID)?.level || 0),
         now: new Date().toISOString(),
       };
     });
@@ -239,17 +275,26 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
     if (!skill_id || typeof target_level !== 'number') {
       return res.status(400).json({ error: 'skill_id + target_level required' });
     }
-    if (target_level < 1 || target_level > MAX_LEVEL) {
-      return res.status(400).json({ error: `target_level must be 1..${MAX_LEVEL}` });
-    }
-
     const out = await transaction(async (client) => {
       const { defs, skillsById, queue } = await loadAndCommit(client, userId);
       const def = defs.find(d => d.id === skill_id);
       if (!def) throw Object.assign(new Error('Unknown skill'), { statusCode: 404 });
 
-      if (queue.length >= MAX_QUEUE) {
-        throw Object.assign(new Error(`Queue full (${MAX_QUEUE} entries max)`), { statusCode: 400 });
+      // target_level cap is per-skill -- defaults to MAX_LEVEL=5,
+      // overridden to override.length when sp_per_level_override is
+      // set (Training Discipline = 7 levels).
+      const maxForThis = maxLevelFor(def);
+      if (target_level < 1 || target_level > maxForThis) {
+        throw Object.assign(new Error(`target_level must be 1..${maxForThis}`), { statusCode: 400 });
+      }
+
+      // Dynamic queue cap: 3 base + Training Discipline level.
+      const dynamicMax = BASE_QUEUE + (skillsById.get(TRAINING_DISCIPLINE_ID)?.level || 0);
+      if (queue.length >= dynamicMax) {
+        throw Object.assign(
+          new Error(`Queue full (${dynamicMax} entries max -- train Training Discipline to unlock more slots)`),
+          { statusCode: 400 }
+        );
       }
 
       // "After the queue runs" level for this skill: current level
@@ -269,7 +314,7 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
       // Compute finishes_at chained off whatever's currently at the
       // tail of the queue. New entry's SP cost = one level at the
       // skill's rank.
-      const sp = spForLevel(target_level, def.rank_multiplier);
+      const sp = spForLevel(target_level, def.rank_multiplier, def.sp_per_level_override);
       const tailFinishes = queue.length > 0 ? new Date(queue[queue.length - 1].finishes_at) : null;
       const startsAt = tailFinishes || new Date();
       const finishesAt = computeFinishesAt(tailFinishes, sp);
@@ -340,7 +385,7 @@ router.post('/queue/remove', authMiddleware, async (req, res) => {
         const q = remaining[i];
         const def = defById[q.skill_id];
         const rankMult = def?.rank_multiplier || 1;
-        const sp = spForLevel(q.target_level, rankMult);
+        const sp = spForLevel(q.target_level, rankMult, def?.sp_per_level_override);
         const newStart = prevFinishes || new Date();
         const newFinish = computeFinishesAt(prevFinishes, sp);
         await client.query(

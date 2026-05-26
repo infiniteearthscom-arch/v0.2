@@ -41,7 +41,7 @@ const formatDuration = (ms) => {
   return `${d}d ${h % 24}h`;
 };
 
-const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
 // Tick once a second so the live SP / countdown displays advance.
 // Cheap -- nothing re-fetches, just a state bump for derived displays.
@@ -164,14 +164,17 @@ const SkillsTab = () => {
             const isTraining = queue[0]?.skill_id === s.id;
             const isCompleted = s.level > 0;
             const isLastTrained = s.id === lastTrainedId;
-            const isMaxed = s.level >= maxLevel;
+            // Per-skill max level (Training Discipline = 7, others = 5).
+            // Falls back to the global maxLevel for old payloads.
+            const skMax = s.max_level || maxLevel;
+            const isMaxed = s.level >= skMax;
             // Subtitle text -- describes current progress instead of
             // the (confusing) rank multiplier. Rank still shows in the
             // detail panel where it's labeled correctly.
             let subtitleText;
             if (isMaxed) subtitleText = '★ MAX LEVEL';
-            else if (s.level > 0) subtitleText = `Lv ${ROMAN[s.level]} · ${maxLevel - s.level} more level${maxLevel - s.level === 1 ? '' : 's'}`;
-            else subtitleText = `Untrained · ${maxLevel} levels available`;
+            else if (s.level > 0) subtitleText = `Lv ${ROMAN[s.level]} · ${skMax - s.level} more level${skMax - s.level === 1 ? '' : 's'}`;
+            else subtitleText = `Untrained · ${skMax} levels available`;
             return (
               <div
                 key={s.id}
@@ -246,7 +249,7 @@ const SkillsTab = () => {
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {selected ? (() => {
             const effLevel = effectiveLevelFor(selected.id);
-            const isMaxed = effLevel >= maxLevel;
+            const isMaxed = effLevel >= (selected.max_level || maxLevel);
             const nextLevel = effLevel + 1;
             const queueFull = queue.length >= maxQueue;
             const bonusText = (() => {

@@ -81,7 +81,7 @@ const initialState = {
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
   skillSpPerMin: 30,
   skillMaxLevel: 5,
-  skillMaxQueue: 10,
+  skillMaxQueue: 3,  // base queue cap; expands +1 per Training Discipline level (max 10)
   skillsLoaded: false,
   researchLoaded: false,
   activeBonuses: {},
