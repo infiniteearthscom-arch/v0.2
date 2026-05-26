@@ -326,9 +326,15 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     systems[idx].hasJumpGate = true;
   }
   
-  // ---- Step 3: Build lookup ----
+  // ---- Step 3: Build lookup + decorate with hasStation ----
+  // hasStation is precomputed once so the galaxy map can show a
+  // station icon next to each discovered system without re-running
+  // content generation per render. Sol short-circuits to true; the
+  // rest run generateSystemContent (already deterministic from the
+  // system seed) and check for a station body.
   const systemMap = {};
   for (const sys of systems) {
+    sys.hasStation = computeHasStation(sys);
     systemMap[sys.id] = sys;
   }
   
@@ -460,7 +466,7 @@ export const generateSystemContent = (system) => {
     orbitOffset: rng.range(0, Math.PI * 2),
     size: 10,
   });
-  
+
   return {
     id: system.id,
     name: system.name,
@@ -469,6 +475,18 @@ export const generateSystemContent = (system) => {
     faction: system.faction,
     dangerLevel: system.dangerLevel,
   };
+};
+
+// Cheap presence check used by generateGalaxy to decorate each system
+// with `hasStation`. Runs the full content generation under the hood
+// since station placement depends on planet types -- but we throw the
+// bodies away and keep only the boolean. ~200 systems × ~10 bodies =
+// well under 50ms one-time at module load.
+const computeHasStation = (system) => {
+  // Sol is hardcoded and has Luna Station (+ vendor in Earth orbit).
+  if (system.id === 'sol') return true;
+  const content = generateSystemContent(system);
+  return !!content?.bodies?.some(b => b.type === 'station');
 };
 
 // ============================================

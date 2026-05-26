@@ -300,6 +300,35 @@ export const GalaxyMapWindow = () => {
                   <circle cx={sys.x} cy={sys.y} r={size}
                     fill={color} opacity={discovered ? 1 : 0.4} />
 
+                  {/* Station marker -- discovered systems with at
+                      least one station get a small gold rect tucked
+                      next to the star dot. Fog-of-war keeps it
+                      hidden until the player has actually been there
+                      (sys.hasStation is precomputed but undiscovered
+                      systems shouldn't leak the fact). */}
+                  {discovered && sys.hasStation && (
+                    <g pointerEvents="none">
+                      <rect
+                        x={sys.x + size + 1 * uiScale}
+                        y={sys.y - (size + 2.5 * uiScale)}
+                        width={3.5 * uiScale}
+                        height={3.5 * uiScale}
+                        fill="#fbbf24"
+                        stroke="#451a03"
+                        strokeWidth={0.4 * uiScale}
+                        opacity={0.95}
+                      />
+                      <line
+                        x1={sys.x + size + 1 * uiScale}
+                        y1={sys.y - (size + 0.75 * uiScale)}
+                        x2={sys.x + size + 4.5 * uiScale}
+                        y2={sys.y - (size + 0.75 * uiScale)}
+                        stroke="#451a03"
+                        strokeWidth={0.4 * uiScale}
+                      />
+                    </g>
+                  )}
+
                   {/* Label -- discovered systems show their real name;
                       undiscovered show "Unknown" only when hovered /
                       selected / autopilot-targeted (no static label
@@ -414,6 +443,12 @@ export const GalaxyMapWindow = () => {
                       <span className="text-slate-500">Jump Gate</span>
                       <span className={selectedSys.hasJumpGate ? 'text-green-400' : 'text-slate-600'}>
                         {selectedSys.hasJumpGate ? `Yes (${selectedSys.jumpConnections.length} links)` : 'None'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Station</span>
+                      <span className={selectedSys.hasStation ? 'text-amber-400' : 'text-slate-600'}>
+                        {selectedSys.hasStation ? 'Yes' : 'None'}
                       </span>
                     </div>
                   </>

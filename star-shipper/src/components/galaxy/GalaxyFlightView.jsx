@@ -559,7 +559,35 @@ export const GalaxyFlightView = () => {
                   {/* Star dot */}
                   <circle cx={sys.x} cy={sys.y} r={size}
                     fill={color} opacity={discovered ? 1 : 0.4} />
-                  
+
+                  {/* Station marker -- discovered systems with at
+                      least one station get a small gold rect tucked
+                      next to the star dot. Mirrors the GalaxyMapWindow
+                      treatment so both views show the same info at a
+                      glance. Fog-of-war hides it until discovered. */}
+                  {discovered && sys.hasStation && (
+                    <g pointerEvents="none">
+                      <rect
+                        x={sys.x + size + 2 * uiScale}
+                        y={sys.y - (size + 4 * uiScale)}
+                        width={5 * uiScale}
+                        height={5 * uiScale}
+                        fill="#fbbf24"
+                        stroke="#451a03"
+                        strokeWidth={0.6 * uiScale}
+                        opacity={0.95}
+                      />
+                      <line
+                        x1={sys.x + size + 2 * uiScale}
+                        y1={sys.y - (size + 1.5 * uiScale)}
+                        x2={sys.x + size + 7 * uiScale}
+                        y2={sys.y - (size + 1.5 * uiScale)}
+                        stroke="#451a03"
+                        strokeWidth={0.6 * uiScale}
+                      />
+                    </g>
+                  )}
+
                   {/* Label -- discovered shows real name; undiscovered
                       shows "Unknown" only on hover/target so static
                       noise doesn't clutter the view. */}
