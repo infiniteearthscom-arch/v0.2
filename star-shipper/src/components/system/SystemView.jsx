@@ -1123,10 +1123,13 @@ export const SystemView = () => {
   // (multiplayer-ready); fetched on system change, not polled (no
   // depletion yet -- A3 will add polling or proximity-driven refresh).
   const asteroidsRef = useRef([]);
-  // A2 scan state: at most one scan in flight at a time. Game loop
-  // checks range each frame; if player flies out, cancels. On time
-  // elapsed, fires the server scan endpoint to record + reveal.
-  const activeScanRef = useRef(null); // { asteroidId, startMs, durationMs } | null
+  // Scan state. Map<asteroidId, {startMs, durationMs, viaArea}>. One
+  // entry per in-flight scan -- single-click scans add one, area scan
+  // adds N simultaneously (truly parallel; every rock in scan range
+  // gets its own timer, all complete after one scan_time interval).
+  // Game loop iterates the map each frame, checks range + completion
+  // per-entry, deletes on either.
+  const activeScansRef = useRef(new Map());
   // Scan range -- the click-to-scan reach for asteroids -- is no
   // longer a constant. Effective value comes from the best fitted
   // scanner's computed_scan_range (T1=80, T2=160, T3=320, x quality)
@@ -1138,9 +1141,9 @@ export const SystemView = () => {
     getFleetScanRange(fleetShipsRef.current, activeBonusesRef.current);
   // Scan duration is no longer a constant -- derived per-scan from the
   // best fitted scanner's computed_scan_time and the ast_scanning skill
-  // bonus via getFleetScanTimeMs(). The asteroid scan loop reads
-  // activeScanRef.durationMs (snapshotted at scan-start) so mid-scan
-  // re-fits don't change the in-flight scan's timing.
+  // bonus via getFleetScanTimeMs(). Per-scan durationMs is snapshotted
+  // at scan-start so mid-scan re-fits don't change the in-flight scan's
+  // timing.
 
   // A4 mining state. Per-laser click-to-mine: every fitted mining
   // laser across the active fleet can be independently assigned to
@@ -1177,16 +1180,12 @@ export const SystemView = () => {
   // ast_bulk_belt_efficiency at -10%/level). Tracked the same way as
   // sweep so the HUD button reflects the same countdown semantics.
   const bulkBeltCooldownUntilRef = useRef(0);
-  // Area scan queue (Wide-Field Sensor Array). Clicking Area Scan no
-  // longer instantly flips every asteroid -- it enqueues unscanned
-  // asteroids in sensor range and runs them through the normal single-
-  // asteroid scan flow one at a time, respecting scan_time + skill
-  // bonuses. areaScanRangeRef snapshots the sensor range at queue start
-  // so the per-asteroid cancel check uses that radius instead of the
-  // tighter scan_range (otherwise scans 200+ units away would auto-
-  // cancel and defeat the area-scan purpose).
-  const areaScanQueueRef = useRef([]);
-  const areaScanRangeRef = useRef(0);
+  // Area-scan expected count -- set when the player triggers an area
+  // scan, decremented as each viaArea scan completes. Drives the
+  // "Area scan complete" toast on the final completion. Cleared on
+  // cancel or system change. Not a queue (scans run in parallel) --
+  // just a counter for the summary toast.
+  const areaScanExpectedRef = useRef(0);
   const [sweepTick, setSweepTick] = useState(0);
 
   // ============================================
@@ -1434,7 +1433,7 @@ export const SystemView = () => {
   useEffect(() => {
     if (!currentSystemId) return undefined;
     let cancelled = false;
-    activeScanRef.current = null; // cancel any pending scan on system change
+    activeScansRef.current.clear(); // cancel any in-flight scans on system change
     miningAssignmentsRef.current.clear(); // drop all per-laser targets on system change
     cargoFullRef.current = false; // re-check capacity in new system
     // Tier B sweep state resets on system change. Cooldown doesn't
@@ -1442,9 +1441,7 @@ export const SystemView = () => {
     sweepActiveUntilRef.current = 0;
     sweepCooldownUntilRef.current = 0;
     bulkBeltCooldownUntilRef.current = 0;
-    // Area-scan queue is per-system (asteroid ids don't carry across).
-    areaScanQueueRef.current = [];
-    areaScanRangeRef.current = 0;
+    areaScanExpectedRef.current = 0;
     // Scanner ghosts are per-system. Clearing here keeps the System
     // Map clean of "last seen 2 systems ago" markers.
     enemyGhostsRef.current.clear();
@@ -1692,9 +1689,11 @@ export const SystemView = () => {
       return;
     }
     // Snapshot scan duration at start so re-fits / skill ticks mid-scan
-    // don't yank the timer out from under the player.
+    // don't yank the timer out from under the player. Map entry per
+    // asteroid -- re-clicking a rock already scanning is a no-op.
+    if (activeScansRef.current.has(asteroid.id)) return;
     const durationMs = getFleetScanTimeMs(fleetShipsRef.current, activeBonusesRef.current);
-    activeScanRef.current = { asteroidId: asteroid.id, startMs: Date.now(), durationMs };
+    activeScansRef.current.set(asteroid.id, { startMs: Date.now(), durationMs, viaArea: false });
     if (pushToast) pushToast({ kind: 'info', text: 'Scanning asteroid...', duration: 2000 });
   };
 
@@ -1725,89 +1724,65 @@ export const SystemView = () => {
     }
   };
 
-  // Area scan no longer instant-flips every asteroid. It enqueues
-  // unscanned rocks in sensor range and feeds them through the normal
-  // single-asteroid scan loop (respects scan_time + ast_scanning
-  // skill). Each scan still hits /asteroids/scan one at a time; the
-  // server-side /asteroids/scan_area bulk endpoint is no longer called
-  // from the client but kept around for future "instant bulk" tiers.
+  // Area scan = TRULY parallel. One click spawns a timer on every
+  // unscanned asteroid inside the fleet's *scan_range* (the inner
+  // perimeter, not the sensor perimeter -- you can only scan what
+  // your scanner can actually reach). Each timer runs independently
+  // and completes after one scan_time interval, so all the rocks
+  // finish ~simultaneously instead of one-by-one. The bulk server
+  // endpoint /asteroids/scan_area is no longer called from the
+  // client; we issue per-asteroid /asteroids/scan calls as each
+  // timer elapses.
+  const countAreaScansActive = () => {
+    let n = 0;
+    for (const v of activeScansRef.current.values()) if (v.viaArea) n++;
+    return n;
+  };
+
   const handleAreaScan = () => {
     if (!fleetHasAreaScan()) {
       if (pushToast) pushToast({ kind: 'error', text: 'No Wide-Field Sensor Array (or higher) fitted', duration: 3000 });
       return;
     }
-    // Cancel toggle: second click while queue is active drains it.
-    if (areaScanQueueRef.current.length > 0 || activeScanRef.current?.viaArea) {
-      const pending = areaScanQueueRef.current.length + (activeScanRef.current?.viaArea ? 1 : 0);
-      areaScanQueueRef.current = [];
-      if (activeScanRef.current?.viaArea) activeScanRef.current = null;
-      areaScanRangeRef.current = 0;
-      if (pushToast) pushToast({ kind: 'info', text: `Area scan cancelled (${pending} remaining)`, duration: 2500 });
+    // Cancel toggle: second click while any area scans are in flight
+    // drains all of them (single-click scans untouched).
+    const inFlight = countAreaScansActive();
+    if (inFlight > 0) {
+      for (const [id, v] of [...activeScansRef.current.entries()]) {
+        if (v.viaArea) activeScansRef.current.delete(id);
+      }
+      areaScanExpectedRef.current = 0;
+      if (pushToast) pushToast({ kind: 'info', text: `Area scan cancelled (${inFlight} in flight)`, duration: 2500 });
       return;
     }
     playSound('button_click');
-    // Tier C `ast_area_scanning` widens the effective radius by
-    // area_scan_radius_pct (+10%/level), so a high-tier scanner +
-    // skilled captain sweeps a much larger zone.
+    // Radius = fleet scan_range (NOT sensor range) so the parallel
+    // scans only cover rocks the scanner can actually reach. Tier C
+    // `ast_area_scanning` (+10%/level) widens it.
     const radiusBonusPct = activeBonusesRef.current?.area_scan_radius_pct || 0;
-    const radius = Math.round(fleetSensorRange() * (1 + radiusBonusPct / 100));
+    const radius = Math.round(fleetScanRange() * (1 + radiusBonusPct / 100));
     const px = shipPosRef.current.x, py = shipPosRef.current.y;
     const r2 = radius * radius;
-    // Closest unscanned asteroids first so the player gets early
-    // feedback on rocks they can already see + reach. Filter out the
-    // one currently being scanned (single-click in flight) -- it'll
-    // naturally complete on its own.
-    const activeId = activeScanRef.current?.asteroidId;
     const candidates = (asteroidsRef.current || [])
-      .filter(a => !a.scanned && a.id !== activeId)
-      .map(a => ({ id: a.id, d2: (a.x - px) ** 2 + (a.y - py) ** 2 }))
-      .filter(x => x.d2 <= r2)
-      .sort((a, b) => a.d2 - b.d2)
-      .map(x => x.id);
+      .filter(a => !a.scanned && !activeScansRef.current.has(a.id))
+      .filter(a => (a.x - px) ** 2 + (a.y - py) ** 2 <= r2);
     if (candidates.length === 0) {
-      if (pushToast) pushToast({ kind: 'info', text: 'Area scan: no unscanned asteroids in sensor range', duration: 3000 });
+      if (pushToast) pushToast({ kind: 'info', text: 'Area scan: no unscanned asteroids in scan range', duration: 3000 });
       return;
     }
-    areaScanQueueRef.current = candidates;
-    areaScanRangeRef.current = radius;
+    // Snapshot duration once so every parallel timer uses the same
+    // window -- they all complete at ~the same tick.
+    const durationMs = getFleetScanTimeMs(fleetShipsRef.current, activeBonusesRef.current);
+    const startMs = Date.now();
+    for (const a of candidates) {
+      activeScansRef.current.set(a.id, { startMs, durationMs, viaArea: true });
+    }
+    areaScanExpectedRef.current = candidates.length;
     if (pushToast) pushToast({
       kind: 'success',
-      text: `Area scan queued -- ${candidates.length} asteroid${candidates.length === 1 ? '' : 's'} (closest first)`,
+      text: `Area scan started -- ${candidates.length} asteroid${candidates.length === 1 ? '' : 's'} in parallel (${(durationMs / 1000).toFixed(1)}s)`,
       duration: 3500,
     });
-    // First queued scan starts on the next game-loop tick via
-    // advanceAreaScanQueue() below; no need to kick it here.
-  };
-
-  // Pop the next viable asteroid off the queue and set activeScanRef
-  // so the existing scan loop processes it. Skips entries that are
-  // already scanned, missing, or out of the queued sensor range.
-  // Called by the scan loop whenever activeScanRef goes null + queue
-  // is non-empty.
-  const advanceAreaScanQueue = () => {
-    while (areaScanQueueRef.current.length > 0) {
-      const nextId = areaScanQueueRef.current.shift();
-      const ast = (asteroidsRef.current || []).find(a => a.id === nextId);
-      if (!ast || ast.scanned) continue;
-      const dx = ast.x - shipPosRef.current.x;
-      const dy = ast.y - shipPosRef.current.y;
-      const r = areaScanRangeRef.current || fleetSensorRange();
-      if (dx * dx + dy * dy > r * r) continue; // out of range, skip
-      const durationMs = getFleetScanTimeMs(fleetShipsRef.current, activeBonusesRef.current);
-      activeScanRef.current = {
-        asteroidId: nextId,
-        startMs: Date.now(),
-        durationMs,
-        viaArea: true,
-      };
-      return;
-    }
-    // Queue drained -- fire one summary toast when the last queued
-    // scan completes (areaScanRangeRef > 0 marks "we were in a queue").
-    if (areaScanRangeRef.current) {
-      areaScanRangeRef.current = 0;
-      if (pushToast) pushToast({ kind: 'success', text: 'Area scan complete', duration: 2500 });
-    }
   };
 
   const handleBeltScan = async () => {
@@ -3190,81 +3165,76 @@ export const SystemView = () => {
       // complete if scan_time elapses. Server records the reveal +
       // returns contents; we patch the local asteroid so the SVG
       // render immediately reflects the new "scanned" state.
-      if (activeScanRef.current) {
-        const scan = activeScanRef.current;
-        const ast = asteroidsRef.current.find(a => a.id === scan.asteroidId);
-        if (!ast) {
-          activeScanRef.current = null;
-        } else {
+      if (activeScansRef.current.size > 0) {
+        // Iterate a snapshot so deletes mid-loop are safe.
+        for (const [astId, scan] of [...activeScansRef.current.entries()]) {
+          const ast = asteroidsRef.current.find(a => a.id === astId);
+          if (!ast) {
+            activeScansRef.current.delete(astId);
+            continue;
+          }
           const sdx = ast.x - playerPos.x;
           const sdy = ast.y - playerPos.y;
-          // Cancel radius is wider for area-scan-queued scans (uses the
-          // queue's snapshotted sensor radius) since the player invoked
-          // area scan to "scan everything in sight" -- not just rocks
-          // within click-scan reach. Single-click scans keep the tight
-          // scan_range cancel that's been the existing behavior.
-          const cancelR = scan.viaArea
-            ? (areaScanRangeRef.current || fleetSensorRange())
-            : fleetScanRange() * 1.2;
+          // Both single-click and area-scan use scan_range as the cancel
+          // boundary -- you can only scan what the scanner can reach.
+          // *1.2 grace for single-click drift; tight for area scans
+          // (the player explicitly chose the perimeter when they
+          // triggered area scan).
+          const cancelR = scan.viaArea ? fleetScanRange() : fleetScanRange() * 1.2;
           if (sdx * sdx + sdy * sdy > cancelR * cancelR) {
-            // Out of range -- cancel. Quiet for queued scans (the rest
-            // of the queue keeps going) to avoid toast spam; chatty for
-            // explicit single-click scans.
-            activeScanRef.current = null;
+            activeScansRef.current.delete(astId);
             if (!scan.viaArea) {
               const pt = useGameStore.getState().pushToast;
               if (pt) pt({ kind: 'error', text: 'Scan cancelled — flew out of range.', duration: 2500 });
             }
-          } else if (Date.now() - scan.startMs >= scan.durationMs) {
-            // Time complete -- record server-side and reveal
-            const astId = scan.asteroidId;
-            const wasViaArea = scan.viaArea;
-            activeScanRef.current = null;
-            asteroidsAPI.scan(astId)
-              .then(({ contents, stat_purity, stat_stability, stat_potency, stat_density }) => {
-                const a = asteroidsRef.current.find(x => x.id === astId);
-                if (a) {
-                  a.scanned = true;
-                  a.contents = contents;
-                  // Phase 1 quality pass: server returns the asteroid's
-                  // rolled stats on scan. Store them so the click-to-mine
-                  // tooltip can show the quality tier going forward.
-                  a.stat_purity = stat_purity;
-                  a.stat_stability = stat_stability;
-                  a.stat_potency = stat_potency;
-                  a.stat_density = stat_density;
-                }
-                // Per-rock toast for explicit single-click scans only.
-                // Queued area scans would spam N toasts -- the single
-                // "Area scan complete" toast at queue end is enough.
-                if (!wasViaArea) {
-                  const pt = useGameStore.getState().pushToast;
-                  const qLabel = formatAsteroidQuality({ stat_purity, stat_stability, stat_potency, stat_density });
-                  if (pt) pt({
-                    kind: 'success',
-                    text: `Scan complete — ${qLabel || 'unknown quality'}: ${formatContents(contents)}`,
-                    duration: 5000,
-                  });
-                }
-                // Tutorial: first successful asteroid scan completes
-                // the chain quest from tutorial_fit_modules. Server is
-                // idempotent so we can fire freely on every scan.
-                if (completeQuest) completeQuest('tutorial_scan_asteroid');
-              })
-              .catch(err => {
-                const pt = useGameStore.getState().pushToast;
-                if (pt) pt({ kind: 'error', text: err?.message || 'Scan failed', duration: 3000 });
-              });
+            continue;
           }
-        }
-      }
+          if (Date.now() - scan.startMs < scan.durationMs) continue;
 
-      // Area-scan queue advance: when no scan is active, either kick
-      // off the next queued one or fire the completion toast if the
-      // queue just drained (areaScanRangeRef stays > 0 while we're in
-      // queue mode; advanceAreaScanQueue zeros it and toasts on empty).
-      if (!activeScanRef.current && (areaScanQueueRef.current.length > 0 || areaScanRangeRef.current > 0)) {
-        advanceAreaScanQueue();
+          // Time complete -- record + reveal.
+          const wasViaArea = scan.viaArea;
+          activeScansRef.current.delete(astId);
+          asteroidsAPI.scan(astId)
+            .then(({ contents, stat_purity, stat_stability, stat_potency, stat_density }) => {
+              const a = asteroidsRef.current.find(x => x.id === astId);
+              if (a) {
+                a.scanned = true;
+                a.contents = contents;
+                a.stat_purity = stat_purity;
+                a.stat_stability = stat_stability;
+                a.stat_potency = stat_potency;
+                a.stat_density = stat_density;
+              }
+              // Per-rock toast for single-click scans only; area-scan
+              // batches would spam N toasts (one summary fires below
+              // when areaScanExpectedRef hits 0).
+              if (!wasViaArea) {
+                const pt = useGameStore.getState().pushToast;
+                const qLabel = formatAsteroidQuality({ stat_purity, stat_stability, stat_potency, stat_density });
+                if (pt) pt({
+                  kind: 'success',
+                  text: `Scan complete — ${qLabel || 'unknown quality'}: ${formatContents(contents)}`,
+                  duration: 5000,
+                });
+              } else if (areaScanExpectedRef.current > 0) {
+                areaScanExpectedRef.current -= 1;
+                if (areaScanExpectedRef.current === 0) {
+                  const pt = useGameStore.getState().pushToast;
+                  if (pt) pt({ kind: 'success', text: 'Area scan complete', duration: 2500 });
+                }
+              }
+              if (completeQuest) completeQuest('tutorial_scan_asteroid');
+            })
+            .catch(err => {
+              const pt = useGameStore.getState().pushToast;
+              if (pt) pt({ kind: 'error', text: err?.message || 'Scan failed', duration: 3000 });
+              // Don't leave the expected counter stuck if a network
+              // error eats an area-scan completion.
+              if (wasViaArea && areaScanExpectedRef.current > 0) {
+                areaScanExpectedRef.current -= 1;
+              }
+            });
+        }
       }
 
       // --- Wreck proximity claim ---
@@ -4082,7 +4052,8 @@ export const SystemView = () => {
               // the player can see at a glance which ones they've
               // surveyed. Active scan target gets a yellow arc that
               // fills over scan_time.
-              const isScanning = activeScanRef.current?.asteroidId === a.id;
+              const scanEntry = activeScansRef.current.get(a.id);
+              const isScanning = !!scanEntry;
               // Phase A4: any laser pointed at this asteroid counts.
               // assignedLaserCount drives the optional Nx badge so the
               // player can see at a glance how many lasers are stacked.
@@ -4092,7 +4063,7 @@ export const SystemView = () => {
               }
               const isMineTarget = assignedLaserCount > 0;
               const scanPct = isScanning
-                ? Math.min(1, (Date.now() - activeScanRef.current.startMs) / activeScanRef.current.durationMs)
+                ? Math.min(1, (Date.now() - scanEntry.startMs) / scanEntry.durationMs)
                 : 0;
               const ringR = a.size + 4;
               const circumference = 2 * Math.PI * ringR;
@@ -4363,24 +4334,25 @@ export const SystemView = () => {
 
           {/* Tier B scan-ability tray. Each button only renders when
               the matching module is fitted. Empty fleet -> nothing
-              shows -- no clutter for a Starter Scout. Positioned at
-              right: 56 to clear the System Map toggle (right:8 +
-              width:38 + 10px gap) which sits at the same vertical
-              level. */}
+              shows -- no clutter for a Starter Scout. Uses `fixed`
+              positioning to share the viewport reference with the
+              System Map toggle (which is fixed at right:8 bottom:40).
+              `absolute` made it land 32px higher because SystemView's
+              container stops above the bottom bar. right:56 = 8 (map
+              gutter) + 38 (map button width) + 10 (visual gap). */}
           {(fleetHasAreaScan() || fleetHasBulkScan() || fleetHasSystemSweep()) && (() => {
             const now = Date.now();
             const sweepActive = sweepActiveUntilRef.current > now;
             const sweepCooldownRemain = Math.max(0, Math.ceil((sweepCooldownUntilRef.current - now) / 1000));
-            const areaQueueLen = areaScanQueueRef.current.length;
-            const areaActive = areaQueueLen > 0 || activeScanRef.current?.viaArea;
+            const areaActive = countAreaScansActive();
             return (
-              <div className="absolute flex gap-2" style={{ zIndex: 20, bottom: 40, right: 56 }}>
+              <div className="fixed flex gap-2 items-center" style={{ zIndex: 40, bottom: 40, right: 56, height: 38 }}>
                 {fleetHasAreaScan() && (
                   <button
                     onClick={handleAreaScan}
                     title={areaActive
-                      ? `Click to cancel the area scan (${areaQueueLen} pending)`
-                      : 'Queue scans for every unscanned asteroid in your sensor range. Each scan takes the normal scan time -- click again to cancel.'}
+                      ? `Click to cancel the area scan (${areaActive} in flight)`
+                      : 'Scan every unscanned asteroid in your scan range simultaneously. Each scan takes the normal scan time -- click again to cancel.'}
                     style={{
                       padding: '6px 12px',
                       background: areaActive
@@ -4392,7 +4364,7 @@ export const SystemView = () => {
                       textTransform: 'uppercase', cursor: 'pointer',
                       borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
                     }}
-                  >{areaActive ? `✕ Cancel (${areaQueueLen})` : '📡 Area Scan'}</button>
+                  >{areaActive ? `✕ Cancel (${areaActive})` : '📡 Area Scan'}</button>
                 )}
                 {fleetHasBulkScan() && (() => {
                   const remain = Math.max(0, Math.ceil((bulkBeltCooldownUntilRef.current - now) / 1000));
