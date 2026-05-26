@@ -9,6 +9,7 @@ import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { getFleetScanTimeMs, fleetHasScanner } from '@/utils/shipStats';
 import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
+import { STAT_META, fmtStatValue } from '@/utils/quality';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -2443,18 +2444,19 @@ const VendorTab = ({ body }) => {
                         gap: 8,
                         opacity: locked ? 0.75 : 1,
                         // Reserve a fixed row height so 1-line and 2-line
-                        // descriptions land at the same row height -- the
-                        // description block below clamps to 2 lines and
-                        // reserves the same vertical space regardless of
-                        // content length.
-                        minHeight: 52,
+                        // descriptions land at the same row height. The
+                        // description below clamps to 2 lines, plus a
+                        // compact stats line beneath -- bumped to 66 to
+                        // fit name (~14) + desc (~24) + stats (~12) +
+                        // padding without clipping.
+                        minHeight: 66,
                       }}>
                         <div style={{
                           width: 3,
-                          // Match the description's reserved 2-line height
-                          // so the accent bar visually spans the same
-                          // vertical extent as the text it labels.
-                          height: 40,
+                          // Span the new taller content (name + desc +
+                          // stats) so the accent bar reads as the row's
+                          // left edge instead of a stranded stripe.
+                          height: 54,
                           background: color,
                           boxShadow: `0 0 4px ${color}66`,
                           flexShrink: 0,
@@ -2485,6 +2487,43 @@ const VendorTab = ({ body }) => {
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
                           }}>T{m.tier} • {m.description}</div>
+                          {/* Compact stats line. Uses the shared
+                              STAT_META labels + fmtStatValue so the
+                              numbers (units, decimals) match what
+                              the player will see in the cargo
+                              tooltip + the ship-designer slot info
+                              once they buy. Vendor modules are
+                              quality-50 baseline, so no quality
+                              scaling needed -- just raw base stats. */}
+                          {m.stats && (() => {
+                            const entries = Object.entries(m.stats)
+                              .filter(([, v]) => typeof v === 'number');
+                            if (entries.length === 0) return null;
+                            return (
+                              <div style={{
+                                marginTop: 3,
+                                fontSize: 9,
+                                color: '#7a8a9a',
+                                fontFamily: FM,
+                                letterSpacing: 0.3,
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}>
+                                {entries.map(([key, val], i) => {
+                                  const meta = STAT_META[key];
+                                  const label = meta?.label || key.replace(/_/g, ' ');
+                                  return (
+                                    <span key={key}>
+                                      {i > 0 && <span style={{ color: '#3a4a5a' }}> · </span>}
+                                      <span style={{ color: '#4a6580' }}>{label} </span>
+                                      <span style={{ color: '#c5d0db' }}>{fmtStatValue(val, meta)}</span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Action cluster: locked → link to research +

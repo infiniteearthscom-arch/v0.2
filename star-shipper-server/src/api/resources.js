@@ -598,8 +598,16 @@ router.get('/recipes', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     
+    // Pull item_definitions.description (item-level, e.g. "Standard
+    // propulsion system.") alongside the recipe so the crafting
+    // window's OutputPreview can show it under the item name. The
+    // crafting_recipes.description (cr.description) is recipe-level
+    // ("Craft a basic harvester") which isn't what the player wants
+    // to read about the output.
     const recipes = await queryAll(`
-      SELECT cr.*, idef.icon, idef.item_data_defaults
+      SELECT cr.*, idef.icon, idef.item_data_defaults,
+             idef.description as item_description,
+             idef.name as item_name
       FROM crafting_recipes cr
       JOIN item_definitions idef ON cr.output_item_id = idef.id
       ORDER BY cr.category, cr.name

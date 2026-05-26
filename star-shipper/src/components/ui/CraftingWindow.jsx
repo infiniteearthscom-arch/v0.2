@@ -399,9 +399,9 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
         fontWeight: 700,
       }}>◆ Output</div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 18 }}>{recipe.icon}</span>
-        <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 18, lineHeight: 1, marginTop: 2 }}>{recipe.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 12,
             fontWeight: 700,
@@ -413,6 +413,23 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
             color: COLORS.TEXT.dim,
             fontFamily: FONT.mono,
           }}>×{recipe.output_quantity}</div>
+          {/* Item-level description (item_definitions.description --
+              "Standard propulsion system." style) so the player can
+              read what the output module does without leaving the
+              crafting window. Falls back to the recipe-level
+              description for older payloads. */}
+          {(recipe.item_description || recipe.description) && (
+            <div style={{
+              marginTop: 4,
+              fontSize: 10,
+              lineHeight: 1.4,
+              color: COLORS.TEXT.secondary,
+              fontFamily: FONT.ui,
+              fontStyle: 'italic',
+            }}>
+              {recipe.item_description || recipe.description}
+            </div>
+          )}
         </div>
       </div>
 
