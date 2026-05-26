@@ -364,11 +364,15 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
       } }
     : null;
 
-  // Iterate every numeric field on item_data_defaults so weapon recipes
-  // (damage, range, fire_rate) and harvester recipes (harvest_rate,
-  // storage_capacity, fuel_hours) both render correctly. Non-numeric
-  // fields (slot_type, etc.) are skipped.
-  const baseData = recipe.item_data_defaults || {};
+  // Stat source priority:
+  //  1. module_stats (from module_types, JOINed server-side for module
+  //     recipes) -- weapons/scanners/engines have all their gameplay
+  //     numbers here.
+  //  2. item_data_defaults -- harvesters + consumables store their
+  //     stats here directly (harvest_rate, fuel_hours, etc.).
+  // Without #1, module crafts had empty stat panels because
+  // item_data_defaults on modules is just {slot_type: ...}.
+  const baseData = recipe.module_stats || recipe.item_data_defaults || {};
   const previewRows = Object.entries(baseData)
     .filter(([, v]) => typeof v === 'number')
     .map(([key, val]) => {
@@ -1211,7 +1215,7 @@ export const CraftingWindow = () => {
                     fontSize: 10,
                     color: COLORS.TEXT.dim,
                     fontFamily: FONT.ui,
-                  }}>{selectedRecipe.description}</div>
+                  }}>{selectedRecipe.item_description || selectedRecipe.description}</div>
                 </div>
               </div>
 

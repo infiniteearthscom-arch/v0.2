@@ -600,16 +600,21 @@ router.get('/recipes', authMiddleware, async (req, res) => {
     
     // Pull item_definitions.description (item-level, e.g. "Standard
     // propulsion system.") alongside the recipe so the crafting
-    // window's OutputPreview can show it under the item name. The
-    // crafting_recipes.description (cr.description) is recipe-level
-    // ("Craft a basic harvester") which isn't what the player wants
-    // to read about the output.
+    // window's OutputPreview can show it under the item name. Also
+    // JOIN module_types for module recipes -- weapon/scanner/engine
+    // stats live in mt.stats, NOT item_data_defaults (which is just
+    // {slot_type: 'weapon'} for modules). Without the JOIN, the
+    // OutputPreview iterates item_data_defaults, finds zero numeric
+    // fields, and renders no stat rows for module crafts.
     const recipes = await queryAll(`
       SELECT cr.*, idef.icon, idef.item_data_defaults,
              idef.description as item_description,
-             idef.name as item_name
+             idef.name as item_name,
+             mt.stats as module_stats,
+             mt.tier as module_tier
       FROM crafting_recipes cr
       JOIN item_definitions idef ON cr.output_item_id = idef.id
+      LEFT JOIN module_types mt ON cr.output_item_id = mt.id
       ORDER BY cr.category, cr.name
     `);
     
