@@ -2011,13 +2011,13 @@ export const SystemView = () => {
     });
   };
 
-  // Bulk belt scan uses the SAME parallel-scan pattern as area scan:
-  // queue every unscanned asteroid in the closest belt into
-  // activeScansRef with viaArea:true. The existing scan loop runs them
-  // all in parallel, all complete after one scan_time interval, and
-  // the "Sweep scan complete" toast fires when the counter hits zero.
-  // Server-side /asteroids/scan_belt bulk endpoint is no longer called
-  // from the client (kept around for a future "instant elite" tier).
+  // Bulk-belt scan = system-wide sweep. Elite Survey Grid scans EVERY
+  // unscanned asteroid in the system in parallel, regardless of how
+  // far they are from the fleet. Distance gating is bypassed via the
+  // `unbounded: true` flag on each scan entry -- without it, asteroids
+  // outside fleetScanRange would queue and then immediately cancel in
+  // the scan loop's range check, marking nothing scanned. (That was
+  // the "nothing appears on the map" bug.)
   const handleBeltScan = () => {
     if (!fleetHasBulkScan()) {
       if (pushToast) pushToast({ kind: 'error', text: 'No Elite Survey Grid fitted', duration: 3000 });
@@ -2030,28 +2030,15 @@ export const SystemView = () => {
       if (pushToast) pushToast({ kind: 'error', text: `Bulk-belt scan on cooldown (${remain}s)`, duration: 2500 });
       return;
     }
-    // Identify the target belt via the closest asteroid's belt_body_id
-    // (server already provides the UUID on every asteroid row).
-    const px = shipPosRef.current.x, py = shipPosRef.current.y;
-    let closestAst = null, closestD2 = Infinity;
-    for (const a of (asteroidsRef.current || [])) {
-      const dx = a.x - px, dy = a.y - py;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < closestD2) { closestAst = a; closestD2 = d2; }
-    }
-    if (!closestAst?.belt_body_id) {
-      if (pushToast) pushToast({ kind: 'error', text: 'No asteroids in this system to scan', duration: 3000 });
-      return;
-    }
-    const beltId = closestAst.belt_body_id;
-    // Every unscanned rock in that belt that isn't already in a scan.
+    // System-wide candidate set: every unscanned asteroid loaded for
+    // this system (asteroidsRef already filters depleted ones). No
+    // belt filter, no distance filter -- the elite scanner has the
+    // reach of the entire system.
     const candidates = (asteroidsRef.current || []).filter(a =>
-      a.belt_body_id === beltId
-      && !a.scanned
-      && !activeScansRef.current.has(a.id)
+      !a.scanned && !activeScansRef.current.has(a.id)
     );
     if (candidates.length === 0) {
-      if (pushToast) pushToast({ kind: 'info', text: 'Bulk-belt scan: nothing new to scan in the nearest belt', duration: 3000 });
+      if (pushToast) pushToast({ kind: 'info', text: 'Bulk-belt scan: every asteroid in the system is already scanned', duration: 3000 });
       return;
     }
     playSound('button_click');
@@ -2060,7 +2047,12 @@ export const SystemView = () => {
     const durationMs = getFleetScanTimeMs(fleetShipsRef.current, activeBonusesRef.current);
     const startMs = Date.now();
     for (const a of candidates) {
-      activeScansRef.current.set(a.id, { startMs, durationMs, viaArea: true });
+      activeScansRef.current.set(a.id, {
+        startMs,
+        durationMs,
+        viaArea: true,
+        unbounded: true, // skip the distance-cancel check in the loop
+      });
     }
     areaScanExpectedRef.current += candidates.length;
     // Cooldown commits on activation -- if the player cancels via the
@@ -2071,7 +2063,7 @@ export const SystemView = () => {
     setSweepTick(t => t + 1);
     if (pushToast) pushToast({
       kind: 'success',
-      text: `Bulk-belt scan started -- ${candidates.length} asteroid${candidates.length === 1 ? '' : 's'} in parallel (${(durationMs / 1000).toFixed(1)}s)`,
+      text: `Bulk-belt scan started -- ${candidates.length} asteroid${candidates.length === 1 ? '' : 's'} system-wide (${(durationMs / 1000).toFixed(1)}s)`,
       duration: 3500,
     });
   };
@@ -3456,13 +3448,14 @@ export const SystemView = () => {
           }
           const sdx = ast.x - playerPos.x;
           const sdy = ast.y - playerPos.y;
-          // Both single-click and area-scan use scan_range as the cancel
-          // boundary -- you can only scan what the scanner can reach.
-          // *1.2 grace for single-click drift; tight for area scans
-          // (the player explicitly chose the perimeter when they
-          // triggered area scan).
+          // Distance-cancel: single-click + area-scan need the player
+          // to stay within scan_range; bulk-belt (unbounded) doesn't,
+          // since the elite scanner reaches system-wide. Without the
+          // unbounded skip, every bulk-belt scan would instantly
+          // cancel for asteroids past scan_range and the player would
+          // see nothing land on the map.
           const cancelR = scan.viaArea ? fleetScanRange() : fleetScanRange() * 1.2;
-          if (sdx * sdx + sdy * sdy > cancelR * cancelR) {
+          if (!scan.unbounded && sdx * sdx + sdy * sdy > cancelR * cancelR) {
             activeScansRef.current.delete(astId);
             if (!scan.viaArea) {
               const pt = useGameStore.getState().pushToast;
