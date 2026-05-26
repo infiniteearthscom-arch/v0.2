@@ -53,6 +53,96 @@ const PIRATE_SPAWN_ZONES = [
   { name: 'Saturn Corsairs', cx: -1000, cy: -3000, radius: 400, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
 ];
 
+// ============================================
+// PIRATE LOADOUTS (Phase 2 of enemy fleet upgrades)
+// ============================================
+// Each loadout describes a "fitted" pirate -- weapon + shield + engine
+// derive their combat stats independently of the hull. Hull provides
+// visual + base HP only; everything else (damage, fire rate, range,
+// shield, speed) comes from the loadout. Tier scales with danger so
+// 5-star systems field T3 pirates with heavy weapons + capital
+// shields. The flat fields the AI loop reads (enemy.damage, .range,
+// .fireRate, .speed, .maxShield) are computed at spawn and stored as
+// before; this is purely a richer SOURCE for those numbers than the
+// old hull.stats hardcode.
+
+// Tiered weapon archetypes. weaponLabel surfaces in the pirate's
+// display name so the player can read the threat from the HUD.
+const PIRATE_WEAPONS = {
+  laser_t1:   { label: 'Pulse Laser',     damage:  8, fireRate: 0.8, range: 130 },
+  laser_t2:   { label: 'Burst Laser',     damage: 14, fireRate: 0.6, range: 160 },
+  kinetic_t1: { label: 'Autocannon',      damage: 18, fireRate: 1.0, range: 180 },
+  kinetic_t2: { label: 'Heavy Cannon',    damage: 28, fireRate: 0.8, range: 200 },
+  missile_t1: { label: 'Light Missiles',  damage: 35, fireRate: 1.8, range: 260 },
+  missile_t2: { label: 'Heavy Missiles',  damage: 55, fireRate: 2.4, range: 320 },
+};
+const PIRATE_SHIELDS = {
+  shield_t1: { label: 'Light Deflector', maxShield:  20 },
+  shield_t2: { label: 'Med Deflector',   maxShield:  60 },
+  shield_t3: { label: 'Capital Shield',  maxShield: 140 },
+};
+const PIRATE_ENGINES = {
+  engine_t1: { label: 'Civilian Drive', speed: 150 },
+  engine_t2: { label: 'Combat Drive',   speed: 130 },
+  engine_t3: { label: 'Heavy Drive',    speed: 100 },
+};
+
+// Loadout templates per tier. Each entry = full pirate kit. RNG picks
+// one randomly from the tier's pool at spawn -- variety within tier
+// keeps encounters interesting (some pirates have lasers, others
+// missiles, etc.) even in the same fleet.
+const PIRATE_LOADOUT_TIERS = {
+  1: [
+    { weapon: 'laser_t1',   shield: 'shield_t1', engine: 'engine_t1' },
+    { weapon: 'kinetic_t1', shield: 'shield_t1', engine: 'engine_t1' },
+  ],
+  2: [
+    { weapon: 'laser_t2',   shield: 'shield_t2', engine: 'engine_t2' },
+    { weapon: 'kinetic_t1', shield: 'shield_t2', engine: 'engine_t2' },
+    { weapon: 'missile_t1', shield: 'shield_t2', engine: 'engine_t2' },
+  ],
+  3: [
+    { weapon: 'kinetic_t2', shield: 'shield_t3', engine: 'engine_t3' },
+    { weapon: 'missile_t2', shield: 'shield_t3', engine: 'engine_t3' },
+    { weapon: 'laser_t2',   shield: 'shield_t3', engine: 'engine_t3' },
+  ],
+};
+
+// Pirate hull pool now mixes the existing PIRATE_HULLS visuals (which
+// already render with pirate-themed palettes) AND a curated set of
+// player combat hulls so pirates have visible variety beyond the
+// three-pirate-silhouette repetition. Hull is purely visual + base
+// HP; loadout drives all combat stats. Size class drives the base HP.
+//   light  -- small/fast (interceptors)
+//   medium -- balanced
+//   heavy  -- slow tanks
+const PIRATE_HULL_POOL = {
+  light:  ['pirate_interceptor', 'fighter',  'scout'],
+  medium: ['pirate_marauder',    'frigate'],
+  heavy:  ['pirate_destroyer',   'capital'],
+};
+const PIRATE_HULL_BASE_HP = { light: 60, medium: 140, heavy: 280 };
+
+// Pick a loadout tier for a given danger level. Higher danger has a
+// chance of bumping up a tier (so a 5-star system mixes T3 with the
+// occasional T2 instead of being 100% endgame).
+function pickLoadoutTier(rng, dangerLevel) {
+  if (dangerLevel <= 2) return 1;
+  if (dangerLevel <= 4) return rng.range(0, 1) < 0.5 ? 1 : 2;
+  // danger 5+: mostly T3 with a smattering of T2
+  return rng.range(0, 1) < 0.25 ? 2 : 3;
+}
+
+// Pick a hull size class for the loadout tier. Tier-3 loadouts go on
+// heavier hulls (capital reactors / shields fit the tier theme); tier-
+// 1 sticks with light hulls so a pulse-laser pirate doesn't fly a
+// capital silhouette.
+function pickHullClass(rng, tier) {
+  if (tier === 3) return rng.range(0, 1) < 0.6 ? 'heavy' : 'medium';
+  if (tier === 2) return rng.range(0, 1) < 0.6 ? 'medium' : 'light';
+  return rng.range(0, 1) < 0.7 ? 'light' : 'medium';
+}
+
 // Galaxy singleton (same seed as GalaxyMapWindow)
 const GALAXY_SEED = 12345;
 const GALAXY_SYSTEM_COUNT = 200;
@@ -79,24 +169,10 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
   const pirateCount = Math.floor(dangerLevel * 5 + rng.range(0, dangerLevel * 3));
   if (pirateCount <= 0) return enemies;
 
-  // Higher-danger systems get richer hull mixes biased toward heavies.
-  const hullPool = dangerLevel >= 5
-    ? ['pirate_destroyer', 'pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor']
-    : dangerLevel >= 4
-      ? ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor']
-      : dangerLevel >= 3
-        ? ['pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_destroyer']
-        : dangerLevel >= 2
-          ? ['pirate_marauder', 'pirate_interceptor', 'pirate_interceptor']
-          : ['pirate_interceptor', 'pirate_interceptor'];
-
-  // Per-tier stat boosts that approximate "better modules fitted" --
-  // higher-danger pirates hit harder and cycle weapons faster than the
-  // hull's baseline numbers. Phase 2 will swap this for a real
-  // pirate module-fitting system; for now a flat scalar.
-  const dmgMult   = 1 + Math.max(0, dangerLevel - 1) * 0.15;  // d1=1.0, d3=1.3, d5=1.6
-  const cycleMult = 1 / (1 + Math.max(0, dangerLevel - 1) * 0.10);  // faster firing
-  const hullMult  = 1 + Math.max(0, dangerLevel - 1) * 0.10;  // d5 = +40% HP
+  // Phase 2: hull + loadout are picked independently per pirate.
+  // Loadout (weapon/shield/engine tier) drives combat stats; hull
+  // drives visual + base HP. Selection helpers are at module scope
+  // (pickLoadoutTier + pickHullClass) -- both biased by dangerLevel.
 
   // Find the outermost orbit to place fleets near.
   const maxOrbit = Math.max(800, ...bodies.filter(b => b.orbitRadius).map(b => b.orbitRadius));
@@ -120,33 +196,60 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
     const patrolCenter = { x: Math.cos(angle) * dist, y: Math.sin(angle) * dist };
     const patrolRadius = rng.range(80, 180);
     for (let m = 0; m < fleetSize; m++) {
-      const hullId = hullPool[rng.int(0, hullPool.length - 1)];
-      const hull = PIRATE_HULLS[hullId];
+      // Phase 2 spawn: roll loadout tier + hull class independently.
+      // Hull determines visual + base HP; loadout determines weapon
+      // damage/range/fireRate + shield + speed.
+      const tier = pickLoadoutTier(rng, dangerLevel);
+      const hullClass = pickHullClass(rng, tier);
+      const hullChoices = PIRATE_HULL_POOL[hullClass];
+      const hullId = hullChoices[rng.int(0, hullChoices.length - 1)];
+      // Lookup falls through PIRATE_HULLS first (pirate-themed visual)
+      // then HULL_SHAPES (player combat hulls). Both render the same
+      // way via getShipIcon.
+      const hull = PIRATE_HULLS[hullId] || HULL_SHAPES[hullId];
       if (!hull) continue;
+      const loadoutPool = PIRATE_LOADOUT_TIERS[tier];
+      const loadout = loadoutPool[rng.int(0, loadoutPool.length - 1)];
+      const weapon = PIRATE_WEAPONS[loadout.weapon];
+      const shield = PIRATE_SHIELDS[loadout.shield];
+      const engine = PIRATE_ENGINES[loadout.engine];
+      // Base HP from hull class (overrides PIRATE_HULLS.stats.maxHull
+      // so capital + frigate hulls don't trail behind their pirate
+      // counterparts). Player hulls don't have stats at all, so this
+      // is the only HP source for them.
+      const baseHp = PIRATE_HULL_BASE_HP[hullClass];
+      // Player hulls (fighter/scout/frigate/capital) don't have
+      // palette.engine; fall back to a neutral color for engine glow.
+      const engineColor = hull.palette?.engine || '#ffaa44';
       // Spawn close to the patrol center so the fleet appears grouped.
       const memberA = rng.range(0, Math.PI * 2);
       const memberD = rng.range(0, 40);
       const startX = patrolCenter.x + Math.cos(memberA) * memberD;
       const startY = patrolCenter.y + Math.sin(memberA) * memberD;
       const icon = getShipIcon(hullId);
+      // Display name reflects loadout so the player can read the
+      // threat from the HUD ("Pirate Destroyer (Heavy Cannon)").
+      const sizeLabel = hullClass === 'heavy' ? 'Destroyer'
+                       : hullClass === 'medium' ? 'Marauder'
+                       : 'Interceptor';
       enemies.push({
         id: `pirate_${nextId++}`,
         hullId, icon, faction: 'pirate',
-        name: `${FACTIONS.pirate.name} ${hull.displaySize > 9 ? 'Destroyer' : hull.displaySize > 7 ? 'Marauder' : 'Interceptor'}`,
+        name: `${FACTIONS.pirate.name} ${sizeLabel} (${weapon.label})`,
         x: startX, y: startY,
         vx: 0, vy: 0,
         rotation: rng.range(-180, 180),
-        hull: Math.round(hull.stats.maxHull * hullMult),
-        maxHull: Math.round(hull.stats.maxHull * hullMult),
-        shield: Math.round(hull.stats.maxShield * hullMult),
-        maxShield: Math.round(hull.stats.maxShield * hullMult),
-        speed: hull.stats.speed,
-        damage: Math.max(1, Math.round(hull.stats.damage * dmgMult)),
-        fireRate: Math.max(0.3, hull.stats.fireRate * cycleMult),
-        range: hull.stats.range,
+        hull: baseHp,
+        maxHull: baseHp,
+        shield: shield.maxShield,
+        maxShield: shield.maxShield,
+        speed: engine.speed,
+        damage: weapon.damage,
+        fireRate: weapon.fireRate,
+        range: weapon.range,
         fireCooldown: 0,
         shieldRegenTimer: 0,
-        engineColor: hull.palette.engine,
+        engineColor,
         displaySize: hull.displaySize,
         state: 'patrol',
         patrolCenter,
@@ -154,7 +257,18 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
         patrolRadius,
         targetId: null,
         fleetId,
-        lootCredits: Math.round(rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX) * (hull.displaySize / 6) * (1 + dangerLevel * 0.3)),
+        // Loadout metadata kept for future tooltips / debugging --
+        // not read by the AI loop. tier drives loot scaling.
+        loadoutTier: tier,
+        loadoutWeapon: loadout.weapon,
+        loadoutShield: loadout.shield,
+        loadoutEngine: loadout.engine,
+        lootCredits: Math.round(
+          rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX)
+          * (hull.displaySize / 6)
+          * (1 + dangerLevel * 0.3)
+          * tier  // T2 = 2x loot, T3 = 3x loot vs the base
+        ),
       });
     }
     remaining -= fleetSize;
