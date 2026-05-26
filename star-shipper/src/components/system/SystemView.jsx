@@ -1086,6 +1086,17 @@ export const SystemView = () => {
             system_planet_count: planetCount,
           }).catch(() => {})
         ));
+        // Re-fetch /asteroids after belts are registered. The initial
+        // asteroidsAPI.list call (in the sibling effect) races with
+        // ensureBody -- if it loses, the server returns [] (no belt
+        // rows yet) and asteroidsRef stays empty even though the
+        // belts later exist. Re-fetching here closes the race and
+        // populates the ref so handleBeltScan + click-to-scan +
+        // area-scan all see the rocks.
+        try {
+          const { asteroids } = await asteroidsAPI.list(currentSystemId);
+          asteroidsRef.current = asteroids || [];
+        } catch (e) { /* will retry on next system entry */ }
       } catch (e) { /* fire-and-forget */ }
     })();
   }, [currentSystemId, currentSystem]);
