@@ -420,8 +420,11 @@ export const generateSystemContent = (system) => {
     orbitRadius += 200 + rng.range(50, 300);
   }
   
-  // Asteroid belt(s)
-  const beltCount = rng.int(0, system.starType === 'blue_giant' ? 2 : 1);
+  // Asteroid belt(s). Floor is 1 so every system has SOMETHING to
+  // mine -- the previous rng.int(0,1) had half the procedural systems
+  // roll zero belts, which made non-Sol travel feel barren. Blue
+  // giants still get the high-end variance (1-3 belts).
+  const beltCount = rng.int(1, system.starType === 'blue_giant' ? 3 : 2);
   for (let i = 0; i < beltCount; i++) {
     const beltRadius = 400 + rng.range(200, orbitRadius * 0.6);
     bodies.push({

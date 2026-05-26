@@ -68,8 +68,17 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
   const enemies = [];
   let nextId = 1;
   
-  // Number of pirates scales with danger level (0 = none, 5 = lots)
-  const pirateCount = Math.floor(dangerLevel * 1.5 + rng.range(0, dangerLevel));
+  // Number of pirates scales hard with danger level. Tuned up from
+  // the old `* 1.5 + rng(0..d)` (which capped a 5-star system at
+  // 7-12 pirates -- felt populated, not "dangerous"). New curve:
+  //   danger 0: 0
+  //   danger 1: 3-5
+  //   danger 3: 9-15
+  //   danger 5: 15-25  (5-star systems now feel like a real fight)
+  // Spawn is still one-shot at entry -- kills stay dead until the
+  // player warps out + back in, so high-danger systems naturally
+  // get "cleared" over a long campaign.
+  const pirateCount = Math.floor(dangerLevel * 3 + rng.range(0, dangerLevel * 2));
   if (pirateCount <= 0) return enemies;
   
   const hullPool = dangerLevel >= 4
