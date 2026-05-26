@@ -1098,6 +1098,10 @@ export const SystemView = () => {
   const setMissileAmmoStore = useGameStore(state => state.setMissileAmmo);
   const designatedEnemyId = useGameStore(state => state.designatedEnemyId);
   const setDesignatedEnemy = useGameStore(state => state.setDesignatedEnemy);
+  // Sensor sweep start broadcast so SystemMapWindow can render the
+  // same 3-wave ping animation on the top-down map. Cleared by the
+  // sweep ticker once the active window ends.
+  const setSweepStartedAt = useGameStore(state => state.setSweepStartedAt);
   const clearDesignatedEnemy = useGameStore(state => state.clearDesignatedEnemy);
   // Range overlay toggle (driven by the "View Scan Range" button in the
   // System Map header). When true, we draw dashed sensor + scan rings
@@ -1213,13 +1217,20 @@ export const SystemView = () => {
   // that reveals every enemy in the system for N seconds regardless of
   // sensor range. Pure client-side render override -- enemy AI already
   // runs on out-of-range targets, this just lifts the visibility gate.
-  //   sweepActiveUntilMs > now  -> sensor range is treated as Infinity
-  //   sweepCooldownUntilMs > now -> button disabled
-  // [tick, setTick] forces 1Hz re-render so the HUD button can show its
-  // countdown text; useEffect below keeps it spinning while either timer
-  // is live, then stops to avoid background work.
+  // Phased: 12s "ping" warm-up (3 sonar waves at 0/4/8s) then enemies
+  // reveal for the rest of sweepActiveUntilRef. The reveal gate checks
+  // both refs -- sweepActiveUntilRef must be future AND we must be past
+  // the ping window (now > sweepStartedAtRef + SWEEP_PING_TOTAL_MS).
+  // sweepStartedAtRef = 0 means no sweep in progress.
+  const sweepStartedAtRef = useRef(0);
   const sweepActiveUntilRef = useRef(0);
   const sweepCooldownUntilRef = useRef(0);
+  // 3 waves at 0/4/8s, last wave finishes propagating at 12s. After
+  // that window the reveal gate opens. Wave animation matches the
+  // sonar ping audio cadence (one ping per wave).
+  const SWEEP_PING_INTERVAL_MS = 4000;
+  const SWEEP_PING_COUNT = 3;
+  const SWEEP_PING_TOTAL_MS = SWEEP_PING_INTERVAL_MS * SWEEP_PING_COUNT; // 12s
   // Tier C: bulk belt scan also has a cooldown (90s base, shortened by
   // ast_bulk_belt_efficiency at -10%/level). Tracked the same way as
   // sweep so the HUD button reflects the same countdown semantics.
@@ -1482,9 +1493,11 @@ export const SystemView = () => {
     cargoFullRef.current = false; // re-check capacity in new system
     // Tier B sweep state resets on system change. Cooldown doesn't
     // carry across systems and an active sweep ends with warp-out.
+    sweepStartedAtRef.current = 0;
     sweepActiveUntilRef.current = 0;
     sweepCooldownUntilRef.current = 0;
     bulkBeltCooldownUntilRef.current = 0;
+    setSweepStartedAt(0);
     areaScanExpectedRef.current = 0;
     // Scanner ghosts are per-system. Clearing here keeps the System
     // Map clean of "last seen 2 systems ago" markers.
@@ -1548,7 +1561,12 @@ export const SystemView = () => {
     // Tier B sensor sweep: while the active-ability window is live,
     // treat sensor range as effectively infinite. Returns Number.MAX_SAFE_INTEGER
     // so squared-distance checks elsewhere don't overflow into NaN.
-    if (sweepActiveUntilRef.current > Date.now()) {
+    // Reveal gate: sweep must still be active AND past the 12s ping
+    // warm-up window. During the ping phase, sensor range is normal
+    // (the visual waves are just propagating; nothing's revealed yet).
+    const nowMs = Date.now();
+    if (sweepActiveUntilRef.current > nowMs
+        && nowMs >= sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS) {
       return Number.MAX_SAFE_INTEGER;
     }
     // 1. Best computed value across the active fleet (Phase 3 path).
@@ -1896,26 +1914,48 @@ export const SystemView = () => {
       return;
     }
     playSound('button_click');
-    // Tier B baseline + Tier C `ast_telemetry_ops` skill reduction
-    // (-5% cooldown per level, max -25% at L5 → 90s).
-    const durationMs = 30 * 1000;
+    // Activation order:
+    //  - Schedule 3 sonar pings at 0/4/8s (paired with the 3 expanding
+    //    wave rings drawn by SystemView's overlay + SystemMapWindow).
+    //  - Reveal phase = 30s base (Tier C ast_telemetry_ops skill -5%
+    //    per level on the COOLDOWN, not the reveal). Total active
+    //    window = 12s ping + 30s reveal = 42s. fleetSensorRange()
+    //    gates the reveal so nothing actually pops in until the 12s
+    //    ping warm-up finishes.
+    const revealMs = 30 * 1000;
     const cdPct = activeBonusesRef.current?.sweep_cooldown_pct || 0;
     const cooldownMs = Math.max(15_000, Math.round(120_000 * (1 + cdPct / 100)));
-    sweepActiveUntilRef.current = now + durationMs;
+    sweepStartedAtRef.current = now;
+    sweepActiveUntilRef.current = now + SWEEP_PING_TOTAL_MS + revealMs;
     sweepCooldownUntilRef.current = now + cooldownMs;
+    setSweepStartedAt(now);  // mirror to store for SystemMapWindow
+    // First ping fires immediately; 2nd + 3rd are deferred via
+    // setTimeout. setTimeout handles late-mount edge cases naturally
+    // (the audio call is a no-op if the SystemView has unmounted).
+    playSound('sonar_ping');
+    setTimeout(() => playSound('sonar_ping'), SWEEP_PING_INTERVAL_MS);
+    setTimeout(() => playSound('sonar_ping'), SWEEP_PING_INTERVAL_MS * 2);
     setSweepTick(t => t + 1); // force immediate render
     if (pushToast) pushToast({
       kind: 'success',
-      text: 'System sweep active -- all enemies visible for 30s',
-      duration: 4000,
+      text: 'Sensor sweep deployed -- 3 pings (12s), then all enemies visible for 30s',
+      duration: 4500,
     });
   };
 
   // Tick HUD once a second while ANY ability is active/cooling so the
-  // countdown text repaints. Stops automatically when all timers expire.
+  // countdown text repaints. Also clears sweepStartedAt(Ref + store)
+  // once the active window has ended so the system map stops drawing
+  // waves. Stops the interval ticking only when all timers are quiet.
   useEffect(() => {
     const tick = setInterval(() => {
       const now = Date.now();
+      // Sweep finished -- clean both ref + store mirror so neither
+      // SystemView nor SystemMapWindow tries to render lingering waves.
+      if (sweepStartedAtRef.current > 0 && sweepActiveUntilRef.current <= now) {
+        sweepStartedAtRef.current = 0;
+        setSweepStartedAt(0);
+      }
       if (sweepActiveUntilRef.current > now
         || sweepCooldownUntilRef.current > now
         || bulkBeltCooldownUntilRef.current > now) {
@@ -1923,7 +1963,7 @@ export const SystemView = () => {
       }
     }, 1000);
     return () => clearInterval(tick);
-  }, []);
+  }, [setSweepStartedAt]);
 
   // Wreck polling DISABLED while wrecks table issue is unresolved.
   // Re-enable by restoring the useEffect body once /wrecks/list stops
@@ -3785,6 +3825,43 @@ export const SystemView = () => {
               );
             })()}
 
+            {/* Sensor sweep ping waves. While sweepStartedAtRef is
+                non-zero, render up to 3 expanding circles from the
+                fleet position -- wave i starts at sweepStartedAt +
+                i*4s and fades out over 4s as it expands to ~800
+                world units. Game loop drives the re-renders so the
+                rings animate smoothly at 60fps without a dedicated
+                tick interval. After all 3 waves finish (12s), the
+                sweep enters its 30s reveal phase and fleetSensorRange
+                returns MAX_SAFE_INTEGER so previously-hidden enemies
+                pop into the SVG render. */}
+            {sweepStartedAtRef.current > 0 && (() => {
+              const px = shipPosRef.current.x, py = shipPosRef.current.y;
+              const startedAt = sweepStartedAtRef.current;
+              const elapsed = Date.now() - startedAt;
+              const WAVE_DURATION = SWEEP_PING_INTERVAL_MS; // 4s per wave
+              const MAX_RADIUS = 800;
+              const waves = [];
+              for (let i = 0; i < SWEEP_PING_COUNT; i++) {
+                const waveStart = i * SWEEP_PING_INTERVAL_MS;
+                const age = elapsed - waveStart;
+                if (age < 0 || age > WAVE_DURATION) continue;
+                const t = age / WAVE_DURATION; // 0 → 1
+                const r = t * MAX_RADIUS;
+                // Two concentric strokes for a richer "sonar" feel --
+                // a thick fading outer + a bright inner.
+                waves.push(
+                  <g key={`sweep-${i}`} style={{ pointerEvents: 'none' }}>
+                    <circle cx={px} cy={py} r={r} fill="none"
+                      stroke="#fbbf24" strokeWidth={2.5 * (1 - t)} opacity={0.6 * (1 - t)} />
+                    <circle cx={px} cy={py} r={r} fill="none"
+                      stroke="#fde68a" strokeWidth={0.8 * (1 - t)} opacity={0.9 * (1 - t)} />
+                  </g>
+                );
+              }
+              return waves;
+            })()}
+
             {/* Fleet Ships — Flying V formation. Active ship reads
                 directly from shipPosRef + shipRotationRef. Wingmen read
                 their lagged position + heading from wingmenPosRef so
@@ -4387,6 +4464,11 @@ export const SystemView = () => {
           {(fleetHasAreaScan() || fleetHasBulkScan() || fleetHasSystemSweep()) && (() => {
             const now = Date.now();
             const sweepActive = sweepActiveUntilRef.current > now;
+            // True while waves are still propagating + nothing's
+            // revealed yet (first 12s of the active window).
+            const sweepPinging = sweepActive
+              && sweepStartedAtRef.current > 0
+              && now < sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS;
             const sweepCooldownRemain = Math.max(0, Math.ceil((sweepCooldownUntilRef.current - now) / 1000));
             const areaActive = countAreaScansActive();
             return (
@@ -4439,11 +4521,13 @@ export const SystemView = () => {
                   <button
                     onClick={handleSystemSweep}
                     disabled={sweepCooldownRemain > 0 && !sweepActive}
-                    title={sweepActive
-                      ? `System sweep active -- all enemies visible (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`
-                      : sweepCooldownRemain > 0
-                        ? `System sweep cooling down (${sweepCooldownRemain}s)`
-                        : 'Reveal every enemy in the system for 30s (120s cooldown)'}
+                    title={sweepPinging
+                      ? `Pinging... reveal in ${Math.ceil((sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS - now) / 1000)}s`
+                      : sweepActive
+                        ? `System sweep active -- all enemies visible (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`
+                        : sweepCooldownRemain > 0
+                          ? `System sweep cooling down (${sweepCooldownRemain}s)`
+                          : 'Deploy 3 sonar pings (12s) then reveal every enemy in the system for 30s. 120s cooldown.'}
                     style={{
                       padding: '6px 12px',
                       background: sweepActive
@@ -4459,8 +4543,9 @@ export const SystemView = () => {
                       borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
                     }}
                   >
-                    🛰️ Sweep
-                    {sweepActive && ` (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`}
+                    {sweepPinging ? '📡 Pinging' : '🛰️ Sweep'}
+                    {sweepPinging && ` ${Math.ceil((sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS - now) / 1000)}s`}
+                    {sweepActive && !sweepPinging && ` (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`}
                     {!sweepActive && sweepCooldownRemain > 0 && ` ${sweepCooldownRemain}s`}
                   </button>
                 )}

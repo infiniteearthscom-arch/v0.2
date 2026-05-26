@@ -153,8 +153,9 @@ const GHOST_TTL_MS = 30000; // mirror of SystemView -- drives ghost fade opacity
 
 const SystemMapSvg = ({
   system, time, shipPosition, shipSpeed, autopilotTarget, onClickBody,
-  scannerData,
+  scannerData, sweepStartedAt,
 }) => {
+  useSweepTick(sweepStartedAt); // smooth wave animation while pinging
   const [hoveredBody, setHoveredBody] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -331,6 +332,32 @@ const SystemMapSvg = ({
           />
         )}
 
+        {/* Sensor sweep ping waves -- mirror of SystemView's overlay,
+            same 3-wave / 4s cadence. Renders waves at the fleet
+            position in map coords (shipScreenX/Y already projected).
+            Max radius = covers the visible map (half the map size). */}
+        {sweepStartedAt > 0 && (() => {
+          const elapsed = Date.now() - sweepStartedAt;
+          const WAVE_DURATION = SWEEP_PING_INTERVAL_MS;
+          const MAX_R = MAP_SIZE * 0.6;
+          const waves = [];
+          for (let i = 0; i < SWEEP_PING_COUNT; i++) {
+            const age = elapsed - i * SWEEP_PING_INTERVAL_MS;
+            if (age < 0 || age > WAVE_DURATION) continue;
+            const t = age / WAVE_DURATION;
+            const r = t * MAX_R;
+            waves.push(
+              <g key={`sweep-${i}`} style={{ pointerEvents: 'none' }}>
+                <circle cx={shipScreenX} cy={shipScreenY} r={r} fill="none"
+                  stroke="#fbbf24" strokeWidth={1.5 * (1 - t)} opacity={0.6 * (1 - t)} />
+                <circle cx={shipScreenX} cy={shipScreenY} r={r} fill="none"
+                  stroke="#fde68a" strokeWidth={0.6 * (1 - t)} opacity={0.9 * (1 - t)} />
+              </g>
+            );
+          }
+          return waves;
+        })()}
+
         {/* Ship */}
         <g transform={`translate(${shipScreenX}, ${shipScreenY})`}>
           <circle r="6" fill="#00ff8822" />
@@ -388,6 +415,32 @@ const useSecondTick = () => {
   }, []);
 };
 
+// Sweep wave timing -- mirror of the constants in SystemView so the
+// map's 3-wave ping animation aligns frame-for-frame with the main
+// view's. Held here so SystemMapWindow doesn't import SystemView.
+const SWEEP_PING_INTERVAL_MS = 4000;
+const SWEEP_PING_COUNT = 3;
+const SWEEP_PING_TOTAL_MS = SWEEP_PING_INTERVAL_MS * SWEEP_PING_COUNT;
+
+// Drives smooth (~30fps) re-renders WHILE a sweep ping is propagating.
+// Idle the rest of the time so we don't burn frames on a static map.
+// `sweepStartedAt` from the store flips on at activation; this hook
+// kicks off the interval whenever that value changes to a future-ish
+// timestamp.
+const useSweepTick = (sweepStartedAt) => {
+  const [, setNow] = useState(Date.now());
+  React.useEffect(() => {
+    if (!sweepStartedAt) return;
+    const endAt = sweepStartedAt + SWEEP_PING_TOTAL_MS;
+    if (Date.now() >= endAt) return;
+    const t = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= endAt) clearInterval(t);
+    }, 33);
+    return () => clearInterval(t);
+  }, [sweepStartedAt]);
+};
+
 export const SystemMapWindow = () => {
   useSecondTick();
   const isOpen = useGameStore(state => state.windows.systemMap?.open);
@@ -400,6 +453,11 @@ export const SystemMapWindow = () => {
   const shipSpeed = useGameStore(state => state.shipSpeed);
   const time = useGameStore(state => state.gameTime);
   const scannerData = useGameStore(state => state.scannerData);
+  // Sensor sweep activation time mirrored from SystemView (gameStore
+  // bridge). When non-zero, SystemMapSvg renders the 3-wave ping
+  // animation at the fleet position on the top-down map in sync with
+  // SystemView's main-view animation + sonar audio.
+  const sweepStartedAt = useGameStore(state => state.sweepStartedAt);
   const showRangeOverlay = useGameStore(state => state.showRangeOverlay);
   const toggleRangeOverlay = useGameStore(state => state.toggleRangeOverlay);
 
@@ -554,6 +612,7 @@ export const SystemMapWindow = () => {
                 autopilotTarget={autopilotTarget}
                 onClickBody={handleClickBody}
                 scannerData={scannerData}
+                sweepStartedAt={sweepStartedAt}
               />
             </div>
 

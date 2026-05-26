@@ -61,6 +61,13 @@ const initialState = {
   researchPoints: 0,
   techs: [],                   // [{ id, tree, tier, name, description, rp_cost, prerequisites, unlocks, status }]
 
+  // Sensor sweep activation timestamp (ms epoch). SystemView writes
+  // it when the player triggers a sweep so SystemMapWindow can read
+  // it and render the same 3-wave ping animation. Zero = no sweep
+  // in progress. Cleared by the SystemView ticker once the active
+  // window ends (12s ping + 30s reveal = 42s after start).
+  sweepStartedAt: 0,
+
   // Cross-window deep-link targets. Vendor "Craft this" button sets
   // craftingTargetRecipeId before opening the crafting window, which
   // reads + auto-selects the matching recipe on mount. CraftingWindow's
@@ -269,6 +276,8 @@ export const useGameStore = create(
           // the player can still play; next system change syncs.
         }
       },
+
+      setSweepStartedAt: (t) => set(state => { state.sweepStartedAt = t || 0; }),
 
       // Cross-window deep-link helpers (Tier B vendor / craft / research
       // integration). Callers should setTarget then openWindow; the

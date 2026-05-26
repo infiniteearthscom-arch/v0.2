@@ -25,6 +25,7 @@ const SOUND_FILES = {
   ship_destroyed_metal: '/sounds/impactMetal_000.ogg',
   dock_complete:        '/sounds/doorClose_000.ogg',
   button_click:         '/sounds/universfield-computer-mouse-click-02-383961.mp3',
+  sonar_ping:           '/sounds/freesound_community-sonar-ping-95840.mp3',
 };
 
 // Looping ambient sounds -- separate from one-shots because they need

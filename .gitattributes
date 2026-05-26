@@ -1,0 +1,29 @@
+# Normalize line endings across platforms. The repo's source of truth
+# stores text files as LF; this stops Windows checkouts (with default
+# core.autocrlf=true) from churning every file through an LF<->CRLF
+# round-trip and showing spurious "line endings changed" diffs in
+# GitHub Desktop. Matches the Linux server's expected line endings on
+# DigitalOcean too -- no conversion needed at deploy.
+
+# All text files: detect text vs binary automatically, force LF in
+# both the repo AND the working copy.
+* text=auto eol=lf
+
+# Common binary types -- mark explicitly so git never tries to
+# "normalize" them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.svg  text eol=lf
+*.mp3  binary
+*.ogg  binary
+*.wav  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.pdf  binary
+*.zip  binary
