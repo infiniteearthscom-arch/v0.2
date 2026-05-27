@@ -541,7 +541,12 @@ router.post('/collect', authMiddleware, async (req, res) => {
       const cargoRemaining = cargoInfo.remaining;
       
       const density = harvester.hopper_stat_density || 50;
-      const volPerUnit = Math.max(density, 1) / 100.0;
+      // Cargo Compression skill (log_cargo_compression) shrinks per-unit
+      // volume; getPlayerCargoInfo exposes the multiplier so this
+      // per-unit fit calc matches what the post-collect re-query will
+      // see. Without this the player would be told they fit fewer units
+      // than the compressed stack actually occupies.
+      const volPerUnit = (Math.max(density, 1) / 100.0) * (cargoInfo.volumeMult ?? 1);
       const unitsThatFit = volPerUnit > 0 ? Math.floor(cargoRemaining / volPerUnit) : 0;
       
       const unitsToCollect = Math.min(computed.computed_hopper, unitsThatFit);

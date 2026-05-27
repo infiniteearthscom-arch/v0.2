@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-25 (Enemy fleet upgrade + system-sweep ping + tooltip unification + crafting/vendor polish)
+**Last updated:** 2026-05-27 (Cargo skills branch — Bulk Cargo Bay + Cargo Handling + Cargo Compression behind Industry research)
 
 ---
 
@@ -15,13 +15,13 @@ Live in prod. Full core loop (mine → craft → fit → fly → trade → fight
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- DB schema: through migration **054**; next new migration is **055** (009 was skipped)
+- DB schema: through migration **055**; next new migration is **056** (009 was skipped)
 
 ---
 
 ## In progress
 
-*Nothing currently in flight.* Last push was the cargo-full lockout fix + the active training indicator. Up next is Outliner + system map polish (per user direction).
+*Nothing currently in flight.* Last push was the cargo skills branch (Bulk Cargo Bay + Cargo Handling + Cargo Compression behind Industry research). Up next is Outliner + system map polish (per user direction).
 
 ---
 
@@ -216,6 +216,30 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-27 — Cargo skills branch (Bulk Cargo Bay + 2 skills, research-gated)
+
+Cargo capacity + volume are now both trainable bonuses, locked behind a new Industry research subbranch. Adds the first research-gated *skills* in the game (previously only modules + recipes were gated). Migration **055**:
+
+- **Industry research subbranch**:
+  - `tech_bulk_process` (T2, was placeholder) — now actually unlocks `cargo_large_2` Bulk Cargo Bay module + recipe.
+  - `tech_cargo_handling` (T2, prereq `tech_adv_mining`, 600 RP) — unlocks the Cargo Handling skill.
+  - `tech_cargo_compression` (T3, prereq `tech_cargo_handling`, 1800 RP) — unlocks the Cargo Compression skill.
+- **`cargo_large_2` Bulk Cargo Bay** — T3 cargo module, 500 cap (vs 250 on `cargo_large`), 6000 cr buy / Titanium+Iron+Copper craft, both gated by `tech_bulk_process`.
+- **Two new wired skills**:
+  - `ind_cargo_handling` (Industry, rank 4, +3%/lvl `cargo_capacity_pct`).
+  - `log_cargo_compression` (Logistics, rank 4, -2%/lvl `cargo_volume_pct`).
+- **Server**: `getCargoBonuses(userId)` helper aggregates both. `getPlayerCargoInfo` applies them at read time — capacity multiplies the fleet-wide computed_cargo sum, volume shrinks the per-stack usage. Returns the raw multipliers too so callers (harvester collect) can apply the same volume math to their per-unit fit calcs. No ship recalc required when skills change — training propagates instantly.
+- **Skill gating scaffolding** — new `skill_definitions.requires_tech` column. `/skills` GET returns `requires_tech` + `requires_tech_name` + `tech_unlocked` per skill; `/skills/queue/add` 403s if the gate isn't met. Mirrors the existing buy-module + craft gates.
+- **Skills window UI** — locked skills show a gold `🔒 {Tech Name}` pill in the list and a "→ Open Research" deep-link panel in the detail pane that jumps to the Research tab on the gating node. Queue Train button disables.
+- `WIRED_BONUS_TYPES` extended to include the two new contracts so both skills render at full opacity (no `○ CATALOG` dim).
+
+Files: `migrations/055_cargo_skills_branch.sql`; server `api/resources.js`, `api/skills.js`, `api/harvesters.js`; client `components/research/SkillsResearchWindow.jsx`.
+
+### 2026-05-26 — Crafting cargo tooltip share + Skills window wired-vs-catalog signal
+
+- **Shared `CargoSlotTooltip`** extracted from `InventoryWindow` to `/components/items/CargoSlotTooltip.jsx`. Both branches preserved: items defer to `ItemTooltipContent` via `normalizeItem` (same renderer the Fittable Modules pane uses), resources keep the per-stat quality bars + base price. Accepts a `resourceIcons` map so each caller passes its own 2-letter abbreviation lookup. `InventoryWindow` swaps its local component for the shared one; `CraftingCargoPanel` adds hover state + portals the same tooltip on cargo-tile hover. The native `title` attribute on tiles was removed to stop the browser tooltip from racing the rich one. Ready to drop into `HarvesterCargoPanel` next.
+- **Skills window dims catalog-only skills.** New `WIRED_BONUS_TYPES` set lists every `bonus_per_level.type` that gameplay code actually reads (9 today: `fleet_damage_pct`, `mining_yield_pct`, `crafted_quality_flat`, `sensor_range_pct`, `scan_time_pct`, `survey_scanner_range_pct`, `area_scan_radius_pct`, `bulk_belt_cooldown_pct`, `sweep_cooldown_pct`). `WIRED_BY_ID` covers skills wired by id rather than by contract (currently just `lead_training_discipline`). Stub skills dim to 55% opacity in the skill list + render a `○ CATALOG` pill in the subtitle row with hover-tooltip explanation. When a new bonus contract gets plugged in, add it to the set and affected skills brighten automatically -- single place to update.
 
 ### 2026-05-25 — Tooltip + crafting + vendor data unification
 

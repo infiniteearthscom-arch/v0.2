@@ -12,6 +12,21 @@ import {
 } from '../game/deposits.js';
 import { isCityPlanet, SRng } from '../util/seed.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
+
+// Cargo bonuses applied at read time so trained-skill changes propagate
+// instantly (no ship recompute required). Capacity bonus multiplies
+// fleet-wide computed_cargo sum; volume bonus shrinks the per-stack
+// volume cost (a stable amount of stuff takes less room). Both bonuses
+// are clamped so a pathological negative skill value can't flip signs.
+const getCargoBonuses = async (userId) => {
+  const b = await getPlayerBonuses(userId);
+  const capPct  = b.cargo_capacity_pct || 0;
+  const volPct  = b.cargo_volume_pct   || 0;
+  return {
+    capacityMult: Math.max(0, 1 + capPct / 100),
+    volumeMult:   Math.max(0, 1 + volPct / 100), // volPct is NEGATIVE for the compression skill
+  };
+};
 import { qualityMultiplier } from '../lib/quality.js';
 
 const router = express.Router();
@@ -73,14 +88,14 @@ export const getPlayerCargoInfo = async (userId, client = null) => {
     WHERE s.user_id = $1
   `, [userId]);
 
-  const capacity = parseInt(fleetCargo?.fleet_capacity || 0);
+  const rawCapacity = parseInt(fleetCargo?.fleet_capacity || 0);
   const shipCount = parseInt(fleetCargo?.ship_count || 0);
 
   // Calculate used volume from inventory
   const volumeResult = await q(`
-    SELECT 
+    SELECT
       COALESCE(SUM(
-        CASE 
+        CASE
           WHEN pri.item_type = 'resource' THEN pri.quantity * GREATEST(pri.stat_density, 1) / 100.0
           ELSE pri.quantity * COALESCE(idef.volume_per_unit, 1)
         END
@@ -91,8 +106,14 @@ export const getPlayerCargoInfo = async (userId, client = null) => {
     WHERE pri.user_id = $1
   `, [userId]);
 
+  // Apply skill bonuses at read time. Both ind_cargo_handling (capacity)
+  // and log_cargo_compression (volume) are summed from player_skills via
+  // getPlayerBonuses, so training propagates without touching ships.
+  const { capacityMult, volumeMult } = await getCargoBonuses(userId);
+  const capacity = Math.floor(rawCapacity * capacityMult);
+  const rawVolume = parseFloat(volumeResult?.total_volume || 0);
   const totalSlots = Math.floor(capacity / 10);
-  const usedVolume = Math.round(parseFloat(volumeResult?.total_volume || 0) * 100) / 100;
+  const usedVolume = Math.round(rawVolume * volumeMult * 100) / 100;
   const usedSlots = parseInt(volumeResult?.slot_count || 0);
 
   return {
@@ -102,6 +123,11 @@ export const getPlayerCargoInfo = async (userId, client = null) => {
     totalSlots,
     usedSlots,
     shipCount,
+    // Exposed so callers doing their own per-unit fit math (harvester
+    // collect, asteroid pre-mine sizing) can apply the compression
+    // multiplier to a raw density-based per-unit volume.
+    capacityMult,
+    volumeMult,
   };
 };
 

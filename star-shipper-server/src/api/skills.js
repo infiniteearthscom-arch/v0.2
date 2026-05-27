@@ -203,9 +203,21 @@ router.get('/', authMiddleware, async (req, res) => {
     const out = await transaction(async (client) => {
       const { defs, skillsById, queue, liveHeadSp } = await loadAndCommit(client, userId);
 
+      // Research-gated skills: load the player's unlocked tech set so
+      // the response can flag locked rows (`tech_unlocked: false`). The
+      // UI dims + disables training; the queue/add handler enforces it.
+      const techRows = await client.query(
+        `SELECT tech_id FROM player_research WHERE user_id = $1`, [userId]
+      );
+      const unlockedTech = new Set(techRows.rows.map(r => r.tech_id));
+      const techNameRows = await client.query(`SELECT id, name FROM tech_definitions`);
+      const techNameById = Object.fromEntries(techNameRows.rows.map(r => [r.id, r.name]));
+
       // Build the response: defs decorated with player state, plus the queue.
       const skills = defs.map(d => {
         const ps = skillsById.get(d.id);
+        const techGate = d.requires_tech || null;
+        const techUnlocked = !techGate || unlockedTech.has(techGate);
         return {
           id: d.id,
           category: d.category,
@@ -225,6 +237,11 @@ router.get('/', authMiddleware, async (req, res) => {
           // Pass override through so any client-side cost preview can
           // mirror the server's math without re-deriving from rank.
           sp_per_level_override: d.sp_per_level_override || null,
+          // Research-gating: tells the client to render a lock badge +
+          // disable the Queue Train button until the tech is unlocked.
+          requires_tech: techGate,
+          requires_tech_name: techGate ? (techNameById[techGate] || techGate) : null,
+          tech_unlocked: techUnlocked,
         };
       });
 
@@ -281,6 +298,26 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
       const { defs, skillsById, queue } = await loadAndCommit(client, userId);
       const def = defs.find(d => d.id === skill_id);
       if (!def) throw Object.assign(new Error('Unknown skill'), { statusCode: 404 });
+
+      // Research gate: skills with requires_tech can't be queued until
+      // the player has researched that tech. Mirrors the buy-module +
+      // craft gates so the obtain ladder reads end-to-end.
+      if (def.requires_tech) {
+        const techRow = await client.query(
+          `SELECT 1 FROM player_research WHERE user_id = $1 AND tech_id = $2`,
+          [userId, def.requires_tech]
+        );
+        if (techRow.rows.length === 0) {
+          const techDef = await client.query(
+            `SELECT name FROM tech_definitions WHERE id = $1`, [def.requires_tech]
+          );
+          const techName = techDef.rows[0]?.name || def.requires_tech;
+          throw Object.assign(
+            new Error(`Requires research: ${techName}`),
+            { statusCode: 403, requires_tech: def.requires_tech }
+          );
+        }
+      }
 
       // target_level cap is per-skill -- defaults to MAX_LEVEL=5,
       // overridden to override.length when sp_per_level_override is

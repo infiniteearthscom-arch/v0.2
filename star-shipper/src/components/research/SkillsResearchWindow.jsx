@@ -55,6 +55,9 @@ const WIRED_BONUS_TYPES = new Set([
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'crafted_quality_flat',       // /craft endpoint output stat bonus
+  // Cargo (applied server-side in getPlayerCargoInfo)
+  'cargo_capacity_pct',         // Industry / Cargo Handling
+  'cargo_volume_pct',           // Logistics / Cargo Compression
   // Sensors + scanning
   'sensor_range_pct',           // SystemView fleetSensorRange()
   'scan_time_pct',              // shipStats.js getFleetScanTimeMs()
@@ -298,6 +301,23 @@ const SkillsTab = () => {
                       ○ catalog
                     </span>
                   )}
+                  {s.requires_tech && !s.tech_unlocked && (
+                    <span
+                      title={`Requires research: ${s.requires_tech_name || s.requires_tech}`}
+                      style={{
+                        color: GOLD.light,
+                        background: `${GOLD.pri}20`,
+                        border: `1px solid ${GOLD.pri}55`,
+                        padding: '1px 5px',
+                        borderRadius: 2,
+                        fontSize: 8,
+                        letterSpacing: 0.5,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      🔒 {s.requires_tech_name || 'Research'}
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -355,34 +375,74 @@ const SkillsTab = () => {
                   </div>
                 </div>
 
+                {/* Tech gate -- locked skills can't be queued. Shows the
+                    research prereq with a click-through to open the
+                    Research tab on that node (deep-link via gameStore). */}
+                {selected.requires_tech && !selected.tech_unlocked && (
+                  <div style={{
+                    marginTop: 12, padding: '10px 12px',
+                    background: `${GOLD.pri}10`,
+                    border: `1px solid ${GOLD.pri}55`,
+                    borderRadius: 2,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                  }}>
+                    <div style={{ fontSize: 10, fontFamily: FM, color: GOLD.light, letterSpacing: 0.5 }}>
+                      🔒 Requires research: <span style={{ color: '#fde68a', fontWeight: 700 }}>{selected.requires_tech_name || selected.requires_tech}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Setting the store target triggers the parent's
+                        // useEffect to switch to the Research tab + jump
+                        // to the right tree. Single source of truth.
+                        useGameStore.getState().setResearchTargetTech?.(selected.requires_tech);
+                      }}
+                      style={{
+                        background: `${GOLD.pri}25`,
+                        border: `1px solid ${GOLD.pri}`,
+                        color: GOLD.light,
+                        padding: '4px 10px',
+                        cursor: 'pointer',
+                        fontSize: 9, fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
+                        textTransform: 'uppercase', borderRadius: 2, whiteSpace: 'nowrap',
+                      }}
+                    >
+                      → Open Research
+                    </button>
+                  </div>
+                )}
+
                 {/* Train buttons */}
                 <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {isMaxed ? (
                     <div style={{ fontSize: 10, fontFamily: FM, color: GOLD.light }}>★ MAX LEVEL</div>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => addSkill(selected.id, nextLevel)}
-                        disabled={queueFull}
-                        style={{
-                          background: queueFull ? '#1a2030' : `${BLUE.pri}25`,
-                          border: `1px solid ${queueFull ? EDGE : BLUE.pri}`,
-                          color: queueFull ? '#4a5a6a' : BLUE.light,
-                          padding: '6px 12px',
-                          cursor: queueFull ? 'not-allowed' : 'pointer',
-                          fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
-                          textTransform: 'uppercase', borderRadius: 2,
-                        }}
-                      >
-                        Queue Train → {ROMAN[nextLevel]}
-                      </button>
-                      {queueFull && (
-                        <div style={{ fontSize: 9, color: '#7a4040', fontFamily: FM, alignSelf: 'center' }}>
-                          Queue full ({maxQueue})
-                        </div>
-                      )}
-                    </>
-                  )}
+                  ) : (() => {
+                    const techLocked = selected.requires_tech && !selected.tech_unlocked;
+                    const disabled = queueFull || techLocked;
+                    return (
+                      <>
+                        <button
+                          onClick={() => addSkill(selected.id, nextLevel)}
+                          disabled={disabled}
+                          style={{
+                            background: disabled ? '#1a2030' : `${BLUE.pri}25`,
+                            border: `1px solid ${disabled ? EDGE : BLUE.pri}`,
+                            color: disabled ? '#4a5a6a' : BLUE.light,
+                            padding: '6px 12px',
+                            cursor: disabled ? 'not-allowed' : 'pointer',
+                            fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
+                            textTransform: 'uppercase', borderRadius: 2,
+                          }}
+                        >
+                          Queue Train → {ROMAN[nextLevel]}
+                        </button>
+                        {queueFull && !techLocked && (
+                          <div style={{ fontSize: 9, color: '#7a4040', fontFamily: FM, alignSelf: 'center' }}>
+                            Queue full ({maxQueue})
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </>
             );
