@@ -10,6 +10,7 @@ import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar } from '@/components/ui/panelStyles';
 import { normalizeItem } from '@/utils/itemShape';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
+import { CargoSlotTooltip } from '@/components/items/CargoSlotTooltip';
 
 // ============================================
 // CONSTANTS
@@ -54,118 +55,11 @@ const canMerge = (a, b) => {
     a.stats.density === b.stats.density;
 };
 
-// ============================================
-// TOOLTIP
-// ============================================
-
-const ItemTooltip = ({ stack, screenX, screenY }) => {
-  const isItem = stack.item_type === 'item';
-
-  let left = screenX + SLOT_SIZE + 8;
-  let top = screenY - 20;
-  if (left + 200 > window.innerWidth) left = screenX - 208;
-  if (top + 210 > window.innerHeight) top = window.innerHeight - 220;
-  if (top < 0) top = 4;
-
-  // For items (modules + consumables), defer entirely to the shared
-  // ItemTooltipContent via normalizeItem -- same renderer the Fittable
-  // Modules pane uses, so the cargo tooltip + the fitting tooltip now
-  // show identical fields (name, icon, description, quality, stats).
-  // The previous custom implementation was missing the stats table
-  // entirely because it iterated item_data directly + base_stats was
-  // never populated there.
-  if (isItem) {
-    const normalized = normalizeItem(stack);
-    return (
-      <div className="fixed z-[9999] pointer-events-none" style={{ left, top }}>
-        <div
-          className="rounded-lg shadow-xl min-w-[220px]"
-          style={{
-            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-            border: '2px solid #ffaa00',
-            boxShadow: '0 0 12px #ffaa0033',
-          }}
-        >
-          <ItemTooltipContent item={normalized} />
-        </div>
-      </div>
-    );
-  }
-
-  // Resource tooltip
-  const tier = getQualityTier(
-    stack.stats.purity, stack.stats.stability,
-    stack.stats.potency, stack.stats.density
-  );
-  const iconInfo = RESOURCE_ICONS[stack.resource_type_id];
-  const rarityInfo = RARITY_INFO[stack.rarity];
-
-  return (
-    <div className="fixed z-[9999] pointer-events-none" style={{ left, top }}>
-      <div
-        className="rounded-lg p-3 shadow-xl min-w-[190px]"
-        style={{
-          background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-          border: `2px solid ${tier.color}`,
-          boxShadow: `0 0 12px ${tier.color}33`,
-        }}
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <div
-            className="w-7 h-7 rounded flex items-center justify-center text-xs font-bold"
-            style={{ backgroundColor: iconInfo?.color + '44', color: iconInfo?.color, border: `1px solid ${iconInfo?.color}88` }}
-          >
-            {iconInfo?.abbr}
-          </div>
-          <div>
-            <div className="font-medium text-sm" style={{ color: rarityInfo?.color || '#fff' }}>
-              {stack.resource_name}
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <span style={{ color: tier.color }}>{tier.name}</span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-400">{stack.category}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="h-px bg-slate-600/50 mb-2" />
-
-        <div className="space-y-1.5 mb-2">
-          {[
-            { label: 'Purity', value: stack.stats.purity },
-            { label: 'Stability', value: stack.stats.stability },
-            { label: 'Potency', value: stack.stats.potency },
-            { label: 'Density', value: stack.stats.density },
-          ].map(stat => {
-            const pct = stat.value;
-            const barColor = pct >= 80 ? '#aa44ff' : pct >= 60 ? '#4488ff' : pct >= 40 ? '#44ff44' : pct >= 20 ? '#ffffff' : '#666666';
-            return (
-              <div key={stat.label} className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500 w-14">{stat.label}</span>
-                <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: barColor }} />
-                </div>
-                <span className="text-slate-300 w-6 text-right">{stat.value}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="h-px bg-slate-600/50 mb-2" />
-
-        <div className="flex justify-between text-xs">
-          <span className="text-slate-400">Quantity</span>
-          <span className="text-cyan-300 font-medium">{stack.quantity}</span>
-        </div>
-        <div className="flex justify-between text-xs mt-0.5">
-          <span className="text-slate-400">Base value</span>
-          <span className="text-yellow-400">{stack.base_price || '—'} cr/unit</span>
-        </div>
-      </div>
-    </div>
-  );
-};
+// Tooltip extracted to `/components/items/CargoSlotTooltip.jsx` so
+// CraftingCargoPanel + HarvesterCargoPanel + any future cargo
+// surface uses the literal same render. Keep RESOURCE_ICONS local
+// (the lookup is window-specific) and pass it into the shared
+// component as `resourceIcons`.
 
 // ============================================
 // CARGO BAR
@@ -771,10 +665,12 @@ export const InventoryWindow = () => {
         </div>
 
         {hoveredStack && !dragItem && createPortal(
-          <ItemTooltip
+          <CargoSlotTooltip
             stack={hoveredStack}
             screenX={tooltipPos.x}
             screenY={tooltipPos.y}
+            slotSize={SLOT_SIZE}
+            resourceIcons={RESOURCE_ICONS}
           />,
           document.body
         )}

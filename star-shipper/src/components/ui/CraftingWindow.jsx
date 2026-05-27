@@ -9,6 +9,7 @@ import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
+import { CargoSlotTooltip } from '@/components/items/CargoSlotTooltip';
 
 // ============================================
 // CONSTANTS
@@ -587,7 +588,7 @@ const CARGO_TIER_BORDER = {
 // adds a subtle glow when the tile's resource is one the currently
 // selected recipe wants, so the player can scan their cargo and see
 // at a glance which stacks are useful right now.
-const CargoStackTile = ({ stack, matchesRecipe, onClick }) => {
+const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLeave }) => {
   const tier = getQualityTier(
     stack.stats.purity, stack.stats.stability,
     stack.stats.potency, stack.stats.density
@@ -618,7 +619,8 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick }) => {
         e.dataTransfer.effectAllowed = 'move';
       }}
       onClick={onClick}
-      title={onClick ? `Click to assign ${stack.resource_name}` : stack.resource_name}
+      onMouseEnter={(e) => onHoverEnter && onHoverEnter(stack, e)}
+      onMouseLeave={onHoverLeave}
       style={{
         width: CARGO_SLOT_SIZE,
         height: CARGO_SLOT_SIZE,
@@ -663,6 +665,18 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick }) => {
 const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
   const [stacks, setStacks] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Hover state for the shared CargoSlotTooltip. tooltipPos tracks the
+  // hovered tile's screen rect so the tooltip lands beside it. Same
+  // pattern InventoryWindow uses; rendered via portal at the bottom
+  // of this panel so it escapes the right-pane width clip.
+  const [hoveredStack, setHoveredStack] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const handleHoverEnter = (stack, e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipPos({ x: rect.left, y: rect.top });
+    setHoveredStack(stack);
+  };
+  const handleHoverLeave = () => setHoveredStack(null);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -759,6 +773,8 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
                 onClick={(selectedRecipe && matches)
                   ? () => onAssign(stack)
                   : undefined}
+                onHoverEnter={handleHoverEnter}
+                onHoverLeave={handleHoverLeave}
               />
             );
           })}
@@ -771,6 +787,21 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
           ? 'Click a glowing tile to add it · X on a slot to remove'
           : 'Select a recipe first, then click cargo tiles to add'}
       </div>
+
+      {/* Shared cargo tooltip -- portal'd to body so the tooltip can
+          extend outside the cargo pane's clipped width. Uses the same
+          CARGO_RESOURCE_ICONS lookup so the icon abbreviation in the
+          tooltip matches the tile glyph the player just hovered. */}
+      {hoveredStack && createPortal(
+        <CargoSlotTooltip
+          stack={hoveredStack}
+          screenX={tooltipPos.x}
+          screenY={tooltipPos.y}
+          slotSize={CARGO_SLOT_SIZE}
+          resourceIcons={CARGO_RESOURCE_ICONS}
+        />,
+        document.body
+      )}
     </div>
   );
 };
