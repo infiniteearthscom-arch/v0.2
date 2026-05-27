@@ -646,10 +646,10 @@ const ResearchTab = ({ initialTree }) => {
   );
 };
 
-const NODE_W = 180;
-const NODE_H = 70;
-const TIER_GAP_Y = 130;
-const NODE_GAP_X = 30;
+const NODE_W = 230;
+const NODE_H = 158;
+const TIER_GAP_Y = 210;
+const NODE_GAP_X = 36;
 
 // Lays out a single tree top-down: tier 1 row, tier 2 row, tier 3
 // row. Nodes within a tier are spaced horizontally by sort_order.
@@ -773,6 +773,10 @@ const TechNode = ({ tech, x, y, accent, canAfford, onClick }) => {
     color = '#4a5a6a';
     badge = '🔒 LOCKED';
   }
+  // Description text dims for locked nodes so they don't compete
+  // visually with researched/available rows. Locked rows still read
+  // (player can scan ahead in the tree) but the available row pops.
+  const descColor = status === 'locked' ? '#4a5a6a' : (status === 'unlocked' ? '#a0b5c8' : '#cbd5e1');
   return (
     <div
       onClick={status === 'available' ? onClick : undefined}
@@ -786,18 +790,39 @@ const TechNode = ({ tech, x, y, accent, canAfford, onClick }) => {
         cursor: status === 'available' ? 'pointer' : 'default',
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
         transition: 'background 0.15s, border-color 0.15s',
+        overflow: 'hidden',
       }}
       title={tech.description}
     >
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }}>
         <div style={{ fontSize: 8, fontFamily: FM, color: '#5a7080', letterSpacing: 1, textTransform: 'uppercase' }}>
           Tier {tech.tier}
         </div>
-        <div style={{ fontSize: 11, fontFamily: F, fontWeight: 700, color, marginTop: 2 }}>
+        <div style={{ fontSize: 11, fontFamily: F, fontWeight: 700, color, lineHeight: 1.15 }}>
           {tech.name}
         </div>
+        <div
+          style={{
+            fontSize: 9.5,
+            fontFamily: F,
+            color: descColor,
+            lineHeight: 1.35,
+            marginTop: 2,
+            // Clamp to 6 lines so an unusually long description can't
+            // burst the card height. Plenty of room for the ~2-3
+            // sentence descriptions today; the title attr is the
+            // overflow fallback.
+            display: '-webkit-box',
+            WebkitLineClamp: 6,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {tech.description}
+        </div>
       </div>
-      <div style={{ fontSize: 8, fontFamily: FM, color, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+      <div style={{ fontSize: 8, fontFamily: FM, color, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 6 }}>
         {badge}
       </div>
     </div>
