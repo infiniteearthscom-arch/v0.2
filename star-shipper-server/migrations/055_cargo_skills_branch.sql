@@ -41,6 +41,16 @@ ON CONFLICT (id) DO UPDATE SET
   tier          = EXCLUDED.tier,
   requires_tech = EXCLUDED.requires_tech;
 
+-- Item definition (required by crafting_recipes.output_item_id FK and
+-- by the inventory system to render the module as a cargo item).
+INSERT INTO item_definitions (id, name, description, category, icon, max_stack, item_data_defaults) VALUES
+  ('cargo_large_2', 'Bulk Cargo Bay', 'Industrial-grade modular cargo bay. Requires Bulk Processing research.',
+   'module', '📦', 5, '{"slot_type":"cargo"}')
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  description = EXCLUDED.description,
+  item_data_defaults = EXCLUDED.item_data_defaults;
+
 INSERT INTO crafting_recipes (id, name, description, output_item_id, output_quantity, ingredients, category, requires_tech) VALUES
   ('craft_cargo_large_2',
    'Bulk Cargo Bay',
