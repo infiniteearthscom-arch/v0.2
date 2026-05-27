@@ -43,6 +43,39 @@ const formatDuration = (ms) => {
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
+// Bonus contracts that game code actually reads today. Anything not
+// listed here is a "catalog only" skill -- the skill row exists in
+// the DB + UI but training it has no in-game effect yet. Visual cue
+// in the skill list dims those rows so the player can see at a
+// glance which skills are wired vs aspirational. Update this set as
+// new bonus types get plugged into combat / mining / etc.
+const WIRED_BONUS_TYPES = new Set([
+  // Combat
+  'fleet_damage_pct',           // Gunnery -> weapons.js fleet damage scalar
+  // Mining + industry
+  'mining_yield_pct',           // /asteroids/mine endpoint
+  'crafted_quality_flat',       // /craft endpoint output stat bonus
+  // Sensors + scanning
+  'sensor_range_pct',           // SystemView fleetSensorRange()
+  'scan_time_pct',              // shipStats.js getFleetScanTimeMs()
+  'survey_scanner_range_pct',   // shipStats.js getFleetScanRange()
+  'area_scan_radius_pct',       // SystemView handleAreaScan
+  'bulk_belt_cooldown_pct',     // SystemView handleBeltScan
+  'sweep_cooldown_pct',         // SystemView handleSystemSweep
+]);
+
+// Skills wired by id rather than by bonus contract (e.g. queue cap
+// reads the level directly off lead_training_discipline without
+// going through bonus_per_level.type). Listed here so they don't
+// get the dim "catalog only" treatment despite having a stub-ish
+// bonus type.
+const WIRED_BY_ID = new Set([
+  'lead_training_discipline',   // skills.js BASE_QUEUE + level
+]);
+
+const isSkillWired = (skill) =>
+  WIRED_BY_ID.has(skill.id) || WIRED_BONUS_TYPES.has(skill.bonus_per_level?.type);
+
 // Tick once a second so the live SP / countdown displays advance.
 // Cheap -- nothing re-fetches, just a state bump for derived displays.
 const useSecondTick = () => {
@@ -168,6 +201,11 @@ const SkillsTab = () => {
             // Falls back to the global maxLevel for old payloads.
             const skMax = s.max_level || maxLevel;
             const isMaxed = s.level >= skMax;
+            // Wired = bonus contract that code actually reads (or
+            // skill id is referenced directly). Stub skills dim so
+            // the player can scan the list and see what's actually
+            // worth training right now.
+            const wired = isSkillWired(s);
             // Subtitle text -- describes current progress instead of
             // the (confusing) rank multiplier. Rank still shows in the
             // detail panel where it's labeled correctly.
@@ -193,6 +231,11 @@ const SkillsTab = () => {
                       ? `2px solid ${GREEN.pri}55`
                       : '2px solid transparent',
                   borderBottom: `1px solid ${EDGE}40`,
+                  // Stub skills dim to ~55% so wired ones read first.
+                  // Active (selected) skill stays full opacity so the
+                  // detail-pane focus is still obvious; same for any
+                  // wired skill the player has already trained.
+                  opacity: !wired && !active ? 0.55 : 1,
                 }}
               >
                 <div style={{
@@ -221,7 +264,7 @@ const SkillsTab = () => {
                   fontSize: 9,
                   color: isMaxed ? GOLD.light : (isCompleted ? '#86efac' : '#4a6580'),
                   fontFamily: FM, marginTop: 2, letterSpacing: 0.3,
-                  display: 'flex', alignItems: 'center', gap: 8,
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
                 }}>
                   <span>{subtitleText}</span>
                   {isTraining && <span style={{ color: GREEN.light }}>· training</span>}
@@ -236,6 +279,23 @@ const SkillsTab = () => {
                       letterSpacing: 0.5,
                     }}>
                       ↩ LAST TRAINED
+                    </span>
+                  )}
+                  {!wired && (
+                    <span
+                      title="No in-game effect yet -- this skill's bonus contract is defined but no gameplay system reads it"
+                      style={{
+                        color: '#64748b',
+                        background: 'rgba(100,116,139,0.15)',
+                        border: '1px solid rgba(100,116,139,0.35)',
+                        padding: '1px 5px',
+                        borderRadius: 2,
+                        fontSize: 8,
+                        letterSpacing: 0.5,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      ○ catalog
                     </span>
                   )}
                 </div>
