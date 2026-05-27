@@ -217,45 +217,6 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
-### 2026-05-25 — Tooltip + crafting + vendor data unification
-
-- **Module tooltips share one data shape.** `/inventory` server query LEFT JOINs `module_types` so cargo items carry `module_stats` + `module_tier` folded into `item_data.base_stats`/`tier`. `normalizeItem` (`utils/itemShape.js`) now uses the shared `STAT_META` + `qualityMultiplier` + `fmtStatValue` for the stats array, matching the per-stat scaling (sqrt for range, inverted for cycle/lock/scan time) used by ShipBuilderWindow's SlotInfo. InventoryWindow's hand-rolled item tooltip retired in favor of `ItemTooltipContent` via `normalizeItem`. Three surfaces (cargo hover, Fittable Modules pane, fitted-slot SlotInfo), one source of truth — adding a stat to `module_types.stats` server-side automatically appears everywhere.
-- **Crafting window data fixes**: server `/recipes` returns `item_description` (item-level, not the recipe-level "Craft an X" string) + `module_stats` JOINed from `module_types`. Top header now shows the item description; OutputPreview now finds stat numbers for module recipes (previously empty because `item_data_defaults` for modules is just `{slot_type}` — actual stats live in `module_types.stats`).
-- **Crafting OutputPreview** reformatted to additive framing: `DAMAGE 6 +5 from quality → 11` (with sign + color showing direction). Q50 ingredients leave only the base value visible since delta is 0.
-- **Vendor module rows** show a compact stats line under the description (`DAMAGE 10 · CYCLE TIME 2.0s · RANGE 300`). Row minHeight bumped 52→66 + accent bar 40→54 to fit cleanly.
-
-### 2026-05-25 — Sensor sweep ping animation + sonar audio
-
-- System Telemetry Array no longer instant-reveals. Click → 12s ping warm-up (3 expanding wave rings + 3 sonar audio pings at 4s intervals, mirrored on both SystemView and SystemMapWindow at the fleet position) → 30s reveal of every enemy in the system → 120s cooldown.
-- `audio.js` registered `sonar_ping → freesound_community-sonar-ping-95840.mp3`.
-- New `sweepStartedAt` in gameStore so SystemMapWindow can read the activation timestamp without coupling to SystemView refs. Map uses a `useSweepTick` hook that idles when no sweep is active and runs 30fps only during the ping window.
-- Combat-effects SVG layer (mining sparks etc.) wrapped in `pointer-events: none` so the sparks no longer steal hover/click events from the asteroid `<g>` underneath.
-
-### 2026-05-25 — Enemy fleets Phase 1+2
-
-- Phase 1: spawn count `dangerLevel * 5 + rng(0..d*3)` — 5-star systems now field 25–40 pirates. Hull pool rebalanced toward destroyers + capitals at higher danger. Pirates spawn in **fleets of 2–4** (3–4 at danger 5) sharing a `patrolCenter` and a `fleetId`. Per-frame **fleet rally**: any patrol/returning member of an engaged fleet force-switches to chase when a fleet-mate spots the player.
-- Phase 2: pirate combat stats now derive from a tiered **loadout catalog** (`PIRATE_WEAPONS` / `PIRATE_SHIELDS` / `PIRATE_ENGINES` + `PIRATE_LOADOUT_TIERS`) instead of hardcoded `PIRATE_HULLS.stats`. Hull is purely visual + base HP. Hull pool now mixes pirate visuals with player combat hulls (`fighter`, `scout`, `frigate`, `capital`). Display name reads "Pirate Destroyer (Heavy Cannon)" so threats parse at a glance. Loot scales × loadout tier.
-- Phase 2b (formation flying with leader + lag-follow wingmen) specced in backlog; deferred until playtest validates the loadout work.
-
-### 2026-05-25 — Module obtain paths + cross-window deep linking
-
-- Migration 053 wires actual buy + craft paths for the 4 higher-tier scanners (T2 Advanced, T2.5 Wide-Field, T3 Elite, System Telemetry). Adds `requires_tech` column on `module_types` + `crafting_recipes`; server `/buy-module` + `/craft` enforce the gate.
-- Vendor module rows show `🔒 Sensor Refinement` badge when research-locked (click → jumps to the research tree). Unlocked rows get a `⚒ Craft` button alongside the buy button.
-- CraftingWindow auto-selects the deep-linked recipe; locked recipes show a yellow lock panel with a "→ Open Research" button.
-- gameStore: `craftingTargetRecipeId` + `researchTargetTechId` state mirrors the cross-window navigation pattern.
-
-### 2026-05-25 — Galaxy fog of war + station markers
-
-- `player_system_visits` table (migration 051) + `/api/galaxy/{visits,visit}` endpoints. App.jsx `hydrateDiscoveredSystems` on login. Undiscovered systems render as bare gray dots (no name / faction / star type) on both the map and in-flight view; jump connection lines render only when at least one endpoint is discovered.
-- `galaxyGenerator` now decorates every system with `hasStation` (Sol = true; procedural systems check `body.type === 'station'`). GalaxyMapWindow + GalaxyFlightView render a small gold rect + antenna line next to the star dot when discovered AND `hasStation`. GalaxyMapWindow info panel gains a "Station: Yes/None" row.
-
-### 2026-05-25 — Scanner depth Tier B + Tier C
-
-- Tier B: 3 new modules (Wide-Field Sensor Array T2.5 with `area_scan`; Elite Survey Grid T3 with `bulk_scan`; System Telemetry Array with `system_sweep`), 3 research nodes branching off Sensor Refinement, bottom-right ability tray with cancel toggles + cooldown countdowns.
-- Tier C: 3 paired Astrometrics skills (`ast_area_scanning` +10% radius/level, `ast_bulk_belt_efficiency` -10% cooldown/level, `ast_telemetry_ops` -5% sweep cooldown/level).
-- Asteroid scans now parallel + queued correctly: area scan uses scan_range (not sensor range) and runs every rock's timer simultaneously; bulk-belt scans the whole system in parallel with `unbounded: true` to bypass the per-rock distance-cancel.
-- Training Discipline skill (Leadership, 7 levels) caps the queue at `3 + level` (max 10). Migration 054 adds `sp_per_level_override JSONB` so a skill can define exact per-level SP costs — Training Discipline uses this for L1=7d through L7=60d real-time training durations.
-
 ### 2026-05-22 — Active training indicator (top bar + Skills window header)
 
 - Shared `ActiveTrainingIndicator` component shows the head queue skill (live progress bar driven by precomputed `finishes_at` + 1s ticker) and current RP balance. Compact variant in the GameFrame top bar (clickable → opens Skills & Research window). Expanded variant in the SkillsResearchWindow header next to the tab strip.
