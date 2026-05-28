@@ -31,29 +31,122 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 ### User-prompted, coming next
 
+- **Realtime multiplayer Phase 1: Presence** — locked spec below. Picking this up next session (2026-05-27 evening per user).
 - **Outliner restructure** — user flagged it's due for changes (specifics TBD when work starts). Density, section priority, what shows when, etc.
 - **System map changes** — user flagged the in-system SVG view needs work (specifics TBD).
 - **Grow the research tree as we build systems** — every new gameplay system (colonies, factions, advanced combat, etc.) should land with new tech nodes that gate it. The skill catalog (165 entries) is already broad — research nodes should expand to match. Per pitfall #15, check `skill_definitions.bonus_per_level->>'type'` for existing bonus contracts before inventing new ones.
 
-### Realtime multiplayer
+### Realtime multiplayer (Phase 1: Presence)
 
-Phase 1 SHIPPED 2026-05-28. Phases 2-4 still ahead. See the "Recently shipped" entry for the full Phase 1 architecture; this is the forward-looking backlog.
+Specced in chat 2026-05-27. First slice of the multi-phase road to shared combat: two players in the same system see each other's ships moving in real time. **No shared enemies, no combat sharing, no PvP** -- that's Phase 2/3. Pure presence so the transport + room model gets validated before stakes are high.
 
-**Phase 1 polish (small, do whenever):**
-- **Wingmen broadcast** — currently only the flagship of each player's fleet broadcasts. Add `fleet: [{slot, x, y, rot}, ...]` to the pos payload so peers see your full fleet, not just one ship. Straightforward, but bumps payload size N× and raises the visual question of how peer wingmen should look vs the flagship (same? subtly distinct?). Better to land alongside Phase 2 when fleet state is already being snapshotted.
-- **Peer position smoothing** — Phase 1 uses linear extrapolation (`render = peer.pos + peer.vel * dt`) between 5 Hz snapshots. If it visibly jerks during real play, swap in prev→next lerp (store the last 2 snapshots per peer, interpolate based on local time vs server ts).
-- **Hover-to-identify** — clicking a peer ship currently does nothing. Should at least open a small panel: pilot name, ship class, maybe shared-system-time. Spec'd as `> PROFILE` link, deferred.
-- **`bumpShipVisual()` on re-fit** — singleton exposes the method but no caller wires it yet. After a player equips/unfits a module in ShipBuilderWindow, peers don't see the new silhouette until reconnect. Hook into the fitting flow so visuals stay fresh.
-- **Galaxy-map presence** — Phase 1 only covers SystemView. Peers vanish during galaxy-fly transits. Phase 2-ish polish: also broadcast on the galaxy map (separate room key, e.g. `presence:galaxy`).
+**Goal:** see peer ships in SystemView, with name tag + accurate position/rotation/velocity, rendered via the existing `shipRenderer.js` (so peer fits look like proper ships).
 
-**Phase 2 — Shared enemies (~2-3 weeks):**
-Pirates owned by server. New `system_combatants` table (or in-memory map keyed by system_id). Server tick at ~10 Hz runs pirate AI (chase / patrol / fire) -- currently ~600 LOC of AI in `SystemView.jsx`, ports server-side. Pirates spawn server-side on first player entering an empty system, persist while ≥1 player is in-system, despawn after grace period. Client stops generating pirates; renders from server snapshots. Important: pitfall #5 (shared time source) gets harder -- server's tick clock becomes truth, client interpolates. Big refactor; ship under a feature flag so single-player keeps working during migration.
+**Out of scope (Phase 1):** galaxy-map presence, peer combat damage, peer chat, peer wingmen, server-authoritative position validation.
 
-**Phase 3 — Authoritative combat (~3-4 weeks):**
-"Fire weapon" becomes a request, not a local event: `POST /combat/fire {weapon_slot, target_id}` → server validates range/cooldown/quality/LOS → computes hit + damage → broadcasts to room. Pirate kills credit the firing fleet (existing loot endpoint, rewire trigger). PvP gate: opt-in flag per player or per-system (high-sec vs null-sec analog) -- design call. Wreckage cleanup: the parked server-side wreck endpoints (Known Issues) become required, not optional.
+**Locked architecture decisions:**
 
-**Phase 4 — Polish:**
-Client prediction + reconciliation so your own ship feels snappy despite round-trip. Lag compensation on hit detection. Sweep telemetry handling for spectators. DO dev DB → managed prod plan; WS connection count starts to matter.
+| Decision | Pick | Why |
+|---|---|---|
+| Transport | `socket.io` server + `socket.io-client` | Rooms + auto-reconnect + handshake auth come free. |
+| Co-host | Same Node process, same port (`io.attach(httpServer)`) | DO routes one port per service. |
+| Authority | Client-authoritative position in Phase 1 | Pure relay; cheaters can teleport a visual ghost with no gameplay impact. Phase 3 validates. |
+| Snapshot cadence | 5 Hz (200ms) | Tiny payloads; client interpolates to 60fps via `gameTimeRef`. |
+| Server tick | None in Phase 1 (pure relay) | Phase 2 introduces a tick for server-owned entities. |
+| Room key | `system:${procedural_id}` (`system:sol` for Sol) | Stable, derivable, no extra table. |
+| Per-user cap | One active socket per user (kick old on new connect) | Two tabs both broadcasting becomes a "where am I really" puzzle. |
+| Stale eviction | 500ms no update -> fade; 5s -> remove | Matches packet loss reality. |
+
+**Message protocol:**
+
+```
+Client -> Server:
+  'enter_system'  { system_id }
+  'leave_system'  { system_id }
+  'pos'           { x, y, vx, vy, rot, ship_visual_v }
+
+Server -> Client:
+  'peer_join'   { user_id, name, ship_visual }
+  'peer_leave'  { user_id }
+  'peers'       { peers: [{ user_id, x, y, vx, vy, rot, ts }, ...] }
+```
+
+`ship_visual_v` is a monotonic counter the client bumps on re-fit / ship change so peers know to refetch the descriptor without it riding every tick. `ship_visual = { hull_type_id, accent_color, ship_name, fitted_summary }`. `ts` is server-stamped for interpolation + stale detection. Server rate-limits `pos` to 10 Hz/socket as a defensive cap.
+
+**File layout (server):**
+
+```
+star-shipper-server/src/realtime/
+  index.js          # io = new Server(httpServer); mount + export
+  auth.js           # io.use middleware: validate JWT from handshake.auth.token
+  presence.js       # enter_system / leave_system / pos / disconnect handlers
+  ship_visual.js    # query the peer's active ship (storage_body_id IS NULL) -> small descriptor
+```
+
+Existing `src/index.js` changes: `createServer(app)` instead of `app.listen`, then `realtime.attach(httpServer, app)`. **No DB writes in Phase 1** -- presence state lives in memory (`Map<userId, socketId>` + `Map<systemId, Set<userId>>`). Server restart = ~2s reconnect blip.
+
+**File layout (client):**
+
+```
+star-shipper/src/
+  utils/presence.js      # singleton socket wrapper: connect, enter/leave, sendPos, event subscribers
+  hooks/usePresence.js   # subscribes to peer stream; returns peersRef (Map) + peerCount state
+  components/system/SystemView.jsx  # changes:
+                         #   - call usePresence(currentSystemId)
+                         #   - in game loop: throttled sendPos at 5 Hz
+                         #   - in render: iterate peersRef, lerp prev->next on gameTimeRef,
+                         #     render via shipRenderer.js with peer chrome
+```
+
+`peersRef` must be a **ref, not state** (pitfall #6 -- physics/render reads from refs). React state is only for `peerCount` (HUD display) and connection status.
+
+**Visual treatment for peer ships:**
+- Same `shipRenderer.js` hull shape (peers see your fit, you see theirs -- feels real)
+- Soft cyan glow halo (`#4488ff` at 40% alpha, 8px blur)
+- Name tag above ship: small monospace, faded, ~25px offset
+- Slightly desaturated fill (~85%) so peers don't fight your own ship's contrast
+- **No** health bars, hit flashes, or combat indicators (Phase 3)
+- Wingmen not rendered (active flagship only)
+- Hover -> show name + stub `> PROFILE` link. Click does nothing in Phase 1.
+
+**Edge cases handled:**
+
+| Case | Behavior |
+|---|---|
+| Player A enters Sol, B already there | A gets `peer_join` for B (with ship_visual) on entry, then B's next `pos` broadcast lands. |
+| Connection drops | After 5s no pos update, server emits `peer_leave`. Client fades the ghost over 500ms. |
+| Player changes system | `leave_system` on old -> `enter_system` on new. Brief gap during galaxy flight is fine. |
+| Player re-fits | Bump `ship_visual_v`, re-broadcast. Peers refetch the descriptor lazily. |
+| Two tabs / accounts | Server kicks the older socket on new connect for the same userId. Old tab gets `'kicked'` event -> toast. |
+| Server restart | Sockets auto-reconnect, re-emit `enter_system`. ~2s blip. |
+
+**Open design questions to settle when work starts:**
+1. Faction colors on peer ships (apply system faction tint, or always cyan)? Lean: cyan for Phase 1 -- pirate distinction matters more than faction nuance.
+2. Sol clustering at high concurrency -- 20 players = 19 peers per Sol-player = ~4 KB/s per player. Fine, but cull farthest-30 if needed.
+3. Galaxy fly-view presence -- defer (out of scope); flag for Phase 2.
+4. DO websocket support -- current Basic plan supports WS. Confirm `VITE_API_URL` can build the WS URL (just swap `https://` -> `wss://`).
+
+**Rollout plan:**
+1. Ship server-only first (socket.io attached, no client integration). Manually `wscat` from local to verify auth + rooms work in prod.
+2. Client behind a flag: `VITE_PRESENCE_ENABLED=true`. Push with flag off; flip on after manual verification.
+3. Two-browser test (different browsers for cookie isolation, two accounts, both fly into Sol).
+4. Kill-server reconnect test.
+5. 4-player smoke test: 3 friends on simultaneously, Sol -> Alpha Centauri -> back. Watch for memory leaks in the server Maps.
+
+**Effort estimate:** ~510 LOC, ~5 dev days.
+
+| Piece | LOC | Time |
+|---|---|---|
+| Server: auth + presence | ~150 | 1 day |
+| Client: socket wrapper + hook | ~180 | 1 day |
+| SystemView render integration | ~120 | 1.5 days |
+| Visual polish | ~60 | 0.5 day |
+| Testing + deploy hardening | -- | 1 day |
+
+**Phase 2/3 follow-ons (not specced yet, in priority order):**
+- Phase 2: Shared enemies -- pirates owned by server, ~10Hz server tick, AI ports from `SystemView.jsx` to server. ~600 LOC client-side AI moves server-side. 2-3 weeks.
+- Phase 3: Authoritative combat -- `POST /combat/fire` request/response, server validates range/cooldown/quality/LOS, broadcasts hits, kills credit firing fleet. Wreckage server endpoints (Known Issues) become required. PvP gate is an open call (opt-in flag vs high-sec/null-sec analog). 3-4 weeks.
+- Phase 4: Polish -- client prediction + reconciliation, lag compensation, sweep telemetry for spectators, DO plan bump.
 
 ### Module + resource quality pass
 
@@ -236,44 +329,6 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
-
-### 2026-05-28 — Realtime Presence Phase 1 (multiplayer ghost ships)
-
-**First slice of real multiplayer.** Two players in the same procedural system see each other's ships moving in real time. Pure presence -- no shared enemies, no combat sharing, no PvP (those are Phases 2/3). Validated end-to-end with two accounts in Sol on 2026-05-28.
-
-**Architecture (locked + shipped):**
-- `socket.io` server + `socket.io-client`; same Node process via `io.attach(httpServer)` -- single port, no extra service to deploy.
-- Per-system rooms keyed `presence:system:${id}` (disjoint from the legacy `hub:*` namespace from a prior design; that legacy code is dead but left in place for a follow-up cleanup).
-- Client-authoritative position relay (Phase 1 doesn't validate -- cheaters can teleport a visual ghost with no gameplay impact). 5 Hz pos snapshots; server rate-limits to 10 Hz per socket as a defensive cap.
-- No DB writes -- presence state lives in memory (`Map<userId, socketId>` + `Map<systemId, Map<userId, peerState>>`). Server restart = ~2s reconnect blip.
-- One active socket per user; new connect kicks the old socket via `'kicked'` event so the kicked tab can toast + close gracefully.
-- 5s stale-peer eviction sweep (covers silent TCP death faster than socket.io's 15s pingTimeout).
-
-**Wire protocol:**
-```
-Client -> Server:    presence:enter / presence:leave / presence:pos
-Server -> Client:    presence:snapshot (on enter) /
-                     presence:peer_join (with ship_visual) /
-                     presence:peer_leave /
-                     presence:peers (single-peer batch, server-stamped ts) /
-                     kicked
-```
-
-`ship_visual_v` (monotonic counter, bumped by `presence.bumpShipVisual()`) tells peers when to refetch a player's visual descriptor without sending hull data on every pos broadcast.
-
-**Visual treatment:** peer ships render via the same `shipRenderer.js` silhouette as own fleet (so peers see your actual fit), with a cyan glow halo + name tag. Linear extrapolation between snapshots (`render = peer.pos + peer.vel * dt`) keeps motion smooth at 60fps despite 5 Hz updates. Wingmen not broadcast yet -- flagship only.
-
-**Files:**
-- Server: `src/realtime/presence.js` (~225 LOC), `src/realtime/socketHandler.js` (added `attachPresence` call alongside legacy), `src/index.js` (added `/api/diag/presence` diag endpoint -- unauthenticated, counts only).
-- Client: `src/utils/presence.js` (~210 LOC singleton with lazy-connect + 5 Hz throttle + auto-reconnect re-enter), `src/components/system/SystemView.jsx` (lifecycle effect + sendPos in game loop + peer render block + kicked toast).
-- Deps: added `socket.io-client ^4.7.2` to client.
-- Feature flag: `VITE_PRESENCE_ENABLED=true` on the DO static site env vars (per pitfall #10, must rebuild after setting).
-
-**Gotchas during deploy:**
-- DO App Platform's `/socket.io` HTTP route had to be added to the server component's Routing rules alongside the existing `/api` -- without it, the WS handshake 404'd at the static site.
-- "Preserve Path Prefix" matters: socket.io's server expects to receive `/socket.io/...` intact.
-
-**Backlog (Phase 1 polish + Phases 2-4) -- see "Up next > Realtime multiplayer" above.**
 
 ### 2026-05-27 — Cargo skills branch (Bulk Cargo Bay + 2 skills, research-gated)
 
