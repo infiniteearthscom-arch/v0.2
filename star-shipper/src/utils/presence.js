@@ -14,15 +14,21 @@
 // ------------
 //   peers: Map<userId, {
 //     name, ship_visual,                       // identity (refreshed on peer_join)
-//     x, y, vx, vy, rot, ts                    // latest server-stamped state
+//     prev: snapshot|null,                     // 2nd-most-recent snapshot (for interpolation)
+//     next: snapshot|null,                     // most-recent snapshot
+//     x, y, vx, vy, rot, ts, fleet,            // == next.* (backward-compat fields)
 //   }>
+//   snapshot = { ts, x, y, vx, vy, rot, fleet }
 //
-// Consumers (SystemView render loop) read peers.values() each frame
-// and apply LINEAR EXTRAPOLATION:
-//   render_x = peer.x + peer.vx * ((now - peer.ts) / 1000)
-// 5 Hz snapshots + a steady velocity means the render stays smooth
-// between updates; a sudden direction change pops by one frame, which
-// at 60fps is invisible. Phase 2 can swap in proper prev->next lerp.
+// RENDER: BUFFERED INTERPOLATION
+// ------------------------------
+// At 5 Hz, naive linear extrapolation snaps every 200ms when the next
+// snapshot arrives -- visible jerk on any direction/speed change.
+// Instead consumers call presence.getRenderState(peer, now) which
+// renders at `now - RENDER_DELAY_MS` (slightly in the past) so we
+// always have prev+next snapshots that bracket the render time. Lerp
+// between them. Costs ~150ms perceived render lag, gains smooth
+// motion. Standard multiplayer netcode pattern.
 //
 // CONNECTION LIFECYCLE
 // --------------------
@@ -43,6 +49,15 @@ import { io as ioClient } from 'socket.io-client';
 const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const ENABLED = import.meta.env.VITE_PRESENCE_ENABLED === 'true';
 const POS_SEND_INTERVAL_MS = 200; // 5 Hz -- server cap is 10 Hz
+// How far in the past to render peer state. ~75% of the snapshot
+// interval -- gives us room for one packet's worth of jitter while
+// keeping perceived lag low. With 200ms snapshots, 150ms delay means
+// the render time usually lands between prev and next.
+const RENDER_DELAY_MS = 150;
+// If `now - next.ts` exceeds this, we extrapolate from `next` instead
+// of lerping (the broadcaster went quiet -- maybe disconnected). Past
+// this window the stale-peer cleanup kicks in.
+const EXTRAPOLATE_AFTER_MS = 500;
 
 // ----- module-scope state -----
 let socket = null;
@@ -131,11 +146,21 @@ function ensureSocket() {
     if (system_id !== currentSystemId) return; // stale snapshot from a prior system
     peers.clear();
     for (const p of snap || []) {
+      const initialSnap = {
+        ts: p.ts || Date.now(),
+        x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot,
+        fleet: p.fleet || [],
+      };
       peers.set(p.user_id, {
         name: p.name,
         ship_visual: p.ship_visual,
-        x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot, ts: p.ts || Date.now(),
-        fleet: p.fleet || [],
+        // Both prev + next start identical; first new update from this
+        // peer rolls next into prev so interpolation has a real window.
+        prev: initialSnap,
+        next: initialSnap,
+        // Top-level fields mirror `next` for backward-compat with any
+        // consumer that still reads them directly (debug, hover).
+        ...initialSnap,
       });
     }
     emit('peers_changed', { count: peers.size });
@@ -149,11 +174,14 @@ function ensureSocket() {
       existing.name = name;
       existing.ship_visual = ship_visual;
     } else {
+      // No prev/next yet -- consumer's getRenderState() will skip until
+      // ts > 0 (first pos arrives).
       peers.set(user_id, {
         name,
         ship_visual,
+        prev: null, next: null,
         x: 0, y: 0, vx: 0, vy: 0, rot: 0,
-        ts: 0, // 0 marks "no pos yet" -- consumers can hide until first pos arrives
+        ts: 0,
         fleet: [],
       });
     }
@@ -168,14 +196,25 @@ function ensureSocket() {
     for (const u of updates || []) {
       const p = peers.get(u.user_id);
       if (!p) continue; // not in room (yet); the peer_join is coming
-      p.x = u.x; p.y = u.y;
-      p.vx = u.vx; p.vy = u.vy;
-      p.rot = u.rot;
-      p.ts = u.ts || Date.now();
-      // Wingmen positions: each update carries the full fleet snapshot
-      // (denormalized, includes hull_type_id per entry). Server caps
-      // at 4 entries so this can't bloat.
-      if (Array.isArray(u.fleet)) p.fleet = u.fleet;
+      const newSnap = {
+        ts: u.ts || Date.now(),
+        x: u.x, y: u.y, vx: u.vx, vy: u.vy, rot: u.rot,
+        fleet: Array.isArray(u.fleet) ? u.fleet : (p.next?.fleet || []),
+      };
+      // Slide the buffer: prev becomes the prior next; next becomes
+      // the just-arrived snapshot. On the very first pos update for a
+      // peer that joined mid-session (no prev/next yet from snapshot),
+      // both prev and next get the new value -- next update will
+      // give us a real lerp window.
+      p.prev = p.next || newSnap;
+      p.next = newSnap;
+      // Mirror top-level fields for backward-compat consumers (hover
+      // panel that reads p.name etc; debug console).
+      p.x = newSnap.x; p.y = newSnap.y;
+      p.vx = newSnap.vx; p.vy = newSnap.vy;
+      p.rot = newSnap.rot;
+      p.ts = newSnap.ts;
+      p.fleet = newSnap.fleet;
     }
   });
 }
@@ -262,6 +301,67 @@ export function bumpShipVisual() {
 // render loop via .values() or .get().
 export function getPeers() { return peers; }
 
+// Shortest-arc angular lerp (degrees, math convention).
+function lerpAngle(a, b, t) {
+  let diff = b - a;
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+  return a + diff * t;
+}
+
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// Render-time interpolated state for a peer. Returns:
+//   { x, y, rot, fleet, ageMs }   if renderable
+//   null                          if the peer has no pos yet or is stale
+//
+// `fleet` is interpolated per-index against the matched entry in prev
+// (degrades gracefully if length differs -- jumps to next's value for
+// indices that don't have a prev twin).
+export function getRenderState(peer, now = Date.now()) {
+  if (!peer?.next || !peer.next.ts) return null;
+  const ageNext = now - peer.next.ts;
+  if (ageNext > 5000) return null; // stale; eviction pending
+
+  // Render time is slightly in the past so we usually have prev+next
+  // bracketing it. The first ~150ms after a new peer joins we won't
+  // have a real prev (prev === next from snapshot init), so the lerp
+  // degenerates to "snap to next" which is fine.
+  const renderTime = now - RENDER_DELAY_MS;
+  const prev = peer.prev || peer.next;
+  const span = peer.next.ts - prev.ts;
+
+  let x, y, rot, fleet;
+  if (span <= 0 || ageNext > EXTRAPOLATE_AFTER_MS) {
+    // No real interp window (first frame after join) OR broadcaster
+    // went quiet -- fall back to linear extrapolation from `next`.
+    const dt = ageNext / 1000;
+    x = peer.next.x + (peer.next.vx || 0) * dt;
+    y = peer.next.y + (peer.next.vy || 0) * dt;
+    rot = peer.next.rot;
+    fleet = peer.next.fleet;
+  } else {
+    // Standard buffered lerp: t = how far renderTime is between prev.ts
+    // and next.ts. Clamped [0,1] so a slow tab doesn't pull t past 1
+    // and turn into accidental extrapolation.
+    const t = Math.max(0, Math.min(1, (renderTime - prev.ts) / span));
+    x = lerp(prev.x, peer.next.x, t);
+    y = lerp(prev.y, peer.next.y, t);
+    rot = lerpAngle(prev.rot || 0, peer.next.rot || 0, t);
+    fleet = (peer.next.fleet || []).map((nf, i) => {
+      const pf = prev.fleet?.[i];
+      if (!pf) return nf;
+      return {
+        x: lerp(pf.x, nf.x, t),
+        y: lerp(pf.y, nf.y, t),
+        rot: lerpAngle(pf.rot || 0, nf.rot || 0, t),
+        hull_type_id: nf.hull_type_id,
+      };
+    });
+  }
+  return { x, y, rot, fleet, ageMs: ageNext };
+}
+
 export function on(event, fn) {
   if (!listeners.has(event)) listeners.set(event, new Set());
   listeners.get(event).add(fn);
@@ -276,5 +376,5 @@ if (typeof window !== 'undefined' && ENABLED) {
 }
 
 export default {
-  enterSystem, leaveSystem, sendPos, getPeers, bumpShipVisual, on, isEnabled,
+  enterSystem, leaveSystem, sendPos, getPeers, getRenderState, bumpShipVisual, on, isEnabled,
 };

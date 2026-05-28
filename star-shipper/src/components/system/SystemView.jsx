@@ -4205,28 +4205,28 @@ export const SystemView = () => {
               const now = Date.now();
               const out = [];
               for (const [userId, p] of presence.getPeers().entries()) {
-                if (!p.ts) continue;                       // no first pos yet
-                const ageMs = now - p.ts;
-                if (ageMs > 5000) continue;                // stale; eviction pending
-                const dt = ageMs / 1000;
-                const px = p.x + (p.vx || 0) * dt;
-                const py = p.y + (p.vy || 0) * dt;
-                const rot = p.rot || 0;
+                // Buffered interpolation: getRenderState returns the
+                // lerp between the last 2 snapshots, evaluated at
+                // (now - RENDER_DELAY_MS). Returns null until the peer
+                // has a first pos or if their data is stale.
+                const r = presence.getRenderState(p, now);
+                if (!r) continue;
+                const px = r.x, py = r.y, rot = r.rot;
                 const hullId = p.ship_visual?.hull_type_id;
                 const icon = hullId ? getShipIcon(hullId) : null;
-                out.push({ userId, p, px, py, rot, icon });
+                out.push({ userId, p, px, py, rot, icon, fleet: r.fleet });
               }
-              return out.map(({ userId, p, px, py, rot, icon }) => {
+              return out.map(({ userId, p, px, py, rot, icon, fleet }) => {
                 const iw = icon?.width ?? 24;
                 const ih = icon?.height ?? 24;
                 const cyan = p.ship_visual?.accent_color || '#4488ff';
-                // Wingmen render -- one ghost per entry in p.fleet.
-                // Positions are absolute world coords (the broadcaster
-                // already resolved them via wingmenPosRef on their
-                // side), so no transform math needed here. Dimmer
-                // glow than the flagship so the player can still tell
-                // which ship is "the peer" at a glance.
-                const wingmen = (p.fleet || []).map((w, idx) => {
+                // Wingmen render -- one ghost per entry in the
+                // INTERPOLATED fleet from getRenderState (not the raw
+                // latest snapshot, so wingmen smooth alongside the
+                // flagship). Positions are absolute world coords.
+                // Dimmer glow than the flagship so the player can
+                // still tell which ship is "the peer" at a glance.
+                const wingmen = (fleet || []).map((w, idx) => {
                   const wIcon = w.hull_type_id ? getShipIcon(w.hull_type_id) : null;
                   const wiw = wIcon?.width ?? 20;
                   const wih = wIcon?.height ?? 20;

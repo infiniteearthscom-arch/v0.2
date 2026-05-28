@@ -40,7 +40,6 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 Phase 1 SHIPPED 2026-05-28. Phases 2-4 still ahead. See the "Recently shipped" entry for the full Phase 1 architecture; this is the forward-looking backlog.
 
 **Phase 1 polish (remaining):**
-- **Peer position smoothing** — Phase 1 uses linear extrapolation (`render = peer.pos + peer.vel * dt`) between 5 Hz snapshots. If it visibly jerks during real play, swap in prev→next lerp (store the last 2 snapshots per peer, interpolate based on local time vs server ts). Wait until we observe jerk in practice before bothering.
 - **Hover-to-identify** — clicking/hovering a peer ship currently does nothing. Should at least open a small panel: pilot name, ship class, maybe shared-system-time. Spec'd as `> PROFILE` link, deferred.
 - **Galaxy-map presence** — Phase 1 only covers SystemView. Peers vanish during galaxy-fly transits. Phase 2-ish polish: also broadcast on the galaxy map (separate room key, e.g. `presence:galaxy`).
 - **Cleanup legacy `hub:*` / `mission:*` socket code in `socketHandler.js`** — dead code from a prior design, no client consumers. Safe to remove now that Phase 1 is proven.
@@ -235,6 +234,18 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-28 — Multiplayer Phase 1 polish: buffered interpolation (smooth peer motion)
+
+Replaced the naive linear extrapolation render with **buffered snapshot interpolation** -- the standard multiplayer netcode pattern.
+
+**Before:** each peer's render position was `peer.x + peer.vx * (now - peer.ts) / 1000`. Snapshot arrives every 200ms (5Hz); each new snapshot caused a position discontinuity (extrapolation overshoot/undershoot got snapped to truth). Direction changes were dramatically jerky.
+
+**After:** singleton stores `prev` + `next` snapshots per peer. New helper `getRenderState(peer, now)` returns a position lerped between them, evaluated at `now - 150ms` (RENDER_DELAY_MS). The render time is slightly in the past so we usually have prev+next bracketing it. Falls back to linear extrapolation if `next` is >500ms stale (broadcaster went quiet). Rotation uses shortest-arc angular lerp. Wingman positions interpolated per-index against the matched entry in `prev.fleet`.
+
+**Cost:** ~150ms perceived render lag on peer motion. Acceptable for non-combat presence; Phase 3 (authoritative combat) will need lag-compensation on hit detection regardless. **Hardware bump not needed** -- this was a pure client-side rendering math issue, server bandwidth is nowhere near limits (10-player Sol cluster = ~5 KB/s server-out total).
+
+Files: `star-shipper/src/utils/presence.js`; `star-shipper/src/components/system/SystemView.jsx` (swapped inline extrapolation for `presence.getRenderState(peer, now)`).
 
 ### 2026-05-28 — Multiplayer Phase 1 polish: wingmen broadcast + ship_visual auto-refresh
 
