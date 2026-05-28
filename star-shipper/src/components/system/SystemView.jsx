@@ -11,6 +11,7 @@ import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
+import presence from '@/utils/presence';
 
 // ============================================
 // CONSTANTS
@@ -1244,7 +1245,41 @@ export const SystemView = () => {
       } catch (e) { /* fire-and-forget */ }
     })();
   }, [currentSystemId, currentSystem]);
-  
+
+  // Realtime presence (Phase 1): tell the server which system we're in
+  // so other players in the same room start receiving our position
+  // broadcasts + we receive theirs. No-op when VITE_PRESENCE_ENABLED is
+  // false. Leave on unmount AND on systemId change (the next mount will
+  // re-enter the new system).
+  useEffect(() => {
+    if (!currentSystemId) return undefined;
+    presence.enterSystem(currentSystemId);
+    return () => { presence.leaveSystem(); };
+  }, [currentSystemId]);
+
+  // Peer count is the only piece of presence state that needs to drive
+  // a React re-render (HUD chrome). Position updates ride on the
+  // game-loop's frameCount tick so we don't re-render every snapshot.
+  const [peerCount, setPeerCount] = useState(0);
+  useEffect(() => {
+    if (!presence.isEnabled()) return undefined;
+    return presence.on('peers_changed', ({ count }) => setPeerCount(count));
+  }, []);
+
+  // 'kicked' fires when the same user logs in from another tab and
+  // the server replaces their socket. Surface a toast so the kicked
+  // tab knows what happened instead of just going silent.
+  useEffect(() => {
+    if (!presence.isEnabled()) return undefined;
+    return presence.on('kicked', () => {
+      pushToast({
+        kind: 'warn',
+        text: 'Multiplayer presence disconnected — another tab took over',
+        duration: 6000,
+      });
+    });
+  }, [pushToast]);
+
   const starConfig = STAR_TYPES[currentSystem.starType] || STAR_TYPES.yellow_star;
   
   // Camera state (keep as state for UI binding)
@@ -3660,7 +3695,21 @@ export const SystemView = () => {
         const speed = Math.sqrt(shipVelRef.current.x * shipVelRef.current.x + shipVelRef.current.y * shipVelRef.current.y);
         updateShipPosition(shipPosRef.current.x, shipPosRef.current.y, speed, gameTime);
       }
-      
+
+      // Realtime presence position broadcast (Phase 1). 12 frames @
+      // 60fps = ~200ms = 5Hz, matching the spec + server rate cap.
+      // The presence singleton internally throttles + coalesces so a
+      // lower-FPS browser still emits at the right cadence.
+      if (frameNum % 12 === 0) {
+        presence.sendPos({
+          x: shipPosRef.current.x,
+          y: shipPosRef.current.y,
+          vx: shipVelRef.current.x,
+          vy: shipVelRef.current.y,
+          rot: shipRotationRef.current,
+        });
+      }
+
       animationId = requestAnimationFrame(gameLoop);
     };
     
@@ -4124,6 +4173,77 @@ export const SystemView = () => {
                 </g>
               );
             })}
+            {/* Realtime presence peer ships (Phase 1). Other players
+                in the same system, rendered via the same shipRenderer
+                hull silhouettes so the player sees what the peer is
+                actually flying. Cyan glow + name tag distinguishes
+                them from own fleet. Linear extrapolation between
+                5Hz snapshots: render_pos = peer.pos + peer.vel * dt.
+                Skipped if ts=0 (entered but no pos yet) or if the
+                last update is >5s old (server stale-evict will have
+                emitted peer_leave any moment; defensive).
+                NOT sensor-gated -- presence is a player meta-channel,
+                you always see whoever's in your system. Reconsider in
+                Phase 3 when combat lands + stealth becomes a thing. */}
+            {presence.isEnabled() && (() => {
+              const now = Date.now();
+              const out = [];
+              for (const [userId, p] of presence.getPeers().entries()) {
+                if (!p.ts) continue;                       // no first pos yet
+                const ageMs = now - p.ts;
+                if (ageMs > 5000) continue;                // stale; eviction pending
+                const dt = ageMs / 1000;
+                const px = p.x + (p.vx || 0) * dt;
+                const py = p.y + (p.vy || 0) * dt;
+                const rot = p.rot || 0;
+                const hullId = p.ship_visual?.hull_type_id;
+                const icon = hullId ? getShipIcon(hullId) : null;
+                out.push({ userId, p, px, py, rot, icon });
+              }
+              return out.map(({ userId, p, px, py, rot, icon }) => {
+                const iw = icon?.width ?? 24;
+                const ih = icon?.height ?? 24;
+                const cyan = p.ship_visual?.accent_color || '#4488ff';
+                return (
+                  <g key={`peer:${userId}`} transform={`translate(${px}, ${py})`}>
+                    {/* Cyan presence halo -- distinct from own fleet's
+                        engine-color glow. Slightly larger so it reads
+                        as "different" at a glance. */}
+                    <circle r={Math.max(8, ih * 0.7)} fill={cyan} opacity={0.16} />
+                    <circle r={Math.max(4, ih * 0.35)} fill={cyan} opacity={0.28} />
+                    {/* Hull silhouette via the shared renderer; +90 for
+                        SVG icon-points-up vs math degrees (pitfall #3).
+                        Falls back to a cyan diamond if hull unknown. */}
+                    {icon ? (
+                      <g transform={`rotate(${rot + 90})`} opacity={0.85}>
+                        <image
+                          href={icon.dataUrl}
+                          x={-iw/2} y={-ih/2}
+                          width={iw} height={ih}
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                      </g>
+                    ) : (
+                      <g transform={`rotate(${rot + 90})`}>
+                        <polygon points="0,-8 6,6 -6,6" fill={cyan} opacity={0.85} stroke={cyan} strokeWidth={1} />
+                      </g>
+                    )}
+                    {/* Name tag above ship */}
+                    <text
+                      x={0} y={-ih/2 - 6}
+                      textAnchor="middle"
+                      fill={cyan}
+                      fontSize="7"
+                      fontFamily="monospace"
+                      opacity={0.8}
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {p.name || 'pilot'}
+                    </text>
+                  </g>
+                );
+              });
+            })()}
             {/* Enemy Ships -- sensor-gated. Only render enemies inside
                 the fleet's sensor range (max of fitted scanners, falls
                 back to INNATE_SENSOR_RANGE if none). AI keeps running

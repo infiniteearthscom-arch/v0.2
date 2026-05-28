@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-27 (Realtime Presence Phase 1 -- server shipped + verified, client code ready to push behind VITE_PRESENCE_ENABLED flag)
+**Last updated:** 2026-05-27 (Cargo skills branch shipped; Realtime Presence Phase 1 spec locked for tonight's session)
 
 ---
 
