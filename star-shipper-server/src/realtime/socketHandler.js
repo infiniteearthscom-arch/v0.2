@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import { socketAuthMiddleware, updateUserOnline } from '../auth/index.js';
 import { query, queryOne, queryAll } from '../db/index.js';
+import { attachPresence } from './presence.js';
 
 // ============================================
 // GAME STATE
@@ -38,6 +39,16 @@ export const setupSocketIO = (httpServer) => {
 
   // Authentication middleware
   io.use(socketAuthMiddleware);
+
+  // ============================================
+  // PHASE 1: REALTIME PRESENCE
+  // ============================================
+  // Registers its own 'connection' handler for the presence:* events
+  // (system rooms, position relay, peer_join/leave, kick on dupe
+  // connect). Coexists with the legacy hub/mission/chat handlers
+  // below -- both fire on every connection. The 'presence:' event
+  // namespace keeps them disjoint.
+  const presence = attachPresence(io);
 
   io.on('connection', async (socket) => {
     const user = socket.user;
@@ -387,6 +398,9 @@ export const setupSocketIO = (httpServer) => {
     });
   }, 60000);
 
+  // Surface the presence handle on `io` so index.js can mount its
+  // diag endpoint without changing setupSocketIO's return signature.
+  io.presence = presence;
   return io;
 };
 

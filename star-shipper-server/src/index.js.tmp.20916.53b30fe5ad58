@@ -73,19 +73,6 @@ app.use('/api/skills', skillsRoutes);
 app.use('/api/research', researchRoutes);
 app.use('/api/galaxy', galaxyRoutes);
 
-// Realtime presence diag (Phase 1 verification). Counts only -- no
-// user data -- so safe to leave unauthenticated. Returns 503 if the
-// presence module hasn't attached (catches deploy misconfig). MUST be
-// registered before the 404 catch-all below; the `io.presence` ref is
-// resolved at request time (after setupSocketIO has run).
-app.get('/api/diag/presence', (req, res) => {
-  const p = io?.presence;
-  if (!p || typeof p.stats !== 'function') {
-    return res.status(503).json({ error: 'presence module not attached' });
-  }
-  res.json({ ...p.stats(), now: Date.now() });
-});
-
 // 404 handler
 app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'Not found' });
