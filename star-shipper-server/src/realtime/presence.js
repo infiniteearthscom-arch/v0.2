@@ -185,13 +185,16 @@ export function attachPresence(io) {
       // Insert self with a stub position (0,0). The next 'presence:pos'
       // overwrites it within ~200ms. ts=0 marks "no pos yet" so peers
       // can render at the broadcast pos rather than (0,0) until the
-      // first real update lands.
+      // first real update lands. `fleet` is the (denormalized) array
+      // of wingman positions/hulls -- starts empty, populated on first
+      // pos broadcast.
       peers.set(user.id, {
         x: 0, y: 0, vx: 0, vy: 0, rot: 0,
         ship_visual_v: 0,
         ts: 0,
         name: user.username,
         ship_visual: shipVisual,
+        fleet: [],
       });
 
       socket.join(roomFor(system_id));
@@ -209,6 +212,7 @@ export function attachPresence(io) {
           name: p.name,
           ship_visual: p.ship_visual,
           x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot, ts: p.ts,
+          fleet: p.fleet || [],
         });
       }
       socket.emit('presence:snapshot', { system_id, peers: snapshot });
@@ -245,7 +249,7 @@ export function attachPresence(io) {
       const peers = systemPeers.get(systemId);
       const peer = peers?.get(user.id);
       if (!peer) return; // entered + left in race; ignore
-      const { x, y, vx, vy, rot, ship_visual_v } = payload || {};
+      const { x, y, vx, vy, rot, ship_visual_v, fleet } = payload || {};
       if (typeof x !== 'number' || typeof y !== 'number') return;
       peer.x = x;
       peer.y = y;
@@ -253,6 +257,22 @@ export function attachPresence(io) {
       peer.vy = typeof vy === 'number' ? vy : 0;
       peer.rot = typeof rot === 'number' ? rot : 0;
       peer.ts = now;
+      // Wingmen: denormalized fleet array. Cap at 4 (MAX_FLEET_SIZE-1)
+      // so a malicious client can't pump up the broadcast size. Each
+      // entry validated independently -- bad entries skipped, valid
+      // ones kept.
+      if (Array.isArray(fleet)) {
+        const cleaned = [];
+        for (const f of fleet.slice(0, 4)) {
+          if (!f || typeof f.x !== 'number' || typeof f.y !== 'number') continue;
+          cleaned.push({
+            x: f.x, y: f.y,
+            rot: typeof f.rot === 'number' ? f.rot : 0,
+            hull_type_id: typeof f.hull_type_id === 'string' ? f.hull_type_id : null,
+          });
+        }
+        peer.fleet = cleaned;
+      }
 
       // Visual version bump -> refresh the descriptor so peers see the
       // new fit. Refetch async; the next snapshot includes it.
@@ -274,6 +294,7 @@ export function attachPresence(io) {
           user_id: user.id,
           x: peer.x, y: peer.y, vx: peer.vx, vy: peer.vy, rot: peer.rot,
           ts: peer.ts,
+          fleet: peer.fleet,
         }],
       });
     });

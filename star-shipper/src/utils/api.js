@@ -340,24 +340,40 @@ export const fittingAPI = {
     method: 'POST',
     body: JSON.stringify({ hull_type_id: hullTypeId, ship_name: shipName, dock_body_id: dockBodyId }),
   }),
-  fitModule: (shipId, slotId, cargoItemId) => request('/fitting/fit-module', {
-    method: 'POST',
-    body: JSON.stringify({ ship_id: shipId, slot_id: slotId, cargo_item_id: cargoItemId }),
-  }),
-  unfitModule: (shipId, slotId) => request('/fitting/unfit-module', {
-    method: 'POST',
-    body: JSON.stringify({ ship_id: shipId, slot_id: slotId }),
-  }),
+  fitModule: async (shipId, slotId, cargoItemId) => {
+    const r = await request('/fitting/fit-module', {
+      method: 'POST',
+      body: JSON.stringify({ ship_id: shipId, slot_id: slotId, cargo_item_id: cargoItemId }),
+    });
+    // Realtime presence: bump so peers refetch our ship_visual + see
+    // the new hardpoint silhouette on the next pos broadcast. Lazy
+    // import so api.js stays usable in non-presence builds.
+    try { (await import('./presence.js')).default.bumpShipVisual(); } catch {}
+    return r;
+  },
+  unfitModule: async (shipId, slotId) => {
+    const r = await request('/fitting/unfit-module', {
+      method: 'POST',
+      body: JSON.stringify({ ship_id: shipId, slot_id: slotId }),
+    });
+    try { (await import('./presence.js')).default.bumpShipVisual(); } catch {}
+    return r;
+  },
   buyModule: (moduleTypeId) => request('/fitting/buy-module', {
     method: 'POST',
     body: JSON.stringify({ module_type_id: moduleTypeId }),
   }),
   getFleet: () => request('/fitting/fleet'),
   getCredits: () => request('/fitting/credits'),
-  setActiveShip: (shipId) => request('/fitting/set-active-ship', {
-    method: 'POST',
-    body: JSON.stringify({ ship_id: shipId }),
-  }),
+  setActiveShip: async (shipId) => {
+    const r = await request('/fitting/set-active-ship', {
+      method: 'POST',
+      body: JSON.stringify({ ship_id: shipId }),
+    });
+    // Active ship changed -- peer's flagship silhouette is now wrong.
+    try { (await import('./presence.js')).default.bumpShipVisual(); } catch {}
+    return r;
+  },
   // Move an active ship into storage at a celestial body. Player must
   // be docked at the body; server validates ship is owned + active +
   // not the active ship + not a pod.

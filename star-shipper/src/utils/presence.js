@@ -135,6 +135,7 @@ function ensureSocket() {
         name: p.name,
         ship_visual: p.ship_visual,
         x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot, ts: p.ts || Date.now(),
+        fleet: p.fleet || [],
       });
     }
     emit('peers_changed', { count: peers.size });
@@ -153,6 +154,7 @@ function ensureSocket() {
         ship_visual,
         x: 0, y: 0, vx: 0, vy: 0, rot: 0,
         ts: 0, // 0 marks "no pos yet" -- consumers can hide until first pos arrives
+        fleet: [],
       });
     }
     emit('peers_changed', { count: peers.size });
@@ -170,6 +172,10 @@ function ensureSocket() {
       p.vx = u.vx; p.vy = u.vy;
       p.rot = u.rot;
       p.ts = u.ts || Date.now();
+      // Wingmen positions: each update carries the full fleet snapshot
+      // (denormalized, includes hull_type_id per entry). Server caps
+      // at 4 entries so this can't bloat.
+      if (Array.isArray(u.fleet)) p.fleet = u.fleet;
     }
   });
 }
@@ -201,6 +207,21 @@ export function leaveSystem() {
   }
 }
 
+// Build the wire payload from a caller-supplied state object. Both
+// the immediate and the trailing-edge flush go through this so the
+// shape stays consistent in one place.
+function makePosPayload(state) {
+  return {
+    x: state.x, y: state.y,
+    vx: state.vx ?? 0, vy: state.vy ?? 0,
+    rot: state.rot ?? 0,
+    ship_visual_v: shipVisualVersion,
+    // Wingmen (denormalized): each entry is { x, y, rot, hull_type_id }.
+    // Server caps at 4. Empty array if caller didn't pass one.
+    fleet: Array.isArray(state.fleet) ? state.fleet : [],
+  };
+}
+
 // Throttled. Safe to call every frame; only emits every POS_SEND_INTERVAL_MS.
 export function sendPos(state) {
   if (!ENABLED) return;
@@ -215,12 +236,7 @@ export function sendPos(state) {
   }
   lastPosSendMs = now;
   pendingPos = null;
-  socket.emit('presence:pos', {
-    x: state.x, y: state.y,
-    vx: state.vx ?? 0, vy: state.vy ?? 0,
-    rot: state.rot ?? 0,
-    ship_visual_v: shipVisualVersion,
-  });
+  socket.emit('presence:pos', makePosPayload(state));
 }
 
 // Catch the trailing edge: if the consumer stopped calling sendPos but
@@ -232,12 +248,7 @@ setInterval(() => {
   lastPosSendMs = now;
   const state = pendingPos;
   pendingPos = null;
-  socket.emit('presence:pos', {
-    x: state.x, y: state.y,
-    vx: state.vx ?? 0, vy: state.vy ?? 0,
-    rot: state.rot ?? 0,
-    ship_visual_v: shipVisualVersion,
-  });
+  socket.emit('presence:pos', makePosPayload(state));
 }, POS_SEND_INTERVAL_MS);
 
 // Bump when the player re-fits / changes active ship. Peers will see

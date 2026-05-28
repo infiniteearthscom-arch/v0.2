@@ -3700,13 +3700,29 @@ export const SystemView = () => {
       // 60fps = ~200ms = 5Hz, matching the spec + server rate cap.
       // The presence singleton internally throttles + coalesces so a
       // lower-FPS browser still emits at the right cadence.
+      // Phase 1 polish (wingmen broadcast): bundle non-active fleet
+      // ships into the payload so peers see the whole fleet, not just
+      // the flagship. Reads positions from wingmenPosRef (the same
+      // lagged-follow positions used for local render + combat hit
+      // detection -- single source of truth).
       if (frameNum % 12 === 0) {
+        const fleetPayload = [];
+        for (const fs of (fleetShipsRef.current || [])) {
+          if (fs.isActive) continue;
+          const w = wingmenPosRef.current[fs.id];
+          if (!w) continue; // first frame -- wingmen pos not seeded yet
+          fleetPayload.push({
+            x: w.x, y: w.y, rot: w.rot,
+            hull_type_id: fs.hull_type_id,
+          });
+        }
         presence.sendPos({
           x: shipPosRef.current.x,
           y: shipPosRef.current.y,
           vx: shipVelRef.current.x,
           vy: shipVelRef.current.y,
           rot: shipRotationRef.current,
+          fleet: fleetPayload,
         });
       }
 
@@ -4204,42 +4220,77 @@ export const SystemView = () => {
                 const iw = icon?.width ?? 24;
                 const ih = icon?.height ?? 24;
                 const cyan = p.ship_visual?.accent_color || '#4488ff';
+                // Wingmen render -- one ghost per entry in p.fleet.
+                // Positions are absolute world coords (the broadcaster
+                // already resolved them via wingmenPosRef on their
+                // side), so no transform math needed here. Dimmer
+                // glow than the flagship so the player can still tell
+                // which ship is "the peer" at a glance.
+                const wingmen = (p.fleet || []).map((w, idx) => {
+                  const wIcon = w.hull_type_id ? getShipIcon(w.hull_type_id) : null;
+                  const wiw = wIcon?.width ?? 20;
+                  const wih = wIcon?.height ?? 20;
+                  return (
+                    <g key={`peer:${userId}:w${idx}`} transform={`translate(${w.x}, ${w.y})`}>
+                      <circle r={Math.max(6, wih * 0.55)} fill={cyan} opacity={0.10} />
+                      <circle r={Math.max(3, wih * 0.28)} fill={cyan} opacity={0.18} />
+                      {wIcon ? (
+                        <g transform={`rotate(${(w.rot || 0) + 90})`} opacity={0.7}>
+                          <image
+                            href={wIcon.dataUrl}
+                            x={-wiw/2} y={-wih/2}
+                            width={wiw} height={wih}
+                            style={{ imageRendering: 'pixelated' }}
+                          />
+                        </g>
+                      ) : (
+                        <g transform={`rotate(${(w.rot || 0) + 90})`}>
+                          <polygon points="0,-6 5,5 -5,5" fill={cyan} opacity={0.7} stroke={cyan} strokeWidth={1} />
+                        </g>
+                      )}
+                    </g>
+                  );
+                });
                 return (
-                  <g key={`peer:${userId}`} transform={`translate(${px}, ${py})`}>
-                    {/* Cyan presence halo -- distinct from own fleet's
-                        engine-color glow. Slightly larger so it reads
-                        as "different" at a glance. */}
-                    <circle r={Math.max(8, ih * 0.7)} fill={cyan} opacity={0.16} />
-                    <circle r={Math.max(4, ih * 0.35)} fill={cyan} opacity={0.28} />
-                    {/* Hull silhouette via the shared renderer; +90 for
-                        SVG icon-points-up vs math degrees (pitfall #3).
-                        Falls back to a cyan diamond if hull unknown. */}
-                    {icon ? (
-                      <g transform={`rotate(${rot + 90})`} opacity={0.85}>
-                        <image
-                          href={icon.dataUrl}
-                          x={-iw/2} y={-ih/2}
-                          width={iw} height={ih}
-                          style={{ imageRendering: 'pixelated' }}
-                        />
-                      </g>
-                    ) : (
-                      <g transform={`rotate(${rot + 90})`}>
-                        <polygon points="0,-8 6,6 -6,6" fill={cyan} opacity={0.85} stroke={cyan} strokeWidth={1} />
-                      </g>
-                    )}
-                    {/* Name tag above ship */}
-                    <text
-                      x={0} y={-ih/2 - 6}
-                      textAnchor="middle"
-                      fill={cyan}
-                      fontSize="7"
-                      fontFamily="monospace"
-                      opacity={0.8}
-                      style={{ pointerEvents: 'none' }}
-                    >
-                      {p.name || 'pilot'}
-                    </text>
+                  <g key={`peer:${userId}`}>
+                    {/* Wingmen first so the flagship label paints on top */}
+                    {wingmen}
+                    <g transform={`translate(${px}, ${py})`}>
+                      {/* Cyan presence halo -- distinct from own fleet's
+                          engine-color glow. Slightly larger so it reads
+                          as "different" at a glance. */}
+                      <circle r={Math.max(8, ih * 0.7)} fill={cyan} opacity={0.16} />
+                      <circle r={Math.max(4, ih * 0.35)} fill={cyan} opacity={0.28} />
+                      {/* Hull silhouette via the shared renderer; +90 for
+                          SVG icon-points-up vs math degrees (pitfall #3).
+                          Falls back to a cyan diamond if hull unknown. */}
+                      {icon ? (
+                        <g transform={`rotate(${rot + 90})`} opacity={0.85}>
+                          <image
+                            href={icon.dataUrl}
+                            x={-iw/2} y={-ih/2}
+                            width={iw} height={ih}
+                            style={{ imageRendering: 'pixelated' }}
+                          />
+                        </g>
+                      ) : (
+                        <g transform={`rotate(${rot + 90})`}>
+                          <polygon points="0,-8 6,6 -6,6" fill={cyan} opacity={0.85} stroke={cyan} strokeWidth={1} />
+                        </g>
+                      )}
+                      {/* Name tag above ship */}
+                      <text
+                        x={0} y={-ih/2 - 6}
+                        textAnchor="middle"
+                        fill={cyan}
+                        fontSize="7"
+                        fontFamily="monospace"
+                        opacity={0.8}
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        {p.name || 'pilot'}
+                      </text>
+                    </g>
                   </g>
                 );
               });
