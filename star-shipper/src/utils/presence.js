@@ -50,11 +50,13 @@ const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const ENABLED = import.meta.env.VITE_PRESENCE_ENABLED === 'true';
 const POS_SEND_INTERVAL_MS = 100; // 10 Hz -- matches server cap
 // Render time = now - RENDER_DELAY_MS so we usually have a prev+next
-// pair bracketing it. With 100ms snapshots a 100ms buffer means the
-// render usually lands ON or just-before `next`, giving us a tight
-// lerp window. If a snapshot's late we extend gracefully into the
-// extrapolation fallback below.
-const RENDER_DELAY_MS = 100;
+// pair bracketing it. With 100ms snapshots, a 150ms buffer means
+// render time normally sits ~50ms before `next` -- plenty of headroom
+// for arrival jitter (snapshots rarely arrive exactly on schedule).
+// Smaller buffer means less lag but more frequent extrapolation/
+// interpolation mode switches at the snapshot boundary which causes
+// visible stutter.
+const RENDER_DELAY_MS = 150;
 // If `now - next.ts` exceeds this, we extrapolate from `next` instead
 // of lerping (the broadcaster went quiet -- maybe disconnected). Past
 // this window the stale-peer cleanup kicks in.
@@ -146,9 +148,17 @@ function ensureSocket() {
   socket.on('presence:snapshot', ({ system_id, peers: snap }) => {
     if (system_id !== currentSystemId) return; // stale snapshot from a prior system
     peers.clear();
+    // IMPORTANT: stamp ts with CLIENT receive time, not the
+    // server-supplied p.ts. Render math compares ts against
+    // Date.now() - RENDER_DELAY_MS; mixing server-time and client-time
+    // domains under any clock skew between the two machines causes
+    // interp t to clamp permanently to 0 or 1, producing visible
+    // teleport-stutter every snapshot interval. Server ts is ignored
+    // for interp; staleness is detected via local receive ts too.
+    const recvNow = Date.now();
     for (const p of snap || []) {
       const initialSnap = {
-        ts: p.ts || Date.now(),
+        ts: recvNow,
         x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot,
         fleet: p.fleet || [],
       };
@@ -194,11 +204,15 @@ function ensureSocket() {
   });
 
   socket.on('presence:peers', ({ peers: updates }) => {
+    // Single client-time stamp per batch keeps multiple peers' updates
+    // in the same batch lined up to the same instant. See the
+    // `presence:snapshot` handler for why we ignore server-supplied ts.
+    const recvNow = Date.now();
     for (const u of updates || []) {
       const p = peers.get(u.user_id);
       if (!p) continue; // not in room (yet); the peer_join is coming
       const newSnap = {
-        ts: u.ts || Date.now(),
+        ts: recvNow,
         x: u.x, y: u.y, vx: u.vx, vy: u.vy, rot: u.rot,
         fleet: Array.isArray(u.fleet) ? u.fleet : (p.next?.fleet || []),
       };

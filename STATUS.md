@@ -235,6 +235,20 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-28 — Multiplayer Phase 1 polish: clock-domain bug fix (the real smoothing fix)
+
+User reported peer ships visibly stuttering at ~100ms intervals (matching the snapshot rate exactly). Diagnosed as a **clock-domain mismatch** in the interp math:
+
+Snapshot `ts` was server-stamped (`server.Date.now()` at relay time), but the receiver's interp formula `t = (now() - prev.ts) / (next.ts - prev.ts)` used the client's `Date.now()` for `now()`. Any clock skew between server and client (always non-zero in practice -- no NTP sync between DO Node host and the user's laptop) shifted the numerator into permanent over/underflow. Result: interp `t` clamped to either 0 or 1 the entire snapshot window, making the peer position "stuck" at prev or next, then teleporting on snapshot arrival = visible periodic stutter.
+
+**Fix:** stamp snapshots with **client receive time** at the moment they arrive at `socket.on('presence:peers'|'presence:snapshot')`, not the server-supplied ts. All interp math now lives in one clock domain (the receiver's). Server `ts` is ignored on the receiver side; staleness is detected the same way (`now() - peer.next.ts > 5s`) but in client time.
+
+While we were at it, bumped `RENDER_DELAY_MS` 100 → 150 to give the interp window headroom for snapshot arrival jitter (network is rarely on-the-dot at 100ms intervals; a 50ms cushion eliminates the extrapolation/interpolation mode-switch snap at the boundary).
+
+The Hermite + 10 Hz + buffered-interp scaffolding from earlier in the evening was correct; the clock bug was masking the smoothness wins. Net result post-fix: ~150ms perceived peer lag (acceptable for non-combat presence), smooth Hermite-curve motion between snapshots.
+
+Files: `star-shipper/src/utils/presence.js`.
+
 ### 2026-05-28 — Multiplayer Phase 1 polish: 10 Hz + Hermite spline (less lag AND smoother)
 
 Second pass on the smoothing. The buffered interpolation from earlier in the evening fixed the snap-on-snapshot-arrival, but motion still read jerky around direction changes. Three coordinated changes push both lag AND smoothness in the right direction simultaneously:
