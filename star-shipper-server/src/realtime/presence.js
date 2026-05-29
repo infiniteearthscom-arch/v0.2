@@ -65,18 +65,35 @@ const roomFor = (systemId) => `presence:system:${systemId}`;
 // Falls back to a generic stub if the player has no active ship --
 // they shouldn't show as a peer in that case, but defensive.
 async function fetchShipVisual(userId, username) {
-  // Active ship = user's first non-stored ship. Mirrors the same
-  // "storage_body_id IS NULL" filter the fleet-cargo + module checks
-  // use elsewhere (pitfall #15).
-  const ship = await queryOne(
+  // Active ship = the one referenced by users.active_ship_id (set on
+  // login + on /set-active-ship). Picking "first non-stored ship by
+  // created_at" is the WRONG heuristic -- a player whose oldest ship
+  // is a Fighter but who flies a newer Capital would broadcast as a
+  // Fighter to peers. Fall back to oldest non-stored only if no
+  // active_ship_id is set (first-time setup race).
+  let ship = await queryOne(
     `SELECT s.id, s.name, s.hull_type_id, s.fitted_modules, ht.name as hull_name
        FROM ships s
        JOIN hull_types ht ON s.hull_type_id = ht.id
-      WHERE s.user_id = $1 AND s.storage_body_id IS NULL
-      ORDER BY s.created_at ASC
+       JOIN users u ON u.active_ship_id = s.id
+      WHERE u.id = $1 AND s.storage_body_id IS NULL
       LIMIT 1`,
     [userId]
   );
+  if (!ship) {
+    // Fallback: oldest non-stored ship. Matches pitfall #15's
+    // "storage_body_id IS NULL" rule so stored ships never claim
+    // active status by accident.
+    ship = await queryOne(
+      `SELECT s.id, s.name, s.hull_type_id, s.fitted_modules, ht.name as hull_name
+         FROM ships s
+         JOIN hull_types ht ON s.hull_type_id = ht.id
+        WHERE s.user_id = $1 AND s.storage_body_id IS NULL
+        ORDER BY s.created_at ASC
+        LIMIT 1`,
+      [userId]
+    );
+  }
   if (!ship) {
     return {
       hull_type_id: null,

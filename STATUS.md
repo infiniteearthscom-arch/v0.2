@@ -235,6 +235,14 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-28 — Multiplayer Phase 1 polish: peer flagship resolves to active ship (not oldest)
+
+Bug: server's `fetchShipVisual` picked the player's **oldest** non-stored ship (`ORDER BY created_at ASC LIMIT 1`) as their flagship for the `ship_visual` descriptor sent to peers. A player whose oldest ship was a Fighter but who was actually flying a newer Capital broadcast as a Fighter -- peers saw the wrong silhouette for the flagship while wingmen were correct (those come from the per-tick fleet payload which reads live state).
+
+Fix: prefer `users.active_ship_id` (set on login + on every `/set-active-ship` call). Fall back to the old "oldest non-stored" heuristic only if no `active_ship_id` is set (covers the new-account-setup race). Both queries keep the `storage_body_id IS NULL` filter so stored ships can never claim active status (pitfall #15).
+
+Files: `star-shipper-server/src/realtime/presence.js`.
+
 ### 2026-05-28 — Multiplayer Phase 1 polish: clock-domain bug fix (the real smoothing fix)
 
 User reported peer ships visibly stuttering at ~100ms intervals (matching the snapshot rate exactly). Diagnosed as a **clock-domain mismatch** in the interp math:
