@@ -235,6 +235,20 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-05-28 — Multiplayer Phase 1 polish: 10 Hz + Hermite spline (less lag AND smoother)
+
+Second pass on the smoothing. The buffered interpolation from earlier in the evening fixed the snap-on-snapshot-arrival, but motion still read jerky around direction changes. Three coordinated changes push both lag AND smoothness in the right direction simultaneously:
+
+1. **Snapshot rate 5 Hz -> 10 Hz.** Client send interval drops from 200ms to 100ms (every 6 frames @ 60fps). Server's MAX_POS_HZ cap is already 10 so no server change needed. Halves the curve length between snapshots = visibly less per-segment jerk. Bandwidth doubles to ~1 KB/s per player, still trivial.
+2. **Cubic Hermite interpolation** replaces linear lerp for position. Uses the already-broadcast `vx`/`vy` as tangent vectors at each endpoint. The curve passes through both snapshots WITH the right slope, so the broadcaster's actual trajectory gets approximated through each waypoint instead of straight-line dart-between. Same input data, smarter math, zero extra bandwidth. Rotation stays linear (we don't broadcast angular velocity, and shortest-arc linear is fine for ship heading).
+3. **Render delay 150ms -> 100ms.** With 100ms snapshots a 100ms buffer means render time usually lands ON or just-before `next`, giving us a tight, low-lag interp window. Extrapolation fallback (broadcaster quiet >500ms) unchanged.
+
+Wingmen stay on linear lerp -- we don't broadcast individual wingman velocities (payload would balloon), but their motion is already smoothed by the broadcaster's lagged-follow filter on the send side, so direction changes are gentler to begin with.
+
+**Hardware check:** still none needed. 10 Hz × 80 bytes × 4 wingman entries = ~1 KB/s per player. A 10-player Sol cluster = ~100 KB/s server-out total. Trivial for the DO basic plan.
+
+Files: `star-shipper/src/utils/presence.js`; `star-shipper/src/components/system/SystemView.jsx`.
+
 ### 2026-05-28 — Multiplayer Phase 1 polish: buffered interpolation (smooth peer motion)
 
 Replaced the naive linear extrapolation render with **buffered snapshot interpolation** -- the standard multiplayer netcode pattern.

@@ -48,12 +48,13 @@ import { io as ioClient } from 'socket.io-client';
 
 const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const ENABLED = import.meta.env.VITE_PRESENCE_ENABLED === 'true';
-const POS_SEND_INTERVAL_MS = 200; // 5 Hz -- server cap is 10 Hz
-// How far in the past to render peer state. ~75% of the snapshot
-// interval -- gives us room for one packet's worth of jitter while
-// keeping perceived lag low. With 200ms snapshots, 150ms delay means
-// the render time usually lands between prev and next.
-const RENDER_DELAY_MS = 150;
+const POS_SEND_INTERVAL_MS = 100; // 10 Hz -- matches server cap
+// Render time = now - RENDER_DELAY_MS so we usually have a prev+next
+// pair bracketing it. With 100ms snapshots a 100ms buffer means the
+// render usually lands ON or just-before `next`, giving us a tight
+// lerp window. If a snapshot's late we extend gracefully into the
+// extrapolation fallback below.
+const RENDER_DELAY_MS = 100;
 // If `now - next.ts` exceeds this, we extrapolate from `next` instead
 // of lerping (the broadcaster went quiet -- maybe disconnected). Past
 // this window the stale-peer cleanup kicks in.
@@ -311,6 +312,30 @@ function lerpAngle(a, b, t) {
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
+// Cubic Hermite spline through (p0, m0) -> (p1, m1) where m0/m1 are
+// the tangent vectors at each endpoint. We use velocity * span as the
+// tangent so the curve passes through both positions WITH the right
+// slope -- the result hugs the broadcaster's actual trajectory through
+// each snapshot instead of darting straight between them. Much smoother
+// around direction changes than the straight linear lerp.
+//
+//   H(t) = (2t^3 - 3t^2 + 1) p0
+//        + (t^3 - 2t^2 + t)  m0
+//        + (-2t^3 + 3t^2)    p1
+//        + (t^3 - t^2)       m1
+//
+// `spanSec` is the time between snapshots in seconds; tangents are
+// scaled by it so the units work (vel is units/sec, position is units).
+function hermite(p0, v0, p1, v1, t, spanSec) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 =  2 * t3 - 3 * t2 + 1;
+  const h10 =      t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 =      t3 -     t2;
+  return h00 * p0 + h10 * v0 * spanSec + h01 * p1 + h11 * v1 * spanSec;
+}
+
 // Render-time interpolated state for a peer. Returns:
 //   { x, y, rot, fleet, ageMs }   if renderable
 //   null                          if the peer has no pos yet or is stale
@@ -341,13 +366,22 @@ export function getRenderState(peer, now = Date.now()) {
     rot = peer.next.rot;
     fleet = peer.next.fleet;
   } else {
-    // Standard buffered lerp: t = how far renderTime is between prev.ts
-    // and next.ts. Clamped [0,1] so a slow tab doesn't pull t past 1
-    // and turn into accidental extrapolation.
+    // Standard buffered interp: t = how far renderTime is between prev
+    // and next. Clamped [0,1] so a slow tab doesn't pull t past 1 and
+    // turn into accidental extrapolation. Position uses cubic Hermite
+    // with broadcast velocities as tangents -- smooth around direction
+    // changes. Rotation stays linear (we don't broadcast angular
+    // velocity, and shortest-arc linear is fine for ship heading).
     const t = Math.max(0, Math.min(1, (renderTime - prev.ts) / span));
-    x = lerp(prev.x, peer.next.x, t);
-    y = lerp(prev.y, peer.next.y, t);
+    const spanSec = span / 1000;
+    x = hermite(prev.x, prev.vx || 0, peer.next.x, peer.next.vx || 0, t, spanSec);
+    y = hermite(prev.y, prev.vy || 0, peer.next.y, peer.next.vy || 0, t, spanSec);
     rot = lerpAngle(prev.rot || 0, peer.next.rot || 0, t);
+    // Wingmen: we don't broadcast individual wingman velocities (the
+    // payload would balloon), so wingmen still get linear lerp. They
+    // already look smoother than the flagship in practice because the
+    // broadcaster's lagged-follow filter smooths their motion on the
+    // send side -- direction changes are gentler.
     fleet = (peer.next.fleet || []).map((nf, i) => {
       const pf = prev.fleet?.[i];
       if (!pf) return nf;

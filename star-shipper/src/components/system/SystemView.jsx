@@ -3696,16 +3696,18 @@ export const SystemView = () => {
         updateShipPosition(shipPosRef.current.x, shipPosRef.current.y, speed, gameTime);
       }
 
-      // Realtime presence position broadcast (Phase 1). 12 frames @
-      // 60fps = ~200ms = 5Hz, matching the spec + server rate cap.
-      // The presence singleton internally throttles + coalesces so a
-      // lower-FPS browser still emits at the right cadence.
-      // Phase 1 polish (wingmen broadcast): bundle non-active fleet
-      // ships into the payload so peers see the whole fleet, not just
-      // the flagship. Reads positions from wingmenPosRef (the same
-      // lagged-follow positions used for local render + combat hit
-      // detection -- single source of truth).
-      if (frameNum % 12 === 0) {
+      // Realtime presence position broadcast (Phase 1 + smoothing pass).
+      // 6 frames @ 60fps = ~100ms = 10 Hz, matching the server's rate
+      // cap. Halves the snapshot gap vs the original 5 Hz so the
+      // peer-side Hermite interp has a smaller curve to bridge =
+      // visibly less jerk on direction changes. The presence singleton
+      // also internally throttles + coalesces so a lower-FPS browser
+      // still emits at the right cadence.
+      // Wingmen are bundled into the payload so peers see the whole
+      // fleet, not just the flagship. Reads positions from wingmenPosRef
+      // (the same lagged-follow positions used for local render +
+      // combat hit detection -- single source of truth).
+      if (frameNum % 6 === 0) {
         const fleetPayload = [];
         for (const fs of (fleetShipsRef.current || [])) {
           if (fs.isActive) continue;
