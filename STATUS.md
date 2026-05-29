@@ -5,13 +5,13 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-28 (Realtime Presence Phase 1 SHIPPED end-to-end — two-account multiplayer verified in prod)
+**Last updated:** 2026-05-28 (Realtime Presence Phase 1 SHIPPED + polish; strategic shift to social-multiplayer roadmap over combat-multiplayer)
 
 ---
 
 ## Current state — one-liner
 
-Live in prod. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Onboarding is a 12-step tutorial chain that walks the player from "land in a Starter Scout" → "build + deploy a harvester" → "collect passive output." Recent sessions added **Skills + Research framework** (EVE-style training queue + Civ-style tech tree, 165 skills + 15 tech nodes), **multi-laser per-asteroid mining**, **wingman lagged-follow movement**, **pinned quests overlay**, and **embedded cargo panes** in Crafting + Harvesters tabs.
+Live in prod with **realtime multiplayer presence** (Phase 1 shipped 2026-05-28 -- two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit). Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: build out **social multiplayer** (chat, market, trading, leaderboards, corps) next; combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
@@ -31,27 +31,60 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 ### User-prompted, coming next
 
-- **Outliner restructure** — user flagged it's due for changes (specifics TBD when work starts). Density, section priority, what shows when, etc.
+- **Social multiplayer roadmap** — chat → activity ticker → leaderboards → direct trade → player market → corps → bounties → mail. Full spec under "Realtime multiplayer > Social multiplayer roadmap" below. Strategic priority for the post-Phase-1 multiplayer work.
 - **System map changes** — user flagged the in-system SVG view needs work (specifics TBD).
 - **Grow the research tree as we build systems** — every new gameplay system (colonies, factions, advanced combat, etc.) should land with new tech nodes that gate it. The skill catalog (165 entries) is already broad — research nodes should expand to match. Per pitfall #15, check `skill_definitions.bonus_per_level->>'type'` for existing bonus contracts before inventing new ones.
 
 ### Realtime multiplayer
 
-Phase 1 SHIPPED 2026-05-28. Phases 2-4 still ahead. See the "Recently shipped" entry for the full Phase 1 architecture; this is the forward-looking backlog.
+Phase 1 SHIPPED 2026-05-28. See the "Recently shipped" entry for the full Phase 1 architecture; this is the forward-looking backlog.
+
+**Strategic direction (decided 2026-05-28):** prioritize **social multiplayer features** (chat, market, trading, leaderboards, corporations) over **combat multiplayer** (server-owned enemies, shared damage, PvP). Rationale: social features deliver the "feels like a real multiplayer game" payoff at a fraction of the architectural risk + cost. Reference points like EVE Online prove that players engage with chat/market/corp drama 100× more than with PvP combat. Star Shipper's DB layer already persists everything we need; socket.io is already running for presence; the remaining gap is mostly UI + a handful of new tables. Combat multiplayer (Phases 2-4 below) is **deferred indefinitely** -- the social roadmap fills the "real multiplayer" need without touching the locally-authoritative combat loop that already works well.
 
 **Phase 1 polish (remaining):**
 - **Hover-to-identify** — clicking/hovering a peer ship currently does nothing. Should at least open a small panel: pilot name, ship class, maybe shared-system-time. Spec'd as `> PROFILE` link, deferred.
-- **Galaxy-map presence** — Phase 1 only covers SystemView. Peers vanish during galaxy-fly transits. Phase 2-ish polish: also broadcast on the galaxy map (separate room key, e.g. `presence:galaxy`).
-- **Cleanup legacy `hub:*` / `mission:*` socket code in `socketHandler.js`** — dead code from a prior design, no client consumers. Safe to remove now that Phase 1 is proven.
+- **Galaxy-map presence** — Phase 1 only covers SystemView. Peers vanish during galaxy-fly transits. Also broadcast on the galaxy map (separate room key, e.g. `presence:galaxy`).
+- **Cleanup legacy `hub:*` / `mission:*` socket code in `socketHandler.js`** — dead code from a prior design, no client consumers. Safe to remove now that Phase 1 is proven. (Note: the legacy chat code in this file might be salvageable as a starting point for the social-multiplayer chat feature below; review before deleting.)
 
-**Phase 2 — Shared enemies (~2-3 weeks):**
-Pirates owned by server. New `system_combatants` table (or in-memory map keyed by system_id). Server tick at ~10 Hz runs pirate AI (chase / patrol / fire) -- currently ~600 LOC of AI in `SystemView.jsx`, ports server-side. Pirates spawn server-side on first player entering an empty system, persist while ≥1 player is in-system, despawn after grace period. Client stops generating pirates; renders from server snapshots. Important: pitfall #5 (shared time source) gets harder -- server's tick clock becomes truth, client interpolates. Big refactor; ship under a feature flag so single-player keeps working during migration.
+### Social multiplayer roadmap
 
-**Phase 3 — Authoritative combat (~3-4 weeks):**
-"Fire weapon" becomes a request, not a local event: `POST /combat/fire {weapon_slot, target_id}` → server validates range/cooldown/quality/LOS → computes hit + damage → broadcasts to room. Pirate kills credit the firing fleet (existing loot endpoint, rewire trigger). PvP gate: opt-in flag per player or per-system (high-sec vs null-sec analog) -- design call. Wreckage cleanup: the parked server-side wreck endpoints (Known Issues) become required, not optional.
+The path that replaces Phases 2-4 of the old combat roadmap. Each item is independently shippable, behind its own feature flag, with low blast radius -- the existing single-player combat loop stays untouched throughout.
 
-**Phase 4 — Polish:**
-Client prediction + reconciliation so your own ship feels snappy despite round-trip. Lag compensation on hit detection. Sweep telemetry handling for spectators. DO dev DB → managed prod plan; WS connection count starts to matter.
+**Step 1 — Chat (target: 1-2 days)**
+System channel (everyone in your current procedural system), Global channel (everyone online), Fleet/Party channel (your future corp -- single-user for now). Chat UI is a dockable bottom-right panel that can be collapsed. Messages persist in DB so you can scroll history when you log in. The dead `chat:send` handler in `socketHandler.js` is a real starting point -- review for salvage. Single biggest "this feels populated" win.
+
+**Step 2 — Live online roster + system population indicators (target: <1 day)**
+"12 pilots online" badge somewhere in the HUD chrome. "3 in Sol" on the galaxy map when you hover a system. Both read from the existing presence singleton -- no new server work; just UI surfaces for data we already have.
+
+**Step 3 — Activity ticker / killboard (target: 2 days)**
+New `activity_events` table; key actions write to it (pirate kill, asteroid depleted, ship destroyed, new system discovered, big crafting completion, etc). Broadcast each new event over socket to all online clients; render a sliding ticker in the HUD ("Pilot X killed a Pirate Capital in Sirius -- 12s ago"). Makes the world feel alive even when you're solo because you see evidence of other players' activity in distant systems.
+
+**Step 4 — Player profiles + leaderboards (target: 1-2 days)**
+"Top Miners (last 7d)", "Richest pilots", "Most pirate kills", "Most systems discovered". All data already in DB; pure read queries. Public profile page per player (clickable from chat names + leaderboard rows): pilot name, ship classes flown, leaderboard ranks, member-since date. Adds competition + identity without combat.
+
+**Step 5 — Direct player-to-player trade (target: 2-3 days)**
+Two players docked at the same station can open a trade window. Each side puts items + credits into their half; both confirm; server atomically swaps. Offers/counter-offers ride on the existing socket. Lets players exchange gear directly ("I'll trade you my Q90 Crystite stack for your Mining Laser II"). Less ambitious than the player market below but ships faster and exercises the same UI patterns.
+
+**Step 6 — Player market (target: 5-7 days, the big one)**
+EVE-style async order book per station. Players post BUY orders ("Will pay 50 cr each for up to 1000 Iron at Luna") and SELL orders ("Offering 500 Mining Lasers at 800 cr each at Mars"). Other players browse the order book at each station and fulfill matching orders. Server matches automatically when compatible orders meet. New tables: `market_orders` (id, user_id, station_id, item_id, quality_floor, side, price, quantity_remaining, expires_at). New endpoints: post/cancel orders, list orders by station + item, fulfill order. Big lift but **massive** multiplayer feel -- suddenly other players are a meaningful part of your economy.
+
+**Step 7 — Corporations / fleets (target: 1-2 weeks)**
+Persistent player groups. Tag visible on ships (rides on presence's `ship_visual`). Shared corp chat channel. Member roster + roles (founder, officer, member). Future hooks: corp-owned stations, shared cargo depots, joint contracts. Adds the social-graph layer that anchors players long-term.
+
+**Step 8 — Bounty board (target: 3-5 days)**
+Players post bounties (cash reward for killing a specific pirate type or pirate fleet in a specific system). Other players claim by completing the criterion (server detects kill, credits claimant). Server-mediated, no realtime negotiation needed.
+
+**Step 9 — Mail system (target: 2-3 days)**
+In-game async messages between players. Standard inbox UI. Pairs with corp/market features for "your sell order filled" notifications.
+
+**Open design questions to settle when each step starts:**
+- Chat: profanity filtering / moderation -- needed before public launch?
+- Activity ticker: per-system vs galaxy-wide visibility? (Big systems would dominate the ticker if galaxy-wide.)
+- Market: tax on transactions? Order-fee on posting? (Standard EVE-style economy levers.)
+- Trade: bound to station-docking only, or station-OR-fleet-rendezvous? (Latter requires both ships to be physically close in same system.)
+
+**Deferred indefinitely (the old combat-multiplayer roadmap):**
+The originally-planned Phases 2-4 of the combat roadmap (server-owned enemies, authoritative combat, PvP) are deferred. They're real and well-specced -- if we ever want them, the spec is preserved in git history (commit on 2026-05-27 added the original Phase 1-4 spec to STATUS.md; the Phase 1 SHIPPED entry below has the architecture summary). Reasons to defer: (1) social features deliver more multiplayer feel per dollar of dev time; (2) server-authoritative combat introduces ~150ms latency on everything pirate-related, degrading single-player feel; (3) DO Basic plan struggles with the server-tick CPU + bandwidth load past ~10-20 concurrent players, forcing a plan upgrade; (4) bugs in lag compensation = "I hit them but they didn't die" complaints, the classic hardest-to-debug multiplayer bug. Revisit if/when the player base grows to where shared combat is the obvious next step.
 
 ### Module + resource quality pass
 
