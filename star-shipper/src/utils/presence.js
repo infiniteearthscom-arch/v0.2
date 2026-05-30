@@ -44,9 +44,12 @@
 // unset), every method is a safe no-op so we can ship with the flag
 // off and flip it once we've verified the server in prod.
 
-import { io as ioClient } from 'socket.io-client';
+// Migrated 2026-05-29: socket lifecycle now lives in utils/socket.js
+// (shared with chat + future realtime modules). This file owns only
+// presence-specific state (peers map, ship visual version) + the
+// presence:* event handlers it binds via socketBus.onSocketEvent.
+import socketBus from './socket.js';
 
-const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const ENABLED = import.meta.env.VITE_PRESENCE_ENABLED === 'true';
 const POS_SEND_INTERVAL_MS = 100; // 10 Hz -- matches server cap
 // Render time = now - RENDER_DELAY_MS so we usually have a prev+next
@@ -63,15 +66,16 @@ const RENDER_DELAY_MS = 150;
 const EXTRAPOLATE_AFTER_MS = 500;
 
 // ----- module-scope state -----
-let socket = null;
-let connecting = false;
 let currentSystemId = null;       // system the user has asked us to be in
 let shipVisualVersion = 0;        // monotonic; bump when player re-fits / changes ship
+let listenersBound = false;       // ensure we only attach socket handlers once per app session
 
 const peers = new Map();          // userId -> peerState
 
 // Pub/sub: small Map<event, Set<fn>>. Each on() call returns its own
-// unsubscribe; no risk of cross-component leaks.
+// unsubscribe; no risk of cross-component leaks. These are
+// presence-specific events (`peers_changed`, `kicked`, etc) -- the
+// socket lifecycle events live on the socket bus.
 const listeners = new Map();
 function emit(event, payload) {
   const set = listeners.get(event);
@@ -86,66 +90,30 @@ function emit(event, payload) {
 let lastPosSendMs = 0;
 let pendingPos = null;
 
-function getToken() {
-  return localStorage.getItem('star-shipper-token');
-}
+// Bind all presence-related socket.io handlers via the shared bus.
+// Idempotent -- only runs once per app session. The bus re-binds
+// each event handler on every reconnect, so a transient socket drop
+// doesn't silently break peer updates.
+function ensureListenersBound() {
+  if (listenersBound) return;
+  listenersBound = true;
 
-// Internal: open the socket if we haven't, attach listeners. Idempotent.
-function ensureSocket() {
-  if (socket && socket.connected) return;
-  if (connecting) return;
-  if (!ENABLED) return;
-  const token = getToken();
-  if (!token) {
-    // Not logged in yet. Bail; enterSystem() will retry next call.
-    return;
-  }
-  connecting = true;
-  socket = ioClient(SERVER_URL, {
-    auth: { token },
-    // socket.io defaults give us auto-reconnect with backoff. Capping
-    // at 10 attempts keeps us from hammering a truly-down server, but
-    // 10 * default-backoff covers a ~5 min outage window.
-    reconnectionAttempts: 10,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    timeout: 10000,
-  });
-
-  socket.on('connect', () => {
-    connecting = false;
-    // Re-enter the current system on every (re)connect. On the first
-    // connect this propagates the user's intent; on reconnect after
-    // a server restart this restores room membership.
+  // Bus-level: re-enter the current system on every (re)connect so
+  // the server-side room membership is restored after restarts.
+  socketBus.on('connect', () => {
     if (currentSystemId) {
-      socket.emit('presence:enter', { system_id: currentSystemId });
+      const s = socketBus.getSocket();
+      s?.emit('presence:enter', { system_id: currentSystemId });
     }
-    emit('connected', { socketId: socket.id });
+    emit('connected', {});
   });
+  socketBus.on('disconnect', (p) => emit('disconnected', p));
+  socketBus.on('kicked', (p) => emit('kicked', p));
 
-  socket.on('disconnect', (reason) => {
-    // We don't clear `peers` here -- ghosts will linger until reconnect
-    // or until consumer triggers a leave. Server already broadcasted
-    // 'presence:peer_leave' for us to everyone else.
-    emit('disconnected', { reason });
-  });
-
-  socket.on('connect_error', (err) => {
-    // Most common cause: bad token. Don't spam reconnects in that case.
-    if (err?.message === 'Authentication required' || err?.message === 'Invalid token') {
-      socket.disconnect();
-    }
-    emit('error', { message: err?.message || 'connection error' });
-  });
-
-  socket.on('kicked', (payload) => {
-    // Server kicked us because another tab/connection took over.
-    emit('kicked', payload);
-    socket.disconnect();
-  });
-
-  // --- presence events ---
-  socket.on('presence:snapshot', ({ system_id, peers: snap }) => {
+  // Presence socket.io events. socketBus.onSocketEvent rebinds these
+  // automatically on each reconnect so we don't silently lose updates
+  // after a transport blip.
+  socketBus.onSocketEvent('presence:snapshot', ({ system_id, peers: snap }) => {
     if (system_id !== currentSystemId) return; // stale snapshot from a prior system
     peers.clear();
     // IMPORTANT: stamp ts with CLIENT receive time, not the
@@ -165,31 +133,22 @@ function ensureSocket() {
       peers.set(p.user_id, {
         name: p.name,
         ship_visual: p.ship_visual,
-        // Both prev + next start identical; first new update from this
-        // peer rolls next into prev so interpolation has a real window.
         prev: initialSnap,
         next: initialSnap,
-        // Top-level fields mirror `next` for backward-compat with any
-        // consumer that still reads them directly (debug, hover).
         ...initialSnap,
       });
     }
     emit('peers_changed', { count: peers.size });
   });
 
-  socket.on('presence:peer_join', ({ user_id, name, ship_visual }) => {
+  socketBus.onSocketEvent('presence:peer_join', ({ user_id, name, ship_visual }) => {
     const existing = peers.get(user_id);
     if (existing) {
-      // Visual refresh path (ship_visual_v bump): preserve position so
-      // the ghost doesn't jump back to (0,0).
       existing.name = name;
       existing.ship_visual = ship_visual;
     } else {
-      // No prev/next yet -- consumer's getRenderState() will skip until
-      // ts > 0 (first pos arrives).
       peers.set(user_id, {
-        name,
-        ship_visual,
+        name, ship_visual,
         prev: null, next: null,
         x: 0, y: 0, vx: 0, vy: 0, rot: 0,
         ts: 0,
@@ -199,32 +158,22 @@ function ensureSocket() {
     emit('peers_changed', { count: peers.size });
   });
 
-  socket.on('presence:peer_leave', ({ user_id }) => {
+  socketBus.onSocketEvent('presence:peer_leave', ({ user_id }) => {
     if (peers.delete(user_id)) emit('peers_changed', { count: peers.size });
   });
 
-  socket.on('presence:peers', ({ peers: updates }) => {
-    // Single client-time stamp per batch keeps multiple peers' updates
-    // in the same batch lined up to the same instant. See the
-    // `presence:snapshot` handler for why we ignore server-supplied ts.
+  socketBus.onSocketEvent('presence:peers', ({ peers: updates }) => {
     const recvNow = Date.now();
     for (const u of updates || []) {
       const p = peers.get(u.user_id);
-      if (!p) continue; // not in room (yet); the peer_join is coming
+      if (!p) continue;
       const newSnap = {
         ts: recvNow,
         x: u.x, y: u.y, vx: u.vx, vy: u.vy, rot: u.rot,
         fleet: Array.isArray(u.fleet) ? u.fleet : (p.next?.fleet || []),
       };
-      // Slide the buffer: prev becomes the prior next; next becomes
-      // the just-arrived snapshot. On the very first pos update for a
-      // peer that joined mid-session (no prev/next yet from snapshot),
-      // both prev and next get the new value -- next update will
-      // give us a real lerp window.
       p.prev = p.next || newSnap;
       p.next = newSnap;
-      // Mirror top-level fields for backward-compat consumers (hover
-      // panel that reads p.name etc; debug console).
       p.x = newSnap.x; p.y = newSnap.y;
       p.vx = newSnap.vx; p.vy = newSnap.vy;
       p.rot = newSnap.rot;
@@ -239,15 +188,17 @@ function ensureSocket() {
 export function enterSystem(systemId) {
   if (!ENABLED || !systemId) return;
   currentSystemId = systemId;
-  ensureSocket();
+  ensureListenersBound();
+  socketBus.ensureSocket();
   // peers Map is for the OLD system; clear so consumers don't briefly
   // render the prior system's peers while waiting for the snapshot.
   peers.clear();
   emit('peers_changed', { count: 0 });
-  if (socket?.connected) {
-    socket.emit('presence:enter', { system_id: systemId });
+  const s = socketBus.getSocket();
+  if (s?.connected) {
+    s.emit('presence:enter', { system_id: systemId });
   }
-  // If not connected yet, the 'connect' handler will fire enter for us.
+  // If not connected yet, the bus's 'connect' handler will fire enter for us.
 }
 
 export function leaveSystem() {
@@ -256,8 +207,9 @@ export function leaveSystem() {
   currentSystemId = null;
   peers.clear();
   emit('peers_changed', { count: 0 });
-  if (wasIn && socket?.connected) {
-    socket.emit('presence:leave', { system_id: wasIn });
+  const s = socketBus.getSocket();
+  if (wasIn && s?.connected) {
+    s.emit('presence:leave', { system_id: wasIn });
   }
 }
 
@@ -279,7 +231,8 @@ function makePosPayload(state) {
 // Throttled. Safe to call every frame; only emits every POS_SEND_INTERVAL_MS.
 export function sendPos(state) {
   if (!ENABLED) return;
-  if (!socket?.connected || !currentSystemId) {
+  const s = socketBus.getSocket();
+  if (!s?.connected || !currentSystemId) {
     pendingPos = state;
     return;
   }
@@ -290,19 +243,20 @@ export function sendPos(state) {
   }
   lastPosSendMs = now;
   pendingPos = null;
-  socket.emit('presence:pos', makePosPayload(state));
+  s.emit('presence:pos', makePosPayload(state));
 }
 
 // Catch the trailing edge: if the consumer stopped calling sendPos but
 // we have a pending coalesced update, flush it after the interval.
 setInterval(() => {
-  if (!ENABLED || !pendingPos || !socket?.connected || !currentSystemId) return;
+  const s = socketBus.getSocket();
+  if (!ENABLED || !pendingPos || !s?.connected || !currentSystemId) return;
   const now = Date.now();
   if (now - lastPosSendMs < POS_SEND_INTERVAL_MS) return;
   lastPosSendMs = now;
   const state = pendingPos;
   pendingPos = null;
-  socket.emit('presence:pos', makePosPayload(state));
+  s.emit('presence:pos', makePosPayload(state));
 }, POS_SEND_INTERVAL_MS);
 
 // Bump when the player re-fits / changes active ship. Peers will see

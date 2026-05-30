@@ -19,6 +19,7 @@ import questRoutes from './api/quests.js';
 import skillsRoutes from './api/skills.js';
 import researchRoutes from './api/research.js';
 import galaxyRoutes from './api/galaxy.js';
+import chatRoutes from './api/chat.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -72,6 +73,7 @@ app.use('/api/quests', questRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/research', researchRoutes);
 app.use('/api/galaxy', galaxyRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Realtime presence diag (Phase 1 verification). Counts only -- no
 // user data -- so safe to leave unauthenticated. Returns 503 if the

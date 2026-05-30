@@ -9,6 +9,7 @@ import { fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { SystemMapWindow } from '@/components/system/SystemMapWindow';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 
 // ============================================
 // CONSTANTS
@@ -521,6 +522,12 @@ export const GameFrame = ({ children }) => {
       <div className="absolute left-0 right-0" style={{ top: 34, bottom: 32 }}>
         {children}
       </div>
+
+      {/* Chat panel — fixed bottom-right; collapsible. Always mounted
+          when GameFrame is up (i.e. user is logged in), works in both
+          SystemView and GalaxyFlightView. Self-disables when the
+          presence/chat feature flag is off. */}
+      <ChatPanel />
     </div>
   );
 };

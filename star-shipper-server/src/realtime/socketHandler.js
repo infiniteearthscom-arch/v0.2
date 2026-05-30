@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { socketAuthMiddleware, updateUserOnline } from '../auth/index.js';
 import { query, queryOne, queryAll } from '../db/index.js';
 import { attachPresence } from './presence.js';
+import { attachChat } from './chat.js';
 
 // ============================================
 // GAME STATE
@@ -49,6 +50,15 @@ export const setupSocketIO = (httpServer) => {
   // below -- both fire on every connection. The 'presence:' event
   // namespace keeps them disjoint.
   const presence = attachPresence(io);
+
+  // ============================================
+  // PHASE 2 STEP 1: CHAT
+  // ============================================
+  // Listens for 'chat:send' events, persists + broadcasts on
+  // 'chat:message'. System chat uses the presence room model
+  // (socket.data.presence.systemId is set by attachPresence handlers).
+  // Global chat fans out to all connected sockets.
+  attachChat(io);
 
   io.on('connection', async (socket) => {
     const user = socket.user;
