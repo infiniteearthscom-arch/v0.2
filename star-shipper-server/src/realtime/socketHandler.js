@@ -214,57 +214,6 @@ export const setupSocketIO = (httpServer) => {
     });
 
     // ==========================================
-    // CHAT EVENTS
-    // ==========================================
-
-    socket.on('chat:send', async (data) => {
-      const { channel, message } = data;
-
-      if (!message || message.length > 500) return;
-
-      const presence = gameState.playerPresence.get(user.id);
-
-      // Determine channel
-      let channelType = 'global';
-      let channelId = null;
-      let room = null;
-
-      if (channel === 'hub' && presence?.hubId) {
-        channelType = 'hub';
-        channelId = presence.hubId;
-        room = `hub:${presence.hubId}`;
-      } else if (channel === 'mission' && presence?.missionId) {
-        channelType = 'mission';
-        channelId = presence.missionId;
-        room = `mission:${presence.missionId}`;
-      }
-
-      const chatMessage = {
-        id: Date.now().toString(36),
-        channelType,
-        channelId,
-        senderId: user.id,
-        senderName: user.username,
-        content: message,
-        timestamp: Date.now(),
-      };
-
-      // Store in DB (async, don't wait)
-      query(
-        `INSERT INTO chat_messages (channel_type, channel_id, sender_id, sender_name, content)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [channelType, channelId, user.id, user.username, message]
-      ).catch(err => console.error('Chat save error:', err));
-
-      // Broadcast
-      if (room) {
-        io.to(room).emit('chat:message', chatMessage);
-      } else {
-        io.emit('chat:message', chatMessage);
-      }
-    });
-
-    // ==========================================
     // MISSION EVENTS
     // ==========================================
 

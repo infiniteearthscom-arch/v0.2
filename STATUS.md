@@ -5,23 +5,23 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-28 (Realtime Presence Phase 1 SHIPPED + polish; strategic shift to social-multiplayer roadmap over combat-multiplayer)
+**Last updated:** 2026-05-30 (Social Multiplayer Step 1 -- Chat -- SHIPPED; shared socket bus extracted from presence so future realtime modules ride one connection)
 
 ---
 
 ## Current state — one-liner
 
-Live in prod with **realtime multiplayer presence** (Phase 1 shipped 2026-05-28 -- two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit). Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: build out **social multiplayer** (chat, market, trading, leaderboards, corps) next; combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
+Live in prod with **realtime multiplayer presence + chat** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Step 1 -- Chat -- shipped 2026-05-30). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration on join. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: continue building **social multiplayer** (next: online roster + system population badges, then activity ticker, leaderboards, trade, market, corps); combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- DB schema: through migration **055**; next new migration is **056** (009 was skipped)
+- DB schema: through migration **056**; next new migration is **057** (009 was skipped)
 
 ---
 
 ## In progress
 
-*Nothing currently in flight.* Realtime Presence Phase 1 shipped end-to-end (verified 2026-05-28 with two accounts in Sol, ghost ships rendering correctly). Phase 1 polish + Phase 2 (server-owned enemies) are queued -- see below.
+*Nothing currently in flight.* Social Multiplayer Step 1 (Chat) shipped end-to-end 2026-05-30. Step 2 (online roster + system population badges) is next; the data is already in the presence singleton so it's mostly a UI surface.
 
 ---
 
@@ -44,14 +44,13 @@ Phase 1 SHIPPED 2026-05-28. See the "Recently shipped" entry for the full Phase 
 **Phase 1 polish (remaining):**
 - **Hover-to-identify** — clicking/hovering a peer ship currently does nothing. Should at least open a small panel: pilot name, ship class, maybe shared-system-time. Spec'd as `> PROFILE` link, deferred.
 - **Galaxy-map presence** — Phase 1 only covers SystemView. Peers vanish during galaxy-fly transits. Also broadcast on the galaxy map (separate room key, e.g. `presence:galaxy`).
-- **Cleanup legacy `hub:*` / `mission:*` socket code in `socketHandler.js`** — dead code from a prior design, no client consumers. Safe to remove now that Phase 1 is proven. (Note: the legacy chat code in this file might be salvageable as a starting point for the social-multiplayer chat feature below; review before deleting.)
+- **Cleanup legacy `hub:*` / `mission:*` socket code in `socketHandler.js`** — dead code from a prior design, no client consumers. Safe to remove now that Phase 1 is proven. (The legacy `chat:send` handler was removed 2026-05-30 when the new chat shipped; `hub:*` + `mission:*` blocks remain to be pruned.)
 
 ### Social multiplayer roadmap
 
 The path that replaces Phases 2-4 of the old combat roadmap. Each item is independently shippable, behind its own feature flag, with low blast radius -- the existing single-player combat loop stays untouched throughout.
 
-**Step 1 — Chat (target: 1-2 days)**
-System channel (everyone in your current procedural system), Global channel (everyone online), Fleet/Party channel (your future corp -- single-user for now). Chat UI is a dockable bottom-right panel that can be collapsed. Messages persist in DB so you can scroll history when you log in. The dead `chat:send` handler in `socketHandler.js` is a real starting point -- review for salvage. Single biggest "this feels populated" win.
+**Step 1 — Chat (SHIPPED 2026-05-30)** — see Recently shipped.
 
 **Step 2 — Live online roster + system population indicators (target: <1 day)**
 "12 pilots online" badge somewhere in the HUD chrome. "3 in Sol" on the galaxy map when you hover a system. Both read from the existing presence singleton -- no new server work; just UI surfaces for data we already have.
@@ -267,6 +266,43 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-30 — Social Multiplayer Step 1: Chat (System + Global) + shared socket bus
+
+**First slice of social multiplayer.** Two channels live: **System** (everyone in the sender's current procedural system, routed through the existing `presence:system:${id}` room) and **Global** (everyone online). Fleet channel reserved for when corps land -- server accepts it but echoes back to sender only.
+
+**Architecture:**
+- **Shared socket bus** (`client utils/socket.js`) extracted from presence so chat + presence + any future realtime module ride a single authenticated socket per user. Auto-rebinds raw socket.io event handlers on every reconnect so a transport blip doesn't silently break chat/presence subscribers. Lifecycle events ('connect', 'disconnect', 'kicked', 'error') and socket events have separate subscription paths.
+- **Chat sits on the presence rooms.** No new room subscription path -- `socket.data.presence.systemId` (set by presence.js handlers) tells the chat handler which system the sender is in.
+- **REST history hydration.** On channel open / system change, client fetches the last 50 messages from `GET /api/chat/history` and seeds the in-memory buffer (capped at 200/channel). Live socket messages append from there. Wire shape is identical for both so the buffer treats them uniformly.
+- **Persistence.** Every successful broadcast also `INSERT`s into `chat_messages`. Server time is the truth -- client clock isn't involved.
+- **Rate limit** 1 msg / 750ms per socket. 500-char cap.
+
+**Wire protocol:**
+```
+Client -> Server: chat:send  { channel, text }
+Server -> Client: chat:message { id, channel, channel_id, sender_id, sender_name, text, ts }
+Server -> Client: chat:error   { message }
+```
+
+**UI:** dockable bottom-right panel, always mounted in `GameFrame` (visible in both SystemView and GalaxyFlightView). Tab strip (System | Global) with per-tab unread badges; sticky auto-scroll that detects "user scrolled up to read history" (>30px from bottom). Collapses to a slim header bar with aggregate-unread badge.
+
+**Migration 056** widens `chat_messages.channel_id` UUID → VARCHAR(64) so procedural system IDs ('sol', '42') fit. Table was empty in prod (legacy `hub:*`/`mission:*` chat handlers had no client consumers), so no data loss.
+
+**Legacy cleanup:** the dead `chat:send` handler in `socketHandler.js` (expected `{channel, message}`, looked up hub/mission presence) was removed -- it was double-firing alongside the new `attachChat` handler but short-circuiting on the missing `message` field. The `hub:*` / `mission:*` blocks in that file remain dead and queued for a separate cleanup pass.
+
+**Files:**
+- Server new: `migrations/056_chat_channel_id_varchar.sql`, `src/api/chat.js`, `src/realtime/chat.js`.
+- Server modified: `src/index.js` (mount `/api/chat`), `src/realtime/socketHandler.js` (`attachChat(io)` + legacy chat handler removal).
+- Client new: `src/utils/socket.js`, `src/utils/chat.js`, `src/components/chat/ChatPanel.jsx`.
+- Client modified: `src/components/ui/GameFrame.jsx` (renders `<ChatPanel />`), `src/utils/presence.js` (migrated to shared bus).
+
+**Feature flag:** rides the same `VITE_PRESENCE_ENABLED=true` flag as presence -- already on in prod. `ChatPanel` self-disables when off.
+
+**Open follow-ups** (Step 1 polish, queue if real chat traffic surfaces them):
+- No moderation / profanity filter yet.
+- Fleet channel has no UI tab (server-side stub only) until corps land.
+- No `@mention` highlighting / sound on direct address.
 
 ### 2026-05-28 — Multiplayer Phase 1 polish: peer flagship resolves to active ship (not oldest)
 
