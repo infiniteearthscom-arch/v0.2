@@ -10,6 +10,7 @@ import { playSound } from '@/utils/audio';
 import { SystemMapWindow } from '@/components/system/SystemMapWindow';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import presence from '@/utils/presence';
 
 // ============================================
 // CONSTANTS
@@ -32,6 +33,75 @@ const PLANET_BUTTON = { id: 'planetInteraction', icon: '🪐', label: 'Planet', 
 const EDGE = '#1a3050';
 const BLUE = { pri: '#3b82f6', light: '#60a5fa', dark: '#1d4ed8', dim: '#1e3a5f' };
 const GOLD = { pri: '#f59e0b', light: '#fbbf24' };
+
+// ============================================
+// ONLINE ROSTER INDICATOR (Step 2)
+// ============================================
+// Subscribes to presence.stats_changed and shows "N ONLINE" (+ "M HERE"
+// when the player is in a system with peers). Self-disables when the
+// presence feature flag is off. Tooltip shows the top systems by
+// population so the player can see at a glance where the action is.
+
+const OnlineRosterIndicator = () => {
+  const currentSystemId = useGameStore(s => s.currentSystem);
+  const viewMode = useGameStore(s => s.viewMode);
+  const [stats, setStats] = useState(() => presence.getOnlineStats());
+
+  useEffect(() => {
+    if (!presence.isEnabled()) return;
+    // Sync once on mount in case stats arrived before this component
+    // existed (singleton outlives mount/unmount).
+    setStats(presence.getOnlineStats());
+    return presence.on('stats_changed', (s) => setStats(s));
+  }, []);
+
+  if (!presence.isEnabled()) return null;
+
+  const total = stats.total_online || 0;
+  // HERE only makes sense when the player is actually in a system room.
+  // In galaxy-flight mode the store's currentSystem may still hold the
+  // last system, but the player has called presence.leaveSystem and
+  // isn't in any system's by_system bucket -- showing "HERE: 1" because
+  // someone else is in their old system would mislead.
+  const here = (viewMode === 'system' && currentSystemId)
+    ? (stats.by_system?.[currentSystemId] || 0)
+    : 0;
+
+  // Top systems by population for the tooltip. Cap at 5 entries so the
+  // tooltip doesn't grow unbounded on a busy day.
+  const topSystems = Object.entries(stats.by_system || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id, n]) => `${id}: ${n}`)
+    .join('\n');
+  const tooltip = topSystems
+    ? `${total} pilot${total === 1 ? '' : 's'} online\nTop systems:\n${topSystems}`
+    : `${total} pilot${total === 1 ? '' : 's'} online`;
+
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-0.5"
+      style={{
+        background: 'rgba(12,26,51,0.4)',
+        border: `1px solid ${BLUE.dim}`,
+        borderRadius: 2,
+        color: BLUE.light,
+      }}
+      title={tooltip}
+    >
+      <span style={{ fontSize: 10 }}>👥</span>
+      <span className="font-bold">{total}</span>
+      <span style={{ color: '#3a4a5a', fontSize: 8 }}>ONLINE</span>
+      {here > 0 && (
+        <>
+          <span style={{ color: '#0e1a2a', margin: '0 2px' }}>·</span>
+          <span className="font-bold" style={{ color: '#22d3ee' }}>{here}</span>
+          <span style={{ color: '#3a4a5a', fontSize: 8 }}>HERE</span>
+        </>
+      )}
+    </div>
+  );
+};
 
 // ============================================
 // TOP RESOURCE BAR
@@ -181,6 +251,7 @@ const TopBar = () => {
             useGameStore.getState().openWindow('research');
           }}
         />
+        <OnlineRosterIndicator />
         {enemyCount > 0 && (
           <div className="flex items-center gap-1 px-2 py-0.5" style={{
             background: 'rgba(127,29,29,0.35)',

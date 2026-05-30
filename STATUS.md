@@ -5,13 +5,13 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-30 (Social Multiplayer Step 1 -- Chat -- SHIPPED; shared socket bus extracted from presence so future realtime modules ride one connection)
+**Last updated:** 2026-05-30 (Social Multiplayer Steps 1 + 2 SHIPPED: Chat + live online roster + galaxy-map per-system population)
 
 ---
 
 ## Current state — one-liner
 
-Live in prod with **realtime multiplayer presence + chat** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Step 1 -- Chat -- shipped 2026-05-30). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration on join. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: continue building **social multiplayer** (next: online roster + system population badges, then activity ticker, leaderboards, trade, market, corps); combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
+Live in prod with **realtime multiplayer presence + chat + live roster** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Steps 1+2 shipped 2026-05-30). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration. Live "N ONLINE · M HERE" HUD badge + galaxy-map per-system population counts, pushed via debounced `presence:stats` broadcasts. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: continue building **social multiplayer** (next: Step 3 activity ticker / killboard, then leaderboards, trade, market, corps); combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
@@ -21,7 +21,7 @@ Live in prod with **realtime multiplayer presence + chat** (Presence Phase 1 shi
 
 ## In progress
 
-*Nothing currently in flight.* Social Multiplayer Step 1 (Chat) shipped end-to-end 2026-05-30. Step 2 (online roster + system population badges) is next; the data is already in the presence singleton so it's mostly a UI surface.
+*Nothing currently in flight.* Social Multiplayer Steps 1 (Chat) + 2 (Live online roster + galaxy population) both shipped end-to-end 2026-05-30. Step 3 (activity ticker / killboard) is next; needs a new `activity_events` table and a tiny socket fanout for live events.
 
 ---
 
@@ -52,8 +52,7 @@ The path that replaces Phases 2-4 of the old combat roadmap. Each item is indepe
 
 **Step 1 — Chat (SHIPPED 2026-05-30)** — see Recently shipped.
 
-**Step 2 — Live online roster + system population indicators (target: <1 day)**
-"12 pilots online" badge somewhere in the HUD chrome. "3 in Sol" on the galaxy map when you hover a system. Both read from the existing presence singleton -- no new server work; just UI surfaces for data we already have.
+**Step 2 — Live online roster + system population indicators (SHIPPED 2026-05-30)** — see Recently shipped.
 
 **Step 3 — Activity ticker / killboard (target: 2 days)**
 New `activity_events` table; key actions write to it (pirate kill, asteroid depleted, ship destroyed, new system discovered, big crafting completion, etc). Broadcast each new event over socket to all online clients; render a sliding ticker in the HUD ("Pilot X killed a Pirate Capital in Sirius -- 12s ago"). Makes the world feel alive even when you're solo because you see evidence of other players' activity in distant systems.
@@ -266,6 +265,25 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-30 — Social Multiplayer Step 2: Live online roster + galaxy-map population
+
+Pushed roster snapshots over the existing socket. New event:
+
+```
+Server -> Client: presence:stats { total_online, by_system: { [systemId]: count } }
+```
+
+Server broadcasts on every roster change (connect / disconnect / system-enter / system-leave / stale-peer eviction), debounced 250ms so connection storms collapse to a single emit. New sockets get an immediate stats snapshot on connect. `by_system` only includes non-empty systems -- consumers must REPLACE their local map (not merge) so a system going 1->0 cleanly drops out.
+
+Client `utils/presence.js` extended with `getOnlineStats()` + a `stats_changed` event. Two UI surfaces consume it:
+
+- **HUD badge** (top bar, next to Active Training): `👥 N ONLINE · M HERE`. The HERE half only renders when in system mode (galaxy-flight players are not in any system room; showing "HERE: 1" because someone else is in their old system would mislead). Tooltip lists the top 5 systems by population.
+- **Galaxy map**: small cyan `👥 N` badge under each system's name on the map for any system with >0 pilots. "Pilots Here" row in the per-system info panel. Danger-level warning indicator's y-offset shifts down when the population badge is also present to avoid label stacking.
+
+Architecture choice: no new REST endpoint, no DB writes -- the singleton already had all the data. Step 2's only server work was adding the debounced broadcast helper. Total diff: ~220 lines across 4 files.
+
+Files: `star-shipper-server/src/realtime/presence.js`; `star-shipper/src/utils/presence.js`; `star-shipper/src/components/ui/GameFrame.jsx` (new `OnlineRosterIndicator`); `star-shipper/src/components/ui/GalaxyMapWindow.jsx`.
 
 ### 2026-05-30 — Social Multiplayer Step 1: Chat (System + Global) + shared socket bus
 

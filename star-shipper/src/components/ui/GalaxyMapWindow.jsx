@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, FACTIONS } from '@/utils/galaxyGenerator';
+import presence from '@/utils/presence';
 
 // ============================================
 // CONSTANTS
@@ -96,6 +97,16 @@ export const GalaxyMapWindow = () => {
   const [zoom, setZoom] = useState(0.58);
   const [hoveredSystem, setHoveredSystem] = useState(null);
   const [selectedSystem, setSelectedSystem] = useState(null);
+
+  // Live presence stats -- map shows "N pilots" per system. Drives info
+  // panel + the small badge next to the star dot (when count > 0).
+  const [onlineStats, setOnlineStats] = useState(() => presence.getOnlineStats());
+  useEffect(() => {
+    if (!presence.isEnabled()) return;
+    setOnlineStats(presence.getOnlineStats());
+    return presence.on('stats_changed', (s) => setOnlineStats(s));
+  }, []);
+  const bySystem = onlineStats.by_system || {};
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const cameraStart = useRef({ x: 0, y: 0 });
@@ -344,9 +355,28 @@ export const GalaxyMapWindow = () => {
                     </text>
                   )}
 
-                  {/* Danger indicator */}
+                  {/* Population badge -- "N here" when at least one
+                      pilot is in this system room. Sits under the name
+                      label (or where the name would be, if none). Only
+                      drawn when count > 0 so empty systems stay clean. */}
+                  {bySystem[sys.id] > 0 && (
+                    <text
+                      x={sys.x}
+                      y={sys.y + size + (showLabel ? 19 : 10) * uiScale}
+                      textAnchor="middle"
+                      fill="#22d3ee"
+                      fontSize={8 * uiScale}
+                      fontFamily="monospace"
+                      opacity={0.85}
+                    >
+                      👥 {bySystem[sys.id]}
+                    </text>
+                  )}
+
+                  {/* Danger indicator -- drops down when the population
+                      badge is taking the row above. */}
                   {showLabel && sys.dangerLevel >= 3 && (
-                    <text x={sys.x} y={sys.y + size + 20 * uiScale}
+                    <text x={sys.x} y={sys.y + size + (bySystem[sys.id] > 0 ? 28 : 20) * uiScale}
                       textAnchor="middle" fill="#ff4444"
                       fontSize={7 * uiScale} fontFamily="monospace"
                     >
@@ -456,6 +486,17 @@ export const GalaxyMapWindow = () => {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Distance</span>
                   <span className="text-slate-300">{dist} ly</span>
+                </div>
+                {/* Pilots here -- shows even when 0 so the player can
+                    distinguish "verified empty" from "data not loaded
+                    yet." Discovered-or-undiscovered doesn't matter:
+                    presence rooms are keyed by system id, so the count
+                    is authoritative regardless of fog of war. */}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Pilots Here</span>
+                  <span className={bySystem[selectedSys.id] > 0 ? 'text-cyan-300 font-bold' : 'text-slate-600'}>
+                    {bySystem[selectedSys.id] || 0}
+                  </span>
                 </div>
               </div>
 

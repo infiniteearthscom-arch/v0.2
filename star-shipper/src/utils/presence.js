@@ -6,9 +6,17 @@
 //   presence.enterSystem(systemId)
 //   presence.leaveSystem(systemId)
 //   presence.sendPos({ x, y, vx, vy, rot, ship_visual_v? })
-//   presence.getPeers()    // Map<userId, peerState> -- read-only, mutated in place by the singleton
-//   presence.bumpShipVisual() // forces peers to refetch our descriptor
+//   presence.getPeers()         // Map<userId, peerState> -- read-only, mutated in place by the singleton
+//   presence.getOnlineStats()   // { total_online, by_system: { [systemId]: count } } -- replaced (not mutated) on each update
+//   presence.bumpShipVisual()   // forces peers to refetch our descriptor
 //   presence.on(event, fn) -> unsubscribe
+//
+// EVENTS (presence.on)
+//   'peers_changed' { count }        -- peer Map size changed
+//   'stats_changed' { total_online, by_system }  -- roster snapshot updated
+//   'connected'                      -- socket (re)connected
+//   'disconnected' { reason }
+//   'kicked'       { reason }        -- server kicked us (dupe tab)
 //
 // MEMORY MODEL
 // ------------
@@ -71,6 +79,13 @@ let shipVisualVersion = 0;        // monotonic; bump when player re-fits / chang
 let listenersBound = false;       // ensure we only attach socket handlers once per app session
 
 const peers = new Map();          // userId -> peerState
+
+// Roster stats (Step 2). Server pushes 'presence:stats' on every
+// roster change. by_system only includes non-empty systems; consumers
+// MUST treat the broadcast as a full replacement, not a merge, so a
+// system going 1->0 cleanly disappears from the map. Default values
+// keep UI defensive against "no message yet" state.
+let onlineStats = { total_online: 0, by_system: {} };
 
 // Pub/sub: small Map<event, Set<fn>>. Each on() call returns its own
 // unsubscribe; no risk of cross-component leaks. These are
@@ -160,6 +175,17 @@ function ensureListenersBound() {
 
   socketBus.onSocketEvent('presence:peer_leave', ({ user_id }) => {
     if (peers.delete(user_id)) emit('peers_changed', { count: peers.size });
+  });
+
+  socketBus.onSocketEvent('presence:stats', (stats) => {
+    if (!stats || typeof stats !== 'object') return;
+    onlineStats = {
+      total_online: typeof stats.total_online === 'number' ? stats.total_online : 0,
+      // Replace, don't merge -- a system that emptied out is absent
+      // from the payload and must drop from the local map too.
+      by_system: stats.by_system && typeof stats.by_system === 'object' ? stats.by_system : {},
+    };
+    emit('stats_changed', onlineStats);
   });
 
   socketBus.onSocketEvent('presence:peers', ({ peers: updates }) => {
@@ -270,6 +296,13 @@ export function bumpShipVisual() {
 // render loop via .values() or .get().
 export function getPeers() { return peers; }
 
+// Latest server-pushed roster snapshot. Safe to read at any time;
+// defaults to zeros until the first 'presence:stats' arrives. The
+// stats object is replaced (not mutated) on each update, so the
+// returned reference is stable until the next change -- callers can
+// memoize on identity.
+export function getOnlineStats() { return onlineStats; }
+
 // Shortest-arc angular lerp (degrees, math convention).
 function lerpAngle(a, b, t) {
   let diff = b - a;
@@ -374,9 +407,9 @@ export function isEnabled() { return ENABLED; }
 
 // For debugging in the browser console: window.__presence = ...
 if (typeof window !== 'undefined' && ENABLED) {
-  window.__presence = { getPeers, enterSystem, leaveSystem, isEnabled };
+  window.__presence = { getPeers, getOnlineStats, enterSystem, leaveSystem, isEnabled };
 }
 
 export default {
-  enterSystem, leaveSystem, sendPos, getPeers, getRenderState, bumpShipVisual, on, isEnabled,
+  enterSystem, leaveSystem, sendPos, getPeers, getRenderState, getOnlineStats, bumpShipVisual, on, isEnabled,
 };

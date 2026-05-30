@@ -38,6 +38,14 @@
 //     'presence:peer_leave'  { user_id }
 //     'presence:peers'       { peers: [{ user_id, x, y, vx, vy, rot, ts }, ...] }
 //     'presence:snapshot'    { peers: [...] }   (sent once on enter)
+//     'presence:stats'       { total_online, by_system: { [systemId]: count } }
+//                            (Step 2: powers the HUD "N online" badge +
+//                             galaxy-map per-system population. Sent to
+//                             every client whenever roster changes;
+//                             debounced 250ms to absorb connect storms.
+//                             by_system only contains non-empty systems
+//                             -- consumers must REPLACE their map, not
+//                             merge, so a system going 1->0 vanishes.)
 //     'kicked'               (sent to the older socket when same user
 //                            connects from a new tab)
 
@@ -52,6 +60,13 @@ const MIN_POS_INTERVAL_MS = 1000 / MAX_POS_HZ;
 // Peer is considered alive while its last pos update is within this
 // window. Stale eviction sweep runs every second.
 const STALE_PEER_MS = 5000;
+
+// Roster stats broadcast (Step 2). Debounced so a connection storm
+// (server restart with many clients reconnecting) coalesces into one
+// emit per window rather than N. 250ms is short enough to feel live
+// when a single user joins/leaves a system and long enough to absorb
+// realistic bursts.
+const STATS_BROADCAST_DEBOUNCE_MS = 250;
 
 // Room prefix -- keeps our rooms disjoint from the legacy `hub:` namespace.
 const roomFor = (systemId) => `presence:system:${systemId}`;
@@ -145,6 +160,32 @@ export function attachPresence(io) {
     console.log(`👋 presence: user ${userId} left ${currentSystem}`);
   }
 
+  // Snapshot the current roster -> wire payload.
+  function computeStats() {
+    const bySystem = {};
+    for (const [systemId, peers] of systemPeers.entries()) {
+      if (peers.size > 0) bySystem[systemId] = peers.size;
+    }
+    return {
+      total_online: userSockets.size,
+      by_system: bySystem,
+    };
+  }
+
+  // Debounced broadcast. Multiple calls within the window collapse to a
+  // single io.emit at the end of the window. Computed fresh at flush
+  // time so stats reflect ALL state changes in the window, not just the
+  // first.
+  let statsBroadcastPending = false;
+  function scheduleStatsBroadcast() {
+    if (statsBroadcastPending) return;
+    statsBroadcastPending = true;
+    setTimeout(() => {
+      statsBroadcastPending = false;
+      io.emit('presence:stats', computeStats());
+    }, STATS_BROADCAST_DEBOUNCE_MS);
+  }
+
   // We attach to the same `io` the legacy handler uses. The
   // io.use(socketAuthMiddleware) call in socketHandler.js has already
   // populated socket.user before we ever see the connection.
@@ -173,6 +214,16 @@ export function attachPresence(io) {
       }
     }
     userSockets.set(user.id, socket.id);
+
+    // Push the current roster snapshot to the just-connected socket so
+    // its HUD doesn't sit at 0 until something else changes. Direct
+    // emit -- not the debounced broadcast -- because this is to one
+    // client only and shouldn't be coalesced with room-wide events.
+    socket.emit('presence:stats', computeStats());
+
+    // Everyone else's total_online just went up by one. Schedule a
+    // room-wide broadcast.
+    scheduleStatsBroadcast();
 
     // -- Enter a system room --------------------------------------
     socket.on('presence:enter', async ({ system_id }) => {
@@ -241,6 +292,10 @@ export function attachPresence(io) {
         name: user.username,
         ship_visual: shipVisual,
       });
+
+      // by_system for this system just changed; possibly the prior
+      // system's count too. Single debounced broadcast covers both.
+      scheduleStatsBroadcast();
     });
 
     // -- Leave a system room --------------------------------------
@@ -248,6 +303,7 @@ export function attachPresence(io) {
       // system_id is informational -- we authoritative use whatever's
       // in socket.data.presence to avoid client-server desync.
       removeFromSystem(user.id, socket);
+      scheduleStatsBroadcast();
     });
 
     // -- Position update (the hot path) ---------------------------
@@ -321,11 +377,16 @@ export function attachPresence(io) {
       // Only clear from userSockets if THIS socket is still the
       // registered one. If we were kicked, the new socket already
       // replaced our entry and we should leave it alone.
-      if (userSockets.get(user.id) === socket.id) {
+      const wasRegistered = userSockets.get(user.id) === socket.id;
+      if (wasRegistered) {
         userSockets.delete(user.id);
       }
       lastPosTs.delete(socket.id);
       removeFromSystem(user.id, socket);
+      // Only schedule a broadcast if THIS socket was the registered
+      // one -- a kick already triggered a broadcast for the new
+      // socket's arrival, so the stats are already accurate.
+      if (wasRegistered) scheduleStatsBroadcast();
     });
   });
 
@@ -337,6 +398,7 @@ export function attachPresence(io) {
   // ghost ships don't linger in the room.
   setInterval(() => {
     const now = Date.now();
+    let evicted = false;
     for (const [systemId, peers] of systemPeers.entries()) {
       for (const [userId, peer] of peers.entries()) {
         // peer.ts === 0 means they just entered and haven't sent
@@ -345,10 +407,15 @@ export function attachPresence(io) {
         if (now - peer.ts > STALE_PEER_MS) {
           peers.delete(userId);
           io.to(roomFor(systemId)).emit('presence:peer_leave', { user_id: userId });
+          evicted = true;
         }
       }
       if (peers.size === 0) systemPeers.delete(systemId);
     }
+    // If we evicted anyone, the by_system counts shifted -- broadcast.
+    // (total_online stays the same; the socket is still connected,
+    // just stopped sending pos. That's a Phase-1-acceptable quirk.)
+    if (evicted) scheduleStatsBroadcast();
   }, 1000);
 
   // -- Diagnostic counters (exported for /api/diag) -----------------
