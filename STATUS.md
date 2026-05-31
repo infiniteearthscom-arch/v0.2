@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-31 (Social Multiplayer Step 8 SHIPPED: bounty board -- single-kill bounty contracts with escrow, browse/post/cancel/claim flows, and a Bounties toolbar window)
+**Last updated:** 2026-05-31 (Social Multiplayer Step 9 SHIPPED: mail / inbox -- async player-to-player messaging with unread badge on the toolbar. Full social roadmap is now complete.)
 
 ---
 
@@ -21,7 +21,7 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 ## In progress
 
-*Nothing currently in flight.* Step 8 (bounty board) shipped end-to-end. Step 9 (mail system) is the last social-roadmap item; async player-to-player messages with a standard inbox UI. Smaller still -- one table + send/list/mark-read endpoints + an Inbox window.
+*Nothing currently in flight.* **The entire 9-step social-multiplayer roadmap is now complete.** Step 9 (mail / inbox) wrapped today. With that, the game has: realtime presence + chat + activity ticker, leaderboards, public profiles, trade, market, corporations, bounties, and mail. Next strategic question is whether to circle back and **playtest + polish** the social stack on live (lots of v2 follow-ups across each step) or pivot to a different system entirely (player-owned stations, scanner Phase D, combat polish, etc.). Worth a session to walk through the live experience with two accounts before deciding.
 
 ---
 
@@ -264,6 +264,50 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-31 — Social Multiplayer Step 9: Mail / inbox (roadmap complete)
+
+Async player-to-player messaging. Standard inbox model: messages live on the recipient's side with a `read_at` timestamp; the sender does not get a copy (no Sent Items tab yet -- v2). Schema supports system-generated mail (`sender_id` nullable + `system_sent` flag) so future hooks like "your sell order filled" can land in inboxes without further plumbing.
+
+**Schema (migration 061):** `mail_messages` with sender_id (nullable, ON DELETE SET NULL so deleted users' mail stays readable), recipient_id, subject (128 chars max), body (4000 chars max), sent_at, read_at, system_sent. Indexes: `idx_mail_inbox(recipient_id, sent_at DESC)` for browse, partial `idx_mail_unread(recipient_id) WHERE read_at IS NULL` for the unread badge poll.
+
+**Server `lib/mail.js`:** `sendMail`, `sendSystemMail` (internal helper, no REST endpoint -- callers like a future market.js fill-notifier can fire it directly), `listInbox`, `getUnreadCount`, `markRead`, `deleteMail`. Validation: subject required + bounded, body required + bounded, recipient must exist, no self-send.
+
+**Server `api/mail.js`:** `GET /inbox?limit | /unread-count`, `POST /send | /:id/mark-read | /:id/delete`.
+
+**UI:** new 📬 **Mail** toolbar button opens `InboxWindow`. Two tabs:
+- **Inbox**: messages newest-first. Unread rows tinted blue with bold subject; expanding marks read server-side + optimistically locally + bumps the unread badge down. Sender column shows "SYSTEM" for system_sent mail (gold) vs. the pilot name (white). Per-message delete with confirm.
+- **+ Compose**: recipient UUID + subject + body. Send -> auto-switch to inbox and refresh.
+
+**Toolbar unread badge.** New `mailUnreadCount` state on gameStore + `setMailUnread(n)` action. A `<MailUnreadPoller />` invisible component in GameFrame polls `/api/mail/unread-count` every 60s + on mount; InboxWindow refreshes it immediately after every read/delete/send action. The toolbar render gained generic `badgeStoreKey` support so future buttons can wire badges with one extra hook line.
+
+**Files (new):** `star-shipper-server/migrations/061_mail_messages.sql`, `star-shipper-server/src/lib/mail.js`, `star-shipper-server/src/api/mail.js`, `star-shipper/src/components/mail/InboxWindow.jsx`.
+
+**Files (modified):** server -- `index.js` (mount route). Client -- `stores/gameStore.js` (mailUnreadCount state + setMailUnread action + window registration), `utils/api.js` (mailAPI), `components/ui/GameFrame.jsx` (toolbar button + mount + MailUnreadPoller + badge rendering).
+
+**Open follow-ups (v2):**
+- **System-mail callers.** Helper is in place but no callers yet. Wire `sendSystemMail` to: market order filled, bounty payouts, corp invites (so they survive a re-login when the player wasn't online to see the toast), kicked-from-corp notifications.
+- **Sent items tab.** Need to denormalize a sender_copy or add a sent_messages projection table; v2.
+- **Reply threading.** Add a `reply_to` self-FK + thread fetch endpoint. Light lift.
+- **Recipient picker.** Compose currently takes a raw UUID. v2: name lookup / recent contacts (chat / trade / corp) / search.
+- **Push notification on mail received.** Socket emit `mail:received` to the recipient so the badge ticks up without the 60s poll. Trivial socket addition.
+
+---
+
+## 2026-05-31 -- Social Multiplayer roadmap COMPLETE
+
+All 9 steps shipped this session:
+1. **Chat** -- System / Global channels with REST history hydration.
+2. **Live online roster** -- HUD "N online + M here" badge + galaxy-map per-system population.
+3. **Activity ticker** -- galaxy-wide top-center event stream (system discoveries, module crafts, ship purchases, trade completions, corp foundings, bounty claims).
+4. **Leaderboards + public profile** -- 5 boards (richest, top explorers, most skills trained, most active 7d, top crafters) + clickable profile from chat / leaderboard rows.
+5. **Trade** -- direct two-pilot trade gated on co-docking, atomic-swap DB transaction, invite toast.
+6. **Player market** -- per-station async order book with escrow + partial fills.
+7. **Corporations** -- persistent player groups with shared chat channel, tickers on peer ships, invite/kick flows.
+8. **Bounty board** -- single-kill bounty contracts with escrow.
+9. **Mail** -- async player-to-player inbox with unread badge.
+
+Total new files this session: ~26 server + client. The game's social surface area went from "see other ships in the same system" to a full multiplayer feature set comparable to early EVE Online. v2 polish (auto-matching market, server-validated bounty claims, system-mail callers, proper pickers everywhere, realtime push for everything) is queued across each step's "Open follow-ups" subsections above.
 
 ### 2026-05-31 — Social Multiplayer Step 8: Bounty board
 

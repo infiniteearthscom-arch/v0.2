@@ -27,6 +27,7 @@ import tradeRoutes from './api/trade.js';
 import marketRoutes from './api/market.js';
 import corpRoutes from './api/corp.js';
 import bountyRoutes from './api/bounty.js';
+import mailRoutes from './api/mail.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -88,6 +89,7 @@ app.use('/api/trade', tradeRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/corp', corpRoutes);
 app.use('/api/bounty', bountyRoutes);
+app.use('/api/mail', mailRoutes);
 
 // Realtime presence diag (Phase 1 verification). Counts only -- no
 // user data -- so safe to leave unauthenticated. Returns 503 if the

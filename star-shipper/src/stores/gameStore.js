@@ -82,6 +82,12 @@ const initialState = {
   // 'profile' window; ProfileWindow reads it on mount and fires the
   // /api/profile/:userId fetch. Cleared after consumption.
   profileTargetUserId: null,
+
+  // Step 9: cached unread mail count. Polled by a small bootstrap
+  // component in GameFrame (every 60s) + refreshed in-place by the
+  // InboxWindow after read/delete/send actions. Drives the badge on
+  // the 📬 Mail toolbar button.
+  mailUnreadCount: 0,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
   skillSpPerMin: 30,
@@ -117,6 +123,7 @@ const initialState = {
     profile: { open: false, x: 220, y: 110, minimized: false },
     corp: { open: false, x: 240, y: 120, minimized: false },
     bounties: { open: false, x: 260, y: 130, minimized: false },
+    mail: { open: false, x: 280, y: 140, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
@@ -304,6 +311,8 @@ export const useGameStore = create(
         state.profileTargetUserId = userId;
         if (state.windows.profile) state.windows.profile.open = true;
       }),
+      // Mail unread count -- pushed by the InboxWindow + the poller.
+      setMailUnread: (n) => set(state => { state.mailUnreadCount = Math.max(0, parseInt(n, 10) || 0); }),
 
       tick: (deltaTime) => set(state => {
         if (state.gamePaused) return;

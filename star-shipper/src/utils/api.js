@@ -282,6 +282,18 @@ export const leaderboardsAPI = {
     request(`/leaderboards/${encodeURIComponent(type)}?limit=${limit}`),
 };
 
+// Mail (Social Multiplayer Step 9). Async player-to-player messages
+// plus an internal "system mail" path (no callers in v1; reserved
+// for future market-fill / bounty-payout notifications).
+export const mailAPI = {
+  inbox:       (limit = 50) => request(`/mail/inbox?limit=${limit}`),
+  unreadCount: () => request('/mail/unread-count'),
+  send:        (payload) =>
+    request('/mail/send', { method: 'POST', body: JSON.stringify(payload) }),
+  markRead:    (id) => request(`/mail/${encodeURIComponent(id)}/mark-read`, { method: 'POST' }),
+  delete:      (id) => request(`/mail/${encodeURIComponent(id)}/delete`, { method: 'POST' }),
+};
+
 // Bounty board (Social Multiplayer Step 8). Single-kill bounty
 // contracts: post locks escrow, claim pays out + closes the bounty.
 // v1 trusts the claimer's kill report -- same cheat surface as the

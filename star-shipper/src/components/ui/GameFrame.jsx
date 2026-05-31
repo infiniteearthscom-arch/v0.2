@@ -17,6 +17,8 @@ import { TradeWindow } from '@/components/trade/TradeWindow';
 import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
 import { CorpWindow } from '@/components/corp/CorpWindow';
 import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
+import { InboxWindow } from '@/components/mail/InboxWindow';
+import { mailAPI } from '@/utils/api';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
 
@@ -36,6 +38,10 @@ const TOOLBAR_BUTTONS = [
   { id: 'leaderboards', icon: '🏆', label: 'Leaders', color: '#fbbf24' },
   { id: 'corp', icon: '🛡️', label: 'Corp', color: '#fbbf24' },
   { id: 'bounties', icon: '🎯', label: 'Bounties', color: '#ef4444' },
+  // badgeStoreKey: when set, the toolbar reads gameStore[badgeStoreKey]
+  // and renders a small red unread counter on the button. Used for
+  // the mail unread count -- extendable to any other future button.
+  { id: 'mail', icon: '📬', label: 'Mail', color: '#60a5fa', badgeStoreKey: 'mailUnreadCount' },
 ];
 
 // Planet button is appended dynamically when the player is docked.
@@ -345,7 +351,7 @@ const TopBar = () => {
 // ============================================
 
 const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
-const MODALS = ['shipBuilder', 'galaxyMap', 'leaderboards', 'corp', 'bounties'];
+const MODALS = ['shipBuilder', 'galaxyMap', 'leaderboards', 'corp', 'bounties', 'mail'];
 
 // Width of the toolbar in each state. Kept in sync with the ContextPanel
 // left-anchor math (see ContextPanel.jsx -- imports nothing, just reads
@@ -362,6 +368,10 @@ const LeftToolbar = () => {
   const dockedBody = useGameStore(state => state.dockedBody);
   const expanded = useGameStore(state => state.toolbarExpanded ?? true);
   const toggleToolbar = useGameStore(state => state.toggleToolbar);
+  // Step 9: pulled out of the button render so a single hook
+  // subscribes once. Add more keys here if other buttons start
+  // wanting badges -- pass the resolved value into the map below.
+  const mailUnreadCount = useGameStore(state => state.mailUnreadCount);
 
   const handleClick = (id) => {
     playSound('button_click');
@@ -433,7 +443,33 @@ const LeftToolbar = () => {
                   marginRight: 8,
                 }}>{btn.label}</span>
               )}
-              <span style={{ fontSize: 16, lineHeight: 1 }}>{btn.icon}</span>
+              <span style={{ fontSize: 16, lineHeight: 1, position: 'relative' }}>
+                {btn.icon}
+                {/* Unread / activity badge -- only renders when the
+                    button has a badgeStoreKey and the resolved value
+                    is > 0. v1 covers mail; trivial to extend later. */}
+                {(() => {
+                  if (!btn.badgeStoreKey) return null;
+                  const n = btn.badgeStoreKey === 'mailUnreadCount' ? mailUnreadCount : 0;
+                  if (!n || n <= 0) return null;
+                  return (
+                    <span style={{
+                      position: 'absolute',
+                      top: -6, right: -8,
+                      minWidth: 14, height: 14,
+                      padding: '0 4px',
+                      background: '#ef4444',
+                      color: '#fff',
+                      fontSize: 9, fontWeight: 800,
+                      fontFamily: "'Share Tech Mono', monospace",
+                      borderRadius: 7,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      lineHeight: 1,
+                      boxShadow: '0 0 4px rgba(239,68,68,0.5)',
+                    }}>{n > 99 ? '99+' : n}</span>
+                  );
+                })()}
+              </span>
             </button>
           );
         })}
@@ -618,11 +654,33 @@ const TradeBootstrap = () => {
   return null;
 };
 
+// Mail unread-count poller (Step 9). Polls every 60s + on mount so
+// the toolbar badge stays roughly fresh. The InboxWindow refreshes
+// the same store key immediately after read/delete/send actions, so
+// the badge updates instantly for user actions; the poll is just a
+// fallback for "new mail arrived while idle".
+const MailUnreadPoller = () => {
+  const setMailUnread = useGameStore(s => s.setMailUnread);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOnce = () => {
+      mailAPI.unreadCount()
+        .then(({ count }) => { if (!cancelled) setMailUnread?.(count); })
+        .catch(() => {});
+    };
+    fetchOnce();
+    const t = setInterval(fetchOnce, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [setMailUnread]);
+  return null;
+};
+
 export const GameFrame = ({ children }) => {
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#030610' }}>
       <DockedBodyPresenceBridge />
       <TradeBootstrap />
+      <MailUnreadPoller />
       <TopBar />
       <LeftToolbar />
       <SystemMapWindow />
@@ -670,6 +728,9 @@ export const GameFrame = ({ children }) => {
       {/* Bounty board — same pattern: toolbar button, modal, self-
           hides when not open. */}
       <BountyBoardWindow />
+
+      {/* Inbox / Mail — same pattern. */}
+      <InboxWindow />
     </div>
   );
 };
