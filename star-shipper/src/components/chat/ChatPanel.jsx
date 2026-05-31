@@ -180,7 +180,7 @@ export const ChatPanel = () => {
         onClick={() => { setCollapsed(false); setUnread(u => ({ ...u, [activeChannel]: 0 })); }}
         style={{
           position: 'fixed',
-          right: 12,
+          left: 12,
           bottom: 40,
           width: 180,
           padding: '6px 10px',
@@ -225,7 +225,7 @@ export const ChatPanel = () => {
     <div
       style={{
         position: 'fixed',
-        right: 12,
+        left: 12,
         bottom: 40,
         width: 340,
         height: 360,

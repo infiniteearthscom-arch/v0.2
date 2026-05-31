@@ -4802,22 +4802,19 @@ export const SystemView = () => {
 
           {/* HUD moved to GameFrame top bar (ship name, hull/shield, hostiles, autopilot) */}
 
-          {/* Combat Log */}
+          {/* Combat Log -- moved to bottom-right (above the system-map
+              toggle) because the bottom-left is now the chat panel.
+              bottom-14 (56px) clears the map toggle which sits at
+              bottom:40 height:38 -> top at 78px from page-bottom, ~46
+              from SystemView container bottom. */}
           {combatLog.length > 0 && (
-            <div className="absolute bottom-12 left-3 bg-slate-900/80 border border-red-500/20 rounded px-2 py-1.5 max-w-xs">
+            <div className="absolute bottom-14 right-3 bg-slate-900/80 border border-red-500/20 rounded px-2 py-1.5 max-w-xs">
               {combatLog.slice(-3).map((msg, i) => (
                 <div key={i} className="text-[10px] text-red-300/80">{msg}</div>
               ))}
             </div>
           )}
 
-          {/* Controls hint */}
-          <div className="absolute bottom-3 left-3 text-xs text-cyan-400/50 bg-slate-900/70 px-2 py-1 rounded">
-            {autopilotTarget
-              ? 'WASD/Esc: Cancel Autopilot | Click: New Destination'
-              : 'W: Thrust | A/D: Turn | S: Brake | Click: Autopilot'
-            }
-          </div>
 
           {/* Tier B scan-ability tray. Each button only renders when
               the matching module is fitted. Empty fleet -> nothing

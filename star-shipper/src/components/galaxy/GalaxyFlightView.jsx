@@ -712,13 +712,6 @@ export const GalaxyFlightView = () => {
             </div>
           )}
           
-          {/* Controls hint */}
-          <div className="absolute bottom-3 left-3 text-xs text-cyan-400/50 bg-slate-900/70 px-2 py-1 rounded">
-            {galaxyAutopilotTarget
-              ? 'WASD/Esc: Cancel Autopilot | Click: New Destination'
-              : 'W: Thrust | A/D: Turn | S: Brake | Click System: Autopilot | Enter: Dock'
-            }
-          </div>
       </div>
     </div>
   );
