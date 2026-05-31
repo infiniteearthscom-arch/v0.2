@@ -28,7 +28,7 @@
 CREATE TABLE market_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  station_body_id UUID NOT NULL REFERENCES bodies(id) ON DELETE CASCADE,
+  station_body_id UUID NOT NULL REFERENCES celestial_bodies(id) ON DELETE CASCADE,
 
   side VARCHAR(8) NOT NULL CHECK (side IN ('buy', 'sell')),
 

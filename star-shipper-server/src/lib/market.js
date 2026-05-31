@@ -409,7 +409,7 @@ export async function listMyOrders({ userId }) {
   return queryAll(
     `SELECT mo.*, b.name AS station_name
        FROM market_orders mo
-       LEFT JOIN bodies b ON b.id = mo.station_body_id
+       LEFT JOIN celestial_bodies b ON b.id = mo.station_body_id
       WHERE mo.user_id = $1 AND mo.status = 'open'
       ORDER BY mo.created_at DESC
       LIMIT 100`,
