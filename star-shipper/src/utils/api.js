@@ -290,6 +290,41 @@ export const profileAPI = {
   get: (userId) => request(`/profile/${encodeURIComponent(userId)}`),
 };
 
+// Player market (Social Multiplayer Step 6). Per-station async order
+// book; manual fulfill in v1 (no auto-cross). All ops are REST; no
+// socket events yet -- the panel refetches after each mutation. If
+// the order book starts feeling stale we'll add a 'market:updated'
+// broadcast for the affected station.
+export const marketAPI = {
+  postOrder: (payload) =>
+    request('/market/order', { method: 'POST', body: JSON.stringify(payload) }),
+  cancelOrder: (orderId) =>
+    request(`/market/order/${encodeURIComponent(orderId)}/cancel`, { method: 'POST' }),
+  fulfillOrder: (orderId, quantity, sourceStackId) =>
+    request(`/market/order/${encodeURIComponent(orderId)}/fulfill`, {
+      method: 'POST',
+      body: JSON.stringify({
+        quantity,
+        ...(sourceStackId ? { source_stack_id: sourceStackId } : {}),
+      }),
+    }),
+  // Per-station "ticker tape": one row per item at this station with
+  // best bid + best ask + total volumes. Drives the overview list
+  // before the player drills into a single item's order book.
+  stationSummary: (bodyId) =>
+    request(`/market/station/${encodeURIComponent(bodyId)}/summary`),
+  // Full open order book for one item at one station.
+  stationBook: (bodyId, { itemType, resourceTypeId, itemId, side } = {}) => {
+    const qs = new URLSearchParams();
+    if (itemType) qs.set('item_type', itemType);
+    if (resourceTypeId) qs.set('resource_type_id', resourceTypeId);
+    if (itemId) qs.set('item_id', itemId);
+    if (side) qs.set('side', side);
+    return request(`/market/station/${encodeURIComponent(bodyId)}/book?${qs.toString()}`);
+  },
+  myOrders: () => request('/market/my'),
+};
+
 // Direct player-to-player trade (Social Multiplayer Step 5 Phase 2).
 // Thin REST surface over lib/trade.js. All state changes also emit
 // socket events the trade singleton (utils/trade.js) listens for, so

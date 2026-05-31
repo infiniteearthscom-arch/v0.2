@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-31 (Social Multiplayer Step 5 SHIPPED: direct player-to-player trade with co-docked gating, atomic-swap server endpoint, two-pane window, invite toast)
+**Last updated:** 2026-05-31 (Social Multiplayer Step 6 SHIPPED: per-station async order book with manual-fulfill, escrow, partial fills, and a Market sub-tab on the City/Station UI)
 
 ---
 
@@ -21,7 +21,7 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 ## In progress
 
-*Nothing currently in flight.* Step 5 (player-to-player trade) shipped end-to-end. Step 6 (player market -- EVE-style async order book) is next; bigger lift (new tables, order-matching SQL, station-scoped browse UI) so worth scoping carefully before starting.
+*Nothing currently in flight.* Step 6 (player market) shipped end-to-end. Step 7 (corporations / fleets) is next; persistent player groups with shared chat channels + roster + roles. Touches a lot of surfaces (presence ship-tag, chat fleet channel, leaderboards potentially, station future-permissions) so worth scoping carefully.
 
 ---
 
@@ -264,6 +264,45 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-31 — Social Multiplayer Step 6: Per-station player market
+
+EVE-style async order book. Pilots post BUY ("I'll pay 50cr each for up to 1000 Iron at Luna") and SELL ("Offering 500 Mining Lasers Q72 at 800cr each at Mars") orders; other pilots browse + manually fulfill at the same station. v1 is **manual-fulfill-only** (no auto-cross matching engine); the wire shape is forward-compatible.
+
+**Escrow model:** the `market_orders` row IS the escrow.
+- SELL orders: items are REMOVED from the seller's inventory at post time; quantity_remaining + the stat_* snapshot columns hold the goods. Cancel re-deposits them (merging into a matching stack or creating a new slot).
+- BUY orders: `price_per_unit * quantity_initial` credits are deducted from the buyer at post time. Cancel refunds `price_per_unit * quantity_remaining`.
+
+**Atomic fulfillment:** every mutating op runs inside a transaction with FOR UPDATE locks on the order row, the relevant inventory stacks, and both users.credits rows (ordered by user_id to prevent deadlock). Partial fills work: a sell order with 500 units lets a buyer take 200 without affecting the remaining 300. Cargo capacity validated against the destination side using the same net-delta logic as the trade swap.
+
+**Migration 058** adds `market_orders` (id, user_id, station_body_id, side, item_type, resource_type_id|item_id, stat_* + item_data snapshot, price_per_unit, quantity_remaining, quantity_initial, status, created_at, expires_at). Partial indexes on (station_body_id, item_type, side) where status=open and on (user_id, status) for the "My Orders" listing. 7-day default expiry but no background expiry job yet -- v2.
+
+**Endpoints:**
+- `POST /api/market/order` -- post (buy or sell). Server pulls the user's current station via the presence module.
+- `POST /api/market/order/:id/cancel` -- return escrow.
+- `POST /api/market/order/:id/fulfill` { quantity, source_stack_id? } -- partial-fill OK. Caller must be docked at the order's station.
+- `GET /api/market/station/:bodyId/summary` -- ticker-tape view: one row per item with best bid + best ask + total volumes.
+- `GET /api/market/station/:bodyId/book?item_type&resource_type_id|item_id&side?` -- full book for one item.
+- `GET /api/market/my` -- requester's open orders.
+
+**UI:** new "Market" sub-tab on the City/Station tab in PlanetInteractionWindow. Three views inside one panel:
+- **Summary** (default): sortable ticker-tape -- each item at this station with best bid/ask/volumes. Click to drill.
+- **Book** (drill-in): side-by-side Buy Orders / Sell Orders for one item. Each row has a Fulfill button that opens an inline qty picker. For fulfilling buy orders (= you're selling), the row also surfaces a stack picker filtered to matching stacks in your cargo.
+- **Post**: new-order form. Side toggle (sell/buy). Sell pre-populates from your cargo (stack picker). Buy currently takes a free-text resource_type_id / item_id (proper picker is v2 polish). Total-escrow preview.
+- **My Open Orders** footer panel persists across views, with cancel buttons.
+
+**Files (new):** `star-shipper-server/migrations/058_market_orders.sql`, `star-shipper-server/src/lib/market.js`, `star-shipper-server/src/api/market.js`, `star-shipper/src/components/market/MarketPanel.jsx`.
+
+**Files (modified):** `star-shipper-server/src/index.js` (mount route), `star-shipper/src/utils/api.js` (`marketAPI`), `star-shipper/src/components/system/PlanetInteractionWindow.jsx` (new Market sub-tab).
+
+**Open follow-ups (v2 features):**
+- **Auto-matching engine.** Current spec only supports manual fulfill; players have to actively click. A periodic crossed-orders sweep (cron-style) that fulfills any open BUY with `price >= sell_price` at the same station would close the loop. Needs careful design around (a) fee economics, (b) match ordering (oldest first? best price first?), and (c) broadcast spam if many orders fill at once.
+- **Quality floors on buy orders.** Currently BUY orders accept any quality matching the resource_type_id / item_id. Add `min_quality` columns + WHERE clauses to fulfillOrder.
+- **Order-expiration sweep.** `expires_at` is set but no background job marks expired orders. Cheapest impl: a cron on the server that runs `UPDATE market_orders SET status='expired'... RETURNING *` then refunds escrow per row. Won't matter until orders accumulate.
+- **Activity ticker events.** Big fills ("X sold 500 Mining Laser II at Luna for 400k cr") would be nice ambient color. Trivial -- add `market_order_filled` to lib/activity.js callers.
+- **Buy-order item identity picker.** PostView's buy mode currently takes free-text resource/item ids; bad UX. Replace with a dropdown keyed off the game's resource_types + item_definitions catalogs (already on the server, just needs to be exposed).
+- **Market history / price chart per item.** Server already retains filled/cancelled rows for 60s post-completion; bumping to permanent retention (or a separate `market_trades` table on each fill) gives us aggregate price-over-time data for charts. Defer until players ask.
+- **Item volume per unit is approximated at 1 for non-resource items** (same gap as trade.js -- shares the resources.js helpers). Add `idef.volume_per_unit` lookup if it bites.
 
 ### 2026-05-31 — Social Multiplayer Step 5: Direct player-to-player trade
 

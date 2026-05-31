@@ -13,6 +13,7 @@ import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyl
 import { STAT_META, fmtStatValue } from '@/utils/quality';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
+import { MarketPanel } from '@/components/market/MarketPanel';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -3042,6 +3043,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
   const [section, setSection] = useState('vendor');
   const sections = [
     { id: 'vendor',    label: 'Vendor',    icon: '🏪' },
+    { id: 'market',    label: 'Market',    icon: '📈' },
     { id: 'ships',     label: 'Ships',     icon: '🚀' },
     { id: 'pilots',    label: 'Pilots',    icon: '👤' },
     { id: 'npcs',      label: 'NPCs',      icon: '🛸' },
@@ -3090,6 +3092,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
       </div>
       {/* Sub-tab content */}
       {section === 'vendor'    && <VendorTab body={body} />}
+      {section === 'market'    && <MarketPanel stationBodyId={effectiveBodyId} />}
       {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'pilots'    && <PilotsTab effectiveBodyId={effectiveBodyId} />}
       {section === 'npcs'      && <NPCsStub />}
