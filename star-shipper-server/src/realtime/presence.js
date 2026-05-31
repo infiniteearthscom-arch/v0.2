@@ -61,6 +61,7 @@
 
 import { queryOne } from '../db/index.js';
 import { cancelTradesForUser } from '../lib/trade.js';
+import { getMembershipFor } from '../lib/corp.js';
 
 // Cap on client-driven pos broadcasts to defend against a misbehaving
 // or malicious client flooding the room. Spec target is 5 Hz; we allow
@@ -125,12 +126,22 @@ async function fetchShipVisual(userId, username) {
       [userId]
     );
   }
+  // Step 7: corp affiliation rides on the visual so peer-render shows
+  // "[TICK] PilotName" tags. Failures fall back to no corp -- the
+  // ship descriptor never blocks on this.
+  let corpInfo = null;
+  try {
+    const m = await getMembershipFor(userId);
+    if (m) corpInfo = { id: m.corp_id, ticker: m.ticker, name: m.name };
+  } catch { /* swallow */ }
+
   if (!ship) {
     return {
       hull_type_id: null,
       ship_name: username,
       accent_color: '#4488ff',
       fitted_summary: [],
+      corp: corpInfo,
     };
   }
   // fitted_summary is the slot->module_type_id map flattened to an
@@ -146,6 +157,7 @@ async function fetchShipVisual(userId, username) {
     ship_name: ship.name || username,
     accent_color: '#4488ff', // Phase 1: all peers cyan. Faction tints in Phase 2.
     fitted_summary: fittedSummary,
+    corp: corpInfo,
   };
 }
 

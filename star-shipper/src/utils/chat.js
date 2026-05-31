@@ -35,6 +35,7 @@ const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/ap
 const MAX_MEMORY_MSGS = 200;  // keep last N per channel in memory; rest stays in DB
 
 let currentSystemId = null;
+let currentCorpId = null;  // Step 7: corp channel scope -- set by ChatPanel after membership lookup
 let listenersBound = false;
 const messages = new Map(); // channelKey -> Message[]
 const loadedChannels = new Set(); // channelKey strings that have been hydrated from REST
@@ -96,20 +97,48 @@ export function setSystemId(systemId) {
   currentSystemId = systemId || null;
 }
 
+// Step 7: tell chat which corp we're in so loadChannel('fleet') hits
+// the right channel_id. Called by ChatPanel after fetching the user's
+// membership. Pass null when the user leaves a corp.
+export function setCorpId(corpId) {
+  currentCorpId = corpId || null;
+}
+
+// Same pattern as resetSystemChannel but for the corp channel -- forces
+// the next loadChannel('fleet') to refetch (e.g. on join / leave).
+export function resetCorpChannel() {
+  for (const k of Array.from(loadedChannels)) {
+    if (k.startsWith('fleet:')) loadedChannels.delete(k);
+  }
+}
+
 // Hydrate a channel's history from the REST endpoint + seed the
 // in-memory buffer. Idempotent per channelKey -- second call no-ops.
 // For 'system' channel, uses the systemId set via setSystemId.
+// For 'fleet' channel, uses the corpId set via setCorpId.
 export async function loadChannel(channel) {
   if (!ENABLED) return;
   ensureListenersBound();
   socketBus.ensureSocket();
-  const channelId = channel === 'system' ? currentSystemId : null;
-  if (channel === 'system' && !channelId) return; // not in a system yet
+  let channelId;
+  if (channel === 'system') {
+    channelId = currentSystemId;
+    if (!channelId) return; // not in a system yet
+  } else if (channel === 'fleet') {
+    channelId = currentCorpId;
+    if (!channelId) return; // not in a corp yet
+  } else {
+    channelId = null;
+  }
   const k = channelKey(channel, channelId);
   if (loadedChannels.has(k)) return;
   loadedChannels.add(k);
   try {
-    const hist = await fetchHistory(channel, channelId);
+    // For 'fleet' the server resolves the corp_id from auth, so we
+    // don't pass channel_id over the wire -- the channel name alone
+    // is enough. Same for 'global' (always null).
+    const restChannelId = channel === 'system' ? channelId : null;
+    const hist = await fetchHistory(channel, restChannelId);
     // Server returns newest-first; reverse so the buffer ends up
     // oldest-first (matching live message order).
     const arr = hist.slice().reverse();
@@ -145,7 +174,14 @@ export function send(channel, text) {
 }
 
 export function getMessages(channel, channelId) {
-  const k = channelKey(channel, channelId ?? (channel === 'system' ? currentSystemId : null));
+  // Auto-resolve channelId from the singleton's tracking state when
+  // the caller doesn't pass one: 'system' uses currentSystemId,
+  // 'fleet' uses currentCorpId. 'global' and unknown channels => null.
+  const resolved = channelId
+    ?? (channel === 'system' ? currentSystemId
+       : channel === 'fleet' ? currentCorpId
+       : null);
+  const k = channelKey(channel, resolved);
   return messages.get(k) || [];
 }
 
@@ -162,4 +198,7 @@ if (typeof window !== 'undefined' && ENABLED) {
   window.__chat = { send, getMessages, loadChannel, setSystemId };
 }
 
-export default { setSystemId, loadChannel, resetSystemChannel, send, getMessages, on, isEnabled };
+export default {
+  setSystemId, setCorpId, loadChannel, resetSystemChannel, resetCorpChannel,
+  send, getMessages, on, isEnabled,
+};

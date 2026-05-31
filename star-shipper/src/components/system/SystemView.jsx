@@ -4280,7 +4280,10 @@ export const SystemView = () => {
                           <polygon points="0,-8 6,6 -6,6" fill={cyan} opacity={0.85} stroke={cyan} strokeWidth={1} />
                         </g>
                       )}
-                      {/* Name tag above ship */}
+                      {/* Name tag above ship -- prefixed with corp
+                          ticker when affiliated (Step 7). The bracket
+                          is part of the convention and visually
+                          distinguishes the ticker from the name. */}
                       <text
                         x={0} y={-ih/2 - 6}
                         textAnchor="middle"
@@ -4290,7 +4293,9 @@ export const SystemView = () => {
                         opacity={0.8}
                         style={{ pointerEvents: 'none' }}
                       >
-                        {p.name || 'pilot'}
+                        {p.ship_visual?.corp?.ticker
+                          ? `[${p.ship_visual.corp.ticker}] ${p.name || 'pilot'}`
+                          : (p.name || 'pilot')}
                       </text>
                     </g>
                   </g>

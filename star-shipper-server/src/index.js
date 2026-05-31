@@ -25,6 +25,8 @@ import leaderboardsRoutes from './api/leaderboards.js';
 import profileRoutes from './api/profile.js';
 import tradeRoutes from './api/trade.js';
 import marketRoutes from './api/market.js';
+import corpRoutes from './api/corp.js';
+import bountyRoutes from './api/bounty.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -84,6 +86,8 @@ app.use('/api/leaderboards', leaderboardsRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/trade', tradeRoutes);
 app.use('/api/market', marketRoutes);
+app.use('/api/corp', corpRoutes);
+app.use('/api/bounty', bountyRoutes);
 
 // Realtime presence diag (Phase 1 verification). Counts only -- no
 // user data -- so safe to leave unauthenticated. Returns 503 if the

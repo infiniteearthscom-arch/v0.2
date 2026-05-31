@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-31 (Social Multiplayer Step 6 SHIPPED: per-station async order book with manual-fulfill, escrow, partial fills, and a Market sub-tab on the City/Station UI)
+**Last updated:** 2026-05-31 (Social Multiplayer Step 8 SHIPPED: bounty board -- single-kill bounty contracts with escrow, browse/post/cancel/claim flows, and a Bounties toolbar window)
 
 ---
 
@@ -21,7 +21,7 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 ## In progress
 
-*Nothing currently in flight.* Step 6 (player market) shipped end-to-end. Step 7 (corporations / fleets) is next; persistent player groups with shared chat channels + roster + roles. Touches a lot of surfaces (presence ship-tag, chat fleet channel, leaderboards potentially, station future-permissions) so worth scoping carefully.
+*Nothing currently in flight.* Step 8 (bounty board) shipped end-to-end. Step 9 (mail system) is the last social-roadmap item; async player-to-player messages with a standard inbox UI. Smaller still -- one table + send/list/mark-read endpoints + an Inbox window.
 
 ---
 
@@ -264,6 +264,78 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-31 — Social Multiplayer Step 8: Bounty board
+
+Single-kill bounty contracts. A poster locks credit escrow at post time; a claimer reports a matching kill via `/api/bounty/:id/claim` and pockets the reward. One claim per bounty (status flips `open` -> `claimed`), so each bounty is a discrete contract -- bounded farming.
+
+**v1 trusts the client's kill report.** The cheat surface is bounded by what posters are willing to lose; a player who fakes a kill is robbing the poster, who'll stop posting. Self-regulating at low stakes. A future server-validated combat layer would promote `claimBounty` to a verified action; for now the same trust model applies as the rest of the client-authoritative combat loop.
+
+**Schema (migration 060):** `bounties` table with poster_id, target_hull_class (validated against a TARGET_HULLS set: any/fighter/scout/interceptor/corvette/gunship/frigate/destroyer/capital), nullable target_system_id, reward_credits, status enum (open/claimed/cancelled/expired), claimer_id + claimed_at on resolution, 7-day default expiry. Partial indexes on (status=open) for browse and on poster_id for "My Bounties".
+
+**Server:** `lib/bounty.js` with `postBounty / cancelBounty / claimBounty / listOpenBounties / listMyBounties`. All mutating ops transactional with FOR UPDATE locks. Claim validates target hull (or 'any') + target system if pinned; rejects self-claim. Logs `bounty_claimed` to activity_events on success.
+
+**Server REST `api/bounty.js`:** `GET /?system_id= | /mine`, `POST /post | /:id/cancel | /:id/claim`.
+
+**UI:** new 🎯 **Bounties** toolbar button opens `BountyBoardWindow`. Three tabs:
+- **Browse**: open bounties (reward-DESC sorted), with a "filter to current system" toggle. Claim button per row -- disabled on own bounties or when not in the bounty's target system.
+- **+ Post**: new-bounty form (target hull dropdown / system field with "use current" shortcut / reward / optional description). Escrow preview at the bottom.
+- **My Bounties**: my posted bounties with status, claimer attribution when claimed, and Cancel buttons (refund escrow).
+
+**Activity ticker formatter** extended to render `corp_founded` (Step 7 -- missed in that turn), `trade_completed` (Step 5), and `bounty_claimed` (this step) entries instead of falling back to "did something."
+
+**Files (new):** `star-shipper-server/migrations/060_bounties.sql`, `star-shipper-server/src/lib/bounty.js`, `star-shipper-server/src/api/bounty.js`, `star-shipper/src/components/bounty/BountyBoardWindow.jsx`.
+
+**Files (modified):** server -- `index.js` (mount route). Client -- `stores/gameStore.js` (window registration), `utils/api.js` (bountyAPI), `components/ui/GameFrame.jsx` (toolbar button + mount), `components/activity/ActivityTicker.jsx` (new event-type renderers).
+
+**Open follow-ups:**
+- **Auto-claim via server-validated combat.** Current claim trusts the client; a server-validated combat hook would replace the explicit "click to claim" button with automatic payouts on real kills.
+- **Multi-kill bounties.** Add a `kills_remaining` column so a single contract can pay out N times (cooldown per claimant per bounty to prevent farming the same target repeatedly).
+- **Bounty hunter reputation / leaderboard.** Aggregate claimed bounties per pilot for a new leaderboard board ("Top Bounty Hunters").
+- **Expiration sweep.** `expires_at` is set but no background job marks expired bounties + refunds escrow. Add a cron once orders accumulate.
+- **Specific fleet target** (vs hull class). v2 could let posters target a specific named pirate fleet ("the one that ambushed me in Sirius yesterday") if the world ever has persistent pirate fleets.
+
+### 2026-05-31 — Social Multiplayer Step 7: Corporations
+
+Persistent player groups. One corp per pilot (enforced by PK on `corporation_members.user_id`). Tickers (2-5 uppercase chars) ride on the presence `ship_visual` descriptor so peers see `[ATLAS] PilotName` on each other's ships in-system.
+
+**Schema (migration 059):**
+- `corporations` (id, name, ticker, description, founder_id, founded_at, member_count). Names + tickers UNIQUE.
+- `corporation_members` (user_id PK -- one corp per pilot, corp_id, role, joined_at). Role enum: founder | officer | member.
+- `corporation_invites` (id, corp_id, inviter_id, invitee_id, expires_at). 7-day default expiry. UNIQUE on (corp_id, invitee_id).
+- Trigger `corp_member_count_bump` keeps `corporations.member_count` accurate without re-querying `COUNT(*)` on every roster read.
+
+**Server `lib/corp.js`:**
+- Validation: name 3-64 alphanumeric + spaces/dash/underscore; ticker 2-5 uppercase alphanumeric.
+- Operations (each in a transaction where multi-row coordination is needed): `createCorp` (rejects if user is already in a corp), `inviteToCorp` (only founder/officer; rejects if invitee in a corp or already pending), `acceptInvite` (deletes all pending invites for the user, inserts membership), `rejectInvite`, `leaveCorp` (founder can leave only when last member; in that case the corp is auto-disbanded), `kickMember` (founder/officer; founder can kick officers; founder can't be kicked).
+- Helpers `getMembershipFor(userId)`, `listMembers(corpId)`, `getCorpMemberIds(corpId)`, `listPendingInvitesFor(userId)` used by chat/profile/presence integration points.
+- Activity ticker: `corp_founded` event on creation.
+
+**Server `api/corp.js`:** `GET /mine | /invites | /:corpId | /:corpId/members`, `POST /create | /invite | /invite/:id/{accept,reject} | /leave | /member/:userId/kick`.
+
+**Cross-cutting integration:**
+- **Presence ship_visual** now includes `{ corp: { id, ticker, name } | null }` -- fetched per-peer inside `fetchShipVisual`. Stale-cache on join/leave is forced fresh by the client's `bumpShipVisual()` after any corp mutation, which the server picks up on the next pos tick and re-broadcasts.
+- **Profile API** includes a `corp: { id, name, ticker, role, member_count, joined_at }` object (or null). Profile window header shows `[TICK] CMDR Name` + a "<role> of <corp_name>" subline.
+- **Chat Fleet channel** is now a real Corp channel. `realtime/chat.js` resolves the sender's corp + fanouts via `emitToUserIds` (iterates io.sockets.sockets once -- fine at our scale). History endpoint resolves caller's corp_id for fleet queries. Client singleton tracks `currentCorpId` (set by ChatPanel after `/corp/mine`). Channel auto-resolves correctly on getMessages / loadChannel without callers passing the id.
+- **SystemView peer rendering** prefixes the name tag with `[TICKER]` when the peer has a corp.
+
+**Client UI:**
+- New 🛡️ **Corp** toolbar button opens `CorpWindow` (modal).
+- Three modes inside one window: founder/officer/member view (identity card + roster + invite-pilot field for managers + kick buttons + leave/disband action); non-member view with pending invites at the top + a create-corp form below.
+- ChatPanel grew a third tab ("Corp"). Disabled when not in a corp.
+- ProfileWindow header line shows ticker + role + corp name.
+
+**Files (new):** `star-shipper-server/migrations/059_corporations.sql`, `star-shipper-server/src/lib/corp.js`, `star-shipper-server/src/api/corp.js`, `star-shipper/src/components/corp/CorpWindow.jsx`.
+
+**Files (modified):** server -- `index.js` (mount), `realtime/presence.js` (corp in ship_visual), `realtime/chat.js` (fleet broadcast to corp members), `api/chat.js` (fleet history scope), `api/profile.js` (corp affiliation). Client -- `stores/gameStore.js` (window registration), `utils/api.js` (corpAPI), `utils/chat.js` (setCorpId + resetCorpChannel + auto-resolved getMessages), `components/ui/GameFrame.jsx` (toolbar button + mount), `components/chat/ChatPanel.jsx` (Corp tab + corp_id wiring), `components/profile/ProfileWindow.jsx` (corp affiliation display), `components/system/SystemView.jsx` (ticker prefix on peer ship name tag).
+
+**Open follow-ups (v2):**
+- **Promote/demote.** Plumb a `POST /corp/member/:userId/role` endpoint with founder-only authority. Trivial server lift; small UI add.
+- **Disband + transfer.** Founder currently can't leave while members remain. v2 should let them either disband (kick everyone + delete corp) or transfer founder role to an officer.
+- **Invite picker (proper UX).** CorpWindow's invite form currently takes a raw user UUID -- the player has to copy it from somewhere else. v2: name lookup + recent-contacts list (chat correspondents, recent trade partners).
+- **Realtime corp events.** Joining/leaving/kicking only updates the affected client's view on refetch. A `corp:roster_updated` socket broadcast to all members would keep everyone's UI live.
+- **Corp on activity ticker.** `trade_completed` and other events could include the corp ticker in the rendered text ("[ATLAS] X traded with [GREY] Y").
+- **Corp-owned stations / shared depots / contracts.** Big v2 features; flagged in the original spec.
 
 ### 2026-05-31 — Social Multiplayer Step 6: Per-station player market
 

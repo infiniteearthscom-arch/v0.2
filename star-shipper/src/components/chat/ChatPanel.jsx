@@ -16,6 +16,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import chat from '@/utils/chat';
+import { corpAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -28,6 +29,7 @@ const FM = "'Share Tech Mono', monospace";
 const CHANNELS = [
   { id: 'system', label: 'System', color: CYAN },
   { id: 'global', label: 'Global', color: '#aa66ff' },
+  { id: 'fleet',  label: 'Corp',   color: '#fbbf24' },
 ];
 
 const formatTime = (ts) => {
@@ -127,6 +129,12 @@ export const ChatPanel = () => {
   const currentSystemId = useGameStore(s => s.currentSystem);
   const openProfile = useGameStore(s => s.openProfile);
   const ownUserId = useAuthStore(s => s.user?.id) || null;
+  // Step 7: corp membership drives the Fleet/Corp channel scope +
+  // whether the tab is enabled at all. Refetched once per mount and
+  // when the player joins/leaves (TODO: realtime push -- v1 just
+  // refetches via the corp window). Null = not in a corp.
+  const [corpId, setCorpId] = useState(null);
+  const [corpTicker, setCorpTicker] = useState(null);
 
   // Keep chat singleton's idea of "current system" in sync with the
   // store so the 'system' channel resolves to the right channel_id.
@@ -142,6 +150,24 @@ export const ChatPanel = () => {
     if (!chat.isEnabled()) return;
     chat.loadChannel('global').then(() => setRenderTick(t => t + 1));
   }, []);
+
+  // Fetch corp membership on mount so we can scope Fleet/Corp chat
+  // correctly. Refetches when the user switches to the corp tab as a
+  // simple way to pick up join/leave changes that happened in another
+  // window. Not realtime; small UX delay if a user just joined.
+  useEffect(() => {
+    if (!chat.isEnabled()) return;
+    corpAPI.mine().then(({ membership }) => {
+      const newCorpId = membership?.corp_id || null;
+      setCorpId(newCorpId);
+      setCorpTicker(membership?.ticker || null);
+      chat.setCorpId(newCorpId);
+      chat.resetCorpChannel();
+      if (newCorpId) {
+        chat.loadChannel('fleet').then(() => setRenderTick(t => t + 1));
+      }
+    }).catch(() => {});
+  }, [activeChannel]);
 
   // Subscribe to live messages.
   useEffect(() => {
@@ -177,8 +203,10 @@ export const ChatPanel = () => {
 
   if (!chat.isEnabled()) return null;
 
-  const totalUnread = (unread.system || 0) + (unread.global || 0);
-  const messages = chat.getMessages(activeChannel, activeChannel === 'system' ? currentSystemId : null);
+  const totalUnread = (unread.system || 0) + (unread.global || 0) + (unread.fleet || 0);
+  // getMessages auto-resolves channel_id from the singleton's tracked
+  // systemId/corpId, so we just pass the channel name.
+  const messages = chat.getMessages(activeChannel);
 
   // Collapsed: just a slim header that expands on click. Shows total
   // unread badge so the player notices new messages while focused on
@@ -341,9 +369,14 @@ export const ChatPanel = () => {
           placeholder={
             activeChannel === 'system'
               ? (currentSystemId ? `Message ${currentSystemId}...` : 'Not in a system')
-              : 'Message everyone...'
+              : activeChannel === 'fleet'
+                ? (corpId ? `Message [${corpTicker}]...` : 'Join a corporation to use Corp chat')
+                : 'Message everyone...'
           }
-          disabled={activeChannel === 'system' && !currentSystemId}
+          disabled={
+            (activeChannel === 'system' && !currentSystemId)
+            || (activeChannel === 'fleet' && !corpId)
+          }
           style={{
             flex: 1,
             background: '#0b1424',
@@ -358,7 +391,11 @@ export const ChatPanel = () => {
         />
         <button
           onClick={handleSend}
-          disabled={!draft.trim() || (activeChannel === 'system' && !currentSystemId)}
+          disabled={
+            !draft.trim()
+            || (activeChannel === 'system' && !currentSystemId)
+            || (activeChannel === 'fleet' && !corpId)
+          }
           style={{
             background: draft.trim() ? `${BLUE.pri}33` : 'transparent',
             border: `1px solid ${draft.trim() ? BLUE.pri : EDGE}`,

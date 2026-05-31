@@ -182,6 +182,11 @@ export const ProfileWindow = () => {
               }}>👤</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#e2e8f0', fontFamily: F }}>
+                  {profile.corp?.ticker && (
+                    <span style={{ color: GOLD.light, fontFamily: FM, marginRight: 6 }}>
+                      [{profile.corp.ticker}]
+                    </span>
+                  )}
                   CMDR {profile.username}
                   {isSelf && (
                     <span style={{ color: BLUE.light, marginLeft: 8, fontSize: 9, fontFamily: FM, fontWeight: 700 }}>
@@ -191,6 +196,14 @@ export const ProfileWindow = () => {
                 </div>
                 <div style={{ fontSize: 10, color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
                   Member since {formatMemberSince(profile.member_since)}
+                  {profile.corp && (
+                    <>
+                      <span style={{ color: '#3a4a5a', margin: '0 6px' }}>·</span>
+                      <span style={{ color: GOLD.light }}>{profile.corp.role}</span>
+                      <span style={{ color: '#7a8a9a' }}> of </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 700 }}>{profile.corp.name}</span>
+                    </>
+                  )}
                 </div>
               </div>
               {/* Trade button -- only shown for other pilots. Enabled

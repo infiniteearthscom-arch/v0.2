@@ -73,6 +73,31 @@ function formatEvent(evt) {
         text: `${name} acquired ${hull}`,
       };
     }
+    case 'corp_founded': {
+      return {
+        icon: '🛡️',
+        color: '#fbbf24',
+        text: `${name} founded [${p.corp_ticker || '???'}] ${p.corp_name || 'a corporation'}`,
+      };
+    }
+    case 'trade_completed': {
+      return {
+        icon: '🤝',
+        color: '#4ade80',
+        text: `${name} traded with ${p.partner_name || 'another pilot'}`,
+      };
+    }
+    case 'bounty_claimed': {
+      const tgt = p.target_hull === 'any' ? 'a pirate' : `a Pirate ${p.target_hull}`;
+      const reward = (typeof p.reward === 'number')
+        ? ` for ${p.reward.toLocaleString()}cr`
+        : '';
+      return {
+        icon: '🎯',
+        color: '#ef4444',
+        text: `${name} claimed a bounty on ${tgt}${reward}`,
+      };
+    }
     default:
       return { icon: '◆', color: '#94a3b8', text: `${name} did something` };
   }

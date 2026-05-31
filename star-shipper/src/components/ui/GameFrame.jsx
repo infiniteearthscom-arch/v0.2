@@ -15,6 +15,8 @@ import { LeaderboardsWindow } from '@/components/leaderboards/LeaderboardsWindow
 import { ProfileWindow } from '@/components/profile/ProfileWindow';
 import { TradeWindow } from '@/components/trade/TradeWindow';
 import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
+import { CorpWindow } from '@/components/corp/CorpWindow';
+import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
 
@@ -32,6 +34,8 @@ const TOOLBAR_BUTTONS = [
   { id: 'galaxyMap', icon: '🌌', label: 'Galaxy', color: '#8844ff' },
   { id: 'research', icon: '🔬', label: 'Research', color: '#22c55e' },
   { id: 'leaderboards', icon: '🏆', label: 'Leaders', color: '#fbbf24' },
+  { id: 'corp', icon: '🛡️', label: 'Corp', color: '#fbbf24' },
+  { id: 'bounties', icon: '🎯', label: 'Bounties', color: '#ef4444' },
 ];
 
 // Planet button is appended dynamically when the player is docked.
@@ -341,7 +345,7 @@ const TopBar = () => {
 // ============================================
 
 const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
-const MODALS = ['shipBuilder', 'galaxyMap', 'leaderboards'];
+const MODALS = ['shipBuilder', 'galaxyMap', 'leaderboards', 'corp', 'bounties'];
 
 // Width of the toolbar in each state. Kept in sync with the ContextPanel
 // left-anchor math (see ContextPanel.jsx -- imports nothing, just reads
@@ -658,6 +662,14 @@ export const GameFrame = ({ children }) => {
           active. Both self-disable when the presence flag is off. */}
       <TradeInviteToast />
       <TradeWindow />
+
+      {/* Corporation window — opened via toolbar button. Self-hides
+          when not open via ModalOverlay short-circuit. */}
+      <CorpWindow />
+
+      {/* Bounty board — same pattern: toolbar button, modal, self-
+          hides when not open. */}
+      <BountyBoardWindow />
     </div>
   );
 };

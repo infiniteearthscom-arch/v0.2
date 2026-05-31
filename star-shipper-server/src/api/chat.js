@@ -18,6 +18,7 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { queryAll } from '../db/index.js';
+import { getMembershipFor } from '../lib/corp.js';
 
 const router = express.Router();
 
@@ -40,10 +41,13 @@ router.get('/history', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'channel_id required for system channel' });
     }
     if (channel === 'fleet') {
-      // Fleet is single-user-until-corps-land. History scoped to
-      // the requesting user so two players don't accidentally see
-      // each other's placeholder fleet messages.
-      channelId = req.user.id;
+      // Step 7: fleet = corp channel. History scopes to the
+      // requesting user's corp_id (which is what realtime/chat.js
+      // stamps as channel_id on send). If they're not in a corp,
+      // there's nothing for them to read -- return empty.
+      const membership = await getMembershipFor(req.user.id);
+      if (!membership) return res.json({ messages: [] });
+      channelId = membership.corp_id;
     }
     if (channel === 'global') channelId = null;
 

@@ -26,6 +26,7 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { queryOne, queryAll } from '../db/index.js';
+import { getMembershipFor } from '../lib/corp.js';
 
 const router = express.Router();
 
@@ -136,6 +137,7 @@ router.get('/:userId', authMiddleware, async (req, res) => {
       visitsCountRow,
       shipsCountRow,
       shipClassRows,
+      membership,
       ...rankPairs
     ] = await Promise.all([
       queryOne(
@@ -164,6 +166,8 @@ router.get('/:userId', authMiddleware, async (req, res) => {
           ORDER BY count DESC, ht.name ASC`,
         [userId]
       ),
+      // Corp membership (or null). Single-row read; cheap.
+      getMembershipFor(userId),
       // Spread the rank+value pairs at the end. Each board returns
       // [valueRow, rankRow]; we zip them back together below.
       ...RANK_QUERIES.flatMap(b => [
@@ -204,6 +208,17 @@ router.get('/:userId', authMiddleware, async (req, res) => {
         count: Number(r.count || 0),
       })),
       ranks,
+      // Corp affiliation (or null). Includes role + member count so
+      // the profile UI can render "[TICK] Name -- founder of 12" in
+      // one line without a second round-trip.
+      corp: membership ? {
+        id: membership.corp_id,
+        name: membership.name,
+        ticker: membership.ticker,
+        role: membership.role,
+        member_count: membership.member_count,
+        joined_at: membership.joined_at,
+      } : null,
     });
   } catch (err) {
     console.error('profile fetch error', err);

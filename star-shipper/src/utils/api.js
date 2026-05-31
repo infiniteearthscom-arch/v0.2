@@ -282,6 +282,45 @@ export const leaderboardsAPI = {
     request(`/leaderboards/${encodeURIComponent(type)}?limit=${limit}`),
 };
 
+// Bounty board (Social Multiplayer Step 8). Single-kill bounty
+// contracts: post locks escrow, claim pays out + closes the bounty.
+// v1 trusts the claimer's kill report -- same cheat surface as the
+// rest of the client-authoritative combat loop.
+export const bountyAPI = {
+  list:   (systemId) => request(`/bounty${systemId ? `?system_id=${encodeURIComponent(systemId)}` : ''}`),
+  mine:   () => request('/bounty/mine'),
+  post:   (payload) =>
+    request('/bounty/post', { method: 'POST', body: JSON.stringify(payload) }),
+  cancel: (id) =>
+    request(`/bounty/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  claim:  (id, payload) =>
+    request(`/bounty/${encodeURIComponent(id)}/claim`, {
+      method: 'POST', body: JSON.stringify(payload),
+    }),
+};
+
+// Corporations (Social Multiplayer Step 7). Persistent player groups.
+// One corp per user (server-enforced via PK on corporation_members).
+// The full membership object includes corp_id + ticker + role -- the
+// CorpWindow / ProfileWindow / chat panel all read from the same shape.
+export const corpAPI = {
+  mine:    () => request('/corp/mine'),
+  invites: () => request('/corp/invites'),
+  get:     (corpId) => request(`/corp/${encodeURIComponent(corpId)}`),
+  members: (corpId) => request(`/corp/${encodeURIComponent(corpId)}/members`),
+  create:  (payload) =>
+    request('/corp/create', { method: 'POST', body: JSON.stringify(payload) }),
+  invite:  (inviteeId) =>
+    request('/corp/invite', { method: 'POST', body: JSON.stringify({ invitee_id: inviteeId }) }),
+  acceptInvite: (id) =>
+    request(`/corp/invite/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
+  rejectInvite: (id) =>
+    request(`/corp/invite/${encodeURIComponent(id)}/reject`, { method: 'POST' }),
+  leave: () => request('/corp/leave', { method: 'POST' }),
+  kick:  (userId) =>
+    request(`/corp/member/${encodeURIComponent(userId)}/kick`, { method: 'POST' }),
+};
+
 // Public profile lookup (Social Multiplayer Step 4 -- profile half).
 // Same endpoint for self + others -- nothing in the response is
 // strategic-secret. Opened from ChatPanel name clicks + LeaderboardsWindow

@@ -115,6 +115,8 @@ const initialState = {
     settings: { open: false, x: 280, y: 80, minimized: false },
     leaderboards: { open: false, x: 200, y: 100, minimized: false },
     profile: { open: false, x: 220, y: 110, minimized: false },
+    corp: { open: false, x: 240, y: 120, minimized: false },
+    bounties: { open: false, x: 260, y: 130, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
