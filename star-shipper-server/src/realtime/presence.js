@@ -46,10 +46,21 @@
 //                             by_system only contains non-empty systems
 //                             -- consumers must REPLACE their map, not
 //                             merge, so a system going 1->0 vanishes.)
+//     'presence:body'        { body_id, pilots: [{ user_id, name }] }
+//                            (Step 5 prep: docked-pilot roster per body.
+//                             Emitted to the room `presence:body:${id}`
+//                             on every dock/undock change. Enables the
+//                             "Pilots Docked Here" panel + the Trade
+//                             button gating on the profile window.)
 //     'kicked'               (sent to the older socket when same user
 //                            connects from a new tab)
+//
+//   Client -> Server (Step 5 prep):
+//     'presence:dock'    { body_id }
+//     'presence:undock'  { body_id }
 
 import { queryOne } from '../db/index.js';
+import { cancelTradesForUser } from '../lib/trade.js';
 
 // Cap on client-driven pos broadcasts to defend against a misbehaving
 // or malicious client flooding the room. Spec target is 5 Hz; we allow
@@ -70,6 +81,11 @@ const STATS_BROADCAST_DEBOUNCE_MS = 250;
 
 // Room prefix -- keeps our rooms disjoint from the legacy `hub:` namespace.
 const roomFor = (systemId) => `presence:system:${systemId}`;
+
+// Per-body room for the docked-pilot roster broadcasts (Step 5 prep).
+// Disjoint from the system rooms above -- a pilot can be in both
+// simultaneously (in-system AND docked).
+const bodyRoomFor = (bodyId) => `presence:body:${bodyId}`;
 
 // ============================================================
 // SHIP VISUAL DESCRIPTOR
@@ -143,6 +159,9 @@ export function attachPresence(io) {
   const userSockets = new Map(); // userId -> socket.id
   const systemPeers = new Map(); // systemId -> Map<userId, peerState>
   const lastPosTs   = new Map(); // socketId -> last-pos-emit timestamp (rate limit)
+  // Step 5 prep: per-body docked roster. Each entry value is a Map<userId, { name }>
+  // so we can broadcast the whole roster on every change without re-querying.
+  const bodyOccupants = new Map(); // bodyId -> Map<userId, { name }>
 
   // Helper: remove a user from whatever system they're in + tell the
   // room. Idempotent. Used on leave, disconnect, kick.
@@ -158,6 +177,40 @@ export function attachPresence(io) {
     io.to(roomFor(currentSystem)).emit('presence:peer_leave', { user_id: userId });
     socket.data.presence.systemId = null;
     console.log(`👋 presence: user ${userId} left ${currentSystem}`);
+  }
+
+  // -- Docked-pilot roster helpers (Step 5 prep) --------------------
+  // Broadcast the current roster of a body to its room. Used after
+  // every dock/undock. The roster is the value (no system_id /
+  // location metadata) -- the client receives `presence:body` keyed
+  // by body_id and replaces its local entry wholesale.
+  function broadcastBody(bodyId) {
+    if (!bodyId) return;
+    const m = bodyOccupants.get(bodyId);
+    const pilots = m
+      ? Array.from(m.entries()).map(([userId, v]) => ({ user_id: userId, name: v.name }))
+      : [];
+    io.to(bodyRoomFor(bodyId)).emit('presence:body', { body_id: bodyId, pilots });
+  }
+
+  // Remove a user from whatever body they're docked at + tell that
+  // body's room. Idempotent. Used on disconnect and on receiving a
+  // new dock event when the player was already docked elsewhere.
+  function removeFromBody(userId, socket) {
+    const currentBody = socket?.data?.presence?.bodyId;
+    if (!currentBody) return;
+    const occ = bodyOccupants.get(currentBody);
+    if (occ) {
+      occ.delete(userId);
+      if (occ.size === 0) bodyOccupants.delete(currentBody);
+    }
+    socket.leave(bodyRoomFor(currentBody));
+    socket.data.presence.bodyId = null;
+    broadcastBody(currentBody);
+    // Trades require both parties be docked. Undocking mid-trade
+    // cancels it for both sides -- no point letting them keep
+    // editing offers that the per-action body check will reject.
+    cancelTradesForUser(userId, 'partner_undocked');
   }
 
   // Snapshot the current roster -> wire payload.
@@ -194,8 +247,10 @@ export function attachPresence(io) {
     if (!user) return; // auth middleware should have rejected
 
     // Init per-socket scratch space. data.presence holds the systemId
-    // this socket is currently in (null if not in any system).
-    socket.data.presence = { systemId: null };
+    // this socket is currently in (null if not in any system), plus
+    // the bodyId this socket is currently DOCKED at (separate -- the
+    // player may be in-system without being docked).
+    socket.data.presence = { systemId: null, bodyId: null };
 
     // -- Connection dedup ------------------------------------------
     // Single active socket per user. Kick the older one if the same
@@ -306,6 +361,28 @@ export function attachPresence(io) {
       scheduleStatsBroadcast();
     });
 
+    // -- Dock at a body (Step 5 prep) -----------------------------
+    socket.on('presence:dock', ({ body_id } = {}) => {
+      if (!body_id || typeof body_id !== 'string') return;
+      // Leaving any prior body cleanly so the room membership matches
+      // single-body-at-a-time invariant. Re-docking at the same body
+      // is a no-op (the broadcastBody at the end re-asserts the
+      // roster either way).
+      if (socket.data.presence.bodyId && socket.data.presence.bodyId !== body_id) {
+        removeFromBody(user.id, socket);
+      }
+      if (!bodyOccupants.has(body_id)) bodyOccupants.set(body_id, new Map());
+      bodyOccupants.get(body_id).set(user.id, { name: user.username });
+      socket.join(bodyRoomFor(body_id));
+      socket.data.presence.bodyId = body_id;
+      broadcastBody(body_id);
+    });
+
+    socket.on('presence:undock', ({ body_id } = {}) => {
+      // body_id is informational -- authoritative source is socket state.
+      removeFromBody(user.id, socket);
+    });
+
     // -- Position update (the hot path) ---------------------------
     socket.on('presence:pos', (payload) => {
       const systemId = socket.data.presence.systemId;
@@ -383,6 +460,11 @@ export function attachPresence(io) {
       }
       lastPosTs.delete(socket.id);
       removeFromSystem(user.id, socket);
+      // Also drop the docked-body roster entry. A docked player who
+      // crashes the tab shouldn't linger in the body's "Pilots Here"
+      // panel -- the broadcastBody inside removeFromBody refreshes
+      // the room.
+      removeFromBody(user.id, socket);
       // Only schedule a broadcast if THIS socket was the registered
       // one -- a kick already triggered a broadcast for the new
       // socket's arrival, so the stats are already accurate.
@@ -425,5 +507,24 @@ export function attachPresence(io) {
       systems_active: systemPeers.size,
       total_peers: [...systemPeers.values()].reduce((s, m) => s + m.size, 0),
     }),
+    // Queries used by trade.js (and any other module that needs to
+    // make decisions based on dock state without re-querying the DB).
+    isUserDockedAt: (userId, bodyId) => {
+      if (!userId || !bodyId) return false;
+      const occ = bodyOccupants.get(bodyId);
+      return occ ? occ.has(userId) : false;
+    },
+    getUserDockedBody: (userId) => {
+      // Linear scan -- small map, called rarely (invite path). Fine.
+      for (const [bodyId, occ] of bodyOccupants.entries()) {
+        if (occ.has(userId)) return bodyId;
+      }
+      return null;
+    },
+    // Lets trade.js (or any module) push user->socket mappings so
+    // server emits can target a specific user without round-tripping
+    // through a room. We forward updates from the kick + connect
+    // paths so the lookup stays in sync.
+    getUserSocketId: (userId) => userSockets.get(userId) || null,
   };
 }

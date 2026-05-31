@@ -12,6 +12,7 @@ import {
 } from '../game/deposits.js';
 import { isCityPlanet, SRng } from '../util/seed.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
+import { logActivity } from '../lib/activity.js';
 
 // Cargo bonuses applied at read time so trained-skill changes propagate
 // instantly (no ship recompute required). Capacity bonus multiplies
@@ -132,7 +133,7 @@ export const getPlayerCargoInfo = async (userId, client = null) => {
 };
 
 // Get next available slot index for a user's inventory
-const getNextSlotIndex = async (userId, client = null) => {
+export const getNextSlotIndex = async (userId, client = null) => {
   // Find the first unused slot index (fills gaps instead of always appending)
   const sql = `
     SELECT s.slot FROM generate_series(0, COALESCE((SELECT MAX(slot_index) + 1 FROM player_resource_inventory WHERE user_id = $1), 0)) s(slot)
@@ -862,12 +863,35 @@ router.post('/craft', authMiddleware, async (req, res) => {
         item_id: recipe.output_item_id,
         item_name: recipe.item_name,
         item_icon: recipe.icon,
+        item_category: recipe.item_category,
         quantity: recipe.output_quantity,
         item_data: itemData,
         stack_id: outputStack.id,
       };
     });
-    
+
+    // Activity ticker: log module crafts only -- otherwise probe /
+    // fuel-cell spam would drown out the interesting signal. Average
+    // the four quality stats so the ticker can show "Q73" at a glance.
+    // Fire-and-forget after the transaction commits so a rolled-back
+    // craft can't leave a ghost activity row.
+    if (result?.item_category === 'module') {
+      const q = result.item_data?.quality;
+      const qAvg = q
+        ? Math.round((q.purity + q.stability + q.potency + q.density) / 4)
+        : null;
+      logActivity({
+        userId: req.user.id,
+        senderName: req.user.username,
+        type: 'module_crafted',
+        systemId: null,
+        payload: {
+          module_name: result.item_name,
+          quality: qAvg,
+        },
+      });
+    }
+
     res.json({ success: true, crafted: result });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });

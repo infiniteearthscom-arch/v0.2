@@ -20,6 +20,10 @@ import skillsRoutes from './api/skills.js';
 import researchRoutes from './api/research.js';
 import galaxyRoutes from './api/galaxy.js';
 import chatRoutes from './api/chat.js';
+import activityRoutes from './api/activity.js';
+import leaderboardsRoutes from './api/leaderboards.js';
+import profileRoutes from './api/profile.js';
+import tradeRoutes from './api/trade.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
 
 // ============================================
@@ -74,6 +78,10 @@ app.use('/api/skills', skillsRoutes);
 app.use('/api/research', researchRoutes);
 app.use('/api/galaxy', galaxyRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/leaderboards', leaderboardsRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/trade', tradeRoutes);
 
 // Realtime presence diag (Phase 1 verification). Counts only -- no
 // user data -- so safe to leave unauthenticated. Returns 503 if the
@@ -104,6 +112,10 @@ app.use((err, req, res, next) => {
 // ============================================
 
 const io = setupSocketIO(httpServer);
+// Expose io on the express app so route modules (e.g. trade.js, which
+// needs the presence-query helpers attached to io.presence) can reach
+// it via `req.app.get('io')` without circular imports.
+app.set('io', io);
 
 // ============================================
 // START SERVER

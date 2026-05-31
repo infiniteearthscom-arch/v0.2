@@ -254,11 +254,67 @@ export const asteroidsAPI = {
 // systems (drives fog of war in GalaxyMapWindow + GalaxyFlightView).
 export const galaxyAPI = {
   visits: () => request('/galaxy/visits'),
-  recordVisit: (systemProceduralId) =>
+  // systemName is optional -- passed when the caller knows it so the
+  // server can include it in the activity_events payload (used by the
+  // ticker for "<pilot> discovered <name>"). When omitted, the server
+  // falls back to the procedural id; the ticker can also resolve names
+  // client-side via galaxyGenerator. Both paths work.
+  recordVisit: (systemProceduralId, systemName) =>
     request('/galaxy/visit', {
       method: 'POST',
-      body: JSON.stringify({ system_procedural_id: systemProceduralId }),
+      body: JSON.stringify({
+        system_procedural_id: systemProceduralId,
+        ...(systemName ? { system_name: systemName } : {}),
+      }),
     }),
+};
+
+// Leaderboards (Social Multiplayer Step 4). All boards computed live
+// server-side from existing tables -- no client caching needed beyond
+// React state in the LeaderboardsWindow.
+export const leaderboardsAPI = {
+  // Catalog: list of available board types + their display metadata.
+  // Returned even when the user has no data so the window can render
+  // the tab strip before fetching the first board.
+  list: () => request('/leaderboards'),
+  // Top N for a specific board + the requesting user's own rank/value.
+  get: (type, limit = 25) =>
+    request(`/leaderboards/${encodeURIComponent(type)}?limit=${limit}`),
+};
+
+// Public profile lookup (Social Multiplayer Step 4 -- profile half).
+// Same endpoint for self + others -- nothing in the response is
+// strategic-secret. Opened from ChatPanel name clicks + LeaderboardsWindow
+// row clicks via the profileTargetUserId store state.
+export const profileAPI = {
+  get: (userId) => request(`/profile/${encodeURIComponent(userId)}`),
+};
+
+// Direct player-to-player trade (Social Multiplayer Step 5 Phase 2).
+// Thin REST surface over lib/trade.js. All state changes also emit
+// socket events the trade singleton (utils/trade.js) listens for, so
+// most callers will react to live updates rather than poll these.
+export const tradeAPI = {
+  invite: (partnerId) =>
+    request('/trade/invite', { method: 'POST', body: JSON.stringify({ partner_id: partnerId }) }),
+  accept: (tradeId) =>
+    request(`/trade/${encodeURIComponent(tradeId)}/accept`, { method: 'POST' }),
+  cancel: (tradeId, reason) =>
+    request(`/trade/${encodeURIComponent(tradeId)}/cancel`, {
+      method: 'POST', body: JSON.stringify({ reason: reason || 'user_cancelled' }),
+    }),
+  setOffer: (tradeId, items, credits) =>
+    request(`/trade/${encodeURIComponent(tradeId)}/set-offer`, {
+      method: 'POST', body: JSON.stringify({ items, credits }),
+    }),
+  confirm: (tradeId, confirmed) =>
+    request(`/trade/${encodeURIComponent(tradeId)}/confirm`, {
+      method: 'POST', body: JSON.stringify({ confirmed: !!confirmed }),
+    }),
+  // Recover after page reload: returns the user's currently-active
+  // session if any, else { trade: null }.
+  active: () => request('/trade/active'),
+  get: (tradeId) => request(`/trade/${encodeURIComponent(tradeId)}`),
 };
 
 // Wrecks — lootable spatial entities. Replaces the old direct-credit

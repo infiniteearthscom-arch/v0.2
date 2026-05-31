@@ -77,6 +77,11 @@ const initialState = {
   // so they don't re-fire on subsequent opens.
   craftingTargetRecipeId: null,
   researchTargetTechId: null,
+  // Public profile deep-link target. Set by callers (ChatPanel name
+  // click, LeaderboardsWindow row click) right before opening the
+  // 'profile' window; ProfileWindow reads it on mount and fires the
+  // /api/profile/:userId fetch. Cleared after consumption.
+  profileTargetUserId: null,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
   skillSpPerMin: 30,
@@ -108,6 +113,8 @@ const initialState = {
     questLog: { open: false, x: 250, y: 80, minimized: false },
     systemMap: { open: true, x: 0, y: 0, minimized: false },
     settings: { open: false, x: 280, y: 80, minimized: false },
+    leaderboards: { open: false, x: 200, y: 100, minimized: false },
+    profile: { open: false, x: 220, y: 110, minimized: false },
   },
   windowZIndex: {},
   topZIndex: 10,
@@ -287,6 +294,14 @@ export const useGameStore = create(
       clearCraftingTargetRecipe: () => set(state => { state.craftingTargetRecipeId = null; }),
       setResearchTargetTech:    (techId)   => set(state => { state.researchTargetTechId = techId; }),
       clearResearchTargetTech:  () => set(state => { state.researchTargetTechId = null; }),
+      setProfileTargetUserId:   (userId)   => set(state => { state.profileTargetUserId = userId; }),
+      clearProfileTargetUserId: () => set(state => { state.profileTargetUserId = null; }),
+      // One-call helper for the common pattern: set target + open
+      // window. Saves callers from importing two actions.
+      openProfile: (userId) => set(state => {
+        state.profileTargetUserId = userId;
+        if (state.windows.profile) state.windows.profile.open = true;
+      }),
 
       tick: (deltaTime) => set(state => {
         if (state.gamePaused) return;

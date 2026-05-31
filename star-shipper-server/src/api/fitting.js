@@ -5,6 +5,7 @@ import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
+import { logActivity } from '../lib/activity.js';
 
 const router = express.Router();
 
@@ -245,6 +246,23 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
 
       return { ship, hull: hullType, stored: willStore };
     });
+
+    // Activity ticker: skip the Starter Scout grant -- every brand-new
+    // pilot triggers it on registration and it would dominate the
+    // ticker during onboarding rushes. Real purchases (player chose to
+    // spend credits) are interesting.
+    if (hull_type_id !== 'starter_scout') {
+      logActivity({
+        userId: req.user.id,
+        senderName: req.user.username,
+        type: 'ship_purchased',
+        systemId: null,
+        payload: {
+          hull_name: result.hull?.name || hull_type_id,
+          hull_id: hull_type_id,
+        },
+      });
+    }
 
     res.json({ success: true, ...result });
   } catch (error) {

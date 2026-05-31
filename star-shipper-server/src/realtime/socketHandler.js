@@ -3,6 +3,8 @@ import { socketAuthMiddleware, updateUserOnline } from '../auth/index.js';
 import { query, queryOne, queryAll } from '../db/index.js';
 import { attachPresence } from './presence.js';
 import { attachChat } from './chat.js';
+import { setActivityIO } from '../lib/activity.js';
+import { setTradeIO, setTradePresence } from '../lib/trade.js';
 
 // ============================================
 // GAME STATE
@@ -59,6 +61,24 @@ export const setupSocketIO = (httpServer) => {
   // (socket.data.presence.systemId is set by attachPresence handlers).
   // Global chat fans out to all connected sockets.
   attachChat(io);
+
+  // ============================================
+  // PHASE 2 STEP 3: ACTIVITY TICKER
+  // ============================================
+  // No socket handlers -- activity events are server-emitted only
+  // (from inside REST handlers via lib/activity.js#logActivity). We
+  // just hand the lib a reference to io so it can io.emit('activity:event', ...)
+  // when something noteworthy happens.
+  setActivityIO(io);
+
+  // ============================================
+  // PHASE 2 STEP 5: TRADE
+  // ============================================
+  // Same pattern -- trade events emit from REST handlers via the
+  // session manager (lib/trade.js). It also needs the presence
+  // module for per-user-socket emits + body-co-docking checks.
+  setTradeIO(io);
+  setTradePresence(presence);
 
   io.on('connection', async (socket) => {
     const user = socket.user;

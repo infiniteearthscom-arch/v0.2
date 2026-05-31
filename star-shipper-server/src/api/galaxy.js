@@ -4,7 +4,8 @@
 
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
-import { query, queryAll } from '../db/index.js';
+import { query, queryAll, queryOne } from '../db/index.js';
+import { logActivity } from '../lib/activity.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -43,16 +44,33 @@ router.get('/visits', async (req, res) => {
 // ============================================
 router.post('/visit', async (req, res) => {
   try {
-    const { system_procedural_id } = req.body;
+    const { system_procedural_id, system_name } = req.body;
     if (!system_procedural_id) {
       return res.status(400).json({ error: 'system_procedural_id required' });
     }
-    await query(
+    // RETURNING ... only fires when a row is actually inserted -- the
+    // ON CONFLICT DO NOTHING silently no-ops on re-visits. We use that
+    // to gate the activity log: only emit on first-ever visit per
+    // player, never on the normal every-jump pings.
+    const inserted = await queryOne(
       `INSERT INTO player_system_visits (user_id, system_procedural_id)
        VALUES ($1, $2)
-       ON CONFLICT (user_id, system_procedural_id) DO NOTHING`,
+       ON CONFLICT (user_id, system_procedural_id) DO NOTHING
+       RETURNING user_id`,
       [req.user.id, system_procedural_id]
     );
+    if (inserted) {
+      // Fire-and-forget. Activity log failures must not break the
+      // primary flow -- the player has discovered the system; the
+      // ticker entry is just an ambient nice-to-have.
+      logActivity({
+        userId: req.user.id,
+        senderName: req.user.username,
+        type: 'system_discovered',
+        systemId: system_procedural_id,
+        payload: { system_name: system_name || system_procedural_id },
+      });
+    }
     res.json({ success: true });
   } catch (e) {
     console.error('Error recording visit:', e);

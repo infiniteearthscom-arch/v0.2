@@ -35,7 +35,7 @@ const formatTime = (ts) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-const MessageList = ({ messages, ownUserId }) => {
+const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
   // Auto-scroll to bottom on new message unless user has scrolled up.
   // We check the scrollTop / scrollHeight delta to detect "user is
   // reading history" (anything more than ~30px from the bottom).
@@ -92,11 +92,19 @@ const MessageList = ({ messages, ownUserId }) => {
         return (
           <div key={m.id} style={{ marginBottom: 4 }}>
             <span style={{ color: '#3a5a6a', fontSize: 9, marginRight: 6 }}>{formatTime(m.ts)}</span>
-            <span style={{
-              color: isOwn ? '#fbbf24' : BLUE.light,
-              fontWeight: 700,
-              marginRight: 6,
-            }}>{m.sender_name}</span>
+            <span
+              onClick={() => m.sender_id && onOpenProfile?.(m.sender_id)}
+              title={m.sender_id ? `Open ${m.sender_name}'s profile` : null}
+              style={{
+                color: isOwn ? '#fbbf24' : BLUE.light,
+                fontWeight: 700,
+                marginRight: 6,
+                cursor: m.sender_id ? 'pointer' : 'default',
+                textDecoration: 'none',
+              }}
+              onMouseEnter={(e) => { if (m.sender_id) e.currentTarget.style.textDecoration = 'underline'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+            >{m.sender_name}</span>
             <span style={{ color: '#e2e8f0' }}>{m.text}</span>
           </div>
         );
@@ -117,6 +125,7 @@ export const ChatPanel = () => {
   const inputRef = useRef(null);
 
   const currentSystemId = useGameStore(s => s.currentSystem);
+  const openProfile = useGameStore(s => s.openProfile);
   const ownUserId = useAuthStore(s => s.user?.id) || null;
 
   // Keep chat singleton's idea of "current system" in sync with the
@@ -308,7 +317,12 @@ export const ChatPanel = () => {
       </div>
 
       {/* Message list */}
-      <MessageList messages={messages} ownUserId={ownUserId} key={`${activeChannel}-${renderTick}`} />
+      <MessageList
+        messages={messages}
+        ownUserId={ownUserId}
+        onOpenProfile={openProfile}
+        key={`${activeChannel}-${renderTick}`}
+      />
 
       {/* Input */}
       <div style={{

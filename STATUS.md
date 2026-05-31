@@ -5,23 +5,23 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-30 (Social Multiplayer Steps 1 + 2 SHIPPED: Chat + live online roster + galaxy-map per-system population)
+**Last updated:** 2026-05-31 (Social Multiplayer Step 5 SHIPPED: direct player-to-player trade with co-docked gating, atomic-swap server endpoint, two-pane window, invite toast)
 
 ---
 
 ## Current state — one-liner
 
-Live in prod with **realtime multiplayer presence + chat + live roster** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Steps 1+2 shipped 2026-05-30). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration. Live "N ONLINE · M HERE" HUD badge + galaxy-map per-system population counts, pushed via debounced `presence:stats` broadcasts. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: continue building **social multiplayer** (next: Step 3 activity ticker / killboard, then leaderboards, trade, market, corps); combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
+Live in prod with **realtime multiplayer presence + chat + live roster + activity ticker** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Steps 1+2 shipped 2026-05-30; Step 3 shipped 2026-05-31). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration. Live "N ONLINE · M HERE" HUD badge + galaxy-map per-system population counts. Top-center activity ticker streams galaxy-wide first-discoveries, module crafts, and ship purchases. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: continue building **social multiplayer** (next: Step 4 player profiles + leaderboards, then trade, market, corps); combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- DB schema: through migration **056**; next new migration is **057** (009 was skipped)
+- DB schema: through migration **057**; next new migration is **058** (009 was skipped)
 
 ---
 
 ## In progress
 
-*Nothing currently in flight.* Social Multiplayer Steps 1 (Chat) + 2 (Live online roster + galaxy population) both shipped end-to-end 2026-05-30. Step 3 (activity ticker / killboard) is next; needs a new `activity_events` table and a tiny socket fanout for live events.
+*Nothing currently in flight.* Step 5 (player-to-player trade) shipped end-to-end. Step 6 (player market -- EVE-style async order book) is next; bigger lift (new tables, order-matching SQL, station-scoped browse UI) so worth scoping carefully before starting.
 
 ---
 
@@ -54,8 +54,7 @@ The path that replaces Phases 2-4 of the old combat roadmap. Each item is indepe
 
 **Step 2 — Live online roster + system population indicators (SHIPPED 2026-05-30)** — see Recently shipped.
 
-**Step 3 — Activity ticker / killboard (target: 2 days)**
-New `activity_events` table; key actions write to it (pirate kill, asteroid depleted, ship destroyed, new system discovered, big crafting completion, etc). Broadcast each new event over socket to all online clients; render a sliding ticker in the HUD ("Pilot X killed a Pirate Capital in Sirius -- 12s ago"). Makes the world feel alive even when you're solo because you see evidence of other players' activity in distant systems.
+**Step 3 — Activity ticker / killboard (SHIPPED 2026-05-31)** — see Recently shipped. v1 covers system_discovered + module_crafted + ship_purchased. Combat events (pirate_kill, ship_destroyed) deferred until the combat loop has a server-validated path -- client-driven combat events would be the only cheat surface in the ticker, not worth it.
 
 **Step 4 — Player profiles + leaderboards (target: 1-2 days)**
 "Top Miners (last 7d)", "Richest pilots", "Most pirate kills", "Most systems discovered". All data already in DB; pure read queries. Public profile page per player (clickable from chat names + leaderboard rows): pilot name, ship classes flown, leaderboard ranks, member-since date. Adds competition + identity without combat.
@@ -265,6 +264,125 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-05-31 — Social Multiplayer Step 5: Direct player-to-player trade
+
+End-to-end two-party trade flow. Two pilots dock at the same body, one invites the other, both lay out offers, both confirm, server atomically swaps. Built in two phases (presence foundation + trade flow) but shipping as one feature.
+
+**Phase 1 -- docked-pilot presence:**
+- Server's `presence.js` gains a `bodyOccupants: Map<bodyId, Map<userId, {name}>>` plus new events: client `presence:dock`/`presence:undock` and broadcast `presence:body { body_id, pilots }` to a per-body socket room. Disconnect cleans up dock rosters too.
+- Client `utils/presence.js` mirrors via `getDockedPilots(bodyId)` + a `body_changed` event. Re-dock on reconnect.
+- `GameFrame` has a `<DockedBodyPresenceBridge />` invisible component that watches `dockedBodyDbId` and forwards changes to the presence singleton -- single source of truth for "am I docked."
+
+**Phase 2 -- trade flow:**
+- **Server `lib/trade.js`:** in-memory session manager. No DB table for sessions (short-lived; audit goes to `activity_events`). Tracks pending vs active sessions, enforces one-at-a-time per user, body-co-docking on every endpoint, 30s pending timeout / 5min active idle timeout. Auto-cancels on undock via a hook in `presence.removeFromBody`. Bait-and-switch protection: any offer edit voids BOTH confirms.
+- **Server `api/trade.js`:** REST surface `POST /invite | /:id/accept | /:id/cancel | /:id/set-offer | /:id/confirm` + `GET /active | /:id`.
+- **Atomic swap:** single `transaction()` with FOR UPDATE locks on every offered stack + both users.credits rows (ordered by user_id to prevent deadlock). Validates stack quantities, validates credits, validates cargo capacity using net-delta (current usage + incoming - outgoing) so a player at 100% capacity can still trade if they're net-zero. Resource transfers merge into matching stacks by (resource_type_id + stat_* tuple); items merge by (item_id + item_data JSONB equality); else new slot. Credits applied as a single delta UPDATE per user. Logs to `activity_events` on success (event_type `trade_completed`).
+- **Client `utils/trade.js`:** singleton mirroring the chat/activity pattern. Listens for `trade:invite | opened | updated | completed | cancelled` and exposes pendingInvite / activeTrade / lastResult state + a small API (invite, accept, reject, setOffer, setConfirmed, cancelActive). `recoverActive()` re-hydrates a live session after page reload.
+- **TradeWindow** (modal): two-pane "Your Offer" / "Their Offer" layout. Own side has a click-to-add cargo picker + per-stack quantity inputs + credits input + Confirm/Unconfirm. Other side renders read-only. Border turns green when a participant has confirmed. Terminal overlay shows "Trade Complete" / "Trade Cancelled (reason)" before the window dismisses.
+- **TradeInviteToast** (top-right, below TopBar): 30s countdown bar + Accept/Reject buttons. Auto-dismisses on either click, expiry, or server-side cancel.
+
+**Two entry points:**
+- **PlanetInteractionWindow → Pilots tab** (Phase 1 surface): each docked pilot row has a 🤝 Trade button alongside the click-to-profile area. Gating is automatic since they're already in our dock roster.
+- **ProfileWindow** 🤝 Trade button: live-toggles enabled/disabled as the target docks/undocks. Inline error message when the invite fails (e.g. partner already mid-trade).
+
+**Files (new):** `star-shipper-server/src/lib/trade.js`, `star-shipper-server/src/api/trade.js`, `star-shipper/src/utils/trade.js`, `star-shipper/src/components/trade/TradeWindow.jsx`, `star-shipper/src/components/trade/TradeInviteToast.jsx`.
+
+**Files (modified):** `star-shipper-server/src/realtime/presence.js` (dock state + isUserDockedAt/getUserDockedBody/getUserSocketId queries + undock hook calls cancelTradesForUser), `star-shipper-server/src/realtime/socketHandler.js` (setTradeIO + setTradePresence), `star-shipper-server/src/api/resources.js` (export getNextSlotIndex), `star-shipper-server/src/index.js` (mount route + app.set('io', io)), `star-shipper/src/utils/api.js` (tradeAPI), `star-shipper/src/utils/presence.js` (dockAtBody/undockFromBody/getDockedPilots + body_changed event), `star-shipper/src/components/ui/GameFrame.jsx` (mount window + toast + DockedBodyPresenceBridge + TradeBootstrap), `star-shipper/src/components/profile/ProfileWindow.jsx` (live Trade button wired to invite), `star-shipper/src/components/system/PlanetInteractionWindow.jsx` (new Pilots sub-tab with click-row + quick Trade button).
+
+**Open follow-ups:**
+- Item volume is approximated at 1/unit (resources use real stat_density). Add proper `idef.volume_per_unit` lookup if item-heavy trades start hitting false cargo-overflow rejects.
+- No "blocked players" list -- anyone can spam invites. Add a per-user invite rate limit if it becomes a problem.
+- TradeWindow doesn't render the other party's offered items with full detail (resource names appear, but quality stats / module tier don't). Would need a server-side projection of the offer payload that includes resolved stack metadata. Defer until a player asks.
+- Trade button errors in PlanetInteractionWindow's quick-trade button are console.warn only. Promote to a toast if it becomes annoying.
+
+### 2026-05-31 — Social Multiplayer Step 4 (profile half): Public pilot profiles
+
+New `GET /api/profile/:userId` returns the same shape for self + others (nothing in the response is strategic-secret -- credits is already on the leaderboards, ship classes flown is identity not loadout). Response:
+
+- Identity: id, username, member_since
+- Totals: skills_trained, systems_discovered, credits, ships_owned
+- ship_classes: distinct hulls owned with counts (lifetime view, includes stored)
+- ranks: array of `{ type, title, rank, value }` for every leaderboard board the player has data on (unranked = null when value is 0, same convention as `/api/leaderboards/:type`)
+
+UUID-shape guard on `:userId` returns 400 for bad ids without hitting Postgres. All sub-queries (totals, ship classes, every per-board rank) run in parallel via `Promise.all`.
+
+UI: `ProfileWindow` modal opened via the new `store.openProfile(userId)` helper (sets `profileTargetUserId` + opens the `profile` window in one call). Header shows pilot name + member-since; body is a 4-tile stats grid, ship-class pill list, and a leaderboard-rank table with the same icon/accent palette as `LeaderboardsWindow`. Self-view tags the header with "(YOU)".
+
+**Open hooks wired:**
+- **ChatPanel** sender names are now clickable -- hover shows underline + `Open <name>'s profile` tooltip, click fires `openProfile(sender_id)`.
+- **LeaderboardsWindow** rows are now clickable -- hover row-highlights, click opens the profile.
+
+Files: `star-shipper-server/src/api/profile.js` (new), `star-shipper-server/src/index.js` (mount route), `star-shipper/src/utils/api.js` (`profileAPI`), `star-shipper/src/components/profile/ProfileWindow.jsx` (new), `star-shipper/src/components/ui/GameFrame.jsx` (mount window), `star-shipper/src/components/leaderboards/LeaderboardsWindow.jsx` (row click + hover), `star-shipper/src/components/chat/ChatPanel.jsx` (name click), `star-shipper/src/stores/gameStore.js` (`profileTargetUserId` + `openProfile` helper + window registration).
+
+**Open follow-ups:**
+- No "members since the dawn of the project" identity beyond `users.created_at`. Add bio / pilot photo / corp tag fields later when they have meaning.
+- ChatPanel name click only works in the chat panel. Activity ticker `sender_name` could also be clickable -- minor follow-up.
+- Profile-of-self currently doesn't link back to CharacterPanel. Could add a "→ Edit Profile" button when looking at yourself; defer until there's something to edit.
+
+### 2026-05-31 — Social Multiplayer Step 4 (boards half): Galaxy-wide leaderboards
+
+Five leaderboards, all computed live from existing tables -- no cache table, no aggregation job. Player base is tiny so live SQL stays cheap.
+
+- **Richest Pilots** -- `users.credits DESC`
+- **Top Explorers** -- `COUNT(player_system_visits)` per user
+- **Most Skills Trained** -- `COUNT(player_skills WHERE level > 0)` per user
+- **Most Active (7d)** -- `COUNT(activity_events WHERE created_at > NOW() - 7d)` per user
+- **Top Crafters** -- `COUNT(activity_events WHERE event_type='module_crafted')` per user
+
+Single endpoint `GET /api/leaderboards/:type?limit=N` returns top N + the requesting user's own rank and value (separate aggregate query). `GET /api/leaderboards` returns the catalog so the client tab strip is server-driven (adding a board only needs a server change). Rank is null when the user has 0 of the metric -- a numeric rank would be misleading ("you're ranked #87 in crafting" when you've never crafted).
+
+UI: dedicated toolbar button (🏆 Leaders) opens a ModalOverlay-style window. Tab strip across the top, ranked-list body (rank | pilot | value, top-3 ranks colored gold/silver/bronze, the user's own row highlighted in cyan with "(YOU)"). Footer summarizes "Your Rank: #N (value)" or "unranked" + `as of HH:MM:SS`. Per-board data cached after first fetch; manual refresh button re-fires the query.
+
+**Setup left for the public-profile half:**
+- Server `GET /api/profile/:userId` returning name, member-since, ship-classes flown, per-board ranks.
+- Client `ProfileWindow` reusable from chat name clicks + leaderboard row clicks.
+- Wire row click in `LeaderboardsWindow` + name click in `ChatPanel` to open the profile window.
+
+Files: `star-shipper-server/src/api/leaderboards.js` (new), `star-shipper-server/src/index.js` (mount route), `star-shipper/src/utils/api.js` (`leaderboardsAPI`), `star-shipper/src/components/leaderboards/LeaderboardsWindow.jsx` (new), `star-shipper/src/components/ui/GameFrame.jsx` (toolbar button + mount), `star-shipper/src/stores/gameStore.js` (window registration).
+
+### 2026-05-31 — CharacterPanel: Skills section rebuild
+
+Replaced the stale 10-category teaser (lifted from the original design doc) with real data from `gameStore.skills` / `skillQueue`:
+
+- **Active training tile** -- shows current skill, `→ {Roman target level}`, live progress bar that ticks every second, ETA. Only renders when the queue has a head.
+- **Career totals** -- Skills Trained / Total SP (sum of sp_at_current_level across trained skills) / Queue length.
+- **Top Specializations** -- top 3 categories by total SP invested, with skill counts.
+- **→ Open Skills & Research** button for deep dives.
+
+Also fixed the fleet-cap display (was `/3`, should be `/${MAX_FLEET}` = 5). Reputation section kept as a placeholder pending the faction-standing system -- the 4-faction teaser names (Terran Accord / Free Merchants Guild / Astral Collective / Void Reavers) are accurate to what's planned.
+
+File: `star-shipper/src/components/ui/CharacterPanel.jsx`.
+
+### 2026-05-31 — Social Multiplayer Step 3: Activity ticker
+
+Append-only `activity_events` table backs a galaxy-wide HUD ticker. Three event types in v1:
+
+- `system_discovered` — fired when `/api/galaxy/visit` creates a new row (gated on the `RETURNING` row from `ON CONFLICT DO NOTHING` so re-visits never re-log). Payload: `{ system_name }`.
+- `module_crafted` — fired after a successful `/api/resources/craft` when `recipe.item_category === 'module'` (filters out the probe/fuel-cell spam). Payload: `{ module_name, quality }` (avg of the 4 quality stats).
+- `ship_purchased` — fired after a successful `/api/fitting/buy-hull`. Skips `starter_scout` so the brand-new-pilot onboarding doesn't flood the ticker. Payload: `{ hull_name, hull_id }`.
+
+**Architecture:**
+- New `lib/activity.js` server-side helper exposes `logActivity({ userId, senderName, type, systemId, payload })`. Inserts to `activity_events` then `io.emit('activity:event', ...)` to broadcast galaxy-wide. Never throws -- a logging failure can't break the primary action.
+- `socketHandler.js` calls `setActivityIO(io)` once at startup to give the lib its broadcast handle. No socket handlers needed -- activity is server-emit-only (no `chat:send`-style client emit path), which keeps the cheat surface zero.
+- REST `GET /api/activity/recent?limit=50` for client hydration on connect. Wire shape mirrors the socket event so live + historical entries are interchangeable.
+- Client `utils/activity.js` mirrors the chat singleton pattern: lazy-connect via the shared socket bus, REST-hydrate on first `loadEvents()`, append live events thereafter, capped at 100 in memory. Dedups on `id` to defend against the reconnect-race "server re-sends a recently-broadcast event" case.
+
+**UI:** thin top-center strip (just under the TopBar), single-line, shows the most-recent event with `{age} ago`. CSS keyframe slide-up + fade-in plays whenever a new event arrives (re-keyed div remounts to trigger the animation). Click expands to a panel showing the last 10 events newest-first. Self-hides entirely until the first event arrives so brand-new servers don't show "no activity" chrome.
+
+**System name resolution is client-side.** Server stores only `system_procedural_id`; the ticker resolves to a name via the deterministic galaxy generator (same one GalaxyMapWindow uses), so the server doesn't need to know procedural names. `recordVisit` now optionally accepts a `systemName` for callers who already have it, but the resolution fallback covers callers that don't.
+
+**Files:**
+- Server new: `migrations/057_activity_events.sql`, `src/lib/activity.js`, `src/api/activity.js`.
+- Server modified: `src/index.js` (mount `/api/activity`), `src/realtime/socketHandler.js` (`setActivityIO(io)`), `src/api/galaxy.js` (log on first visit), `src/api/resources.js` (log on module craft), `src/api/fitting.js` (log on hull purchase).
+- Client new: `src/utils/activity.js`, `src/components/activity/ActivityTicker.jsx`.
+- Client modified: `src/utils/api.js` (`recordVisit` accepts optional name), `src/components/ui/GameFrame.jsx` (mounts `<ActivityTicker />`).
+
+**Open follow-ups** for when traffic surfaces them:
+- Combat events (pirate_kill, ship_destroyed) need server-validated combat first -- client-driven log calls are the only cheat vector.
+- Galaxy-wide vs system-only filter toggle. Trivial to add: predicate over the buffer + a toggle button. Wait until the ticker actually feels noisy before adding the UI.
+- No cleanup job on `activity_events` -- table grows unbounded. Cheap; revisit at ~1M rows.
+- Mute lists / per-player block. Wait until someone is actually annoying.
 
 ### 2026-05-30 — Social Multiplayer Step 2: Live online roster + galaxy-map population
 

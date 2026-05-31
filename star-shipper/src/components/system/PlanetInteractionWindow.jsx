@@ -4,12 +4,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { useAuthStore } from '@/stores/authStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
 import { resourcesAPI, harvesterAPI, fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { getFleetScanTimeMs, fleetHasScanner } from '@/utils/shipStats';
 import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
 import { STAT_META, fmtStatValue } from '@/utils/quality';
+import presence from '@/utils/presence';
+import trade from '@/utils/trade';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -3040,7 +3043,8 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
   const sections = [
     { id: 'vendor',    label: 'Vendor',    icon: '🏪' },
     { id: 'ships',     label: 'Ships',     icon: '🚀' },
-    { id: 'npcs',      label: 'NPCs',      icon: '👥' },
+    { id: 'pilots',    label: 'Pilots',    icon: '👤' },
+    { id: 'npcs',      label: 'NPCs',      icon: '🛸' },
     { id: 'buildings', label: 'Buildings', icon: '🏗️' },
   ];
   return (
@@ -3087,8 +3091,137 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
       {/* Sub-tab content */}
       {section === 'vendor'    && <VendorTab body={body} />}
       {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
+      {section === 'pilots'    && <PilotsTab effectiveBodyId={effectiveBodyId} />}
       {section === 'npcs'      && <NPCsStub />}
       {section === 'buildings' && <BuildingsStub />}
+    </div>
+  );
+};
+
+// ============================================
+// PILOTS TAB (Step 5 prep)
+// Lists every other pilot currently docked at this body. Click a row
+// to open their profile (which surfaces the Trade button once Phase 2
+// is wired up). Reads from the presence singleton's bodyOccupants
+// cache, which is kept fresh by `presence:body` broadcasts.
+// ============================================
+const PilotsTab = ({ effectiveBodyId }) => {
+  const openProfile = useGameStore(s => s.openProfile);
+  const myUserId = useAuthStore(s => s.user?.id) || null;
+
+  // Re-render on every roster change for this body. Subscribing in a
+  // useEffect rather than reading directly so we re-pull after dock /
+  // undock / peer-join / peer-leave events without a parent re-mount.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!presence.isEnabled()) return;
+    return presence.on('body_changed', ({ body_id }) => {
+      if (body_id === effectiveBodyId) setTick(t => t + 1);
+    });
+  }, [effectiveBodyId]);
+
+  const allDocked = effectiveBodyId ? presence.getDockedPilots(effectiveBodyId) : [];
+  const others = allDocked.filter(p => p.user_id !== myUserId);
+  void tick;
+
+  if (!presence.isEnabled()) {
+    return (
+      <div style={{ padding: 20, color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic', textAlign: 'center' }}>
+        Realtime presence is disabled.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{
+        fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1,
+        textTransform: 'uppercase', marginBottom: 6, padding: '0 2px',
+      }}>
+        Pilots Docked Here
+        <span style={{ color: BLUE.light, marginLeft: 8, fontWeight: 700 }}>
+          {others.length}
+        </span>
+      </div>
+      {others.length === 0 ? (
+        <div style={{
+          padding: 20, color: '#475569', fontSize: 11, fontFamily: F,
+          fontStyle: 'italic', textAlign: 'center',
+          background: 'rgba(4,8,16,0.5)',
+          border: `1px solid ${EDGE}`,
+          borderRadius: 3,
+        }}>
+          No other pilots are docked here.
+        </div>
+      ) : (
+        <div style={{
+          background: 'rgba(4,8,16,0.5)',
+          border: `1px solid ${EDGE}`,
+          borderRadius: 3,
+          padding: '4px 0',
+        }}>
+          {others.map(p => (
+            <div
+              key={p.user_id}
+              style={{
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                borderBottom: `1px solid rgba(26,48,80,0.2)`,
+                transition: 'background 80ms ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(20,30,50,0.6)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <div
+                onClick={() => { playSound('button_click'); openProfile(p.user_id); }}
+                title={`Open ${p.name}'s profile`}
+                style={{
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{
+                  width: 28, height: 28, borderRadius: 14,
+                  background: `linear-gradient(135deg, ${BLUE.pri}, ${BLUE.dim})`,
+                  border: `1px solid ${BLUE.light}55`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, flexShrink: 0,
+                }}>👤</div>
+                <span style={{
+                  flex: 1,
+                  fontSize: 12, fontFamily: F, fontWeight: 700,
+                  color: '#e2e8f0',
+                }}>{p.name}</span>
+              </div>
+              {/* Quick-trade button -- since they're already in our
+                  docked roster the gating is automatically satisfied
+                  (presence guarantees co-docking). Errors (e.g. they
+                  already have a pending trade) surface as a brief
+                  console warn for v1; can promote to a toast later. */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  playSound('button_click');
+                  trade.invite(p.user_id).catch(err => console.warn('trade invite failed', err));
+                }}
+                title={`Send ${p.name} a trade invite`}
+                style={{
+                  padding: '4px 10px',
+                  background: `${GOLD.light}1c`,
+                  border: `1px solid ${GOLD.light}66`,
+                  color: GOLD.light,
+                  fontSize: 10, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+                  textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
+                  flexShrink: 0,
+                }}
+              >🤝 Trade</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

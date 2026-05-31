@@ -10,7 +10,13 @@ import { playSound } from '@/utils/audio';
 import { SystemMapWindow } from '@/components/system/SystemMapWindow';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { ActivityTicker } from '@/components/activity/ActivityTicker';
+import { LeaderboardsWindow } from '@/components/leaderboards/LeaderboardsWindow';
+import { ProfileWindow } from '@/components/profile/ProfileWindow';
+import { TradeWindow } from '@/components/trade/TradeWindow';
+import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
 import presence from '@/utils/presence';
+import trade from '@/utils/trade';
 
 // ============================================
 // CONSTANTS
@@ -25,6 +31,7 @@ const TOOLBAR_BUTTONS = [
   { id: 'questLog', icon: '📋', label: 'Missions', color: '#22d3ee' },
   { id: 'galaxyMap', icon: '🌌', label: 'Galaxy', color: '#8844ff' },
   { id: 'research', icon: '🔬', label: 'Research', color: '#22c55e' },
+  { id: 'leaderboards', icon: '🏆', label: 'Leaders', color: '#fbbf24' },
 ];
 
 // Planet button is appended dynamically when the player is docked.
@@ -334,7 +341,7 @@ const TopBar = () => {
 // ============================================
 
 const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
-const MODALS = ['shipBuilder', 'galaxyMap'];
+const MODALS = ['shipBuilder', 'galaxyMap', 'leaderboards'];
 
 // Width of the toolbar in each state. Kept in sync with the ContextPanel
 // left-anchor math (see ContextPanel.jsx -- imports nothing, just reads
@@ -580,9 +587,38 @@ const SystemMapToggle = () => {
   );
 };
 
+// Wires the global dockedBodyDbId into the presence singleton so the
+// server knows which body we're docked at (drives the "Pilots Docked
+// Here" panel + the Trade-button gating on profile windows). Runs once
+// per mount/dock-change; idempotent on the presence side.
+const DockedBodyPresenceBridge = () => {
+  const dockedBodyDbId = useGameStore(s => s.dockedBodyDbId);
+  useEffect(() => {
+    if (!presence.isEnabled()) return;
+    if (dockedBodyDbId) presence.dockAtBody(dockedBodyDbId);
+    else presence.undockFromBody();
+  }, [dockedBodyDbId]);
+  return null;
+};
+
+// Trade singleton bootstrap: ensures the socket bus + listeners are
+// up as soon as the user is in-game, and recovers any active trade
+// session after a page reload (singleton state was lost; server still
+// has it, so we re-hydrate from /api/trade/active).
+const TradeBootstrap = () => {
+  useEffect(() => {
+    if (!trade.isEnabled()) return;
+    trade.ensureReady();
+    trade.recoverActive().catch(() => {});
+  }, []);
+  return null;
+};
+
 export const GameFrame = ({ children }) => {
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#030610' }}>
+      <DockedBodyPresenceBridge />
+      <TradeBootstrap />
       <TopBar />
       <LeftToolbar />
       <SystemMapWindow />
@@ -594,11 +630,34 @@ export const GameFrame = ({ children }) => {
         {children}
       </div>
 
-      {/* Chat panel — fixed bottom-right; collapsible. Always mounted
+      {/* Chat panel — fixed bottom-left; collapsible. Always mounted
           when GameFrame is up (i.e. user is logged in), works in both
           SystemView and GalaxyFlightView. Self-disables when the
           presence/chat feature flag is off. */}
       <ChatPanel />
+
+      {/* Activity ticker — fixed top-center strip showing the latest
+          galaxy-wide event. Self-hides until the first event arrives,
+          self-disables when the presence feature flag is off. */}
+      <ActivityTicker />
+
+      {/* Leaderboards modal — mounted globally so the toolbar button
+          can open/close it from anywhere. ModalOverlay short-circuits
+          the render when closed, so this is essentially free. */}
+      <LeaderboardsWindow />
+
+      {/* Public profile modal — opened via store.openProfile(userId)
+          from chat name clicks and leaderboard row clicks. No toolbar
+          button (there's no "my profile" use case yet -- CharacterPanel
+          covers that). */}
+      <ProfileWindow />
+
+      {/* Trade UI surfaces — both self-hidden until something is
+          happening. The toast appears top-right when an invite
+          arrives; the window covers the screen when a trade is
+          active. Both self-disable when the presence flag is off. */}
+      <TradeInviteToast />
+      <TradeWindow />
     </div>
   );
 };

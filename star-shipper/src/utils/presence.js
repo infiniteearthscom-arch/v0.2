@@ -9,11 +9,15 @@
 //   presence.getPeers()         // Map<userId, peerState> -- read-only, mutated in place by the singleton
 //   presence.getOnlineStats()   // { total_online, by_system: { [systemId]: count } } -- replaced (not mutated) on each update
 //   presence.bumpShipVisual()   // forces peers to refetch our descriptor
+//   presence.dockAtBody(bodyId)         -- announce dock; receive body roster updates
+//   presence.undockFromBody(bodyId)     -- leave the body's room
+//   presence.getDockedPilots(bodyId)    // Array<{user_id, name}> -- empty if we're not subscribed to that body
 //   presence.on(event, fn) -> unsubscribe
 //
 // EVENTS (presence.on)
 //   'peers_changed' { count }        -- peer Map size changed
 //   'stats_changed' { total_online, by_system }  -- roster snapshot updated
+//   'body_changed'  { body_id, pilots }          -- docked roster for a body changed
 //   'connected'                      -- socket (re)connected
 //   'disconnected' { reason }
 //   'kicked'       { reason }        -- server kicked us (dupe tab)
@@ -75,6 +79,7 @@ const EXTRAPOLATE_AFTER_MS = 500;
 
 // ----- module-scope state -----
 let currentSystemId = null;       // system the user has asked us to be in
+let currentBodyId = null;         // body the user is currently docked at (Step 5 prep)
 let shipVisualVersion = 0;        // monotonic; bump when player re-fits / changes ship
 let listenersBound = false;       // ensure we only attach socket handlers once per app session
 
@@ -86,6 +91,12 @@ const peers = new Map();          // userId -> peerState
 // system going 1->0 cleanly disappears from the map. Default values
 // keep UI defensive against "no message yet" state.
 let onlineStats = { total_online: 0, by_system: {} };
+
+// Per-body docked rosters (Step 5 prep). Only contains bodies we're
+// subscribed to (i.e. bodies we're docked at, plus any we explicitly
+// query). Values are arrays of { user_id, name }, replaced wholesale
+// on every 'presence:body' broadcast.
+const bodyOccupants = new Map();  // bodyId -> Array<{user_id, name}>
 
 // Pub/sub: small Map<event, Set<fn>>. Each on() call returns its own
 // unsubscribe; no risk of cross-component leaks. These are
@@ -114,12 +125,13 @@ function ensureListenersBound() {
   listenersBound = true;
 
   // Bus-level: re-enter the current system on every (re)connect so
-  // the server-side room membership is restored after restarts.
+  // the server-side room membership is restored after restarts. Also
+  // re-dock at the current body so the dock-presence roster stays
+  // accurate across transport blips.
   socketBus.on('connect', () => {
-    if (currentSystemId) {
-      const s = socketBus.getSocket();
-      s?.emit('presence:enter', { system_id: currentSystemId });
-    }
+    const s = socketBus.getSocket();
+    if (currentSystemId) s?.emit('presence:enter', { system_id: currentSystemId });
+    if (currentBodyId) s?.emit('presence:dock', { body_id: currentBodyId });
     emit('connected', {});
   });
   socketBus.on('disconnect', (p) => emit('disconnected', p));
@@ -175,6 +187,18 @@ function ensureListenersBound() {
 
   socketBus.onSocketEvent('presence:peer_leave', ({ user_id }) => {
     if (peers.delete(user_id)) emit('peers_changed', { count: peers.size });
+  });
+
+  socketBus.onSocketEvent('presence:body', ({ body_id, pilots }) => {
+    if (!body_id) return;
+    // Replace, don't merge. Empty roster means everyone left -- drop
+    // the entry entirely so consumers can default to [] cleanly.
+    if (Array.isArray(pilots) && pilots.length > 0) {
+      bodyOccupants.set(body_id, pilots);
+    } else {
+      bodyOccupants.delete(body_id);
+    }
+    emit('body_changed', { body_id, pilots: pilots || [] });
   });
 
   socketBus.onSocketEvent('presence:stats', (stats) => {
@@ -292,6 +316,39 @@ export function bumpShipVisual() {
   shipVisualVersion += 1;
 }
 
+// Step 5 prep: announce that we're docked at this body. Server adds
+// us to the body's roster + sends the current roster back to all
+// subscribers. Idempotent -- calling with the same body_id twice is
+// a no-op on the server (it just re-broadcasts). Calling with a
+// different body_id implicitly leaves the prior one.
+export function dockAtBody(bodyId) {
+  if (!ENABLED || !bodyId) return;
+  currentBodyId = bodyId;
+  ensureListenersBound();
+  socketBus.ensureSocket();
+  const s = socketBus.getSocket();
+  if (s?.connected) s.emit('presence:dock', { body_id: bodyId });
+  // If not connected yet, the bus's 'connect' handler re-fires dock for us.
+}
+
+export function undockFromBody(bodyId) {
+  if (!ENABLED) return;
+  const wasAt = currentBodyId;
+  currentBodyId = null;
+  // Drop our local cached roster -- we'll get fresh data next time
+  // we dock somewhere.
+  if (wasAt) bodyOccupants.delete(wasAt);
+  const s = socketBus.getSocket();
+  if (wasAt && s?.connected) s.emit('presence:undock', { body_id: wasAt });
+}
+
+// Read-only docked-pilot roster for a body. Returns [] if we have
+// no data for that body (typically because we're not docked there).
+export function getDockedPilots(bodyId) {
+  if (!bodyId) return [];
+  return bodyOccupants.get(bodyId) || [];
+}
+
 // Live, read-only peer map. Consumers MUST NOT mutate. Read in the
 // render loop via .values() or .get().
 export function getPeers() { return peers; }
@@ -407,9 +464,13 @@ export function isEnabled() { return ENABLED; }
 
 // For debugging in the browser console: window.__presence = ...
 if (typeof window !== 'undefined' && ENABLED) {
-  window.__presence = { getPeers, getOnlineStats, enterSystem, leaveSystem, isEnabled };
+  window.__presence = {
+    getPeers, getOnlineStats, getDockedPilots, enterSystem, leaveSystem,
+    dockAtBody, undockFromBody, isEnabled,
+  };
 }
 
 export default {
-  enterSystem, leaveSystem, sendPos, getPeers, getRenderState, getOnlineStats, bumpShipVisual, on, isEnabled,
+  enterSystem, leaveSystem, sendPos, getPeers, getRenderState, getOnlineStats,
+  dockAtBody, undockFromBody, getDockedPilots, bumpShipVisual, on, isEnabled,
 };
