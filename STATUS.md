@@ -5,13 +5,13 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-05-31 (Social Multiplayer Step 9 SHIPPED: mail / inbox -- async player-to-player messaging with unread badge on the toolbar. Full social roadmap is now complete.)
+**Last updated:** 2026-06-02 (Design approved for the **Combat Depth & Galaxy Progression** overhaul — full consolidated spec written to `docs/combat-progression-spec.md`. Not started; first buildable slice is combat P0+P1. Social roadmap remains complete from 2026-05-31.)
 
 ---
 
 ## Current state — one-liner
 
-Live in prod with **realtime multiplayer presence + chat + live roster + activity ticker** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Steps 1+2 shipped 2026-05-30; Step 3 shipped 2026-05-31). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration. Live "N ONLINE · M HERE" HUD badge + galaxy-map per-system population counts. Top-center activity ticker streams galaxy-wide first-discoveries, module crafts, and ship purchases. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction: continue building **social multiplayer** (next: Step 4 player profiles + leaderboards, then trade, market, corps); combat-multiplayer (server-owned enemies, shared damage, PvP) deferred indefinitely.
+Live in prod with **realtime multiplayer presence + chat + live roster + activity ticker** (Presence Phase 1 shipped 2026-05-28; Social Multiplayer Steps 1+2 shipped 2026-05-30; Step 3 shipped 2026-05-31). Two players in the same system see each other's ships smooth-interp'd via Hermite splines at 10 Hz; flagship + wingmen broadcast; ship visuals refresh on re-fit. System + Global chat channels are live with REST history hydration. Live "N ONLINE · M HERE" HUD badge + galaxy-map per-system population counts. Top-center activity ticker streams galaxy-wide first-discoveries, module crafts, and ship purchases. Full core loop (mine → craft → fit → fly → trade → fight → explore) works across 200 procedural systems. Strategic direction (as of 2026-06-02): the **Combat Depth & Galaxy Progression** overhaul — see `docs/combat-progression-spec.md`. Adds combat depth (damage triangle + pip power management), chokepoint-gated difficulty tiers, and the risk→resource→craft progression loop. The real-time combat sim stays **client-local**; combat-*multiplayer* (server-owned enemies, shared damage, PvP) remains deferred indefinitely. The 9-step social roadmap is complete.
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
@@ -21,7 +21,9 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 ## In progress
 
-*Nothing currently in flight.* **The entire 9-step social-multiplayer roadmap is now complete.** Step 9 (mail / inbox) wrapped today. With that, the game has: realtime presence + chat + activity ticker, leaderboards, public profiles, trade, market, corporations, bounties, and mail. Next strategic question is whether to circle back and **playtest + polish** the social stack on live (lots of v2 follow-ups across each step) or pivot to a different system entirely (player-owned stations, scanner Phase D, combat polish, etc.). Worth a session to walk through the live experience with two accounts before deciding.
+**Combat Depth & Galaxy Progression overhaul — design approved, build not started.** Full consolidated spec: **`docs/combat-progression-spec.md`**. This is the agreed next major direction (supersedes the "playtest social vs pivot" open question below). It couples two threads into one progression engine: (A) combat depth — armor layer + damage-type×defense-layer triangle, Starfield-style pip power management, full stakes (cargo/module ejection + server-validated loot); (B) galaxy zoning — 5 chokepoint-gated difficulty tiers, hard-gated rare resources, warp-drive-range travel, four enemy-scaling mechanics — feeding (C) the crafting loop. First buildable slice = combat **P0+P1** (armor layer + damage triangle; no migration, instantly playtestable). See the spec's §7 for the full build sequence. Design decisions also captured in memory (`project_combat_overhaul.md`, `project_galaxy_zoning.md`).
+
+*Prior open question (now superseded):* the 9-step social-multiplayer roadmap is complete (presence + chat + activity ticker + leaderboards + profiles + trade + market + corps + bounties + mail); social v2 polish + a two-account playtest remain available to pull from but are no longer the headline direction.
 
 ---
 
@@ -31,7 +33,8 @@ Unranked queue. Pull from the top of the next session, or pick by interest.
 
 ### User-prompted, coming next
 
-- **Social multiplayer roadmap** — chat → activity ticker → leaderboards → direct trade → player market → corps → bounties → mail. Full spec under "Realtime multiplayer > Social multiplayer roadmap" below. Strategic priority for the post-Phase-1 multiplayer work.
+- **★ Combat Depth & Galaxy Progression overhaul (APPROVED — current direction)** — see **`docs/combat-progression-spec.md`** for the full spec and **`docs/combat-progression-spec.md` §7** for the build sequence. Start with combat **P0+P1** (armor layer + damage triangle, no migration). Ties combat depth + difficulty-zoning + crafting into the missing progression engine. Design forks all locked (see spec §2); what remains is tuning numbers settled by live playtest.
+- **Social multiplayer roadmap** — chat → activity ticker → leaderboards → direct trade → player market → corps → bounties → mail. SHIPPED in full 2026-05-31; remaining work is v2 polish per each step's follow-ups. (Was the prior strategic priority; now superseded by the combat/progression overhaul above.)
 - **System map changes** — user flagged the in-system SVG view needs work (specifics TBD).
 - **Grow the research tree as we build systems** — every new gameplay system (colonies, factions, advanced combat, etc.) should land with new tech nodes that gate it. The skill catalog (165 entries) is already broad — research nodes should expand to match. Per pitfall #15, check `skill_definitions.bonus_per_level->>'type'` for existing bonus contracts before inventing new ones.
 
