@@ -4,6 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
+import { applyDamage } from '@/utils/combat';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI } from '@/utils/api';
@@ -233,6 +234,14 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
       const sizeLabel = hullClass === 'heavy' ? 'Destroyer'
                        : hullClass === 'medium' ? 'Marauder'
                        : 'Interceptor';
+      // Armor layer: redistribute a slice of base HP into armor so total
+      // neutral EHP is unchanged, but the damage triangle now bites --
+      // heavies are armor-tanky (reward lasers), lights are bare. Weapon
+      // type drives both what the pirate fires AND (later) its loadout feel.
+      const armorFrac = hullClass === 'heavy' ? 0.35 : hullClass === 'medium' ? 0.2 : 0;
+      const enemyArmor = Math.round(baseHp * armorFrac);
+      const enemyHull = baseHp - enemyArmor;
+      const enemyWeaponType = String(loadout.weapon || '').split('_')[0] || 'kinetic';
       enemies.push({
         id: `pirate_${nextId++}`,
         hullId, icon, faction: 'pirate',
@@ -240,10 +249,13 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies) => {
         x: startX, y: startY,
         vx: 0, vy: 0,
         rotation: rng.range(-180, 180),
-        hull: baseHp,
-        maxHull: baseHp,
+        hull: enemyHull,
+        maxHull: enemyHull,
+        armor: enemyArmor,
+        maxArmor: enemyArmor,
         shield: shield.maxShield,
         maxShield: shield.maxShield,
+        weaponType: enemyWeaponType,
         speed: engine.speed,
         damage: weapon.damage,
         fireRate: weapon.fireRate,
@@ -1487,6 +1499,10 @@ export const SystemView = () => {
   const playerShieldRef = useRef(50);
   const playerMaxHullRef = useRef(100);
   const playerMaxShieldRef = useRef(50);
+  // Armor: the middle defense layer (shield → armor → hull). Does NOT
+  // regenerate. Sourced from fitted armor modules via fleetStats.totalArmor.
+  const playerArmorRef = useRef(0);
+  const playerMaxArmorRef = useRef(0);
   const playerShieldRegenTimerRef = useRef(0);
   const combatInitializedRef = useRef(false);
   // Mirror of `isPod` for game-loop closure access (combat AI runs in
@@ -1602,13 +1618,18 @@ export const SystemView = () => {
   useEffect(() => {
     const oldMaxHull   = playerMaxHullRef.current   || 1;
     const oldMaxShield = playerMaxShieldRef.current || 1;
+    const oldMaxArmor  = playerMaxArmorRef.current  || 1;
     const hullPct      = playerHullRef.current   / oldMaxHull;
     const shieldPct    = playerShieldRef.current / oldMaxShield;
+    const armorPct     = playerArmorRef.current  / oldMaxArmor;
     playerMaxHullRef.current   = Math.max(1, fleetStats.totalHull);
     playerMaxShieldRef.current = Math.max(0, fleetStats.totalShield);
+    playerMaxArmorRef.current  = Math.max(0, fleetStats.totalArmor);
     playerHullRef.current   = Math.min(playerMaxHullRef.current,   playerHullRef.current   > 0 ? hullPct   * playerMaxHullRef.current   : playerMaxHullRef.current);
     playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current > 0 ? shieldPct * playerMaxShieldRef.current : playerMaxShieldRef.current);
-  }, [fleetStats.totalHull, fleetStats.totalShield]);
+    // Armor refills to its preserved ratio on refit (no in-combat regen).
+    playerArmorRef.current  = Math.min(playerMaxArmorRef.current,  playerArmorRef.current  > 0 ? armorPct  * playerMaxArmorRef.current  : playerMaxArmorRef.current);
+  }, [fleetStats.totalHull, fleetStats.totalShield, fleetStats.totalArmor]);
 
   // Override the ship physics ref with fleet-derived speed/maneuver,
   // which already include the fleet-mass penalty.  fleet_speed = 50 is
@@ -2272,13 +2293,19 @@ export const SystemView = () => {
           const angle = rng.range(0, Math.PI * 2);
           const dist = rng.range(0, zone.radius);
           const icon = getShipIcon(hullId);
+          // Armor layer redistributed from base HP by size (neutral EHP).
+          const solArmorFrac = hull.displaySize > 9 ? 0.35 : hull.displaySize > 7 ? 0.2 : 0;
+          const solArmor = Math.round(hull.stats.maxHull * solArmorFrac);
+          const solHull = hull.stats.maxHull - solArmor;
           enemies.push({
             id: `pirate_${nextId++}`, hullId, icon, faction: 'pirate',
             name: `${FACTIONS.pirate.name} ${hull.displaySize > 9 ? 'Destroyer' : hull.displaySize > 7 ? 'Marauder' : 'Interceptor'}`,
             x: zone.cx + Math.cos(angle) * dist, y: zone.cy + Math.sin(angle) * dist,
             vx: 0, vy: 0, rotation: rng.range(-180, 180),
-            hull: hull.stats.maxHull, maxHull: hull.stats.maxHull,
+            hull: solHull, maxHull: solHull,
+            armor: solArmor, maxArmor: solArmor,
             shield: hull.stats.maxShield, maxShield: hull.stats.maxShield,
+            weaponType: 'kinetic',
             speed: hull.stats.speed, damage: hull.stats.damage,
             fireRate: hull.stats.fireRate, range: hull.stats.range,
             fireCooldown: 0, shieldRegenTimer: 0,
@@ -2326,9 +2353,10 @@ export const SystemView = () => {
       setDockedBody(null);
       setAutopilotTarget(null);
       
-      // Reset hull/shield
+      // Reset hull/shield/armor
       playerHullRef.current = playerMaxHullRef.current;
       playerShieldRef.current = playerMaxShieldRef.current;
+      playerArmorRef.current = playerMaxArmorRef.current;
     }
   }, [currentSystemId, currentSystem]);
   
@@ -2890,6 +2918,7 @@ export const SystemView = () => {
               vy: Math.sin(pAngle) * PROJECTILE_SPEED * 0.7,
               age: 0, fromPlayer: false, damage: enemy.damage,
               color: enemy.engineColor,
+              weapon_type: enemy.weaponType || 'kinetic',
             });
           }
         }
@@ -3019,14 +3048,11 @@ export const SystemView = () => {
             // Hybrid Turret Operation = +5%/level). Applies fleet-wide
             // so wingmen benefit from the captain's training too.
             const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
-            let dmg = w.damage * dmgBonus;
-            if (nearest.shield > 0) {
-              const shieldDmg = Math.min(nearest.shield, dmg);
-              nearest.shield -= shieldDmg;
-              dmg -= shieldDmg;
-              nearest.shieldRegenTimer = SHIELD_REGEN_DELAY;
-            }
-            nearest.hull -= dmg;
+            const dmg = w.damage * dmgBonus;
+            // Damage triangle: laser is strong vs armor, weak vs shield.
+            // applyDamage walks shield → armor → hull with per-layer mults.
+            const laserRes = applyDamage(nearest, dmg, 'laser');
+            if (laserRes.shieldDamaged) nearest.shieldRegenTimer = SHIELD_REGEN_DELAY;
             effects.push({
               type: 'laser_beam',
               x1: sx, y1: sy,
@@ -3179,15 +3205,10 @@ export const SystemView = () => {
             if (e.hull <= 0) continue;
             const d = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
             if (d < e.displaySize + 5) {
-              // Hit!
-              let dmg = p.damage;
-              if (e.shield > 0) {
-                const shieldDmg = Math.min(e.shield, dmg);
-                e.shield -= shieldDmg;
-                dmg -= shieldDmg;
-                e.shieldRegenTimer = SHIELD_REGEN_DELAY;
-              }
-              e.hull -= dmg;
+              // Hit! Resolve through the damage triangle by projectile type
+              // (kinetic strong vs shield, missile strong vs hull).
+              const projRes = applyDamage(e, p.damage, p.weapon_type);
+              if (projRes.shieldDamaged) e.shieldRegenTimer = SHIELD_REGEN_DELAY;
               effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: e.shield > 0 ? '#4488ff' : '#ff8844' });
               playSound('weapon_hit');
               projectiles.splice(i, 1);
@@ -3225,16 +3246,19 @@ export const SystemView = () => {
           // Check hits on player
           const d = Math.sqrt((p.x - playerPos.x) ** 2 + (p.y - playerPos.y) ** 2);
           if (d < 12) {
-            let dmg = p.damage;
-            const shield = playerShieldRef.current;
-            if (shield > 0) {
-              const shieldDmg = Math.min(shield, dmg);
-              playerShieldRef.current -= shieldDmg;
-              dmg -= shieldDmg;
-              playerShieldRegenTimerRef.current = SHIELD_REGEN_DELAY;
-            }
-            playerHullRef.current -= dmg;
-            effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: shield > 0 ? '#4488ff' : '#ff4444' });
+            // Resolve incoming fire through the player's shield → armor →
+            // hull pool using the firing weapon's type.
+            const playerPool = {
+              shield: playerShieldRef.current,
+              armor: playerArmorRef.current,
+              hull: playerHullRef.current,
+            };
+            const hitRes = applyDamage(playerPool, p.damage, p.weapon_type);
+            playerShieldRef.current = playerPool.shield;
+            playerArmorRef.current  = playerPool.armor;
+            playerHullRef.current   = playerPool.hull;
+            if (hitRes.shieldDamaged) playerShieldRegenTimerRef.current = SHIELD_REGEN_DELAY;
+            effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: playerShieldRef.current > 0 ? '#4488ff' : '#ff4444' });
             projectiles.splice(i, 1);
             
             if (playerHullRef.current <= 0 && !podEntryInFlightRef.current && !isPodRef.current) {
@@ -3251,6 +3275,7 @@ export const SystemView = () => {
               podEntryInFlightRef.current = true;
               playerHullRef.current = playerMaxHullRef.current;
               playerShieldRef.current = playerMaxShieldRef.current;
+              playerArmorRef.current = playerMaxArmorRef.current;
 
               // Disengage all aggro'd pirates immediately. They'll fly
               // home; pod is untargetable so they won't re-aggro.
@@ -3618,6 +3643,8 @@ export const SystemView = () => {
           playerMaxHull: playerMaxHullRef.current,
           playerShield: shieldNow,
           playerMaxShield: playerMaxShieldRef.current,
+          playerArmor: Math.round(playerArmorRef.current),
+          playerMaxArmor: Math.round(playerMaxArmorRef.current),
           enemyCount: visibleEnemies,
           followMode: followModeRef.current,
         });
@@ -4396,9 +4423,17 @@ export const SystemView = () => {
                           fill="#4488ff" rx="0.5" />
                       </>
                     )}
-                    {/* Hull bar */}
-                    <rect x="0" y="3" width="20" height="2" fill="#332222" rx="0.5" />
-                    <rect x="0" y="3" width={20 * (enemy.hull / enemy.maxHull)} height="2"
+                    {/* Armor bar (only when the enemy carries armor) */}
+                    {enemy.maxArmor > 0 && (
+                      <>
+                        <rect x="0" y="3" width="20" height="2" fill="#332b1a" rx="0.5" />
+                        <rect x="0" y="3" width={20 * (enemy.armor / enemy.maxArmor)} height="2"
+                          fill="#d8a24a" rx="0.5" />
+                      </>
+                    )}
+                    {/* Hull bar — shifts down a row when an armor bar is present */}
+                    <rect x="0" y={enemy.maxArmor > 0 ? 6 : 3} width="20" height="2" fill="#332222" rx="0.5" />
+                    <rect x="0" y={enemy.maxArmor > 0 ? 6 : 3} width={20 * (enemy.hull / enemy.maxHull)} height="2"
                       fill={enemy.hull > enemy.maxHull * 0.5 ? '#44aa44' : enemy.hull > enemy.maxHull * 0.25 ? '#aaaa44' : '#ff4444'}
                       rx="0.5" />
                   </g>

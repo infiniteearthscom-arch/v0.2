@@ -138,6 +138,8 @@ const TopBar = () => {
   const playerMaxHull = useGameStore(state => state.playerMaxHull);
   const playerShield = useGameStore(state => state.playerShield);
   const playerMaxShield = useGameStore(state => state.playerMaxShield);
+  const playerArmor = useGameStore(state => state.playerArmor);
+  const playerMaxArmor = useGameStore(state => state.playerMaxArmor);
   const enemyCount = useGameStore(state => state.enemyCount);
   const autopilotTarget = useGameStore(state => state.autopilotTarget);
 
@@ -188,6 +190,9 @@ const TopBar = () => {
   const shieldPct = playerMaxShield > 0 ? playerShield / playerMaxShield : 0;
   const hasShield = playerMaxShield > 0;
 
+  const armorPct = playerMaxArmor > 0 ? playerArmor / playerMaxArmor : 0;
+  const hasArmor = playerMaxArmor > 0;
+
   return (
     <div
       className="fixed top-0 left-0 right-0 z-50 flex items-center"
@@ -237,6 +242,23 @@ const TopBar = () => {
             {playerHull}
           </span>
         </div>
+
+        {/* Armor bar (only when armor modules are fitted) */}
+        {hasArmor && (
+          <div className="flex items-center gap-1.5" title={`Armor: ${playerArmor}/${playerMaxArmor}`}>
+            <span style={{ color: '#d8a24a', fontSize: 8 }}>▰</span>
+            <span style={{ color: '#3a4a5a', fontSize: 8 }}>ARMR</span>
+            <div className="overflow-hidden" style={{ width: 45, height: 5, background: '#0a1528', borderRadius: 2, border: `1px solid ${EDGE}` }}>
+              <div className="h-full transition-all duration-200" style={{
+                width: `${Math.max(0, Math.min(100, armorPct * 100))}%`,
+                background: 'linear-gradient(90deg, #8a5a18, #d8a24a)',
+              }} />
+            </div>
+            <span className="font-bold" style={{ color: '#d8a24a', minWidth: 20, textAlign: 'right' }}>
+              {playerArmor}
+            </span>
+          </div>
+        )}
 
         {/* Shield bar */}
         <div className="flex items-center gap-1.5" title={hasShield ? `Shield: ${playerShield}/${playerMaxShield}` : 'No shield fitted'}>

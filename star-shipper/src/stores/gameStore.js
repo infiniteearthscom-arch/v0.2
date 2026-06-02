@@ -139,6 +139,8 @@ const initialState = {
   playerMaxHull: 100,
   playerShield: 0,
   playerMaxShield: 0,
+  playerArmor: 0,
+  playerMaxArmor: 0,
   enemyCount: 0,
   followMode: true,
 
@@ -669,6 +671,8 @@ export const useGameStore = create(
         if (data.playerMaxHull !== undefined) state.playerMaxHull = data.playerMaxHull;
         if (data.playerShield !== undefined) state.playerShield = data.playerShield;
         if (data.playerMaxShield !== undefined) state.playerMaxShield = data.playerMaxShield;
+        if (data.playerArmor !== undefined) state.playerArmor = data.playerArmor;
+        if (data.playerMaxArmor !== undefined) state.playerMaxArmor = data.playerMaxArmor;
         if (data.enemyCount !== undefined) state.enemyCount = data.enemyCount;
         if (data.followMode !== undefined) state.followMode = data.followMode;
       }),

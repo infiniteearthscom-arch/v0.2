@@ -7,6 +7,8 @@ import { ItemCell, ItemIcon, EmptySlotCell } from '@/components/items';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 import { normalizeItem, normalizeFittedModule, SLOT_TYPE_META } from '@/utils/itemShape';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
+import { detectWeaponType } from '@/utils/weapons';
+import { describeWeaponEffectiveness } from '@/utils/combat';
 // Single source of truth for hull shape data (pitfall #11 in CLAUDE.md).
 // ShipBuilderWindow used to inline its own HULL_SHAPES const which
 // drifted from shipRenderer.js -- the mining barges (Prospector,
@@ -515,6 +517,32 @@ const SlotInfo = ({ slot, module }) => {
               })}
             </div>
           )}
+          {/* Damage triangle: how this weapon fares vs each defense layer
+              (shield → armor → hull). Reads the shared DAMAGE_MATRIX so
+              the tooltip matches what combat actually does. */}
+          {slot.type === 'weapon' && (() => {
+            const wType = detectWeaponType(module);
+            const eff = describeWeaponEffectiveness(wType);
+            if (!eff) return null;
+            return (
+              <div className="mt-1.5 pt-1.5 border-t border-slate-700/30">
+                <div className="text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">
+                  {wType} · vs defense layers
+                </div>
+                <div className="flex gap-1">
+                  {eff.rows.map(r => {
+                    const c = r.tone === 'good' ? '#44cc44' : r.tone === 'bad' ? '#ff5555' : '#94a3b8';
+                    return (
+                      <div key={r.layer} className="flex-1 text-center rounded px-1 py-0.5" style={{ background: c + '14' }}>
+                        <div className="text-[9px] text-slate-400">{r.label}</div>
+                        <div className="text-[10px] font-bold" style={{ color: c }}>×{r.mult.toFixed(2)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
           <div className="text-[9px] text-slate-600 mt-1">Click to unfit</div>
         </div>
       ) : (
