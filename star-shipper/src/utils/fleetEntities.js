@@ -8,6 +8,7 @@
 // The fleet pool below is the authoritative combat health.
 
 import { applyDamage } from './combat';
+import { FORMATION_OFFSETS } from './shipRenderer';
 
 // Build the fleetId -> fleet-pool Map from a flat member array. Also stamps
 // `isFlagship` on each member (heaviest hull in its fleet). Returns the Map.
@@ -51,10 +52,26 @@ export function buildFleets(members) {
     delete f._flagHp;
   }
 
-  // Stamp flagship flag on members for render (one bar per fleet).
+  // Stamp flagship flag + formation slot on each member. The flagship is
+  // the formation leader (slot 0); followers get slots 1.. and a V-formation
+  // offset (reused from the player fleet for a consistent feel). Followers
+  // lagged-follow the leader; a fleet of 1 is just a free-flying leader.
+  const followerCount = new Map();
   for (const m of members || []) {
     const f = fleets.get(m.fleetId);
-    m.isFlagship = !!(f && f.flagshipId === m.id);
+    if (!f) { m.isFlagship = false; m.formationSlot = 0; m.formationOffset = FORMATION_OFFSETS[0]; continue; }
+    if (f.flagshipId === m.id) {
+      m.isFlagship = true;
+      m.formationSlot = 0;
+      m.formationOffset = FORMATION_OFFSETS[0];
+    } else {
+      m.isFlagship = false;
+      const next = (followerCount.get(m.fleetId) || 0) + 1;
+      followerCount.set(m.fleetId, next);
+      const idx = Math.min(next, FORMATION_OFFSETS.length - 1);
+      m.formationSlot = idx;
+      m.formationOffset = FORMATION_OFFSETS[idx];
+    }
   }
 
   return fleets;

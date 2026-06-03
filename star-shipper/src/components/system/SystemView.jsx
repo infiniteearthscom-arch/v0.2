@@ -2840,10 +2840,12 @@ export const SystemView = () => {
       // while a fleet-mate fights. Cheap O(N) scan; built once per
       // frame so all members see a consistent set.
       const engagedFleets = new Set();
+      const leaderByFleet = new Map(); // fleetId -> live flagship (formation leader)
       for (const e of enemies) {
         if (e.hull > 0 && e.fleetId && (e.state === 'chase' || e.state === 'attack')) {
           engagedFleets.add(e.fleetId);
         }
+        if (e.hull > 0 && e.isFlagship) leaderByFleet.set(e.fleetId, e);
       }
       // Fleet-level shield regen (pool, not per-member).
       for (const fleet of fleetsRef.current.values()) {
@@ -2864,6 +2866,47 @@ export const SystemView = () => {
         const hdx = enemy.patrolCenter.x - enemy.x;
         const hdy = enemy.patrolCenter.y - enemy.y;
         const homeDist = Math.sqrt(hdx * hdx + hdy * hdy);
+
+        // --- Followers hold formation behind the flagship (combat F1.5) ---
+        // The flagship runs the state machine below; wingmen mirror its
+        // combat state and lagged-follow their V-formation slot, reusing the
+        // player fleet's formation math (WINGMAN_LAG_RATE). A fleet of 1 has
+        // no leader here and falls through to fly free like before.
+        const leader = enemy.isFlagship ? null : leaderByFleet.get(enemy.fleetId);
+        if (leader && leader.hull > 0) {
+          enemy.state = leader.state; // drives firing + flee uniformly
+          const theta = leader.rotation * Math.PI / 180;
+          const cosT = Math.cos(theta), sinT = Math.sin(theta);
+          const off = enemy.formationOffset || { x: 0, y: 0 };
+          // x = lateral (+right of heading), y = longitudinal (+behind).
+          const slotX = leader.x + (-sinT) * off.x + (-cosT) * off.y;
+          const slotY = leader.y + ( cosT) * off.x + (-sinT) * off.y;
+          const fLag = 1 - Math.exp(-WINGMAN_LAG_RATE * delta);
+          const prevX = enemy.x, prevY = enemy.y;
+          enemy.x = prevX + (slotX - prevX) * fLag;
+          enemy.y = prevY + (slotY - prevY) * fLag;
+          const mvx = enemy.x - prevX, mvy = enemy.y - prevY;
+          if (mvx * mvx + mvy * mvy > 0.04) enemy.rotation = Math.atan2(mvy, mvx) * 180 / Math.PI;
+          else enemy.rotation = leader.rotation;
+          enemy.vx = 0; enemy.vy = 0;
+          // Fire from formation (same rule as the leader).
+          if (!dockedBodyRef.current && enemy.state === 'attack' && dist < enemy.range) {
+            enemy.fireCooldown -= delta;
+            if (enemy.fireCooldown <= 0) {
+              enemy.fireCooldown = enemy.fireRate;
+              const pAngle = Math.atan2(dy, dx);
+              projectiles.push({
+                x: enemy.x, y: enemy.y,
+                vx: Math.cos(pAngle) * PROJECTILE_SPEED * 0.7,
+                vy: Math.sin(pAngle) * PROJECTILE_SPEED * 0.7,
+                age: 0, fromPlayer: false, damage: enemy.damage,
+                color: enemy.engineColor,
+                weapon_type: enemy.weaponType || 'kinetic',
+              });
+            }
+          }
+          continue; // skip the leader/free-agent state machine + movement
+        }
 
         // If player just docked OR ejected into a pod, disengage any
         // hostile enemies. Pods are untargetable; pirates fly home and
