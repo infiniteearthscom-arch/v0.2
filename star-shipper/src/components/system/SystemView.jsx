@@ -5,6 +5,7 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HUL
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
+import { buildFleets, damageFleet } from '@/utils/fleetEntities';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI } from '@/utils/api';
@@ -1373,7 +1374,10 @@ export const SystemView = () => {
   const fleetShipsRef = useRef([]); // Mirror of fleetShips for game loop access
   
   // Combat state
-  const enemiesRef = useRef([]); // Array of enemy objects
+  const enemiesRef = useRef([]); // Array of enemy MEMBER objects (visual/AI/fire)
+  // Combat F1: fleetId -> pooled {shield,armor,hull} entity. Damage targets
+  // the pool; members are liveness-only. Rebuilt at each spawn.
+  const fleetsRef = useRef(new Map());
   const projectilesRef = useRef([]); // Active projectiles {x, y, vx, vy, age, fromPlayer, damage}
   const combatEffectsRef = useRef([]); // Visual effects: explosions, hit sparks
   const playerFireCooldownRef = useRef(0);
@@ -2314,6 +2318,8 @@ export const SystemView = () => {
             patrolCenter: { x: zone.cx + Math.cos(angle) * dist, y: zone.cy + Math.sin(angle) * dist },
             patrolAngle: rng.range(0, Math.PI * 2), patrolRadius: rng.range(50, 150),
             targetId: null,
+            // Each Sol spawn zone is one fleet (combat F1 entity model).
+            fleetId: `sol_${zone.name.replace(/\s+/g, '')}`,
             lootCredits: Math.round(rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX) * (hull.displaySize / 6)),
           });
         }
@@ -2327,6 +2333,8 @@ export const SystemView = () => {
     }
     
     enemiesRef.current = enemies;
+    // Combat F1: build the pooled fleet entities from the spawned members.
+    fleetsRef.current = buildFleets(enemies);
     setEnemyCount(enemies.length);
     
     // Reset ship position when changing systems (not on first load)
@@ -2786,7 +2794,44 @@ export const SystemView = () => {
       const enemies = enemiesRef.current;
       const projectiles = projectilesRef.current;
       const effects = combatEffectsRef.current;
-      
+
+      // Combat F1: destroy an entire fleet at once (no attrition yet).
+      // Explodes every alive member, drops ONE wreck at the formation
+      // centroid with the fleet's pooled loot, clears designation, and
+      // removes the pool. Member liveness (.hull=0) lets the existing
+      // dead-member cleanup + counts handle the rest.
+      const killFleet = (fleetId) => {
+        const fleet = fleetsRef.current.get(fleetId);
+        let cx = 0, cy = 0, n = 0;
+        for (const e of enemies) {
+          if (e.fleetId === fleetId && e.hull > 0) {
+            cx += e.x; cy += e.y; n++;
+            e.hull = 0;
+            effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
+          }
+        }
+        if (n === 0) { fleetsRef.current.delete(fleetId); return; }
+        cx /= n; cy /= n;
+        playSound('ship_destroyed');
+        playSound('ship_destroyed_metal');
+        const loot = fleet?.lootCredits || 50;
+        if (pushToast) pushToast({
+          kind: 'success',
+          text: `Fleet destroyed — ${loot} cr loot dropped, fly to salvage.`,
+          duration: 3500,
+        });
+        wrecksRef.current.push({
+          id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          x: cx, y: cy,
+          contents: { credits: loot },
+          expires_at_ms: Date.now() + 5 * 60 * 1000,
+        });
+        if (fleet && designatedEnemyIdRef.current && fleet.memberIds.includes(designatedEnemyIdRef.current)) {
+          clearDesignatedEnemy();
+        }
+        fleetsRef.current.delete(fleetId);
+      };
+
       // --- Enemy AI ---
       // Fleet rally pre-pass: collect every fleetId that has at least
       // one member currently engaging the player (chase / attack). On
@@ -2798,6 +2843,13 @@ export const SystemView = () => {
       for (const e of enemies) {
         if (e.hull > 0 && e.fleetId && (e.state === 'chase' || e.state === 'attack')) {
           engagedFleets.add(e.fleetId);
+        }
+      }
+      // Fleet-level shield regen (pool, not per-member).
+      for (const fleet of fleetsRef.current.values()) {
+        fleet.shieldRegenTimer -= delta;
+        if (fleet.shieldRegenTimer <= 0 && fleet.shield < fleet.maxShield) {
+          fleet.shield = Math.min(fleet.maxShield, fleet.shield + SHIELD_REGEN_RATE * delta);
         }
       }
       for (const enemy of enemies) {
@@ -2843,7 +2895,9 @@ export const SystemView = () => {
         } else if (enemy.state === 'attack') {
           if (dist > PIRATE_ATTACK_RANGE * 1.5) enemy.state = 'chase';
           if (dist > PIRATE_DEAGGRO_RANGE) enemy.state = 'patrol';
-          if (enemy.hull < enemy.maxHull * 0.2) enemy.state = 'flee';
+          // Flee when the FLEET (pooled) is below 20% hull.
+          const efleet = fleetsRef.current.get(enemy.fleetId);
+          if (efleet && efleet.hull < efleet.maxHull * 0.2) enemy.state = 'flee';
         } else if (enemy.state === 'flee') {
           if (dist > PIRATE_DEAGGRO_RANGE * 1.5) enemy.state = 'patrol';
         } else if (enemy.state === 'returning') {
@@ -2923,11 +2977,7 @@ export const SystemView = () => {
           }
         }
         
-        // Shield regen
-        enemy.shieldRegenTimer -= delta;
-        if (enemy.shieldRegenTimer <= 0 && enemy.shield < enemy.maxShield) {
-          enemy.shield = Math.min(enemy.maxShield, enemy.shield + SHIELD_REGEN_RATE * delta);
-        }
+        // (Shield regen is now fleet-level — see the pre-pass above.)
       }
       
       // --- Per-ship weapon firing (each ship fires its own weapons) ---
@@ -3049,10 +3099,14 @@ export const SystemView = () => {
             // so wingmen benefit from the captain's training too.
             const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
             const dmg = w.damage * dmgBonus;
-            // Damage triangle: laser is strong vs armor, weak vs shield.
-            // applyDamage walks shield → armor → hull with per-layer mults.
-            const laserRes = applyDamage(nearest, dmg, 'laser');
-            if (laserRes.shieldDamaged) nearest.shieldRegenTimer = SHIELD_REGEN_DELAY;
+            // Combat F1: damage the target's FLEET pool (shield→armor→hull
+            // via the triangle), not the individual member. Laser is strong
+            // vs armor, weak vs shield.
+            const nearestFleet = fleetsRef.current.get(nearest.fleetId);
+            if (nearestFleet) {
+              const laserRes = damageFleet(nearestFleet, dmg, 'laser');
+              if (laserRes.shieldDamaged) nearestFleet.shieldRegenTimer = SHIELD_REGEN_DELAY;
+            }
             effects.push({
               type: 'laser_beam',
               x1: sx, y1: sy,
@@ -3062,40 +3116,15 @@ export const SystemView = () => {
               color: w.color,
               fromPlayer: true,
             });
-            // Hit spark at impact point
+            // Hit spark at impact point (blue while the fleet's shield holds).
             effects.push({
               x: nearest.x, y: nearest.y,
               type: 'hit', age: 0,
-              color: nearest.shield > 0 ? '#4488ff' : w.color,
+              color: (nearestFleet && nearestFleet.shield > 0) ? '#4488ff' : w.color,
             });
-            // Enemy destroyed by laser? Mirror the projectile-hit
-            // destruction path. Spawns a CLIENT-LOCAL wreck (no server
-            // persistence -- the server-side wrecks table issue is
-            // still unresolved). Credits are awarded on pickup via the
-            // existing awardLoot endpoint, which works.
-            if (nearest.hull <= 0) {
-              nearest.hull = 0;
-              effects.push({ x: nearest.x, y: nearest.y, type: 'explosion', age: 0, size: nearest.displaySize });
-              playSound('ship_destroyed');
-              playSound('ship_destroyed_metal');
-              const loot = nearest.lootCredits || 50;
-              if (pushToast) pushToast({
-                kind: 'success',
-                text: `Destroyed ${nearest.name} — ${loot} cr loot dropped, fly to salvage.`,
-                duration: 3500,
-              });
-              wrecksRef.current.push({
-                id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                x: nearest.x,
-                y: nearest.y,
-                contents: { credits: loot },
-                expires_at_ms: Date.now() + 5 * 60 * 1000, // 5 min local TTL
-              });
-              // Clear designation if this was the designated target
-              // so the fleet doesn't keep "trying" to lock a corpse.
-              if (designatedEnemyIdRef.current === nearest.id) {
-                clearDesignatedEnemy();
-              }
+            // Fleet destroyed? In F1 the whole formation pops at once.
+            if (nearestFleet && nearestFleet.hull <= 0) {
+              killFleet(nearest.fleetId);
             }
           } else if (w.type === 'kinetic') {
             // Bullet with slight aim spread. Gunnery skill damage
@@ -3228,39 +3257,20 @@ export const SystemView = () => {
             if (e.hull <= 0) continue;
             const d = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
             if (d < e.displaySize + 5) {
-              // Hit! Resolve through the damage triangle by projectile type
-              // (kinetic strong vs shield, missile strong vs hull).
-              const projRes = applyDamage(e, p.damage, p.weapon_type);
-              if (projRes.shieldDamaged) e.shieldRegenTimer = SHIELD_REGEN_DELAY;
-              effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: e.shield > 0 ? '#4488ff' : '#ff8844' });
+              // Hit! Combat F1: resolve through the target's FLEET pool
+              // by projectile type (kinetic strong vs shield, missile vs hull).
+              const hitFleet = fleetsRef.current.get(e.fleetId);
+              if (hitFleet) {
+                const projRes = damageFleet(hitFleet, p.damage, p.weapon_type);
+                if (projRes.shieldDamaged) hitFleet.shieldRegenTimer = SHIELD_REGEN_DELAY;
+              }
+              effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: (hitFleet && hitFleet.shield > 0) ? '#4488ff' : '#ff8844' });
               playSound('weapon_hit');
               projectiles.splice(i, 1);
 
-              // Enemy destroyed by projectile. Spawns a CLIENT-LOCAL
-              // wreck the player flies to. See the laser branch above
-              // for the same logic + the rationale (server-side wrecks
-              // table is still busted; local-only is the workaround).
-              if (e.hull <= 0) {
-                e.hull = 0;
-                if (designatedEnemyIdRef.current === e.id) {
-                  clearDesignatedEnemy();
-                }
-                effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
-                playSound('ship_destroyed');
-                playSound('ship_destroyed_metal');
-                const loot = e.lootCredits || 50;
-                if (pushToast) pushToast({
-                  kind: 'success',
-                  text: `Destroyed ${e.name} — ${loot} cr loot dropped, fly to salvage.`,
-                  duration: 3500,
-                });
-                wrecksRef.current.push({
-                  id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                  x: e.x,
-                  y: e.y,
-                  contents: { credits: loot },
-                  expires_at_ms: Date.now() + 5 * 60 * 1000,
-                });
+              // Fleet destroyed? Whole formation pops at once (F1).
+              if (hitFleet && hitFleet.hull <= 0) {
+                killFleet(e.fleetId);
               }
               break;
             }
@@ -4435,32 +4445,38 @@ export const SystemView = () => {
                     style={{ imageRendering: 'pixelated' }}
                   />
                 )}
-                {/* Health bar (only when damaged or attacking) */}
-                {(enemy.hull < enemy.maxHull || enemy.state === 'attack' || enemy.state === 'chase') && (
-                  <g transform={`translate(${enemy.x - 10}, ${enemy.y + enemy.displaySize + 4})`}>
-                    {/* Shield bar */}
-                    {enemy.maxShield > 0 && (
-                      <>
-                        <rect x="0" y="0" width="20" height="2" fill="#222244" rx="0.5" />
-                        <rect x="0" y="0" width={20 * (enemy.shield / enemy.maxShield)} height="2"
-                          fill="#4488ff" rx="0.5" />
-                      </>
-                    )}
-                    {/* Armor bar (only when the enemy carries armor) */}
-                    {enemy.maxArmor > 0 && (
-                      <>
-                        <rect x="0" y="3" width="20" height="2" fill="#332b1a" rx="0.5" />
-                        <rect x="0" y="3" width={20 * (enemy.armor / enemy.maxArmor)} height="2"
-                          fill="#d8a24a" rx="0.5" />
-                      </>
-                    )}
-                    {/* Hull bar — shifts down a row when an armor bar is present */}
-                    <rect x="0" y={enemy.maxArmor > 0 ? 6 : 3} width="20" height="2" fill="#332222" rx="0.5" />
-                    <rect x="0" y={enemy.maxArmor > 0 ? 6 : 3} width={20 * (enemy.hull / enemy.maxHull)} height="2"
-                      fill={enemy.hull > enemy.maxHull * 0.5 ? '#44aa44' : enemy.hull > enemy.maxHull * 0.25 ? '#aaaa44' : '#ff4444'}
-                      rx="0.5" />
-                  </g>
-                )}
+                {/* Fleet health bar — ONE per fleet, drawn on the flagship,
+                    reading the pooled shield/armor/hull (combat F1). */}
+                {enemy.isFlagship && (() => {
+                  const fleet = fleetsRef.current.get(enemy.fleetId);
+                  if (!fleet) return null;
+                  const show = fleet.shield < fleet.maxShield || fleet.armor < fleet.maxArmor
+                    || fleet.hull < fleet.maxHull || enemy.state === 'attack' || enemy.state === 'chase';
+                  if (!show) return null;
+                  const W = 24;
+                  const hasArmor = fleet.maxArmor > 0;
+                  const clamp = (v) => Math.max(0, Math.min(1, v));
+                  return (
+                    <g transform={`translate(${enemy.x - W / 2}, ${enemy.y + enemy.displaySize + 4})`}>
+                      {fleet.maxShield > 0 && (
+                        <>
+                          <rect x="0" y="0" width={W} height="2" fill="#222244" rx="0.5" />
+                          <rect x="0" y="0" width={W * clamp(fleet.shield / fleet.maxShield)} height="2" fill="#4488ff" rx="0.5" />
+                        </>
+                      )}
+                      {hasArmor && (
+                        <>
+                          <rect x="0" y="3" width={W} height="2" fill="#332b1a" rx="0.5" />
+                          <rect x="0" y="3" width={W * clamp(fleet.armor / fleet.maxArmor)} height="2" fill="#d8a24a" rx="0.5" />
+                        </>
+                      )}
+                      <rect x="0" y={hasArmor ? 6 : 3} width={W} height="2" fill="#332222" rx="0.5" />
+                      <rect x="0" y={hasArmor ? 6 : 3} width={W * clamp(fleet.hull / fleet.maxHull)} height="2"
+                        fill={fleet.hull > fleet.maxHull * 0.5 ? '#44aa44' : fleet.hull > fleet.maxHull * 0.25 ? '#aaaa44' : '#ff4444'}
+                        rx="0.5" />
+                    </g>
+                  );
+                })()}
                 {/* Faction name */}
                 {(enemy.state === 'attack' || enemy.state === 'chase') && (
                   <text x={enemy.x} y={enemy.y - enemy.displaySize - 5}
