@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { shipsAPI, questsAPI, galaxyAPI } from '@/utils/api';
+import { addPip, removePip, allocTotal } from '@/utils/powerPips';
 
 // ============================================
 // INITIAL STATE
@@ -185,6 +186,12 @@ const initialState = {
 
   // Fleet aggregated stats (computed by SystemView, consumed by Outliner)
   fleetStats: null,
+
+  // Combat power-pip allocation (P2a). Fleet-wide; the captain distributes
+  // reactor power across LAS/BAL/MIS/SHD/ENG. Pool size comes from
+  // fleetStats.pipPool. Even split (2 each = pool 10) is neutral. Persisted
+  // as a player preference; SystemView reconciles to the live pool.
+  pipAllocation: { LAS: 2, BAL: 2, MIS: 2, SHD: 2, ENG: 2 },
 
   // Docked body (set by SystemView when player docks, cleared on undock)
   // Shape: { id, name, type, ... } — or null when undocked
@@ -713,6 +720,20 @@ export const useGameStore = create(
         state.fleetStats = stats || null;
       }),
 
+      // Power-pip allocation (combat P2a).
+      setPipAllocation: (alloc) => set(state => {
+        if (alloc) state.pipAllocation = alloc;
+      }),
+      // Move one pip into `target` (delta>0) or out of it (delta<0). Keeps
+      // the total pinned to the reactor-derived pool (pulls from the
+      // largest other subsystem when the pool is already full).
+      adjustPip: (target, delta) => set(state => {
+        const pool = state.fleetStats?.pipPool || allocTotal(state.pipAllocation);
+        state.pipAllocation = delta > 0
+          ? addPip(state.pipAllocation, target, pool)
+          : removePip(state.pipAllocation, target);
+      }),
+
       // Dock status: SystemView pushes on dock / undock
       setDockedBodyDbId: (id) => set(state => {
         state.dockedBodyDbId = id || null;
@@ -826,6 +847,7 @@ export const useGameStore = create(
         audio: state.audio,
         uiScale: state.uiScale,
         toolbarExpanded: state.toolbarExpanded,
+        pipAllocation: state.pipAllocation,
       }),
       // Merge persisted state with initial state. Window open/minimized
       // state is NOT persisted — we always start with all panels closed

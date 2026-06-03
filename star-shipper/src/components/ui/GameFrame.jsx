@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { SystemMapWindow } from '@/components/system/SystemMapWindow';
+import PowerPanel from '@/components/system/PowerPanel';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ActivityTicker } from '@/components/activity/ActivityTicker';
@@ -719,6 +720,10 @@ export const GameFrame = ({ children }) => {
           SystemView and GalaxyFlightView. Self-disables when the
           presence/chat feature flag is off. */}
       <ChatPanel />
+
+      {/* Combat power-pip allocator (P2a) — fixed bottom-left, only
+          visible in System View. Self-gates on viewMode. */}
+      <PowerPanel />
 
       {/* Activity ticker — fixed top-center strip showing the latest
           galaxy-wide event. Self-hides until the first event arrives,
