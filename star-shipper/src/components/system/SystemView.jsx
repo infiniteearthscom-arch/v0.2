@@ -3149,17 +3149,40 @@ export const SystemView = () => {
         }
       }
 
-      // Clean up cooldowns for ships that no longer exist (ship sold, etc.)
-      // Cheap pass: only do it occasionally.
+      // Clean up state for ships/enemies that no longer exist. Cheap pass
+      // every ~10s. Prevents per-session accumulation that drags FPS over
+      // a long single-system grind (which the delta clamp then turns into
+      // sluggish movement).
       if (frameNum % 600 === 0) {
         const liveKeys = new Set();
+        const liveShipIds = new Set();
         for (const fs of fleetData) {
+          liveShipIds.add(fs.id);
           for (let wi = 0; wi < (fs.weapons?.length || 0); wi++) {
             liveKeys.add(`${fs.id}:${wi}`);
           }
         }
         for (const k of cooldowns.keys()) {
           if (!liveKeys.has(k)) cooldowns.delete(k);
+        }
+        // Ship-id-keyed refs (trails, wingman positions, missile lock) —
+        // drop entries for ships sold / stored since last sweep.
+        for (const ref of [wingmenPosRef.current, trailsRef.current, missileLockRef.current]) {
+          for (const id of Object.keys(ref)) {
+            if (!liveShipIds.has(id)) delete ref[id];
+          }
+        }
+        // Composite `${shipId}::${slot}` keys (missile ammo + last-server).
+        for (const ref of [missileAmmoRef.current, missileLastServerRef.current]) {
+          for (const k of Object.keys(ref)) {
+            if (!liveShipIds.has(k.split('::')[0])) delete ref[k];
+          }
+        }
+        // Drop destroyed enemies so per-frame enemy scans stop iterating
+        // corpses. (Explosions/wrecks/ghosts are tracked separately, so
+        // removing the dead enemy object here is safe.)
+        for (let ei = enemies.length - 1; ei >= 0; ei--) {
+          if (enemies[ei].hull <= 0) enemies.splice(ei, 1);
         }
       }
       } // end if (!dockedBodyRef.current)

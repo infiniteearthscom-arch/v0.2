@@ -309,6 +309,22 @@ setInterval(() => {
   s.emit('presence:pos', makePosPayload(state));
 }, POS_SEND_INTERVAL_MS);
 
+// Stale-peer eviction. getRenderState() already HIDES peers silent >5s,
+// but nothing removed them from the Map -- an ungraceful disconnect (no
+// presence:peer_leave) left a zombie entry forever. This actually drops
+// them so they don't accumulate over a long session. Guard `ts > 0` so a
+// freshly-joined peer that hasn't broadcast a position yet isn't swept.
+const STALE_PEER_MS = 15000;
+setInterval(() => {
+  if (!ENABLED || peers.size === 0) return;
+  const now = Date.now();
+  let removed = 0;
+  for (const [uid, p] of peers) {
+    if (p.ts > 0 && now - p.ts > STALE_PEER_MS) { peers.delete(uid); removed++; }
+  }
+  if (removed) emit('peers_changed', { count: peers.size });
+}, 10000);
+
 // Bump when the player re-fits / changes active ship. Peers will see
 // the new ship_visual_v in our next pos broadcast and the server will
 // rebroadcast a fresh ship_visual descriptor to the room.

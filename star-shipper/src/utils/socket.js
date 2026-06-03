@@ -78,6 +78,14 @@ export function ensureSocket() {
   if (!token) return null;
 
   connecting = true;
+  // If a previous socket exists but is dead (gave up reconnecting, was
+  // kicked, or auth-failed), tear it down before building a new one --
+  // otherwise the old instance keeps its listeners + reconnection timers
+  // alive and orphans accumulate across a long session.
+  if (socket) {
+    try { socket.removeAllListeners(); socket.disconnect(); } catch (err) { /* already dead */ }
+    socket = null;
+  }
   socket = ioClient(SERVER_URL, {
     auth: { token },
     reconnectionAttempts: 10,
