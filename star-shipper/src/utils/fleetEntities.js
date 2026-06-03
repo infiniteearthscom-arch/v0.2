@@ -29,6 +29,8 @@ export function buildFleets(members) {
         shieldRegenTimer: 0,
         lootCredits: 0,
         memberIds: [],
+        members: [],          // member refs (for attrition checks)
+        deathOrder: [],        // member refs, escort-first → flagship last
         flagshipId: null,
         _flagHp: -1,
       };
@@ -39,6 +41,7 @@ export function buildFleets(members) {
     f.maxHull     += (m.maxHull   ?? m.hull ?? 0);
     f.lootCredits += (m.lootCredits || 0);
     f.memberIds.push(m.id);
+    f.members.push(m);
     // Flagship = heaviest member (by hull), tie-break first-seen.
     const hp = (m.maxHull ?? m.hull ?? 0);
     if (hp > f._flagHp) { f._flagHp = hp; f.flagshipId = m.id; }
@@ -72,6 +75,24 @@ export function buildFleets(members) {
       m.formationSlot = idx;
       m.formationOffset = FORMATION_OFFSETS[idx];
     }
+  }
+
+  // Death order + per-member hull thresholds for attrition (combat F2).
+  // Escorts (lightest hull) die first; the flagship (leader) dies last at
+  // threshold 0. A member dies once the pooled hull drops to/below its
+  // threshold: T_k = maxHull − (sum of member hulls up to & incl. k).
+  for (const f of fleets.values()) {
+    const order = f.members.slice().sort((a, b) => {
+      if (a.id === f.flagshipId) return 1;   // flagship always last
+      if (b.id === f.flagshipId) return -1;
+      return (a.maxHull ?? a.hull ?? 0) - (b.maxHull ?? b.hull ?? 0); // lightest first
+    });
+    let cum = 0;
+    for (const m of order) {
+      cum += (m.maxHull ?? m.hull ?? 0);
+      m.deathThreshold = f.maxHull - cum;
+    }
+    f.deathOrder = order;
   }
 
   return fleets;

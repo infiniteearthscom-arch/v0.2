@@ -2795,41 +2795,39 @@ export const SystemView = () => {
       const projectiles = projectilesRef.current;
       const effects = combatEffectsRef.current;
 
-      // Combat F1: destroy an entire fleet at once (no attrition yet).
-      // Explodes every alive member, drops ONE wreck at the formation
-      // centroid with the fleet's pooled loot, clears designation, and
-      // removes the pool. Member liveness (.hull=0) lets the existing
-      // dead-member cleanup + counts handle the rest.
-      const killFleet = (fleetId) => {
-        const fleet = fleetsRef.current.get(fleetId);
-        let cx = 0, cy = 0, n = 0;
-        for (const e of enemies) {
-          if (e.fleetId === fleetId && e.hull > 0) {
-            cx += e.x; cy += e.y; n++;
-            e.hull = 0;
-            effects.push({ x: e.x, y: e.y, type: 'explosion', age: 0, size: e.displaySize });
+      // Combat F2: attrition. Call after any hull damage to a fleet. Peels
+      // off every member whose death threshold the pooled hull has dropped
+      // past (escorts first; flagship last). Each peeled ship explodes +
+      // drops its own loot wreck and — being hull<=0 — stops firing/moving,
+      // so the fleet's DPS decays as it shrinks. The flagship's death (last,
+      // threshold 0) destroys the fleet. Idempotent: already-dead members
+      // are skipped, so re-calling is safe.
+      const checkFleetAttrition = (fleet) => {
+        if (!fleet) return;
+        for (const m of fleet.deathOrder) {
+          if (m.hull > 0 && fleet.hull <= (m.deathThreshold ?? 0)) {
+            m.hull = 0;
+            effects.push({ x: m.x, y: m.y, type: 'explosion', age: 0, size: m.displaySize });
+            playSound('ship_destroyed_metal');
+            const loot = m.lootCredits || 0;
+            if (loot > 0) {
+              wrecksRef.current.push({
+                id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                x: m.x, y: m.y,
+                contents: { credits: loot },
+                expires_at_ms: Date.now() + 5 * 60 * 1000,
+              });
+            }
+            // Clear target-lock if the destroyed ship was the designated one.
+            if (designatedEnemyIdRef.current === m.id) clearDesignatedEnemy();
+            if (m.isFlagship) {
+              // Flagship down (last to die) = whole fleet destroyed.
+              playSound('ship_destroyed');
+              if (pushToast) pushToast({ kind: 'success', text: 'Enemy fleet destroyed — salvage the wreckage!', duration: 3000 });
+              fleetsRef.current.delete(fleet.id);
+            }
           }
         }
-        if (n === 0) { fleetsRef.current.delete(fleetId); return; }
-        cx /= n; cy /= n;
-        playSound('ship_destroyed');
-        playSound('ship_destroyed_metal');
-        const loot = fleet?.lootCredits || 50;
-        if (pushToast) pushToast({
-          kind: 'success',
-          text: `Fleet destroyed — ${loot} cr loot dropped, fly to salvage.`,
-          duration: 3500,
-        });
-        wrecksRef.current.push({
-          id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          x: cx, y: cy,
-          contents: { credits: loot },
-          expires_at_ms: Date.now() + 5 * 60 * 1000,
-        });
-        if (fleet && designatedEnemyIdRef.current && fleet.memberIds.includes(designatedEnemyIdRef.current)) {
-          clearDesignatedEnemy();
-        }
-        fleetsRef.current.delete(fleetId);
       };
 
       // --- Enemy AI ---
@@ -3165,10 +3163,9 @@ export const SystemView = () => {
               type: 'hit', age: 0,
               color: (nearestFleet && nearestFleet.shield > 0) ? '#4488ff' : w.color,
             });
-            // Fleet destroyed? In F1 the whole formation pops at once.
-            if (nearestFleet && nearestFleet.hull <= 0) {
-              killFleet(nearest.fleetId);
-            }
+            // Combat F2: attrition — members peel off as the pooled hull
+            // crosses their thresholds (flagship's death ends the fleet).
+            if (nearestFleet) checkFleetAttrition(nearestFleet);
           } else if (w.type === 'kinetic') {
             // Bullet with slight aim spread. Gunnery skill damage
             // bonus is baked into the projectile at spawn -- when the
@@ -3311,10 +3308,8 @@ export const SystemView = () => {
               playSound('weapon_hit');
               projectiles.splice(i, 1);
 
-              // Fleet destroyed? Whole formation pops at once (F1).
-              if (hitFleet && hitFleet.hull <= 0) {
-                killFleet(e.fleetId);
-              }
+              // Combat F2: attrition check after the hit.
+              if (hitFleet) checkFleetAttrition(hitFleet);
               break;
             }
           }
