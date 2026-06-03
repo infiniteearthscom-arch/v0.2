@@ -23,7 +23,7 @@ The core loop's bookends are thin (see the build's honest weak-point review): **
         └──────────────── crafted into ──────┘
 ```
 
-Combat depth gives the player the **tools** (damage triangle + power pips); zoning gives the **reason to use them and the reward for doing so**. Neither half is worth much alone.
+Combat depth gives the player the **tools** (the damage triangle + readable fleet-vs-fleet tactics); zoning gives the **reason to use them and the reward for doing so**. Neither half is worth much alone.
 
 ---
 
@@ -31,8 +31,8 @@ Combat depth gives the player the **tools** (damage triangle + power pips); zoni
 
 | Area | Decision |
 |---|---|
-| **Combat feel** | **Starfield-style multi-pip** power allocation (LAS / BAL / MIS / SHD / ENG) |
-| **Stakes** | **Full** — eject cargo + modules into a recoverable wreck on death, AND server-validated loot |
+| **Combat model** | **Fleet-vs-fleet collective entities** (revised 2026-06-03). Both player and enemy fleets are single entities with pooled Shield/Armor/Hull, rendered as a formation, with **visual attrition** (ships peel off and die as the pool degrades). The **damage triangle** is the interactive core. *The earlier Starfield pip system was cut* — see A2. |
+| **Stakes** | **Full** — eject cargo + modules into a recoverable wreck on death, AND server-validated loot. Player fleet now also loses ships one-by-one (attrition) before the final pod. |
 | **Zoning structure** | **Chokepoint-gated** 5 tiers — cross tier N to reach N+1 |
 | **Rarity coupling** | **Hard gate** — rarest exotics + top-quality rolls practically only in tier III+ |
 | **Enemy scaling** | **All four** — tankier/typed defenses, elite bosses, coordinated formations, faction enemy types |
@@ -47,7 +47,7 @@ Combat depth gives the player the **tools** (damage triangle + power pips); zoni
 - **Weapons** (`weapons.js`): laser 6 dmg / 0.45s / 200 range, kinetic 12 / 0.7 / 180, missile 22 / 1.4 / 500. Type detected heuristically from module name keywords.
 - **Damage resolution is flat 2-layer**: `shield -= min(shield,dmg); hull -= rest`, at `SystemView.jsx:3023` (laser), `:3184` (projectile), `:3229` (player-hit). `weapon_type` is carried on projectiles but **never read at impact**.
 - **Armor is computed but unused** — `fleetStats.js:189` sums `totalArmor` (`MODULE_BONUSES.armor = {armor:25, mass:8}`), nothing in combat reads it.
-- **Reactors produce nothing consumable** — `MODULE_BONUSES.reactor = {shield:15, repair:0.5}` (`fleetStats.js:71`); no power budget gates anything. Empty hook for the pip system.
+- **Reactors produce nothing consumable** — `MODULE_BONUSES.reactor = {shield:15, repair:0.5}` (`fleetStats.js:71`); no power budget gates anything. (Was the hook for the cut pip system; now an open lever if reactors ever need a combat role.)
 - **Shield regen** is a global constant: `SHIELD_REGEN_RATE = 2`/s after `SHIELD_REGEN_DELAY = 3`s (`SystemView.jsx:44-45`).
 - **Death** (`enter-pod`, `fitting.js:1211`): destroys active ship + fitted modules, creates Escape Pod, **no cargo/module ejection, no credit loss**. Loot is a client-local credits wreck (`SystemView.jsx:3061`).
 - **Loot** (`award-loot`, `fitting.js:1171`): **trusts the client**, caps 1000/call. Cheatable (mint credits, zero an enemy in DevTools).
@@ -91,28 +91,32 @@ Three defense layers deplete **top-down**: **Shield → Armor → Hull** (hull 0
 
 Because layers deplete in order, a **mixed loadout** (kinetic strips shields → laser cracks armor → missiles gut hull) beats mono-weapon — that's the decision we want. Pirate loadouts already tag weapon type, so enemy typing is free.
 
-**Implementation:** one shared helper `applyDamage(target, rawDmg, weaponType) → {layerHit, killed}` replaces the four copy-pasted damage sites. Add the armor layer to both enemy objects and the player pool (read `totalArmor` already summed in `fleetStats`). Ship first with an all-1.0 matrix (zero feel change, pure plumbing = **P0**), then turn the matrix on (**P1**). Surface the matrix in the Ship Builder weapon tooltip + an in-combat damage-type readout. No migration.
+**SHIPPED (P0+P1, 2026-06-02).** `applyDamage(target, rawDmg, weaponType) → {killed, shieldDamaged, layerHit}` in `utils/combat.js` replaces the copy-pasted damage sites; armor layer added to enemies + the player pool; matrix above is live; Ship Builder weapon tooltip shows the effectiveness triangle. Per-enemy 3-segment health bars added. The helper operates on **any** `{shield, armor, hull}` target, so it generalizes straight to the collective fleet pools in A2 below.
 
-### A2. Power management — Starfield multi-pip
+### A2. Combat model — fleet-vs-fleet collective entities *(revised 2026-06-03)*
 
-A fleet-wide **pip pool** (the captain's command over the shared fleet) allocated in real time across five subsystems:
+> **The Starfield pip system was CUT** (built as P2a, then reverted 2026-06-03). Why: pips are a single fleet-wide allocation, but the common case is fighting **multiple enemy fleets at once** with *different* defense profiles — there's no one "correct" allocation against a shielded fleet and an armored fleet simultaneously, so the decision the pips asked for had no clean answer and couldn't be made legible. The model below delivers the same *shifting, active* decision the pips were chasing — but it falls out of the triangle naturally and is fully readable. Pips may return later as a light "overcharge" toggle, not core.
 
-| Subsystem | Effect of pips |
-|---|---|
-| **LAS / BAL / MIS** | Each weapon family has a **capacitor**; pips set its recharge rate. Firing drains the cap. 0 pips ≈ that family can't sustain fire → you choose *what you're shooting through* a target's layers. |
-| **SHD** | Shield regen rate + incoming-damage resist (small % per pip). |
-| **ENG** | Top speed + a boost/afterburner dodge. |
+**An enemy fleet is one entity** (1–N ships in formation), mirroring the player fleet, with:
+- **Collective Shield → Armor → Hull**, pooled from its member ships' composition. Defense profile *emerges* from the fitout — a fleet of shield-hulls reads as a "shield fleet"; a mixed fleet reads blended. (Deep-tier fleets in Part B are tuned to force specific damage types.)
+- **Visual attrition.** Shield + Armor are fleet-wide buffers — **no ship dies while they hold**. Hull = the *sum of the member ships' HP*; as hull damage lands past each ship's share, ships **peel off and explode one at a time**.
+  - **Death order: outermost escorts / lightest hulls first → flagship (formation leader, heaviest) last.** Kill the flagship = kill the fleet.
+  - Each peeled-off ship **takes its guns offline** (the fleet's outgoing DPS decays as it shrinks — natural rampdown, rewards focus) and drops a little loot; the flagship is the big payout.
+- **Fleets can be size 1** (a lone scout = a fleet of one, same model).
 
-**Pool size scales with fitted reactors × reactor quality** — closes the pending "Reactor power ×Q" item in STATUS and finally makes reactors matter. `computed_power` column on ships (migration 062), filled by `recalcShipStats`; fleet pool = sum, converted to N pips.
+**The interactive core this creates:** the triangle becomes a **readable sequence within one fight** — kinetic to drop the blue (shield) bar → laser to crack the amber (armor) → then ships start dying as the hull bar falls. You watch three bars deplete in order and switch weapons/targets to match. Against multiple fleets you read each one's bars and bring the right damage to each. *This* is the active, shifting decision — no abstract power layer needed.
 
-**UI:** a combat power panel (click/scroll to move pips + hotkeys), fleet-wide. Presets + a sensible default allocation.
+**Symmetry:** the **player fleet gets the same attrition** — wingmen peel off and die one-by-one as the shared pool degrades, *then* the final pod ejects (A3). More visceral, more stakes; the pod flow triggers on the last ship.
 
-**The loop it creates:** "shields dropping → dump pips to SHD and kite on ENG while the weapon cap refills → reallocate to BAL and burst through their shields." This is the active resource-management layer the game is missing.
+**Legibility (the readout):** per-**fleet** 3-segment bars (shield/armor/hull) are the primary combat UI — local to each threat, so they scale to many fleets without pretending there's a single answer. Expandable to per-ship detail. Battlefield tint by dominant layer (blue=shielded, amber=armored) is a nice-to-have.
 
-**Tuning knobs (playtest on live):** power-per-reactor curve, pips→cap-recharge math, whether 0 pips = hard-off vs trickle, resist % per SHD pip, speed bonus per ENG pip, total pip count at each progression stage. Enemy time-to-kill must be re-tuned so allocation matters without making fights a slog.
+**This is a real refactor of the enemy model** (today pirates are independent ships, not collective entities — see §3). It makes the deferred "coordinated formations" the *baseline*, changes targeting to per-fleet, and reworks loot to attrition + flagship payout. `applyDamage` (A1) already operates on any `{shield, armor, hull}` target, so it points at a fleet pool unchanged.
+
+**Detailed mechanic → `docs/combat-attrition-spec.md`** — the full sub-spec: data model, the hull-pool → ship-death threshold algorithm (with worked example), death-order rule, DPS decay, player-attrition ↔ pod flow (incl. the new `lose-ship` server endpoint), loot, the spawn refactor, and an incremental build order (F1 entity+pool → F2 enemy attrition → F3 player attrition → F4 polish).
 
 ### A3. Stakes — ejection + server-validated loot
 
+- **Player fleet attrition → pod.** Per the A2 model, your wingmen peel off and die one-by-one as the shared pool degrades; the **pod ejects when the last (flagship) ship dies**. Each lost wingman could itself drop salvage. The pod/disembark flow triggers off that final death rather than a single hull-zero event.
 - **Cargo + module ejection on death.** Extend `enter-pod` to eject a % of cargo + the destroyed ship's fitted modules into a **server** wreck the player (or a rival) can salvage. **Blocker:** the wrecks table has a parked `42P01` error (migrations 021/022 recorded as applied but endpoints 500). Fix first — add the `GET /api/diag/db` probe from STATUS known-issues to compare runtime schema vs migration tracker.
 - **Server-validated loot via pirate manifest.** The deterministic galaxy generator already exists server-side; have the server generate the same per-system pirate manifest (ids + loot table) and validate `award-loot` against it: enemy id must be in the manifest and not already claimed. Caps farming to the real spawn and kills the credit-mint exploit **without** moving the combat sim server-side.
 - **Rewards rebalanced above mining** so combat is a viable income path.
@@ -158,10 +162,12 @@ Makes chokepoints real. Today travel is fully open (warp point in every system +
 
 ### B4. Enemy scaling — all four mechanics
 
-1. **Tankier + typed defenses** — deep enemies carry heavy armor *or* strong shields (some shield-heavy → need kinetic, some armor-heavy → need laser). **Forces** mixed-damage loadouts + pip allocation. Highest synergy with Part A; **depends on A1 landing first.**
-2. **Elite / named mini-bosses** — occasional unique pirate, +HP, custom loadout, guaranteed high-tier/unique drop. Memorable targets + bounty-board fodder.
-3. **Coordinated formations** — revive the deferred enemy-fleet Phase 2b: leader (`formationSlot 0`) + lag-following wingmen (mirror the player's `WINGMAN_LAG_RATE` system), focus-fire, promote next member on leader death.
-4. **Faction-specific enemy types** — beyond Void Reavers: Astral Collective drones, rogue Terran patrols, each with a distinct loadout/behavior signature so regions feel different.
+Note: with the A2 fleet-entity model, **"coordinated formations" is now the baseline**, not an add-on — every enemy fleet is a formation entity. These four are how *deeper tiers* escalate within that model.
+
+1. **Tankier + typed defenses** — deep-tier fleets carry heavy armor *or* strong shields (a shield-fleet forces kinetic; an armor-fleet forces laser). **Forces** mixed-damage loadouts + deliberate weapon/target matching. Highest synergy with Part A; **builds on the A1 triangle + A2 fleet pools.**
+2. **Elite / named flagships** — a fleet whose flagship is a unique, high-HP boss with a custom loadout + guaranteed high-tier/unique drop. Memorable targets + bounty-board fodder. (Fits attrition naturally: the elite is the last ship standing.)
+3. **Formation behavior** — formations that converge + focus-fire, with promotion of the next member to leader as ships peel off (the attrition order). The baseline fleet entity; deeper tiers add smarter maneuvers.
+4. **Faction-specific fleet types** — beyond Void Reavers: Astral Collective drone-swarms, rogue Terran patrols, each with a distinct composition/behavior signature so regions feel different.
 
 ---
 
@@ -183,25 +189,27 @@ Smallest-risk first; combat depth precedes the deep-enemy roster because typed d
 
 | # | Step | Migration | Notes |
 |---|---|---|---|
-| 1 | **Combat P0+P1** — armor layer + damage triangle | none | First playtestable slice; loadout suddenly matters |
-| 2 | **Exotic recipe pass** — author exotic/rare-requiring high-tier recipes | 063 | Crafting audit done; gives the hard-gate something to bite |
-| 3 | **Zoning generator** — tier bands + star bias + danger-scaled rarity/quantity/quality | (mostly code; recipe/resource tweaks via migration) | Re-rolls galaxy — warn before push |
-| 4 | **Travel gating** — `warp_range` stat + galaxy-flight range + tier-aware gate topology | 062 (computed stats) | Touches protected travel views |
-| 5 | **Combat P2 (pips) + deep-enemy roster** — typed/tanky/elite/formation/faction enemies | 062 (`computed_power`) | Difficulty + the tools to handle it ship together |
-| 6 | **Stakes (Combat P3)** + tier map visualization | 064+ | Fix wrecks `42P01` first; unblocks ticker/bounty kills |
-| 7 | **Combat A4** — targeting, ECM/repair, heat, skill hooks | later | Iterate after playtest |
+| ✅ | **Combat P0+P1** — armor layer + damage triangle | none | SHIPPED 2026-06-02. Loadout now matters. |
+| ~~—~~ | ~~Combat P2 (Starfield pips)~~ | — | **CUT 2026-06-03** (built then reverted). Replaced by the A2 fleet-entity model. |
+| 2 | **Fleet-entity combat rebuild** — enemy fleets as collective entities (pooled S/A/H, formation, visual attrition, per-fleet bars, per-fleet targeting); player-fleet attrition → pod. The new combat core. | none (client model) | Biggest combat lift. Touches the protected loop + rendering — spec the hull→ship-death mapping first. |
+| 3 | **Exotic recipe pass** — author exotic/rare-requiring high-tier recipes | next free | Crafting audit done; gives the hard-gate something to bite |
+| 4 | **Zoning generator** — tier bands + star bias + danger-scaled rarity/quantity/quality | (mostly code; recipe/resource tweaks via migration) | Re-rolls galaxy — warn before push |
+| 5 | **Travel gating** — `warp_range` stat + galaxy-flight range + tier-aware gate topology | next free | Touches protected travel views |
+| 6 | **Deep-enemy roster** — tankier/typed/elite-flagship/faction fleets (B4) | next free | Difficulty tuned against the fleet-entity model |
+| 7 | **Stakes (Combat A3)** + tier map visualization | next free | Fix wrecks `42P01` first; unblocks ticker/bounty kills |
+| 8 | **Combat A4** — targeting polish, ECM/repair, heat, skill hooks | later | Iterate after playtest |
 
-*(Migration numbering approximate — next free number is 062; renumber sequentially when authored. 009 is skipped; current highest applied is 061.)*
+*(Migration numbering: next free is **062** — assign sequentially when each is authored. 009 is skipped; highest applied is 061.)*
 
 ---
 
 ## 8. Open tuning numbers (decide by playtesting on live)
 
-- Damage matrix values (§A1 table is a starting point).
-- Pip pool size per reactor + quality; pips→cap-recharge curve; SHD resist %/pip; ENG speed bonus/pip; total pips per progression stage.
+- Damage matrix values (§A1 table is live; tunable).
+- **Fleet-entity model:** hull-pool → ship-death thresholds (escort-first order); how much shield+armor buffer relative to hull; DPS-decay curve as ships peel off; fleet sizes per tier; whether player wingmen drop salvage on peel-off.
 - Tier loot multipliers; danger→rarity-chance curve; quantity multipliers; amplified quality-bonus slope.
 - `warp_range` base + per-drive-tier increments + skill/fuel contribution.
-- Enemy TTK at each tier; elite spawn frequency; ejection % on death.
+- Enemy fleet TTK at each tier; elite-flagship spawn frequency; ejection % on death.
 
 ---
 

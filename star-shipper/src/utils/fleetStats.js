@@ -120,7 +120,6 @@ const getShipModuleBonuses = (ship) => {
     hull: 0, shield: 0, armor: 0, ecm: 0,
     speed: 0, maneuver: 0, cargo: 0,
     sensor_range: 0, repair: 0, mass: 0,
-    reactorCount: 0,
   };
   const slots = ship?.hull_slots || [];
   const fitted = ship?.fitted_modules || {};
@@ -132,9 +131,6 @@ const getShipModuleBonuses = (ship) => {
 
     const role = detectModuleRole(fittedValue);
     if (!role) continue;
-    // Count reactors for the power-pip pool (combat P2a). Reactor power
-    // is what the captain distributes across subsystems.
-    if (role === 'reactor') bonuses.reactorCount += 1;
     const bonus = MODULE_BONUSES[role];
     if (!bonus) continue;
     const qMult = getQualityMultiplier(fittedValue);
@@ -178,7 +174,6 @@ export const computeFleetStats = (ships) => {
     dpsLaser: 0, dpsKinetic: 0, dpsMissile: 0, dpsTotal: 0,
     fleetMass: 0,
     shipCount: 0, weaponCount: 0,
-    reactorCount: 0, pipPool: 5,
   };
 
   if (!ships || ships.length === 0) return result;
@@ -197,7 +192,6 @@ export const computeFleetStats = (ships) => {
     result.totalCargo      += base.cargo  + mods.cargo;
     result.totalSensorRange += mods.sensor_range;
     result.fleetMass       += base.mass + mods.mass;
-    result.reactorCount    += mods.reactorCount;
 
     speedSum    += base.speed    + mods.speed;
     maneuverSum += base.maneuver + mods.maneuver;
@@ -248,11 +242,6 @@ export const computeFleetStats = (ships) => {
   result.dpsMissile = Math.round(result.dpsMissile);
   result.dpsTotal   = Math.round(result.dpsTotal);
   result.repairRate = Math.round(result.repairRate * 10) / 10;
-
-  // Power-pip pool (combat P2a): reactor-derived. Min 5 so an even split
-  // is always >=1 each; scales with reactors, capped at 25. P2b makes this
-  // server-authoritative + reactor-quality-scaled.
-  result.pipPool = Math.max(5, Math.min(25, 5 + 5 * result.reactorCount));
 
   return result;
 };

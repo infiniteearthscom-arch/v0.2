@@ -5,7 +5,6 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HUL
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
-import { WEAPON_PIP_KEY, weaponFireMult, shieldRegenMult, shieldResist, engineSpeedMult, allocTotal, defaultAllocation } from '@/utils/powerPips';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI } from '@/utils/api';
@@ -1505,11 +1504,6 @@ export const SystemView = () => {
   const playerArmorRef = useRef(0);
   const playerMaxArmorRef = useRef(0);
   const playerShieldRegenTimerRef = useRef(0);
-  // Power-pip allocation (combat P2a). Mirrored into a ref so the
-  // refs-only game loop reads live values each frame (pitfall #7).
-  const pipAllocation = useGameStore(state => state.pipAllocation);
-  const setPipAllocation = useGameStore(state => state.setPipAllocation);
-  const pipStateRef = useRef({ alloc: pipAllocation, pool: 10 });
   const combatInitializedRef = useRef(false);
   // Mirror of `isPod` for game-loop closure access (combat AI runs in
   // a refs-only loop and can't read React state directly).
@@ -1643,32 +1637,12 @@ export const SystemView = () => {
   useEffect(() => {
     const fleetSpeedMult    = Math.max(0.3, Math.min(3, fleetStats.fleetSpeed    / 50));
     const fleetManeuverMult = Math.max(0.3, Math.min(3, fleetStats.fleetManeuver / 50));
-    // Engine pips scale top speed + accel (neutral 1.0 at even allocation,
-    // so a player who ignores the panel is unaffected).
-    const engMult = engineSpeedMult(pipAllocation?.ENG ?? 2, fleetStats.pipPool || 10);
     shipPhysicsRef.current = {
-      SHIP_MAX_SPEED:      BASE_SHIP_MAX_SPEED      * fleetSpeedMult * engMult,
-      SHIP_ACCELERATION:   BASE_SHIP_ACCELERATION   * fleetSpeedMult * engMult,
+      SHIP_MAX_SPEED:      BASE_SHIP_MAX_SPEED      * fleetSpeedMult,
+      SHIP_ACCELERATION:   BASE_SHIP_ACCELERATION   * fleetSpeedMult,
       SHIP_ROTATION_SPEED: BASE_SHIP_ROTATION_SPEED * fleetManeuverMult,
     };
-  }, [fleetStats.fleetSpeed, fleetStats.fleetManeuver, fleetStats.pipPool, pipAllocation]);
-
-  // Mirror pip allocation + live pool into the loop-readable ref.
-  useEffect(() => {
-    pipStateRef.current = { alloc: pipAllocation || {}, pool: fleetStats.pipPool || 10 };
-  }, [pipAllocation, fleetStats.pipPool]);
-
-  // Reconcile the allocation to the reactor-derived pool. Only fires when
-  // the POOL changes (refit adds/removes a reactor): if the current total
-  // no longer matches, re-seed an even spread. Customizations within a
-  // fixed pool are preserved (total stays == pool, so this no-ops).
-  useEffect(() => {
-    const pool = fleetStats.pipPool || 10;
-    if (!pipAllocation || allocTotal(pipAllocation) !== pool) {
-      setPipAllocation(defaultAllocation(pool));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fleetStats.pipPool]);
+  }, [fleetStats.fleetSpeed, fleetStats.fleetManeuver]);
 
   // Push local dock state to the global store so GameFrame can show a
   // "Planet" toolbar button while docked.
@@ -3063,13 +3037,8 @@ export const SystemView = () => {
             }
           }
 
-          // Fire! Power pips scale the cadence (soft floor: a starved
-          // weapon family still fires, just slowly). laser→LAS, kinetic→BAL,
-          // missile→MIS. fireMult>1 shortens the cooldown.
-          const famKey = WEAPON_PIP_KEY[w.type];
-          const ps = pipStateRef.current;
-          const fireMult = famKey ? weaponFireMult(ps.alloc?.[famKey], ps.pool) : 1;
-          cooldowns.set(cooldownKey, w.fire_rate / fireMult);
+          // Fire!
+          cooldowns.set(cooldownKey, w.fire_rate);
           playSound('weapon_fire');
           const aimAngle = Math.atan2(nearest.y - sy, nearest.x - sx);
 
@@ -3307,10 +3276,7 @@ export const SystemView = () => {
               armor: playerArmorRef.current,
               hull: playerHullRef.current,
             };
-            // SHD pips provide an incoming-damage resist (0 below even allocation).
-            const dmgPs = pipStateRef.current;
-            const incoming = p.damage * (1 - shieldResist(dmgPs.alloc?.SHD, dmgPs.pool));
-            const hitRes = applyDamage(playerPool, incoming, p.weapon_type);
+            const hitRes = applyDamage(playerPool, p.damage, p.weapon_type);
             playerShieldRef.current = playerPool.shield;
             playerArmorRef.current  = playerPool.armor;
             playerHullRef.current   = playerPool.hull;
@@ -3359,12 +3325,10 @@ export const SystemView = () => {
         }
       }
       
-      // --- Player shield regen (scaled by SHD pips) ---
+      // --- Player shield regen ---
       playerShieldRegenTimerRef.current -= delta;
       if (playerShieldRegenTimerRef.current <= 0 && playerShieldRef.current < playerMaxShieldRef.current) {
-        const shdPs = pipStateRef.current;
-        const regenRate = SHIELD_REGEN_RATE * shieldRegenMult(shdPs.alloc?.SHD, shdPs.pool);
-        playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current + regenRate * delta);
+        playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current + SHIELD_REGEN_RATE * delta);
       }
       
       // --- Update effects ---
