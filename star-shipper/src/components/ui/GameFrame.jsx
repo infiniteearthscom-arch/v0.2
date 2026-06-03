@@ -530,89 +530,9 @@ const LeftToolbar = () => {
   );
 };
 
-// ============================================
-// BOTTOM BAR
-// ============================================
-
-const BottomBar = () => {
-  const viewMode = useGameStore(state => state.viewMode);
-  const currentSystem = useGameStore(state => state.currentSystem);
-  const gamePaused = useGameStore(state => state.gamePaused);
-  const gameSpeed = useGameStore(state => state.gameSpeed);
-  const togglePause = useGameStore(state => state.togglePause);
-  const setGameSpeed = useGameStore(state => state.setGameSpeed);
-  const shipSpeed = useGameStore(state => state.shipSpeed);
-  const galaxyShipSpeed = useGameStore(state => state.galaxyShipSpeed);
-
-  const speed = viewMode === 'galaxy' ? galaxyShipSpeed : shipSpeed;
-  const systemName = currentSystem === 'sol' ? 'Sol System' : currentSystem;
-
-  return (
-    <div
-      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2.5"
-      style={{
-        height: 32,
-        background: 'linear-gradient(0deg, rgba(8,16,32,0.95), rgba(6,12,24,0.85))',
-        borderTop: `1px solid ${EDGE}`,
-        fontFamily: "'Share Tech Mono', monospace",
-        fontSize: 10,
-      }}
-    >
-      {/* Speed readout */}
-      <span style={{ color: '#3a4a5a' }}>
-        SPD <span style={{ color: speed > 0 ? BLUE.light : '#3a4a5a' }}>{Math.round(speed)}</span>
-      </span>
-
-      <span style={{ color: '#0e1a2a' }}>│</span>
-
-      {/* Pause / speed controls */}
-      <button
-        onClick={togglePause}
-        className="transition-colors"
-        style={{
-          background: gamePaused ? `${GOLD.pri}20` : 'transparent',
-          border: `1px solid ${gamePaused ? GOLD.pri + '44' : EDGE}`,
-          color: gamePaused ? GOLD.light : '#3a4a5a',
-          padding: '2px 7px',
-          cursor: 'pointer',
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 10,
-          borderRadius: 2,
-        }}
-      >
-        {gamePaused ? '▶' : '⏸'}
-      </button>
-      {[1, 2, 3].map(s => (
-        <button
-          key={s}
-          onClick={() => setGameSpeed(s)}
-          className="transition-colors"
-          style={{
-            background: gameSpeed === s && !gamePaused ? `${BLUE.pri}18` : 'transparent',
-            border: `1px solid ${gameSpeed === s && !gamePaused ? BLUE.dim : EDGE}`,
-            color: gameSpeed === s && !gamePaused ? BLUE.light : '#3a4a5a',
-            padding: '2px 7px',
-            cursor: 'pointer',
-            fontFamily: "'Share Tech Mono', monospace",
-            fontSize: 10,
-            borderRadius: 2,
-          }}
-        >
-          {s}×
-        </button>
-      ))}
-
-      <span style={{ color: '#0e1a2a' }}>│</span>
-
-      {/* System name */}
-      <div style={{ borderLeft: `2px solid ${GOLD.pri}33`, padding: '2px 12px', background: `${GOLD.pri}08` }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: '#d0dce8', letterSpacing: 1, fontFamily: "'Rajdhani', sans-serif" }}>
-          {viewMode === 'galaxy' ? '⟡ Interstellar Space' : systemName}
-        </span>
-      </div>
-    </div>
-  );
-};
+// BottomBar removed 2026-06-02 — its pause / game-speed controls were
+// vestigial (nothing reads gamePaused/gameSpeed) and the system-name label
+// is shown on the galaxy map. The bottom-center is now the power hotbar.
 
 // ============================================
 // GAME FRAME (main export)
@@ -708,10 +628,9 @@ export const GameFrame = ({ children }) => {
       <LeftToolbar />
       <SystemMapWindow />
       <SystemMapToggle />
-      <BottomBar />
 
-      {/* Game content area — fills space between top and bottom bars */}
-      <div className="absolute left-0 right-0" style={{ top: 34, bottom: 32 }}>
+      {/* Game content area — fills space below the top bar */}
+      <div className="absolute left-0 right-0" style={{ top: 34, bottom: 0 }}>
         {children}
       </div>
 
