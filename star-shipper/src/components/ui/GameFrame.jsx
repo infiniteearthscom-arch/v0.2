@@ -372,8 +372,9 @@ const TopBar = () => {
 // LEFT TOOLBAR
 // ============================================
 
-const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
-const MODALS = ['shipBuilder', 'galaxyMap', 'leaderboards', 'corp', 'bounties', 'mail'];
+// Keep in sync with CONTEXT_PANELS in gameStore.js (openContextPanel).
+const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction', 'leaderboards', 'corp', 'bounties', 'mail'];
+const MODALS = ['shipBuilder', 'galaxyMap'];
 
 // Width of the toolbar in each state. Kept in sync with the ContextPanel
 // left-anchor math (see ContextPanel.jsx -- imports nothing, just reads

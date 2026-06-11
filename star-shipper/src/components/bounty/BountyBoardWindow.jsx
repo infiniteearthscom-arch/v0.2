@@ -11,7 +11,7 @@
 // claim to a verified action.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ModalOverlay } from '@/components/ui/ModalOverlay';
+import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useAuthStore } from '@/stores/authStore';
 import { useGameStore } from '@/stores/gameStore';
 import { bountyAPI } from '@/utils/api';
@@ -398,9 +398,9 @@ export const BountyBoardWindow = () => {
   };
 
   return (
-    <ModalOverlay windowId="bounties" title="Bounty Board" icon="🎯" accent={GOLD.light} width={640}>
+    <ContextPanel windowId="bounties" title="Bounty Board" icon="🎯" accent={GOLD.light} width={600}>
       <div style={{
-        padding: 16, minHeight: 320,
+        padding: 4, minHeight: 320,
       }}>
         {/* Tab strip */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -456,7 +456,7 @@ export const BountyBoardWindow = () => {
           <MyBountiesView rows={mine} onCancel={handleCancel} />
         )}
       </div>
-    </ModalOverlay>
+    </ContextPanel>
   );
 };
 

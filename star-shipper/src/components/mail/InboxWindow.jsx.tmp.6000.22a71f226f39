@@ -281,9 +281,9 @@ export const InboxWindow = () => {
   };
 
   return (
-    <ContextPanel windowId="mail" title="Inbox" icon="📬" accent={BLUE.light} width={640}>
+    <ModalOverlay windowId="mail" title="Inbox" icon="📬" accent={BLUE.light} width={680}>
       <div style={{
-        padding: 4, minHeight: 360,
+        padding: 16, minHeight: 360,
       }}>
         {/* Tab strip */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -334,7 +334,7 @@ export const InboxWindow = () => {
           />
         )}
       </div>
-    </ContextPanel>
+    </ModalOverlay>
   );
 };
 

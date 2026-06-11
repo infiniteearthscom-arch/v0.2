@@ -8,7 +8,7 @@
 // Future: row click -> open public profile (Step 4 second half).
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ContextPanel } from '@/components/ui/ContextPanel';
+import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useAuthStore } from '@/stores/authStore';
 import { useGameStore } from '@/stores/gameStore';
 import { leaderboardsAPI } from '@/utils/api';

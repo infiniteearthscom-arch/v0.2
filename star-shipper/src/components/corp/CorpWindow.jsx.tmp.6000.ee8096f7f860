@@ -367,9 +367,9 @@ export const CorpWindow = () => {
   };
 
   return (
-    <ContextPanel windowId="corp" title="Corporation" icon="🛡️" accent={GOLD.light} width={540}>
+    <ModalOverlay windowId="corp" title="Corporation" icon="🛡️" accent={GOLD.light} width={580}>
       <div style={{
-        padding: 4, minHeight: 280,
+        padding: 16, minHeight: 280,
       }}>
         {membership === undefined && (
           <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic' }}>
@@ -386,7 +386,7 @@ export const CorpWindow = () => {
           <MemberView membership={membership} onChanged={refetch} />
         )}
       </div>
-    </ContextPanel>
+    </ModalOverlay>
   );
 };
 

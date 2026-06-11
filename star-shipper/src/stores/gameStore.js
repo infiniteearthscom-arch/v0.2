@@ -564,7 +564,8 @@ export const useGameStore = create(
       // panels. Mirrors the behavior of the left toolbar's handleClick, but
       // callable from anywhere (e.g. SystemView's auto-open on dock).
       openContextPanel: (windowId) => set(state => {
-        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction'];
+        // Keep in sync with CONTEXT_PANELS in GameFrame.jsx (LeftToolbar).
+        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction', 'leaderboards', 'corp', 'bounties', 'mail'];
         for (const pid of CONTEXT_PANELS) {
           if (pid !== windowId && state.windows[pid]?.open) {
             state.windows[pid].open = false;
