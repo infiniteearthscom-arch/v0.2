@@ -553,6 +553,13 @@ export const fittingAPI = {
     method: 'POST',
     body: JSON.stringify({ ship_id: shipId }),
   }),
+  // Combat F3 player attrition: destroy a non-active fleet ship when the
+  // pooled fleet hull crosses its death threshold. Active-ship (flagship)
+  // death is enterPod above.
+  loseShip: (shipId) => request('/fitting/lose-ship', {
+    method: 'POST',
+    body: JSON.stringify({ ship_id: shipId }),
+  }),
   resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
   // Tops up every missile launcher on EVERY active fleet ship from
   // warheads in cargo. Each launcher is independent -- a 2-ship

@@ -1275,6 +1275,64 @@ router.post('/enter-pod', authMiddleware, async (req, res) => {
 });
 
 // ============================================
+// COMBAT: Lose a non-active fleet ship (player attrition, combat F3)
+// ============================================
+// Called by the client when the shared fleet hull pool crosses a
+// wingman's death threshold. Destroys that ship + its fitted modules.
+// The ACTIVE ship can never die here -- its death is /enter-pod (the
+// flagship dies last in the attrition order). Same client-shows-death-
+// immediately / server-reconciles-via-fetchShips trust model as
+// /enter-pod. Cargo/module ejection into a wreck is deferred to F4
+// (blocked on the parked wrecks-table 42P01 bug).
+
+router.post('/lose-ship', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ship_id } = req.body;
+    if (!ship_id) return res.status(400).json({ error: 'ship_id required' });
+
+    const result = await transaction(async (client) => {
+      // Lock the user row (single-table FOR UPDATE, per pitfall #14).
+      const userRow = await client.query(
+        `SELECT active_ship_id FROM users WHERE id = $1 FOR UPDATE`,
+        [userId]
+      );
+      if (userRow.rows.length === 0) {
+        throw Object.assign(new Error('User not found'), { statusCode: 400 });
+      }
+      if (userRow.rows[0].active_ship_id === ship_id) {
+        throw Object.assign(new Error('Cannot lose the active ship — flagship death uses /enter-pod'), { statusCode: 400 });
+      }
+
+      const shipRow = await client.query(
+        `SELECT hull_type_id, name, storage_body_id FROM ships WHERE id = $1 AND user_id = $2`,
+        [ship_id, userId]
+      );
+      const ship = shipRow.rows[0];
+      if (!ship) {
+        throw Object.assign(new Error('Ship not found'), { statusCode: 404 });
+      }
+      if (ship.storage_body_id != null) {
+        // Stored ships are parked at a station and can't die in space.
+        throw Object.assign(new Error('Ship is in storage'), { statusCode: 400 });
+      }
+      if (ship.hull_type_id === 'pod') {
+        throw Object.assign(new Error('Pods cannot be lost this way'), { statusCode: 400 });
+      }
+
+      await client.query(`DELETE FROM ships WHERE id = $1 AND user_id = $2`, [ship_id, userId]);
+      return { destroyed_ship_name: ship.name };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error losing ship:', error);
+    res.status(500).json({ error: 'Failed to lose ship' });
+  }
+});
+
+// ============================================
 // COMBAT: Disembark from escape pod
 // ============================================
 // Switches active ship to a non-pod fleet ship and deletes the pod.

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
-import { computeFleetStats } from '@/utils/fleetStats';
+import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
 import { buildFleets, damageFleet } from '@/utils/fleetEntities';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
@@ -1534,6 +1534,11 @@ export const SystemView = () => {
   // Re-entrancy guard: once /enter-pod is called for a death event,
   // ignore further hull<=0 triggers until the pod ship is active.
   const podEntryInFlightRef = useRef(false);
+  // Combat F3: ship ids we've already fired /lose-ship for, so one
+  // wingman death never double-fires across frames (mirror of
+  // podEntryInFlightRef, but per-ship). Ids are UUIDs (never reused),
+  // so successfully destroyed ships can stay in the set.
+  const loseShipInFlightRef = useRef(new Set());
   // Auto-disembark guard: prevents firing exit-pod multiple times for
   // the same hull-acquisition (one ships[] update can trigger multiple
   // re-renders of the effect). Reset on undock and on exit-pod failure.
@@ -2849,6 +2854,71 @@ export const SystemView = () => {
         }
       };
 
+      // Combat F3: PLAYER-side attrition — the mirror of checkFleetAttrition.
+      // The player fleet shares one pooled hull; when it drops to/below a
+      // wingman's death threshold (wingmen lightest-first; the ACTIVE ship
+      // dies last via the existing enter-pod branch at threshold 0), that
+      // wingman dies: explosion at its lagged formation position, removed
+      // from the live fleet (its guns stop firing — DPS decays), destroyed
+      // server-side via /lose-ship (fire-and-forget; fetchShips reconciles —
+      // if the call fails the ship reappears, the server is the truth).
+      // The pool max is rebased down by the dead ship's hull share so the
+      // HUD bar and later thresholds stay consistent without waiting on the
+      // refetch (the refit effect's ratio-preserve then sees old≈new max
+      // and no-ops). Thresholds are computed fresh from the current roster
+      // each call — cheap at ≤5 ships — so this needs no precomputed state.
+      const checkPlayerAttrition = () => {
+        if (isPodRef.current || podEntryInFlightRef.current) return;
+        const fleet = fleetShipsRef.current || [];
+        if (fleet.length <= 1) return; // flagship only → pod path handles it
+
+        const wingmen = fleet
+          .filter(fs => !fs.isActive)
+          .map(fs => ({ fs, hp: getShipHullContribution(fs) }))
+          .sort((a, b) => a.hp - b.hp); // lightest dies first
+        const totalHull = fleet.reduce((sum, fs) => sum + getShipHullContribution(fs), 0);
+
+        let cum = 0;
+        for (const { fs, hp } of wingmen) {
+          cum += hp;
+          const threshold = totalHull - cum; // pool level at/below which fs is dead
+          if (playerHullRef.current > threshold) continue;
+          if (loseShipInFlightRef.current.has(fs.id)) continue;
+          loseShipInFlightRef.current.add(fs.id);
+
+          const w = wingmenPosRef.current[fs.id];
+          const wx = w?.x ?? shipPosRef.current.x;
+          const wy = w?.y ?? shipPosRef.current.y;
+          effects.push({ x: wx, y: wy, type: 'explosion', age: 0, size: 14 });
+          playSound('ship_destroyed_metal');
+          setCombatLog(prev => [...prev.slice(-4), `${fs.name || 'Wingman'} destroyed!`]);
+          if (pushToast) pushToast({ kind: 'error', text: `${fs.name || 'A fleet ship'} was destroyed!`, duration: 4000 });
+
+          // Remove from the live fleet NOW. This splices the fleetShips
+          // memo array in place — formation, firing, trails, render, and
+          // the presence broadcast all iterate it, so the ship vanishes
+          // everywhere this frame. The memo only rebuilds when `ships`
+          // changes (i.e. when fetchShips reconciles).
+          const idx = fleetShipsRef.current.indexOf(fs);
+          if (idx >= 0) fleetShipsRef.current.splice(idx, 1);
+          delete wingmenPosRef.current[fs.id];
+          delete trailsRef.current[fs.id];
+
+          playerMaxHullRef.current = Math.max(1, playerMaxHullRef.current - hp);
+          playerHullRef.current = Math.min(playerHullRef.current, playerMaxHullRef.current);
+
+          fittingAPI.loseShip(fs.id)
+            .then(() => { if (fetchShips) fetchShips(); })
+            .catch(err => {
+              console.warn('lose-ship failed:', err);
+              loseShipInFlightRef.current.delete(fs.id);
+              // Refetch anyway — if the ship wasn't actually destroyed
+              // it rejoins the fleet on the next roster rebuild.
+              if (fetchShips) fetchShips();
+            });
+        }
+      };
+
       // --- Enemy AI ---
       // Fleet rally pre-pass: collect every fleetId that has at least
       // one member currently engaging the player (chase / attack). On
@@ -3350,7 +3420,13 @@ export const SystemView = () => {
             if (hitRes.shieldDamaged) playerShieldRegenTimerRef.current = SHIELD_REGEN_DELAY;
             effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: playerShieldRef.current > 0 ? '#4488ff' : '#ff4444' });
             projectiles.splice(i, 1);
-            
+
+            // Combat F3: attrition check after every player hit (mirrors
+            // the unconditional enemy-side calls). Runs BEFORE the pod
+            // branch so a huge overshoot hit kills the escorts first,
+            // then pods the flagship.
+            checkPlayerAttrition();
+
             if (playerHullRef.current <= 0 && !podEntryInFlightRef.current && !isPodRef.current) {
               // Pod ejection: replace the old "respawn at Luna" with EVE-
               // style podding. Active ship is destroyed server-side and
