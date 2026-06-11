@@ -48,12 +48,31 @@ const SHIELD_REGEN_DELAY = 3; // seconds after last hit before regen starts
 const LOOT_CREDITS_MIN = 20;
 const LOOT_CREDITS_MAX = 80;
 
-// Pirate spawn zones — defined by center point + radius
+// Pirate spawn zones — defined by center point + radius. Each zone is one
+// FLEET (combat F1+): heaviest hull = flagship/leader, the rest fly in
+// formation behind it and peel off (attrition) as the pooled hull falls.
+//
+// ⚠ TEST BUFF (2026-06-03): hefty fleets for combat playtesting. Sol is the
+// newbie starter — REVERT to small single/duo patrols before real new
+// players matter. Smaller spawn radius = members start clustered so the
+// formation reads cleanly. Profiles are varied to exercise the damage
+// triangle (kinetic→shields, laser→armor, anything→hull).
 const PIRATE_SPAWN_ZONES = [
-  { name: 'Belt Raiders', cx: 1500, cy: 0, radius: 400, count: 3, types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_marauder'] },
-  { name: 'Outer Patrol', cx: -2500, cy: 1500, radius: 500, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
-  { name: 'Jupiter Ambush', cx: 2200, cy: -800, radius: 350, count: 3, types: ['pirate_interceptor', 'pirate_marauder', 'pirate_interceptor'] },
-  { name: 'Saturn Corsairs', cx: -1000, cy: -3000, radius: 400, count: 2, types: ['pirate_marauder', 'pirate_destroyer'] },
+  // Shield-heavy gang — strip shields with KINETIC first. Medium fight.
+  { name: 'Belt Raiders', cx: 1400, cy: 200, radius: 220, count: 5,
+    types: ['pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_interceptor'] },
+  // Armor wall of destroyers — crack with LASER. Tanky, slow.
+  { name: 'Jupiter Siege Wing', cx: 2200, cy: -800, radius: 220, count: 4,
+    types: ['pirate_destroyer', 'pirate_destroyer', 'pirate_destroyer', 'pirate_destroyer'] },
+  // Interceptor swarm — bare hulls, fast, lots of small guns.
+  { name: 'Inner Pickets', cx: -900, cy: 900, radius: 200, count: 6,
+    types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor'] },
+  // Big mixed battle fleet — destroyer flagship + mixed escorts. Attrition showcase.
+  { name: 'Saturn Corsairs', cx: -1200, cy: -2600, radius: 260, count: 6,
+    types: ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_interceptor'] },
+  // Dreadnought escort wing — 1 heavy flagship + a screen that dies first.
+  { name: 'Outer Dreadnought Wing', cx: -2600, cy: 1400, radius: 240, count: 5,
+    types: ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor'] },
 ];
 
 // ============================================

@@ -112,7 +112,7 @@ export const LeaderboardsWindow = () => {
   const state = active ? data[active] : null;
 
   return (
-    <ModalOverlay windowId="leaderboards" title="Leaderboards" icon="🏆" accent={GOLD.light}>
+    <ModalOverlay windowId="leaderboards" title="Leaderboards" icon="🏆" accent={GOLD.light} width={760} height={620}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         {/* Tab strip */}
         <div style={{

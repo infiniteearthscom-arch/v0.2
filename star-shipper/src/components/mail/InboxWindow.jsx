@@ -281,9 +281,8 @@ export const InboxWindow = () => {
   };
 
   return (
-    <ModalOverlay windowId="mail" title="Inbox" icon="📬" accent={BLUE.light}>
+    <ModalOverlay windowId="mail" title="Inbox" icon="📬" accent={BLUE.light} width={680}>
       <div style={{
-        width: 640, maxWidth: '94vw',
         padding: 16, minHeight: 360,
       }}>
         {/* Tab strip */}

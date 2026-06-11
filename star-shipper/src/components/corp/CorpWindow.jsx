@@ -367,9 +367,8 @@ export const CorpWindow = () => {
   };
 
   return (
-    <ModalOverlay windowId="corp" title="Corporation" icon="🛡️" accent={GOLD.light}>
+    <ModalOverlay windowId="corp" title="Corporation" icon="🛡️" accent={GOLD.light} width={580}>
       <div style={{
-        width: 540, maxWidth: '92vw',
         padding: 16, minHeight: 280,
       }}>
         {membership === undefined && (

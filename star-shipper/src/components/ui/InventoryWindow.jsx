@@ -18,7 +18,7 @@ import { CargoSlotTooltip } from '@/components/items/CargoSlotTooltip';
 
 const SLOT_SIZE = 40;
 const SLOT_GAP = 4;
-const GRID_COLS = 6;
+const GRID_COLS = 8; // 8 × (40+4) ≈ 358px — fills the 420px ContextPanel width
 
 // Resource icon abbreviations and colors
 const RESOURCE_ICONS = {};
@@ -318,7 +318,7 @@ export const InventoryWindow = () => {
   const padding = 24; // window padding
   const titleBarHeight = 36;
   
-  // Max rows before scrolling (100 slots / 6 cols ≈ 17 rows)
+  // Max rows before scrolling (100 slots / 8 cols ≈ 13 rows)
   const maxRowsBeforeScroll = Math.ceil(100 / GRID_COLS);
   const maxGridHeight = maxRowsBeforeScroll * (SLOT_SIZE + SLOT_GAP) + SLOT_GAP + 2;
   

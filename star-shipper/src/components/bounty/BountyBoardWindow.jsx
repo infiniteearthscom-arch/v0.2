@@ -398,9 +398,8 @@ export const BountyBoardWindow = () => {
   };
 
   return (
-    <ModalOverlay windowId="bounties" title="Bounty Board" icon="🎯" accent={GOLD.light}>
+    <ModalOverlay windowId="bounties" title="Bounty Board" icon="🎯" accent={GOLD.light} width={640}>
       <div style={{
-        width: 600, maxWidth: '94vw',
         padding: 16, minHeight: 320,
       }}>
         {/* Tab strip */}

@@ -141,10 +141,8 @@ export const ProfileWindow = () => {
   const isSelf = profile && profile.id === myUserId;
 
   return (
-    <ModalOverlay windowId="profile" title="Pilot Profile" icon="👤" accent={BLUE.light}>
+    <ModalOverlay windowId="profile" title="Pilot Profile" icon="👤" accent={BLUE.light} width={580}>
       <div style={{
-        width: 540,
-        maxWidth: '92vw',
         padding: 16,
         display: 'flex',
         flexDirection: 'column',

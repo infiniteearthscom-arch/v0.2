@@ -8,7 +8,11 @@ import { useGameStore } from '@/stores/gameStore';
 const EDGE = '#1a3050';
 const diagMix = (c = 10) => `polygon(${c}px 0, 100% 0, 100% calc(100% - ${c}px), calc(100% - ${c}px) 100%, 0 100%, 0 ${c}px)`;
 
-export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', children }) => {
+// width/height (optional): compact centered modal of that size instead of
+// the near-fullscreen default. Omit height to fit the content's height
+// (capped to the viewport). Big screens (Ship Builder, Galaxy Map, Planet)
+// omit both and keep the fullscreen frame.
+export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', width, height, children }) => {
   const isOpen = useGameStore(state => state.windows[windowId]?.open && !state.windows[windowId]?.minimized);
   const closeWindow = useGameStore(state => state.closeWindow);
 
@@ -24,8 +28,10 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', childr
 
   if (!isOpen) return null;
 
+  const sized = width != null;
+
   return (
-    <div className="fixed inset-0 z-50" onClick={() => closeWindow(windowId)}>
+    <div className="fixed inset-0 z-50" style={{ display: 'flex' }} onClick={() => closeWindow(windowId)}>
       {/* Backdrop */}
       <div
         style={{
@@ -39,12 +45,24 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', childr
       {/* Modal container */}
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{
+        style={sized ? {
+          // Compact mode: centered, content-height (unless height given)
+          position: 'relative',
+          margin: 'auto',
+          width,
+          maxWidth: 'calc(100vw - 60px)',
+          ...(height != null ? { height } : {}),
+          maxHeight: 'calc(100vh - 84px)',
+          display: 'flex',
+          flexDirection: 'column',
+        } : {
           position: 'absolute',
           top: 42,
           left: 50,
           right: 50,
           bottom: 42,
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {/* Border layer */}
@@ -57,7 +75,8 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', childr
             clipPath: diagMix(10),
             background: 'rgba(8,14,28,0.93)',
             zIndex: 1,
-            height: '100%',
+            flex: '1 1 auto',
+            minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -111,7 +130,7 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', childr
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 12 }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: sized ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: 12 }}>
             {children}
           </div>
         </div>

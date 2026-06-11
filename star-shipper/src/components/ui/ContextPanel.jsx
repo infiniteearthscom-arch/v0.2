@@ -26,8 +26,13 @@ export const ContextPanel = ({ windowId, title, icon, accent = '#60a5fa', width 
       style={{
         top: 46,
         left: leftAnchor,
-        bottom: 44,
         width,
+        // Panel height follows its content; cap = screen minus the top
+        // bar (46) and bottom bar (44) so tall panels scroll instead of
+        // running under the HUD chrome.
+        maxHeight: 'calc(100vh - 90px)',
+        display: 'flex',
+        flexDirection: 'column',
         transition: 'left 0.18s ease',
       }}
     >
@@ -41,7 +46,7 @@ export const ContextPanel = ({ windowId, title, icon, accent = '#60a5fa', width 
           clipPath: diagMix(8),
           background: 'rgba(8,14,28,0.93)',
           zIndex: 1,
-          height: '100%',
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -94,7 +99,7 @@ export const ContextPanel = ({ windowId, title, icon, accent = '#60a5fa', width 
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+        <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: 12 }}>
           {children}
         </div>
       </div>
