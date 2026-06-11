@@ -46,10 +46,19 @@ export const TooltipProvider = ({ children }) => {
   // tooltips. Cached size makes per-frame repositioning a pure transform
   // write (compositor-only).
   const sizeRef = useRef({ w: 0, h: 0 });
+  // Anchor rect for the current tooltip, if the caller passed one to
+  // showTooltip(). Anchored tooltips position ONCE beside the anchor and
+  // never follow the mouse — matching the cargo-grid tooltips. Mouse-
+  // following looked choppy in the Ship Designer no matter how cheap the
+  // per-frame update was: the OS cursor moves on the hardware plane while
+  // the tooltip moves at whatever rAF cadence the busy game loop allows,
+  // and the relative judder is what reads as "lag." Anchored = nothing
+  // moves = nothing to judder.
+  const anchorRef = useRef(null);
 
   // Imperative function that writes the tooltip's position to the DOM.
-  // Called from both the mousemove listener (during hover) and right after
-  // show (to position at the first-paint cursor location).
+  // Anchored: beside the anchor rect (flipping left/up near screen
+  // edges). Unanchored (legacy): at the cursor, then follows it.
   const placeTooltip = useCallback(() => {
     const node = tooltipRef.current;
     if (!node) return;
@@ -58,10 +67,19 @@ export const TooltipProvider = ({ children }) => {
     const vh = window.innerHeight;
     const w = sizeRef.current.w;
     const h = sizeRef.current.h;
-    let tx = mousePos.current.x + OFFSET;
-    let ty = mousePos.current.y + OFFSET;
-    if (tx + w > vw - 8) tx = mousePos.current.x - w - OFFSET;
-    if (ty + h > vh - 8) ty = mousePos.current.y - h - OFFSET;
+    let tx, ty;
+    const a = anchorRef.current;
+    if (a) {
+      tx = a.left + a.width + 8;
+      ty = a.top - 8;
+      if (tx + w > vw - 8) tx = a.left - w - 8;
+      if (ty + h > vh - 8) ty = vh - h - 8;
+    } else {
+      tx = mousePos.current.x + OFFSET;
+      ty = mousePos.current.y + OFFSET;
+      if (tx + w > vw - 8) tx = mousePos.current.x - w - OFFSET;
+      if (ty + h > vh - 8) ty = mousePos.current.y - h - OFFSET;
+    }
     tx = Math.max(8, tx);
     ty = Math.max(8, ty);
     // transform is on the compositor thread — much cheaper than left/top.
@@ -69,12 +87,13 @@ export const TooltipProvider = ({ children }) => {
   }, []);
 
   // Global mousemove → update mousePos ref and schedule an rAF to reposition
-  // the tooltip DOM node. No React re-render happens here.
+  // the tooltip DOM node. No React re-render happens here. Anchored
+  // tooltips don't follow the mouse, so they skip the rAF entirely.
   useEffect(() => {
     const onMove = (e) => {
       mousePos.current.x = e.clientX;
       mousePos.current.y = e.clientY;
-      if (!state.visible) return;
+      if (!state.visible || anchorRef.current) return;
       if (rafRef.current) return; // already scheduled
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
@@ -104,11 +123,17 @@ export const TooltipProvider = ({ children }) => {
     }
   }, [state.visible, state.content, placeTooltip]);
 
-  const showTooltip = useCallback((content) => {
+  // anchor (optional): a DOMRect-like {left, top, width, height}. When
+  // provided, the tooltip is pinned beside it (cargo-tooltip behavior).
+  // Callers typically pass e.currentTarget.getBoundingClientRect().
+  // Without it, the tooltip follows the cursor (legacy behavior).
+  const showTooltip = useCallback((content, anchor = null) => {
+    anchorRef.current = anchor;
     setState({ visible: true, content });
   }, []);
 
   const hideTooltip = useCallback(() => {
+    anchorRef.current = null;
     setState(prev => prev.visible ? { visible: false, content: null } : prev);
   }, []);
 

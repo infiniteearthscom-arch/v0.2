@@ -898,7 +898,11 @@ export const ShipBuilderWindow = () => {
     // supplies its own ItemTooltipContent on hover. Avoid double-tooltips
     // by only showing the slot-info tooltip when the slot is empty.
     if (mod) { hideTooltip(); return; }
-    showTooltip(<SlotInfo slot={slot} module={null} />);
+    // Anchor at the cursor point where the slot was entered (this only
+    // fires on slot CHANGE, not per mousemove) so the tooltip pins in
+    // place like the cargo tooltips instead of chasing the mouse.
+    const anchor = e ? { left: e.clientX, top: e.clientY, width: 14, height: 14 } : null;
+    showTooltip(<SlotInfo slot={slot} module={null} />, anchor);
   };
 
   const hullType = shipDetail?.hull_type_id;

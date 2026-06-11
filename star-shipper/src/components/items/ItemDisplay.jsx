@@ -217,7 +217,7 @@ export const ItemCell = ({
         e.dataTransfer.setData('application/json', JSON.stringify(payload));
         e.dataTransfer.effectAllowed = 'move';
       } : undefined}
-      onMouseEnter={() => showTooltip(<ItemTooltipContent item={item} />)}
+      onMouseEnter={(e) => showTooltip(<ItemTooltipContent item={item} />, e.currentTarget.getBoundingClientRect())}
       onMouseLeave={hideTooltip}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
@@ -283,7 +283,7 @@ export const EmptySlotCell = ({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onMouseEnter={(e) => {
-        if (tooltipContent) showTooltip(tooltipContent);
+        if (tooltipContent) showTooltip(tooltipContent, e.currentTarget.getBoundingClientRect());
         onMouseEnter?.(e);
       }}
       onMouseLeave={(e) => {

@@ -4841,7 +4841,7 @@ export const SystemView = () => {
                 <g key={`ast-${a.id}`}
                    transform={`translate(${a.x}, ${a.y})`}
                    onClick={(e) => { e.stopPropagation(); handleAsteroidClick(a); }}
-                   onMouseEnter={() => showTooltip(tooltipNode)}
+                   onMouseEnter={(e) => showTooltip(tooltipNode, { left: e.clientX, top: e.clientY, width: 14, height: 14 })}
                    onMouseLeave={() => hideTooltip()}
                    style={{ cursor: 'pointer' }}>
                   <polygon points={pts}
