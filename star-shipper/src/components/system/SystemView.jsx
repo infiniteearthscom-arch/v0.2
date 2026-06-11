@@ -5027,6 +5027,74 @@ export const SystemView = () => {
             </div>
           )}
 
+          {/* Fleet status readout — bottom-center. The player fleet's
+              pooled Shield → Armor → Hull, the same three layers the
+              per-fleet enemy bars show, promoted from the cramped top
+              bar to a prominent combat readout. Reads the combat refs
+              directly: this component re-renders every frame off
+              frameCount, so the bars track damage in real time (the
+              store push is only every 5 frames). `fixed` positioning
+              for the same viewport-reference reason as the scan tray;
+              bottom:44 clears the bottom bar. Armor row dims to '—'
+              when no armor is fitted (maxArmor 0), mirroring the old
+              top bar's no-shield treatment. */}
+          {(() => {
+            const hull = Math.max(0, Math.round(playerHullRef.current));
+            const maxHull = Math.round(playerMaxHullRef.current);
+            const shield = Math.max(0, Math.round(playerShieldRef.current));
+            const maxShield = Math.round(playerMaxShieldRef.current);
+            const armor = Math.max(0, Math.round(playerArmorRef.current));
+            const maxArmor = Math.round(playerMaxArmorRef.current);
+            const hullPct = maxHull > 0 ? hull / maxHull : 0;
+            const hullColor = hullPct > 0.6 ? '#22c55e' : hullPct > 0.3 ? '#fbbf24' : '#ef4444';
+            const rows = [
+              { label: 'SHLD', icon: '◆', cur: shield, max: maxShield, color: '#818cf8', track: '#222244' },
+              { label: 'ARMR', icon: '▰', cur: armor, max: maxArmor, color: '#d8a24a', track: '#332b1a' },
+              { label: 'HULL', icon: '■', cur: hull, max: maxHull, color: hullColor, track: '#332222' },
+            ];
+            return (
+              <div
+                className="fixed"
+                style={{
+                  zIndex: 40,
+                  bottom: 44,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 250,
+                  background: 'rgba(8,14,28,0.88)',
+                  border: '1px solid #1a3050',
+                  borderRadius: 3,
+                  padding: '5px 10px',
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}
+              >
+                {rows.map(r => {
+                  const has = r.max > 0;
+                  const pct = has ? Math.max(0, Math.min(1, r.cur / r.max)) : 0;
+                  return (
+                    <div key={r.label} className="flex items-center gap-2" style={{ height: 15 }}>
+                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: 8, width: 8 }}>{r.icon}</span>
+                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: 9, width: 30 }}>{r.label}</span>
+                      <div style={{ flex: 1, height: 6, background: r.track, borderRadius: 2, overflow: 'hidden' }}>
+                        {has && (
+                          <div style={{
+                            width: `${pct * 100}%`,
+                            height: '100%',
+                            background: r.color,
+                            transition: 'width 0.15s',
+                          }} />
+                        )}
+                      </div>
+                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: 9, width: 62, textAlign: 'right' }}>
+                        {has ? `${r.cur}/${r.max}` : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
 
           {/* Tier B scan-ability tray. Each button only renders when
               the matching module is fitted. Empty fleet -> nothing
