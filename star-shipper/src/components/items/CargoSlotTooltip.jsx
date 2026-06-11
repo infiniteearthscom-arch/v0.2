@@ -23,10 +23,13 @@ import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 export const CargoSlotTooltip = ({ stack, screenX, screenY, slotSize = 44, resourceIcons }) => {
   if (!stack) return null;
 
+  // Clamp estimates scale with the root font-size so the tooltip stays
+  // on-screen when the Settings UI-scale grows it (rem-based text).
+  const ui = (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) / 16;
   let left = screenX + slotSize + 8;
   let top = screenY - 20;
-  if (left + 200 > window.innerWidth) left = screenX - 208;
-  if (top + 210 > window.innerHeight) top = window.innerHeight - 220;
+  if (left + 230 * ui > window.innerWidth) left = screenX - 238 * ui;
+  if (top + 220 * ui > window.innerHeight) top = window.innerHeight - 230 * ui;
   if (top < 0) top = 4;
 
   const isItem = stack.item_type === 'item';

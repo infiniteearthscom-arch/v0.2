@@ -18,6 +18,7 @@ import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
 import { CorpWindow } from '@/components/corp/CorpWindow';
 import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
 import { InboxWindow } from '@/components/mail/InboxWindow';
+import { CargoTooltipLayer } from '@/components/items/CargoTooltipLayer';
 import { mailAPI } from '@/utils/api';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
@@ -607,6 +608,11 @@ export const GameFrame = ({ children }) => {
 
       {/* Inbox / Mail — same pattern. */}
       <InboxWindow />
+
+      {/* Singleton cargo hover tooltip — tiles anywhere call
+          cargoTooltip.show()/hide() and only this tiny layer
+          re-renders (not the hosting cargo grid). */}
+      <CargoTooltipLayer />
     </div>
   );
 };

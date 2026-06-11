@@ -457,7 +457,7 @@ export const InventoryWindow = () => {
                       onDrop={() => handleDrop(index)}
                       onDragEnd={handleDragEnd}
                       onMouseEnter={(e) => handleSlotHover(stack, e)}
-                      onMouseLeave={() => cargoTooltip.hide()}
+                      onMouseLeave={() => setHoveredStack(null)}
                       style={{
                         width: SLOT_SIZE,
                         height: SLOT_SIZE,
@@ -671,8 +671,16 @@ export const InventoryWindow = () => {
           >↻ REFRESH</button>
         </div>
 
-        {/* Hover tooltip now renders via the singleton CargoTooltipLayer
-            mounted in GameFrame (see CargoTooltipLayer.jsx). */}
+        {hoveredStack && !dragItem && createPortal(
+          <CargoSlotTooltip
+            stack={hoveredStack}
+            screenX={tooltipPos.x}
+            screenY={tooltipPos.y}
+            slotSize={SLOT_SIZE}
+            resourceIcons={RESOURCE_ICONS}
+          />,
+          document.body
+        )}
       </div>
     </ContextPanel>
   );

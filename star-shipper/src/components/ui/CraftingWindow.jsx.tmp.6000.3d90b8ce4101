@@ -2,13 +2,14 @@
 // Select recipes, drag resources from Cargo window into ingredient slots, craft items
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
-import { cargoTooltip } from '@/components/items/CargoTooltipLayer';
+import { CargoSlotTooltip } from '@/components/items/CargoSlotTooltip';
 
 // ============================================
 // CONSTANTS
