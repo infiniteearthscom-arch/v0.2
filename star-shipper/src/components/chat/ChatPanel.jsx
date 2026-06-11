@@ -64,7 +64,7 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
           flex: 1,
           overflowY: 'auto',
           padding: '8px 10px',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           color: '#3a5a6a',
           fontStyle: 'italic',
@@ -84,7 +84,7 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
         overflowY: 'auto',
         padding: '6px 10px',
         fontFamily: FM,
-        fontSize: 11,
+        fontSize: '0.6875rem',
         lineHeight: 1.45,
         color: '#cbd5e1',
       }}
@@ -93,7 +93,7 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
         const isOwn = m.sender_id === ownUserId;
         return (
           <div key={m.id} style={{ marginBottom: 4 }}>
-            <span style={{ color: '#3a5a6a', fontSize: 9, marginRight: 6 }}>{formatTime(m.ts)}</span>
+            <span style={{ color: '#3a5a6a', fontSize: '0.5625rem', marginRight: 6 }}>{formatTime(m.ts)}</span>
             <span
               onClick={() => m.sender_id && onOpenProfile?.(m.sender_id)}
               title={m.sender_id ? `Open ${m.sender_name}'s profile` : null}
@@ -226,7 +226,7 @@ export const ChatPanel = () => {
           borderRadius: 3,
           cursor: 'pointer',
           fontFamily: F,
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontWeight: 700,
           color: BLUE.light,
           letterSpacing: 0.5,
@@ -246,7 +246,7 @@ export const ChatPanel = () => {
             color: '#fff',
             padding: '1px 6px',
             borderRadius: 8,
-            fontSize: 9,
+            fontSize: '0.5625rem',
             fontFamily: FM,
             minWidth: 16,
             textAlign: 'center',
@@ -297,7 +297,7 @@ export const ChatPanel = () => {
                 borderRight: `1px solid ${EDGE}`,
                 borderBottom: isActive ? `2px solid ${c.color}` : '2px solid transparent',
                 color: isActive ? c.color : '#7a8a9a',
-                fontSize: 10,
+                fontSize: '0.625rem',
                 fontFamily: F,
                 fontWeight: 700,
                 letterSpacing: 0.5,
@@ -316,7 +316,7 @@ export const ChatPanel = () => {
                   color: '#fff',
                   padding: '0 5px',
                   borderRadius: 8,
-                  fontSize: 8,
+                  fontSize: '0.5rem',
                   fontFamily: FM,
                   minWidth: 14,
                   textAlign: 'center',
@@ -334,7 +334,7 @@ export const ChatPanel = () => {
             background: 'transparent',
             border: 'none',
             color: '#7a8a9a',
-            fontSize: 14,
+            fontSize: '0.875rem',
             cursor: 'pointer',
             fontFamily: FM,
           }}
@@ -383,7 +383,7 @@ export const ChatPanel = () => {
             border: `1px solid ${EDGE}`,
             color: '#e2e8f0',
             padding: '5px 8px',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             fontFamily: FM,
             borderRadius: 2,
             outline: 'none',
@@ -401,7 +401,7 @@ export const ChatPanel = () => {
             border: `1px solid ${draft.trim() ? BLUE.pri : EDGE}`,
             color: draft.trim() ? BLUE.light : '#4a5a6a',
             padding: '5px 12px',
-            fontSize: 10,
+            fontSize: '0.625rem',
             fontFamily: F,
             fontWeight: 700,
             letterSpacing: 0.5,

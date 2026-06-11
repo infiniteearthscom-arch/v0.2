@@ -537,9 +537,9 @@ export const SystemMapWindow = () => {
           flexShrink: 0,
           gap: 8,
         }}>
-          <span style={{ fontSize: 12 }}>🗺️</span>
+          <span style={{ fontSize: '0.75rem' }}>🗺️</span>
           <span style={{
-            fontSize: 11, fontWeight: 800, color: BLUE.light,
+            fontSize: '0.6875rem', fontWeight: 800, color: BLUE.light,
             letterSpacing: 2, flex: 1, textTransform: 'uppercase',
           }}>
             System Map{system ? ` · ${system.name}` : ''}
@@ -559,7 +559,7 @@ export const SystemMapWindow = () => {
               padding: '3px 9px',
               cursor: 'pointer',
               borderRadius: 2,
-              fontSize: 9,
+              fontSize: '0.5625rem',
               fontFamily: F,
               fontWeight: 700,
               letterSpacing: 0.8,
@@ -572,7 +572,7 @@ export const SystemMapWindow = () => {
             onClick={() => closeWindow('systemMap')}
             style={{
               background: 'none', border: 'none', color: '#3a5a6a',
-              cursor: 'pointer', fontSize: 12, fontFamily: F,
+              cursor: 'pointer', fontSize: '0.75rem', fontFamily: F,
             }}
             title="Hide System Map"
           >✕</button>
@@ -582,11 +582,11 @@ export const SystemMapWindow = () => {
         {!inSystem ? (
           <div style={{
             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#3a5a6a', fontSize: 11, fontFamily: F, fontStyle: 'italic',
+            color: '#3a5a6a', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic',
             textAlign: 'center', padding: '0 32px',
           }}>
             <div>
-              <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.6 }}>⟡</div>
+              <div style={{ fontSize: '1.75rem', marginBottom: 10, opacity: 0.6 }}>⟡</div>
               <div style={{ color: '#5a7080' }}>You're in interstellar space.</div>
               <div style={{ marginTop: 4, color: '#3a5a6a' }}>
                 Enter a system to see its map + bodies here.
@@ -624,7 +624,7 @@ export const SystemMapWindow = () => {
             }}>
               <div style={{
                 padding: '8px 12px 4px',
-                fontSize: 9, fontFamily: FM,
+                fontSize: '0.5625rem', fontFamily: FM,
                 color: GOLD.light,
                 letterSpacing: 1.5,
                 textTransform: 'uppercase',
@@ -673,7 +673,7 @@ export const SystemMapWindow = () => {
                       }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
-                          fontSize: 11,
+                          fontSize: '0.6875rem',
                           color: '#cbd5e1',
                           fontWeight: 600,
                           whiteSpace: 'nowrap',
@@ -681,7 +681,7 @@ export const SystemMapWindow = () => {
                           textOverflow: 'ellipsis',
                         }}>{body.name}</div>
                         <div style={{
-                          fontSize: 9, color: '#5a7080', fontFamily: FM,
+                          fontSize: '0.5625rem', color: '#5a7080', fontFamily: FM,
                           letterSpacing: 0.3,
                         }}>
                           {BODY_TYPE_LABEL[body.type] || body.type} · {formatDistance(distance)}
@@ -699,7 +699,7 @@ export const SystemMapWindow = () => {
         <div style={{
           padding: '6px 12px',
           borderTop: `1px solid ${EDGE}`,
-          fontSize: 10,
+          fontSize: '0.625rem',
           color: '#5a7080',
           fontFamily: FM,
           flexShrink: 0,
@@ -720,7 +720,7 @@ export const SystemMapWindow = () => {
                   padding: '2px 10px',
                   cursor: 'pointer',
                   borderRadius: 2,
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   fontFamily: F,
                   fontWeight: 700,
                   letterSpacing: 0.5,

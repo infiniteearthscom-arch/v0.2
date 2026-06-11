@@ -30,7 +30,7 @@ const RewardBadges = ({ rewards }) => {
         border: `1px solid ${COLORS.GOLD.pri}55`,
         borderRadius: 2,
         color: COLORS.GOLD.light,
-        fontSize: 9,
+        fontSize: '0.5625rem',
         fontFamily: FONT.mono,
         fontWeight: 700,
         letterSpacing: 0.5,
@@ -52,7 +52,7 @@ const RewardBadges = ({ rewards }) => {
           border: `1px solid ${COLORS.BLUE.pri}55`,
           borderRadius: 2,
           color: COLORS.BLUE.light,
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FONT.mono,
           fontWeight: 700,
           letterSpacing: 0.5,
@@ -100,7 +100,7 @@ const QuestCard = ({ quest, isActive }) => {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           <span style={{
-            fontSize: 12,
+            fontSize: '0.75rem',
             fontWeight: 700,
             color: COLORS.TEXT.primary,
             fontFamily: FONT.ui,
@@ -123,7 +123,7 @@ const QuestCard = ({ quest, isActive }) => {
               padding: '2px 8px',
               cursor: 'pointer',
               borderRadius: 2,
-              fontSize: 11,
+              fontSize: '0.6875rem',
               lineHeight: 1,
               flexShrink: 0,
               fontFamily: FONT.ui,
@@ -135,7 +135,7 @@ const QuestCard = ({ quest, isActive }) => {
         {!isActive && (
           <span style={{
             color: COLORS.GREEN.light,
-            fontSize: 10,
+            fontSize: '0.625rem',
             fontFamily: FONT.ui,
             fontWeight: 700,
             letterSpacing: 0.5,
@@ -145,7 +145,7 @@ const QuestCard = ({ quest, isActive }) => {
       </div>
 
       <p style={{
-        fontSize: 11,
+        fontSize: '0.6875rem',
         color: COLORS.TEXT.secondary,
         lineHeight: 1.5,
         fontFamily: FONT.ui,
@@ -190,7 +190,7 @@ export const QuestLogWindow = () => {
           borderLeft: isActive ? `2px solid ${accent}` : `1px solid ${COLORS.EDGE}`,
           borderRadius: 3,
           color: isActive ? accent : COLORS.TEXT.muted,
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontWeight: 800,
           fontFamily: FONT.ui,
           cursor: 'pointer',
@@ -208,7 +208,7 @@ export const QuestLogWindow = () => {
             color: isActive ? '#0a0e18' : accent,
             borderRadius: 8,
             padding: '0 6px',
-            fontSize: 9,
+            fontSize: '0.5625rem',
             fontWeight: 800,
             fontFamily: FONT.mono,
             minWidth: 14,
@@ -248,7 +248,7 @@ export const QuestLogWindow = () => {
               textAlign: 'center',
               padding: '32px 0',
               color: COLORS.TEXT.muted,
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontFamily: FONT.ui,
             }}>
               {tab === 'active' ? 'No active missions.' : 'No completed missions yet.'}

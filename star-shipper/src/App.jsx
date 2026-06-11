@@ -70,19 +70,19 @@ const QuestToast = () => {
         {data.rewards && (
           <div className="flex flex-wrap gap-2 mt-2">
             {data.rewards.credits > 0 && (
-              <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-900/40 border border-yellow-600/30 text-yellow-400">
+              <span className="text-[0.625rem] px-2 py-0.5 rounded bg-yellow-900/40 border border-yellow-600/30 text-yellow-400">
                 +{data.rewards.credits.toLocaleString()} cr
               </span>
             )}
             {data.rewards.items?.map((item, i) => (
-              <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/40 border border-cyan-600/30 text-cyan-400">
+              <span key={i} className="text-[0.625rem] px-2 py-0.5 rounded bg-cyan-900/40 border border-cyan-600/30 text-cyan-400">
                 +{item.quantity}x {item.item_id?.replace(/_/g, ' ')}
               </span>
             ))}
           </div>
         )}
         {data.triggeredQuests?.length > 0 && (
-          <div className="text-[10px] text-cyan-400/60 mt-1.5">New quest unlocked!</div>
+          <div className="text-[0.625rem] text-cyan-400/60 mt-1.5">New quest unlocked!</div>
         )}
       </div>
     </div>

@@ -90,7 +90,7 @@ const CargoBar = ({ capacity, used, slotCount, usedSlots, shipCount }) => {
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FONT.mono,
           marginBottom: 5,
           letterSpacing: 0.5,
@@ -356,7 +356,7 @@ export const InventoryWindow = () => {
                 border: 'none',
                 color: '#fca5a5',
                 cursor: 'pointer',
-                fontSize: 11,
+                fontSize: '0.6875rem',
                 fontFamily: FONT.ui,
               }}>✕</button>
             </MessageBar>
@@ -369,7 +369,7 @@ export const InventoryWindow = () => {
               textAlign: 'center',
               padding: '32px 0',
               color: COLORS.TEXT.muted,
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontFamily: FONT.ui,
             }}>Loading cargo...</div>
           ) : (
@@ -486,7 +486,7 @@ export const InventoryWindow = () => {
 
                       {stack.quantity > 1 && (
                         <div
-                          className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold px-1 rounded-sm leading-tight"
+                          className="absolute -bottom-0.5 -right-0.5 text-[0.5625rem] font-bold px-1 rounded-sm leading-tight"
                           style={{ backgroundColor: '#000000cc', color: '#ffffff', minWidth: 14, textAlign: 'center' }}
                         >
                           {stack.quantity}
@@ -556,9 +556,9 @@ export const InventoryWindow = () => {
               transition: 'all 0.15s',
             }}
           >
-            <span style={{ fontSize: 13 }}>🗑️</span>
+            <span style={{ fontSize: '0.8125rem' }}>🗑️</span>
             <span style={{
-              fontSize: 10,
+              fontSize: '0.625rem',
               color: trashDragOver ? COLORS.RED.light : COLORS.TEXT.dim,
               fontFamily: FONT.ui,
               fontWeight: 700,
@@ -593,7 +593,7 @@ export const InventoryWindow = () => {
               fontFamily: FONT.ui,
             }}>
               <div style={{
-                fontSize: 9,
+                fontSize: '0.5625rem',
                 color: COLORS.RED.light,
                 fontFamily: FONT.mono,
                 letterSpacing: 1.5,
@@ -601,7 +601,7 @@ export const InventoryWindow = () => {
                 textTransform: 'uppercase',
               }}>⚠ Confirm Destruction</div>
               <div style={{
-                fontSize: 12,
+                fontSize: '0.75rem',
                 color: COLORS.TEXT.primary,
                 marginBottom: 8,
                 lineHeight: 1.5,
@@ -611,7 +611,7 @@ export const InventoryWindow = () => {
                 </span>?
               </div>
               <div style={{
-                fontSize: 10,
+                fontSize: '0.625rem',
                 color: COLORS.TEXT.muted,
                 fontFamily: FONT.mono,
                 marginBottom: 16,
@@ -650,7 +650,7 @@ export const InventoryWindow = () => {
           marginTop: 8,
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FONT.mono,
           color: COLORS.TEXT.muted,
           letterSpacing: 0.5,
@@ -663,7 +663,7 @@ export const InventoryWindow = () => {
               border: 'none',
               color: COLORS.BLUE.light,
               cursor: 'pointer',
-              fontSize: 9,
+              fontSize: '0.5625rem',
               fontFamily: FONT.mono,
               letterSpacing: 0.5,
               padding: 0,

@@ -40,9 +40,9 @@ const SectionHead = ({ title, accent = BLUE.light, icon, right }) => (
     background: `linear-gradient(90deg, ${accent}18, transparent)`,
     padding: '5px 10px',
   }}>
-    {icon && <span style={{ marginRight: 6, fontSize: 12 }}>{icon}</span>}
+    {icon && <span style={{ marginRight: 6, fontSize: '0.75rem' }}>{icon}</span>}
     <span style={{
-      fontSize: 11,
+      fontSize: '0.6875rem',
       fontWeight: 800,
       color: accent,
       letterSpacing: 1.5,
@@ -50,7 +50,7 @@ const SectionHead = ({ title, accent = BLUE.light, icon, right }) => (
       textTransform: 'uppercase',
       flex: 1,
     }}>{title}</span>
-    {right && <span style={{ fontSize: 9, color: '#3a5a6a', fontFamily: FM }}>{right}</span>}
+    {right && <span style={{ fontSize: '0.5625rem', color: '#3a5a6a', fontFamily: FM }}>{right}</span>}
   </div>
 );
 
@@ -60,7 +60,7 @@ const StatRow = ({ label, value, color = '#c8d6e5' }) => (
     display: 'flex',
     justifyContent: 'space-between',
     padding: '4px 2px',
-    fontSize: 10,
+    fontSize: '0.625rem',
     fontFamily: FM,
     borderBottom: '1px solid rgba(26,48,80,0.3)',
   }}>
@@ -82,13 +82,13 @@ const TeaserRow = ({ icon, label, detail }) => (
     marginBottom: 3,
     opacity: 0.75,
   }}>
-    <span style={{ fontSize: 14 }}>{icon}</span>
+    <span style={{ fontSize: '0.875rem' }}>{icon}</span>
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: '#a0b0c0', fontWeight: 700, fontFamily: F }}>{label}</div>
-      {detail && <div style={{ fontSize: 9, color: '#3a5a6a', fontFamily: FM }}>{detail}</div>}
+      <div style={{ fontSize: '0.6875rem', color: '#a0b0c0', fontWeight: 700, fontFamily: F }}>{label}</div>
+      {detail && <div style={{ fontSize: '0.5625rem', color: '#3a5a6a', fontFamily: FM }}>{detail}</div>}
     </div>
     <span style={{
-      fontSize: 8,
+      fontSize: '0.5rem',
       color: '#4a6080',
       fontFamily: FM,
       letterSpacing: 1,
@@ -194,13 +194,13 @@ export const CharacterPanel = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 20,
+            fontSize: '1.25rem',
           }}>👤</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#e2e8f0', fontFamily: F }}>
+            <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#e2e8f0', fontFamily: F }}>
               CMDR {user?.displayName || user?.username || 'Unknown'}
             </div>
-            <div style={{ fontSize: 9, color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
+            <div style={{ fontSize: '0.5625rem', color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
               INDEPENDENT PILOT
             </div>
           </div>
@@ -208,7 +208,7 @@ export const CharacterPanel = () => {
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           paddingTop: 8,
           borderTop: `1px solid ${EDGE}`,
@@ -266,14 +266,14 @@ export const CharacterPanel = () => {
             alignItems: 'baseline',
             marginBottom: 6,
           }}>
-            <span style={{ fontSize: 10, color: BLUE.light, fontWeight: 700, letterSpacing: 0.5, fontFamily: F, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '0.625rem', color: BLUE.light, fontWeight: 700, letterSpacing: 0.5, fontFamily: F, textTransform: 'uppercase' }}>
               Training
             </span>
-            <span style={{ fontSize: 9, color: '#3a5a6a', fontFamily: FM }}>
+            <span style={{ fontSize: '0.5625rem', color: '#3a5a6a', fontFamily: FM }}>
               {formatDuration(trainingProgress.remainMs)}
             </span>
           </div>
-          <div style={{ fontSize: 11, color: '#e2e8f0', fontWeight: 700, marginBottom: 6, fontFamily: F }}>
+          <div style={{ fontSize: '0.6875rem', color: '#e2e8f0', fontWeight: 700, marginBottom: 6, fontFamily: F }}>
             {trainingSkill.name} → {ROMAN[trainingProgress.targetLevel] || trainingProgress.targetLevel}
           </div>
           <div style={{
@@ -310,7 +310,7 @@ export const CharacterPanel = () => {
       {topCategories.length > 0 && (
         <>
           <div style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             color: '#3a5a6a',
             fontFamily: FM,
             letterSpacing: 1,
@@ -331,7 +331,7 @@ export const CharacterPanel = () => {
                 display: 'flex',
                 justifyContent: 'space-between',
                 padding: '3px 0',
-                fontSize: 10,
+                fontSize: '0.625rem',
                 fontFamily: FM,
               }}>
                 <span style={{ color: '#c8d6e5' }}>
@@ -349,7 +349,7 @@ export const CharacterPanel = () => {
 
       {skillsLoaded && trainedSkills.length === 0 && (
         <div style={{
-          fontSize: 10,
+          fontSize: '0.625rem',
           color: '#4a6580',
           fontFamily: F,
           fontStyle: 'italic',
@@ -368,7 +368,7 @@ export const CharacterPanel = () => {
           background: `${BLUE.pri}18`,
           border: `1px solid ${BLUE.pri}55`,
           color: BLUE.light,
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: F,
           fontWeight: 700,
           letterSpacing: 1,
@@ -384,7 +384,7 @@ export const CharacterPanel = () => {
       {/* Reputation placeholder */}
       <SectionHead title="Reputation" accent="#f59e0b" icon="🤝" right="COMING SOON" />
       <div style={{
-        fontSize: 10,
+        fontSize: '0.625rem',
         color: '#4a6580',
         fontFamily: F,
         lineHeight: 1.5,

@@ -139,7 +139,7 @@ export const LeaderboardsWindow = () => {
                   borderBottom: isActive ? '1px solid transparent' : `1px solid ${EDGE}`,
                   marginBottom: -1,
                   color: isActive ? meta.accent : '#7a8a9a',
-                  fontSize: 11,
+                  fontSize: '0.6875rem',
                   fontFamily: F,
                   fontWeight: 700,
                   letterSpacing: 1,
@@ -150,7 +150,7 @@ export const LeaderboardsWindow = () => {
                   gap: 6,
                 }}
               >
-                <span style={{ fontSize: 13 }}>{meta.icon}</span>
+                <span style={{ fontSize: '0.8125rem' }}>{meta.icon}</span>
                 <span>{b.title}</span>
               </button>
             );
@@ -165,7 +165,7 @@ export const LeaderboardsWindow = () => {
                 border: `1px solid ${EDGE}`,
                 color: '#7a8a9a',
                 padding: '4px 10px',
-                fontSize: 10,
+                fontSize: '0.625rem',
                 fontFamily: FM,
                 cursor: 'pointer',
                 borderRadius: 3,
@@ -183,22 +183,22 @@ export const LeaderboardsWindow = () => {
           padding: '12px 16px',
         }}>
           {!boards && (
-            <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F }}>
+            <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F }}>
               Loading boards...
             </div>
           )}
           {boards && boards.length === 0 && (
-            <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F }}>
+            <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F }}>
               No leaderboards available.
             </div>
           )}
           {board && state?.loading && (
-            <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F }}>
+            <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F }}>
               Loading {board.title}...
             </div>
           )}
           {board && state?.error && (
-            <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', fontSize: 11, fontFamily: F }}>
+            <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', fontSize: '0.6875rem', fontFamily: F }}>
               {state.error}
             </div>
           )}
@@ -223,7 +223,7 @@ export const LeaderboardsWindow = () => {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             fontFamily: FM,
             flexShrink: 0,
           }}>
@@ -237,7 +237,7 @@ export const LeaderboardsWindow = () => {
                 </span>
               )}
             </span>
-            <span style={{ color: '#3a4a5a', fontSize: 9 }}>
+            <span style={{ color: '#3a4a5a', fontSize: '0.5625rem' }}>
               {state.generated_at ? `as of ${new Date(state.generated_at).toLocaleTimeString()}` : ''}
             </span>
           </div>
@@ -250,7 +250,7 @@ export const LeaderboardsWindow = () => {
 const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
   if (entries.length === 0) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic' }}>
+      <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic' }}>
         No entries yet. Be the first.
       </div>
     );
@@ -262,7 +262,7 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
         display: 'grid',
         gridTemplateColumns: '60px 1fr 140px',
         padding: '6px 12px',
-        fontSize: 9,
+        fontSize: '0.5625rem',
         fontFamily: FM,
         color: '#475569',
         textTransform: 'uppercase',
@@ -290,7 +290,7 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
               alignItems: 'center',
               background: isMe ? `${BLUE.pri}18` : 'rgba(4,8,16,0.4)',
               borderLeft: isMe ? `2px solid ${BLUE.light}` : '2px solid transparent',
-              fontSize: 12,
+              fontSize: '0.75rem',
               fontFamily: FM,
               transition: 'background 80ms ease',
               cursor: 'pointer',
@@ -298,20 +298,20 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
             onMouseEnter={(ev) => { ev.currentTarget.style.background = isMe ? `${BLUE.pri}30` : 'rgba(20,30,50,0.6)'; }}
             onMouseLeave={(ev) => { ev.currentTarget.style.background = isMe ? `${BLUE.pri}18` : 'rgba(4,8,16,0.4)'; }}
           >
-            <span style={{ color: rankColor, fontWeight: 800, fontSize: 13 }}>
+            <span style={{ color: rankColor, fontWeight: 800, fontSize: '0.8125rem' }}>
               #{e.rank}
             </span>
             <span style={{
               color: isMe ? BLUE.light : '#cbd5e1',
               fontFamily: F,
               fontWeight: isMe ? 800 : 600,
-              fontSize: 12,
+              fontSize: '0.75rem',
             }}>
-              {e.username}{isMe && <span style={{ color: BLUE.light, marginLeft: 6, fontSize: 9, fontFamily: FM }}>(YOU)</span>}
+              {e.username}{isMe && <span style={{ color: BLUE.light, marginLeft: 6, fontSize: '0.5625rem', fontFamily: FM }}>(YOU)</span>}
             </span>
             <span style={{ color: '#e2e8f0', textAlign: 'right', fontWeight: 700 }}>
               {formatValue(e.value)}
-              <span style={{ color: '#3a4a5a', marginLeft: 4, fontSize: 9 }}>{board.value_suffix}</span>
+              <span style={{ color: '#3a4a5a', marginLeft: 4, fontSize: '0.5625rem' }}>{board.value_suffix}</span>
             </span>
           </div>
         );
@@ -323,7 +323,7 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
           padding: 12,
           textAlign: 'center',
           color: '#475569',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           fontStyle: 'italic',
         }}>

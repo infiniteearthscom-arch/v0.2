@@ -95,15 +95,15 @@ export const TradeInviteToast = () => {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, marginTop: 2 }}>
-        <span style={{ fontSize: 16 }}>🤝</span>
+        <span style={{ fontSize: '1rem' }}>🤝</span>
         <span style={{
-          fontSize: 10, color: GOLD.light, fontWeight: 800,
+          fontSize: '0.625rem', color: GOLD.light, fontWeight: 800,
           letterSpacing: 1, textTransform: 'uppercase', flex: 1,
         }}>Trade Invite</span>
-        <span style={{ fontSize: 9, color: '#475569', fontFamily: FM }}>{remainSec}s</span>
+        <span style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM }}>{remainSec}s</span>
       </div>
 
-      <div style={{ fontSize: 12, color: '#e2e8f0', marginBottom: 10 }}>
+      <div style={{ fontSize: '0.75rem', color: '#e2e8f0', marginBottom: 10 }}>
         <span style={{ color: GOLD.light, fontWeight: 700 }}>{invite.from_name}</span>
         <span style={{ color: '#94a3b8' }}> wants to trade.</span>
       </div>
@@ -117,7 +117,7 @@ export const TradeInviteToast = () => {
             background: `${GREEN.pri}22`,
             border: `1px solid ${GREEN.pri}88`,
             color: GREEN.light,
-            fontSize: 10, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+            fontSize: '0.625rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >Accept</button>
@@ -129,7 +129,7 @@ export const TradeInviteToast = () => {
             background: `${RED.pri}1c`,
             border: `1px solid ${RED.pri}66`,
             color: RED.light,
-            fontSize: 10, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+            fontSize: '0.625rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >Reject</button>

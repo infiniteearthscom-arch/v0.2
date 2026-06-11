@@ -93,10 +93,10 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', width,
               flexShrink: 0,
             }}
           >
-            {icon && <span style={{ marginRight: 8, fontSize: 15 }}>{icon}</span>}
+            {icon && <span style={{ marginRight: 8, fontSize: '0.9375rem' }}>{icon}</span>}
             <span
               style={{
-                fontSize: 14,
+                fontSize: '0.875rem',
                 fontWeight: 800,
                 color: accent,
                 letterSpacing: 2,
@@ -121,7 +121,7 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', width,
                 justifyContent: 'center',
                 cursor: 'pointer',
                 borderRadius: 3,
-                fontSize: 13,
+                fontSize: '0.8125rem',
                 fontFamily: "'Rajdhani', sans-serif",
               }}
             >

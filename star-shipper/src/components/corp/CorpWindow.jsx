@@ -38,7 +38,7 @@ const fmtDate = (iso) => {
 };
 
 const Label = ({ children }) => (
-  <div style={{ fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );
@@ -71,7 +71,7 @@ const CreateForm = ({ onCreated }) => {
       padding: 12,
     }}>
       <div style={{
-        fontSize: 12, color: BLUE.light, fontWeight: 800, letterSpacing: 1.5,
+        fontSize: '0.75rem', color: BLUE.light, fontWeight: 800, letterSpacing: 1.5,
         textTransform: 'uppercase', fontFamily: F, marginBottom: 10,
       }}>Found a Corporation</div>
       <div style={{ marginBottom: 8 }}>
@@ -118,7 +118,7 @@ const PendingInvites = ({ invites, onChanged }) => {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{
-        fontSize: 11, color: GOLD.light, fontWeight: 800, letterSpacing: 1,
+        fontSize: '0.6875rem', color: GOLD.light, fontWeight: 800, letterSpacing: 1,
         textTransform: 'uppercase', fontFamily: F, marginBottom: 6,
       }}>
         {invites.length} Pending Invite{invites.length === 1 ? '' : 's'}
@@ -131,10 +131,10 @@ const PendingInvites = ({ invites, onChanged }) => {
           padding: '10px 12px',
           marginBottom: 6,
         }}>
-          <div style={{ fontSize: 12, color: '#e2e8f0', fontFamily: F, fontWeight: 700, marginBottom: 4 }}>
+          <div style={{ fontSize: '0.75rem', color: '#e2e8f0', fontFamily: F, fontWeight: 700, marginBottom: 4 }}>
             <span style={{ color: GOLD.light }}>[{inv.corp_ticker}]</span> {inv.corp_name}
           </div>
-          <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: FM, marginBottom: 8 }}>
+          <div style={{ fontSize: '0.625rem', color: '#94a3b8', fontFamily: FM, marginBottom: 8 }}>
             Invited by {inv.inviter_name} · {inv.member_count} member{inv.member_count === 1 ? '' : 's'}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -224,30 +224,30 @@ const MemberView = ({ membership, onChanged }) => {
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
           <span style={{
-            fontSize: 18, color: GOLD.light, fontFamily: FM, fontWeight: 800, letterSpacing: 2,
+            fontSize: '1.125rem', color: GOLD.light, fontFamily: FM, fontWeight: 800, letterSpacing: 2,
           }}>[{membership.ticker}]</span>
-          <span style={{ fontSize: 16, color: '#e2e8f0', fontFamily: F, fontWeight: 800, flex: 1 }}>
+          <span style={{ fontSize: '1rem', color: '#e2e8f0', fontFamily: F, fontWeight: 800, flex: 1 }}>
             {membership.name}
           </span>
           <span style={{
-            fontSize: 9, color: ROLE_COLOR[membership.role], fontFamily: FM,
+            fontSize: '0.5625rem', color: ROLE_COLOR[membership.role], fontFamily: FM,
             fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
             padding: '2px 8px', border: `1px solid ${ROLE_COLOR[membership.role]}88`, borderRadius: 2,
           }}>{membership.role}</span>
         </div>
         {membership.description && (
-          <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: F, marginTop: 4, lineHeight: 1.4 }}>
+          <div style={{ fontSize: '0.6875rem', color: '#94a3b8', fontFamily: F, marginTop: 4, lineHeight: 1.4 }}>
             {membership.description}
           </div>
         )}
-        <div style={{ fontSize: 10, color: '#475569', fontFamily: FM, marginTop: 8 }}>
+        <div style={{ fontSize: '0.625rem', color: '#475569', fontFamily: FM, marginTop: 8 }}>
           {membership.member_count} member{membership.member_count === 1 ? '' : 's'} · Joined {fmtDate(membership.joined_at)}
         </div>
       </div>
 
       {/* Roster */}
       <div style={{
-        fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1,
+        fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
         textTransform: 'uppercase', marginBottom: 6,
       }}>Roster</div>
       <div style={{
@@ -257,13 +257,13 @@ const MemberView = ({ membership, onChanged }) => {
         padding: '4px 0',
         marginBottom: 12,
       }}>
-        {members == null && <div style={{ padding: 12, color: '#475569', fontSize: 10, fontFamily: F, fontStyle: 'italic' }}>Loading...</div>}
+        {members == null && <div style={{ padding: 12, color: '#475569', fontSize: '0.625rem', fontFamily: F, fontStyle: 'italic' }}>Loading...</div>}
         {members?.map(m => (
           <div key={m.user_id} style={{
             display: 'grid', gridTemplateColumns: '1fr 80px 80px',
             alignItems: 'center', gap: 6,
             padding: '6px 12px',
-            fontSize: 11, fontFamily: FM,
+            fontSize: '0.6875rem', fontFamily: FM,
             borderBottom: `1px solid rgba(26,48,80,0.2)`,
           }}>
             <span
@@ -271,9 +271,9 @@ const MemberView = ({ membership, onChanged }) => {
               title={`Open ${m.username}'s profile`}
               style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 700, cursor: 'pointer' }}
             >{m.username}{m.user_id === myUserId && (
-              <span style={{ color: BLUE.light, marginLeft: 6, fontSize: 9 }}>(you)</span>
+              <span style={{ color: BLUE.light, marginLeft: 6, fontSize: '0.5625rem' }}>(you)</span>
             )}</span>
-            <span style={{ color: ROLE_COLOR[m.role], fontWeight: 700, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase' }}>
+            <span style={{ color: ROLE_COLOR[m.role], fontWeight: 700, fontSize: '0.5625rem', letterSpacing: 1, textTransform: 'uppercase' }}>
               {m.role}
             </span>
             <span style={{ textAlign: 'right' }}>
@@ -282,7 +282,7 @@ const MemberView = ({ membership, onChanged }) => {
                   onClick={() => handleKick(m)}
                   style={{
                     background: 'transparent', border: `1px solid ${RED.pri}55`,
-                    color: RED.light, fontSize: 9, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                    color: RED.light, fontSize: '0.5625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                     textTransform: 'uppercase', padding: '3px 8px', cursor: 'pointer', borderRadius: 2,
                   }}
                 >Kick</button>
@@ -326,7 +326,7 @@ const MemberView = ({ membership, onChanged }) => {
           background: 'transparent',
           border: `1px solid ${RED.pri}66`,
           color: RED.light,
-          fontSize: 11, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+          fontSize: '0.6875rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
           textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
         }}
       >
@@ -372,7 +372,7 @@ export const CorpWindow = () => {
         padding: 4, minHeight: 280,
       }}>
         {membership === undefined && (
-          <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic' }}>
+          <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic' }}>
             Loading...
           </div>
         )}
@@ -395,7 +395,7 @@ export const CorpWindow = () => {
 // ============================================
 const inputStyle = {
   width: '100%',
-  fontSize: 12, fontFamily: FM,
+  fontSize: '0.75rem', fontFamily: FM,
   background: '#0b1424', border: `1px solid ${EDGE}`,
   color: '#cbd5e1', padding: '5px 8px', borderRadius: 2, outline: 'none',
   boxSizing: 'border-box',
@@ -403,14 +403,14 @@ const inputStyle = {
 const errorStyle = {
   padding: '6px 8px', marginBottom: 8,
   background: 'rgba(127,29,29,0.3)', border: `1px solid ${RED.pri}66`,
-  color: RED.light, fontSize: 11, fontFamily: F, borderRadius: 2,
+  color: RED.light, fontSize: '0.6875rem', fontFamily: F, borderRadius: 2,
 };
 const primaryBtnStyle = (bgColor, fgColor, disabled) => ({
   padding: '6px 14px',
   background: `${bgColor}24`,
   border: `1px solid ${bgColor}88`,
   color: disabled ? '#475569' : fgColor,
-  fontSize: 11, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+  fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
   textTransform: 'uppercase',
   cursor: disabled ? 'not-allowed' : 'pointer',
   borderRadius: 3,

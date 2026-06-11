@@ -383,7 +383,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
 
   return (
     <div className="space-y-2">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider">Your Fleet</div>
+      <div className="text-[0.625rem] text-slate-500 uppercase tracking-wider">Your Fleet</div>
       {ships.map(ship => (
         <button key={ship.id} onClick={() => onSelect(ship.id)}
           className={`w-full text-left p-2 rounded transition-all text-xs ${
@@ -393,7 +393,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
           }`}
         >
           <div className="font-medium text-slate-200">{ship.name}</div>
-          <div className="text-[10px] text-slate-500">{ship.hull_name || 'Unknown'} • {ship.hull_class || ''}</div>
+          <div className="text-[0.625rem] text-slate-500">{ship.hull_name || 'Unknown'} • {ship.hull_class || ''}</div>
         </button>
       ))}
       {ships.length === 0 && (
@@ -416,7 +416,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
                 <span className="text-slate-200">{h.name}</span>
                 <span className="text-yellow-400">{h.price > 0 ? `${h.price.toLocaleString()} cr` : 'Free'}</span>
               </div>
-              <div className="text-[10px] text-slate-500">{h.class} • {(h.slots || []).length} slots</div>
+              <div className="text-[0.625rem] text-slate-500">{h.class} • {(h.slots || []).length} slots</div>
             </button>
           ))}
         </div>
@@ -429,7 +429,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
 // SLOT INFO PANEL
 // ============================================
 const SlotInfo = ({ slot, module }) => {
-  if (!slot) return <div className="text-center text-slate-600 text-[10px] py-3">Hover a slot for details</div>;
+  if (!slot) return <div className="text-center text-slate-600 text-[0.625rem] py-3">Hover a slot for details</div>;
   const st = SLOT_TYPES[slot.type] || { color: '#888', name: slot.type };
   
   let avgQ = null, qColor = '#888';
@@ -444,9 +444,9 @@ const SlotInfo = ({ slot, module }) => {
       <div className="flex items-center gap-2 mb-1">
         <div className="w-2.5 h-2.5 rounded" style={{ backgroundColor: st.color }} />
         <span className="font-medium" style={{ color: st.color }}>{st.name} Slot</span>
-        {slot.required && <span className="text-[9px] text-red-400 font-bold">REQUIRED</span>}
+        {slot.required && <span className="text-[0.5625rem] text-red-400 font-bold">REQUIRED</span>}
       </div>
-      <div className="text-[10px] text-slate-500">Size: {slot.w}×{slot.h}</div>
+      <div className="text-[0.625rem] text-slate-500">Size: {slot.w}×{slot.h}</div>
       {module ? (
         <div className="mt-1.5">
           {/* Name + icon row -- matches the inventory tooltip + the
@@ -465,17 +465,17 @@ const SlotInfo = ({ slot, module }) => {
               server response. Matches what the inventory + fittable
               tooltips show. */}
           {module.description && (
-            <div className="text-[10px] text-slate-400 mt-1 leading-snug italic">
+            <div className="text-[0.625rem] text-slate-400 mt-1 leading-snug italic">
               {module.description}
             </div>
           )}
           {avgQ !== null && (
             <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-[10px] text-slate-500">Quality:</span>
+              <span className="text-[0.625rem] text-slate-500">Quality:</span>
               <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${avgQ}%`, backgroundColor: qColor }} />
               </div>
-              <span className="text-[10px] font-medium" style={{ color: qColor }}>Q{avgQ}</span>
+              <span className="text-[0.625rem] font-medium" style={{ color: qColor }}>Q{avgQ}</span>
             </div>
           )}
           {/* Per-stat purity/stability/potency/density values
@@ -499,7 +499,7 @@ const SlotInfo = ({ slot, module }) => {
                 const differs = Math.abs(scaled - val) > 0.005;
                 const multColor = statModifierColor(scaled, val, meta);
                 return (
-                  <div key={key} className="flex justify-between text-[10px] py-px">
+                  <div key={key} className="flex justify-between text-[0.625rem] py-px">
                     <span className="text-slate-500">{label}</span>
                     <span>
                       <span className="text-slate-200 font-medium">{fmtStatValue(scaled, meta)}</span>
@@ -526,7 +526,7 @@ const SlotInfo = ({ slot, module }) => {
             if (!eff) return null;
             return (
               <div className="mt-1.5 pt-1.5 border-t border-slate-700/30">
-                <div className="text-[9px] text-slate-500 mb-0.5 uppercase tracking-wide">
+                <div className="text-[0.5625rem] text-slate-500 mb-0.5 uppercase tracking-wide">
                   {wType} · vs defense layers
                 </div>
                 <div className="flex gap-1">
@@ -534,8 +534,8 @@ const SlotInfo = ({ slot, module }) => {
                     const c = r.tone === 'good' ? '#44cc44' : r.tone === 'bad' ? '#ff5555' : '#94a3b8';
                     return (
                       <div key={r.layer} className="flex-1 text-center rounded px-1 py-0.5" style={{ background: c + '14' }}>
-                        <div className="text-[9px] text-slate-400">{r.label}</div>
-                        <div className="text-[10px] font-bold" style={{ color: c }}>×{r.mult.toFixed(2)}</div>
+                        <div className="text-[0.5625rem] text-slate-400">{r.label}</div>
+                        <div className="text-[0.625rem] font-bold" style={{ color: c }}>×{r.mult.toFixed(2)}</div>
                       </div>
                     );
                   })}
@@ -543,7 +543,7 @@ const SlotInfo = ({ slot, module }) => {
               </div>
             );
           })()}
-          <div className="text-[9px] text-slate-600 mt-1">Click to unfit</div>
+          <div className="text-[0.5625rem] text-slate-600 mt-1">Click to unfit</div>
         </div>
       ) : (
         <div className="mt-1 text-slate-500">Empty — drag a module from cargo</div>
@@ -575,19 +575,19 @@ const StatsPanel = ({ ship, moduleDetails }) => {
 
   return (
     <div className="space-y-1.5">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider">Ship Stats</div>
+      <div className="text-[0.625rem] text-slate-500 uppercase tracking-wider">Ship Stats</div>
       {stats.map(s => (
         <div key={s.label} className="bg-slate-800/30 rounded p-1.5 border border-slate-700/20">
-          <div className="text-[9px] text-slate-500">{s.label}</div>
+          <div className="text-[0.5625rem] text-slate-500">{s.label}</div>
           <div className="text-sm text-slate-200">{s.value}</div>
         </div>
       ))}
       <div className="bg-slate-800/30 rounded p-1.5 border border-slate-700/20">
-        <div className="text-[9px] text-slate-500">Cargo</div>
+        <div className="text-[0.5625rem] text-slate-500">Cargo</div>
         <div className="text-sm text-yellow-300">{totalCargo}</div>
       </div>
       <div className="bg-slate-800/30 rounded p-1.5 border border-slate-700/20">
-        <div className="text-[9px] text-slate-500">Modules</div>
+        <div className="text-[0.5625rem] text-slate-500">Modules</div>
         <div className="text-sm text-cyan-300">{fitted}/{totalSlots}</div>
       </div>
     </div>
@@ -607,12 +607,12 @@ const ModuleShop = ({ moduleTypes, onBuy }) => {
 
   return (
     <div className="space-y-2">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider">Station Modules</div>
+      <div className="text-[0.625rem] text-slate-500 uppercase tracking-wider">Station Modules</div>
       {Object.entries(grouped).map(([type, mods]) => {
         const st = SLOT_TYPES[type] || { color: '#888', name: type };
         return (
           <div key={type}>
-            <div className="text-[10px] font-medium mb-1" style={{ color: st.color }}>{st.name}</div>
+            <div className="text-[0.625rem] font-medium mb-1" style={{ color: st.color }}>{st.name}</div>
             {mods.map(m => (
               <button key={m.id} onClick={() => onBuy(m.id)}
                 className="w-full text-left p-1.5 rounded bg-slate-800/30 border border-slate-700/20 hover:border-slate-500/40 text-xs mb-1"
@@ -621,7 +621,7 @@ const ModuleShop = ({ moduleTypes, onBuy }) => {
                   <span className="text-slate-300">{m.name}</span>
                   <span className="text-yellow-400">{m.buy_price} cr</span>
                 </div>
-                <div className="text-[9px] text-slate-500">T{m.tier} • {m.description}</div>
+                <div className="text-[0.5625rem] text-slate-500">T{m.tier} • {m.description}</div>
               </button>
             ))}
           </div>
@@ -664,13 +664,13 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
       {/* Header */}
       <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-700/40">
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 12 }}>📦</span>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Fittable Modules</span>
+          <span style={{ fontSize: '0.75rem' }}>📦</span>
+          <span className="text-[0.625rem] font-bold uppercase tracking-wider text-slate-300">Fittable Modules</span>
         </div>
         <button
           onClick={onRefresh}
           title="Refresh from cargo"
-          className="text-[10px] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+          className="text-[0.625rem] text-slate-500 hover:text-cyan-300 transition-colors px-1"
         >
           ↻
         </button>
@@ -679,10 +679,10 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-1.5" style={{ scrollbarWidth: 'thin' }}>
         {loading && !hasAny && (
-          <div className="text-[10px] text-slate-600 text-center mt-3">Loading…</div>
+          <div className="text-[0.625rem] text-slate-600 text-center mt-3">Loading…</div>
         )}
         {!loading && !hasAny && (
-          <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
+          <div className="text-[0.625rem] text-slate-500 text-center mt-3 px-2 leading-snug">
             No fittable modules in cargo.
             <div className="text-slate-600 mt-1">Buy modules from a station vendor, then drag them onto ship slots.</div>
           </div>
@@ -696,8 +696,8 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
               {/* Group header */}
               <div className="flex items-center gap-1.5 px-1 py-0.5 mb-1">
                 <div className="w-1.5 h-1.5 rounded-sm" style={{ backgroundColor: st.color }} />
-                <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: st.color }}>{st.name}</span>
-                <span className="text-[9px] text-slate-600">({items.length})</span>
+                <span className="text-[0.5625rem] font-bold uppercase tracking-wider" style={{ color: st.color }}>{st.name}</span>
+                <span className="text-[0.5625rem] text-slate-600">({items.length})</span>
               </div>
 
               {/* Grid of 40x40 module icons — each a shared ItemCell */}
@@ -717,7 +717,7 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
       </div>
 
       {/* Footer hint */}
-      <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
+      <div className="px-2 py-1 border-t border-slate-700/40 text-[0.5625rem] text-slate-500 text-center leading-tight">
         Drag onto slot • Click fitted module to unfit
       </div>
     </div>
@@ -974,11 +974,11 @@ export const ShipBuilderWindow = () => {
 
             {/* Slot legend */}
             <div className="mt-2">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Slot Types</div>
+              <div className="text-[0.625rem] text-slate-500 uppercase tracking-wider mb-1">Slot Types</div>
               {Object.entries(SLOT_TYPES).map(([key, st]) => (
                 <div key={key} className="flex items-center gap-1.5 mb-0.5">
                   <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: st.color }} />
-                  <span className="text-[10px] text-slate-400">{st.name}</span>
+                  <span className="text-[0.625rem] text-slate-400">{st.name}</span>
                 </div>
               ))}
             </div>
@@ -987,7 +987,7 @@ export const ShipBuilderWindow = () => {
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-700/30 pt-2">
-          <span className="text-[10px] text-slate-500">
+          <span className="text-[0.625rem] text-slate-500">
             Fit modules from the panel on the right • Click a fitted module to remove it
           </span>
           {selectedShipId && (

@@ -110,7 +110,7 @@ const PinnedTile = ({ quest, onUnpin }) => {
     >
       {/* Pin icon */}
       <div style={{
-        fontSize: 13,
+        fontSize: '0.8125rem',
         color: accent.light,
         marginTop: 1,
         textShadow: `0 0 6px ${accent.pri}66`,
@@ -120,19 +120,19 @@ const PinnedTile = ({ quest, onUnpin }) => {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          fontSize: 11, fontFamily: F, fontWeight: 800,
+          fontSize: '0.6875rem', fontFamily: F, fontWeight: 800,
           color: accent.light, letterSpacing: 0.5,
         }}>
           <span>{quest.title}</span>
           <span style={{
-            fontSize: 8, fontFamily: FM, fontWeight: 700,
+            fontSize: '0.5rem', fontFamily: FM, fontWeight: 700,
             color: accent.pri, opacity: 0.65, letterSpacing: 1.2,
           }}>
             {accent.label}
           </span>
         </div>
         <div style={{
-          fontSize: 10, color: '#a8b4c5', fontFamily: F,
+          fontSize: '0.625rem', color: '#a8b4c5', fontFamily: F,
           lineHeight: 1.4, marginTop: 2,
         }}>
           {quest.description}
@@ -148,7 +148,7 @@ const PinnedTile = ({ quest, onUnpin }) => {
           color: '#5a6a7a', width: 20, height: 20,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', borderRadius: 2,
-          fontSize: 10, fontFamily: F, lineHeight: 1,
+          fontSize: '0.625rem', fontFamily: F, lineHeight: 1,
           flexShrink: 0, marginTop: 1,
         }}
         onMouseEnter={(e) => { e.currentTarget.style.color = '#a04040'; e.currentTarget.style.borderColor = '#5a3030'; }}

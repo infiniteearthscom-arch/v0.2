@@ -423,7 +423,7 @@ export const GalaxyMapWindow = () => {
           </svg>
 
           {/* Zoom display */}
-          <div className="absolute bottom-2 left-2 text-[9px] text-slate-600 font-mono">
+          <div className="absolute bottom-2 left-2 text-[0.5625rem] text-slate-600 font-mono">
             {galaxy.stats?.totalSystems || systems.length} systems · Scroll to zoom · Drag to pan
           </div>
         </div>
@@ -443,12 +443,12 @@ export const GalaxyMapWindow = () => {
               </div>
 
               {!isDiscovered && (
-                <div className="text-[10px] text-slate-500 italic">
+                <div className="text-[0.625rem] text-slate-500 italic">
                   Unsurveyed. Warp in to reveal star type, faction, resources, and jump connections.
                 </div>
               )}
 
-              <div className="space-y-1 text-[10px]">
+              <div className="space-y-1 text-[0.625rem]">
                 {isDiscovered && (
                   <>
                     <div className="flex justify-between">
@@ -503,10 +503,10 @@ export const GalaxyMapWindow = () => {
               {/* Resource profile -- discovered only. */}
               {isDiscovered && selectedSys.resourceProfile && (
                 <div className="space-y-1 pt-1 border-t border-slate-700/30">
-                  <div className="text-[9px] text-slate-600 uppercase tracking-wider">Resources</div>
+                  <div className="text-[0.5625rem] text-slate-600 uppercase tracking-wider">Resources</div>
                   {Object.entries(selectedSys.resourceProfile).map(([key, val]) => (
                     <div key={key} className="flex items-center gap-2">
-                      <span className="text-[9px] text-slate-500 w-12 capitalize">{key}</span>
+                      <span className="text-[0.5625rem] text-slate-500 w-12 capitalize">{key}</span>
                       <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                         <div className="h-full rounded-full bg-cyan-500/60"
                           style={{ width: `${Math.min(100, val * 50)}%` }} />
@@ -519,14 +519,14 @@ export const GalaxyMapWindow = () => {
               {/* Jump connections -- discovered only. */}
               {isDiscovered && selectedSys.hasJumpGate && selectedSys.jumpConnections.length > 0 && (
                 <div className="space-y-1 pt-1 border-t border-slate-700/30">
-                  <div className="text-[9px] text-slate-600 uppercase tracking-wider">Jump Connections</div>
+                  <div className="text-[0.5625rem] text-slate-600 uppercase tracking-wider">Jump Connections</div>
                   {selectedSys.jumpConnections.map(connId => {
                     const conn = galaxy.systemMap[connId];
                     if (!conn) return null;
                     const connDiscovered = discoveredSet.has(connId);
                     return (
                       <div key={connId}
-                        className="text-[10px] text-slate-400 hover:text-cyan-300 cursor-pointer"
+                        className="text-[0.625rem] text-slate-400 hover:text-cyan-300 cursor-pointer"
                         onClick={() => setSelectedSystem(conn)}
                       >
                         → {connDiscovered ? conn.name : 'Unknown'}
@@ -560,7 +560,7 @@ export const GalaxyMapWindow = () => {
                   </button>
                 )}
                 {viewMode === 'system' && selectedSys.id !== currentSystemId && !canJump && (
-                  <div className="text-[9px] text-slate-600 text-center py-1">
+                  <div className="text-[0.5625rem] text-slate-600 text-center py-1">
                     {!currentSys?.hasJumpGate
                       ? 'No jump gate in current system'
                       : !selectedSys.hasJumpGate
@@ -574,25 +574,25 @@ export const GalaxyMapWindow = () => {
           })() : (
             <div className="text-center py-8">
               <div className="text-xs text-slate-500 mb-2">Click a system to inspect</div>
-              <div className="text-[10px] text-slate-600 space-y-1">
+              <div className="text-[0.625rem] text-slate-600 space-y-1">
                 <div>Scroll to zoom</div>
                 <div>Drag to pan</div>
               </div>
 
               {/* Legend */}
               <div className="mt-6 space-y-1.5 text-left">
-                <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-2">Factions</div>
+                <div className="text-[0.5625rem] text-slate-600 uppercase tracking-wider mb-2">Factions</div>
                 {Object.entries(FACTIONS).map(([id, f]) => (
                   <div key={id} className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
-                    <span className="text-[10px] text-slate-400">{f.name}</span>
+                    <span className="text-[0.625rem] text-slate-400">{f.name}</span>
                   </div>
                 ))}
-                <div className="text-[9px] text-slate-600 uppercase tracking-wider mt-3 mb-2">Star Types</div>
+                <div className="text-[0.5625rem] text-slate-600 uppercase tracking-wider mt-3 mb-2">Star Types</div>
                 {Object.entries(STAR_COLORS).map(([type, color]) => (
                   <div key={type} className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                    <span className="text-[10px] text-slate-400">{type.replace('_', ' ')}</span>
+                    <span className="text-[0.625rem] text-slate-400">{type.replace('_', ' ')}</span>
                   </div>
                 ))}
               </div>

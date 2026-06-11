@@ -178,7 +178,7 @@ export const ActivityTicker = () => {
           border: `1px solid ${EDGE}`,
           borderRadius: 3,
           fontFamily: F,
-          fontSize: 11,
+          fontSize: '0.6875rem',
           color: '#cbd5e1',
           cursor: 'pointer',
           zIndex: 35,
@@ -202,10 +202,10 @@ export const ActivityTicker = () => {
             animation: 'act-slide-up 320ms ease-out',
           }}
         >
-          <span style={{ fontSize: 12 }}>{f.icon}</span>
+          <span style={{ fontSize: '0.75rem' }}>{f.icon}</span>
           <span style={{ color: f.color, fontWeight: 700, letterSpacing: 0.3 }}>{f.text}</span>
         </div>
-        <span style={{ color: '#475569', fontFamily: FM, fontSize: 9 }}>
+        <span style={{ color: '#475569', fontFamily: FM, fontSize: '0.5625rem' }}>
           {formatAge(latest.ts, now)} ago
         </span>
       </div>
@@ -248,20 +248,20 @@ const ActivityExpandedPanel = ({ now, onClose }) => {
         borderBottom: `1px solid ${EDGE}`,
         marginBottom: 4,
       }}>
-        <span style={{ fontSize: 9, color: '#7a8a9a', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
+        <span style={{ fontSize: '0.5625rem', color: '#7a8a9a', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
           Galaxy Activity
         </span>
         <button
           onClick={onClose}
           style={{
             background: 'transparent', border: 'none', color: '#7a8a9a',
-            fontSize: 12, cursor: 'pointer', padding: '0 4px',
+            fontSize: '0.75rem', cursor: 'pointer', padding: '0 4px',
           }}
           title="Close"
         >×</button>
       </div>
       {recent.length === 0 ? (
-        <div style={{ padding: 12, color: '#475569', fontSize: 10, fontStyle: 'italic', textAlign: 'center' }}>
+        <div style={{ padding: 12, color: '#475569', fontSize: '0.625rem', fontStyle: 'italic', textAlign: 'center' }}>
           No activity yet.
         </div>
       ) : recent.map((evt) => {
@@ -272,13 +272,13 @@ const ActivityExpandedPanel = ({ now, onClose }) => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            fontSize: 11,
+            fontSize: '0.6875rem',
           }}>
-            <span style={{ fontSize: 12 }}>{f.icon}</span>
+            <span style={{ fontSize: '0.75rem' }}>{f.icon}</span>
             <span style={{ color: f.color, fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {f.text}
             </span>
-            <span style={{ color: '#475569', fontFamily: FM, fontSize: 9 }}>
+            <span style={{ color: '#475569', fontFamily: FM, fontSize: '0.5625rem' }}>
               {formatAge(evt.ts, now)} ago
             </span>
           </div>

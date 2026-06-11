@@ -68,7 +68,7 @@ const InboxList = ({ messages, expandedId, onExpand, onDelete, busy }) => {
               }}
             >
               <span style={{
-                fontSize: 10, fontFamily: FM,
+                fontSize: '0.625rem', fontFamily: FM,
                 color: m.system_sent ? GOLD.light : '#cbd5e1',
                 fontWeight: 700,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -76,13 +76,13 @@ const InboxList = ({ messages, expandedId, onExpand, onDelete, busy }) => {
                 {m.system_sent ? 'SYSTEM' : (m.sender_name || 'Unknown')}
               </span>
               <span style={{
-                fontSize: 12, fontFamily: F,
+                fontSize: '0.75rem', fontFamily: F,
                 color: unread ? '#e2e8f0' : '#94a3b8',
                 fontWeight: unread ? 800 : 600,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>{m.subject}</span>
               <span style={{
-                fontSize: 9, color: '#475569', fontFamily: FM,
+                fontSize: '0.5625rem', color: '#475569', fontFamily: FM,
                 textAlign: 'right',
               }}>{fmtTs(m.sent_at)}</span>
               <button
@@ -96,7 +96,7 @@ const InboxList = ({ messages, expandedId, onExpand, onDelete, busy }) => {
                 title="Delete"
                 style={{
                   background: 'transparent', border: 'none',
-                  color: '#475569', fontSize: 13, cursor: 'pointer',
+                  color: '#475569', fontSize: '0.8125rem', cursor: 'pointer',
                   padding: 0,
                 }}
               >×</button>
@@ -108,7 +108,7 @@ const InboxList = ({ messages, expandedId, onExpand, onDelete, busy }) => {
                 background: 'rgba(0,0,0,0.25)',
               }}>
                 <div style={{
-                  fontSize: 11, color: '#cbd5e1', fontFamily: F,
+                  fontSize: '0.6875rem', color: '#cbd5e1', fontFamily: F,
                   lineHeight: 1.5, whiteSpace: 'pre-wrap',
                 }}>{m.body}</div>
               </div>
@@ -152,7 +152,7 @@ const ComposeView = ({ onSent, onCancel }) => {
       padding: 14,
     }}>
       <div style={{
-        fontSize: 12, color: BLUE.light, fontWeight: 800, letterSpacing: 1.5,
+        fontSize: '0.75rem', color: BLUE.light, fontWeight: 800, letterSpacing: 1.5,
         textTransform: 'uppercase', fontFamily: F, marginBottom: 10,
       }}>Compose Message</div>
 
@@ -182,7 +182,7 @@ const ComposeView = ({ onSent, onCancel }) => {
           onChange={(e) => setBody(e.target.value.slice(0, 4000))}
           rows={8} maxLength={4000}
           placeholder="Write your message..."
-          style={{ ...inputStyle, resize: 'vertical', fontFamily: F, fontSize: 12, lineHeight: 1.5 }}
+          style={{ ...inputStyle, resize: 'vertical', fontFamily: F, fontSize: '0.75rem', lineHeight: 1.5 }}
         />
       </div>
 
@@ -194,7 +194,7 @@ const ComposeView = ({ onSent, onCancel }) => {
           style={{
             padding: '8px 12px',
             background: 'transparent', border: `1px solid ${EDGE}`,
-            color: '#7a8a9a', fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+            color: '#7a8a9a', fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >Cancel</button>
@@ -207,7 +207,7 @@ const ComposeView = ({ onSent, onCancel }) => {
             background: `${BLUE.pri}24`,
             border: `1px solid ${BLUE.pri}88`,
             color: BLUE.light,
-            fontSize: 11, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+            fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
             opacity: (busy || !recipientId.trim() || !subject.trim() || !body.trim()) ? 0.5 : 1,
           }}
@@ -299,7 +299,7 @@ export const InboxWindow = () => {
                 background: tab === t.id ? `${BLUE.pri}24` : 'transparent',
                 border: `1px solid ${tab === t.id ? BLUE.pri + '88' : EDGE}`,
                 color: tab === t.id ? BLUE.light : '#7a8a9a',
-                fontSize: 11, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                fontSize: '0.6875rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                 textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
               }}
             >{t.label}</button>
@@ -312,7 +312,7 @@ export const InboxWindow = () => {
               style={{
                 padding: '6px 10px',
                 background: 'transparent', border: `1px solid ${EDGE}`,
-                color: '#7a8a9a', fontSize: 12, cursor: 'pointer', borderRadius: 3,
+                color: '#7a8a9a', fontSize: '0.75rem', cursor: 'pointer', borderRadius: 3,
               }}
             >↻</button>
           )}
@@ -342,27 +342,27 @@ export const InboxWindow = () => {
 // STYLE HELPERS
 // ============================================
 const Loading = () => (
-  <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic' }}>
+  <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic' }}>
     Loading...
   </div>
 );
 const Empty = ({ children }) => (
   <div style={{
     padding: 40, textAlign: 'center', color: '#475569',
-    fontSize: 11, fontFamily: F, fontStyle: 'italic',
+    fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic',
     background: 'rgba(4,8,16,0.4)', border: `1px solid ${EDGE}`, borderRadius: 3,
   }}>
     {children}
   </div>
 );
 const Label = ({ children }) => (
-  <div style={{ fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );
 const inputStyle = {
   width: '100%',
-  fontSize: 12, fontFamily: FM,
+  fontSize: '0.75rem', fontFamily: FM,
   background: '#0b1424', border: `1px solid ${EDGE}`,
   color: '#cbd5e1', padding: '5px 8px', borderRadius: 2, outline: 'none',
   boxSizing: 'border-box',
@@ -370,7 +370,7 @@ const inputStyle = {
 const errorStyle = {
   padding: '6px 8px', marginBottom: 8,
   background: 'rgba(127,29,29,0.3)', border: `1px solid ${RED.pri}66`,
-  color: RED.light, fontSize: 11, fontFamily: F, borderRadius: 2,
+  color: RED.light, fontSize: '0.6875rem', fontFamily: F, borderRadius: 2,
 };
 
 export default InboxWindow;

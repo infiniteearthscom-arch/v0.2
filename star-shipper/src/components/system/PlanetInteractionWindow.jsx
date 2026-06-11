@@ -54,9 +54,9 @@ const SectionHead = ({ title, accent = BLUE.light, right, icon }) => (
     background: `linear-gradient(90deg, ${accent}18, transparent)`,
     padding: '5px 10px',
   }}>
-    {icon && <span style={{ marginRight: 6, fontSize: 12 }}>{icon}</span>}
+    {icon && <span style={{ marginRight: 6, fontSize: '0.75rem' }}>{icon}</span>}
     <span style={{
-      fontSize: 11,
+      fontSize: '0.6875rem',
       fontWeight: 800,
       color: accent,
       letterSpacing: 1.5,
@@ -64,7 +64,7 @@ const SectionHead = ({ title, accent = BLUE.light, right, icon }) => (
       textTransform: 'uppercase',
       flex: 1,
     }}>{title}</span>
-    {right && <span style={{ fontSize: 10, color: '#3a5a6a', fontFamily: FM }}>{right}</span>}
+    {right && <span style={{ fontSize: '0.625rem', color: '#3a5a6a', fontFamily: FM }}>{right}</span>}
   </div>
 );
 
@@ -128,7 +128,7 @@ const PlanetBanner = ({ body, onClose }) => {
           justifyContent: 'center',
           cursor: 'pointer',
           borderRadius: 3,
-          fontSize: 12,
+          fontSize: '0.75rem',
           fontFamily: F,
           zIndex: 5,
         }}
@@ -195,7 +195,7 @@ const PlanetBanner = ({ body, onClose }) => {
       }}>
         <div>
           <div style={{
-            fontSize: 18,
+            fontSize: '1.125rem',
             fontWeight: 800,
             color: '#e2e8f0',
             textShadow: '0 1px 4px rgba(0,0,0,0.5)',
@@ -203,7 +203,7 @@ const PlanetBanner = ({ body, onClose }) => {
             letterSpacing: 0.5,
           }}>{body?.name || 'Unknown'}</div>
           <div style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             color: '#6a8a9a',
             fontFamily: FM,
             textTransform: 'capitalize',
@@ -235,7 +235,7 @@ const SurveyStatus = ({ status }) => {
 
 const OrbitalScanResults = ({ resources, probeQuality }) => {
   if (!resources || resources.length === 0) {
-    return <p style={{ color: '#4a6580', fontSize: 11, fontFamily: F }}>No resources detected</p>;
+    return <p style={{ color: '#4a6580', fontSize: '0.6875rem', fontFamily: F }}>No resources detected</p>;
   }
 
   return (
@@ -255,17 +255,17 @@ const OrbitalScanResults = ({ resources, probeQuality }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14 }}>{CATEGORY_INFO[resource.category]?.icon || '📦'}</span>
+            <span style={{ fontSize: '0.875rem' }}>{CATEGORY_INFO[resource.category]?.icon || '📦'}</span>
             <span style={{
               fontWeight: 700,
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontFamily: F,
               color: RARITY_INFO[resource.rarity]?.color || '#e2e8f0',
             }}>
               {resource.name}
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, fontFamily: FM }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.625rem', fontFamily: FM }}>
             <span style={{ color: '#4a6580' }}>{resource.deposit_count}×</span>
             {/* Numeric estimate when probe quality > 50 (Phase 2). The
                 server omits this field on baseline probes so the player
@@ -277,7 +277,7 @@ const OrbitalScanResults = ({ resources, probeQuality }) => {
             <span style={{
               padding: '1px 6px',
               borderRadius: 2,
-              fontSize: 8,
+              fontSize: '0.5rem',
               fontWeight: 800,
               fontFamily: F,
               letterSpacing: 0.5,
@@ -320,7 +320,7 @@ const ProbeQualityFooter = ({ q }) => {
     <div style={{
       marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EDGE}`,
       display: 'flex', alignItems: 'baseline', gap: 8,
-      fontSize: 9, fontFamily: FM, color: '#5a6a7a',
+      fontSize: '0.5625rem', fontFamily: FM, color: '#5a6a7a',
     }}>
       <span>Scanned with</span>
       <span style={{ color: tier.color, fontWeight: 700 }}>
@@ -335,7 +335,7 @@ const ProbeQualityFooter = ({ q }) => {
 
 const GroundScanResults = ({ deposits, probeQuality }) => {
   if (!deposits || deposits.length === 0) {
-    return <p style={{ color: '#4a6580', fontSize: 11, fontFamily: F }}>No deposit data available</p>;
+    return <p style={{ color: '#4a6580', fontSize: '0.6875rem', fontFamily: F }}>No deposit data available</p>;
   }
 
   return (
@@ -359,10 +359,10 @@ const GroundScanResults = ({ deposits, probeQuality }) => {
             marginBottom: 6,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 9, color: '#3a5a6a', fontFamily: FM, letterSpacing: 0.5 }}>#{deposit.slot_number}</span>
+              <span style={{ fontSize: '0.5625rem', color: '#3a5a6a', fontFamily: FM, letterSpacing: 0.5 }}>#{deposit.slot_number}</span>
               <span style={{
                 fontWeight: 700,
-                fontSize: 11,
+                fontSize: '0.6875rem',
                 fontFamily: F,
                 color: RARITY_INFO[deposit.rarity]?.color || '#e2e8f0',
               }}>
@@ -370,7 +370,7 @@ const GroundScanResults = ({ deposits, probeQuality }) => {
               </span>
             </div>
             <span style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               padding: '2px 7px',
               borderRadius: 2,
               fontWeight: 800,
@@ -386,7 +386,7 @@ const GroundScanResults = ({ deposits, probeQuality }) => {
           </div>
 
           <div style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             color: '#4a6580',
             fontFamily: FM,
             marginBottom: 6,
@@ -409,7 +409,7 @@ const GroundScanResults = ({ deposits, probeQuality }) => {
                 border: `1px solid ${EDGE}`,
                 borderRadius: 2,
                 padding: '3px 7px',
-                fontSize: 9,
+                fontSize: '0.5625rem',
                 fontFamily: FM,
                 letterSpacing: 0.3,
               }}>
@@ -446,7 +446,7 @@ const HazardWarning = ({ hazards }) => {
         color: '#fca5a5',
         fontWeight: 800,
         marginBottom: 5,
-        fontSize: 10,
+        fontSize: '0.625rem',
         fontFamily: F,
         letterSpacing: 1,
         textTransform: 'uppercase',
@@ -455,7 +455,7 @@ const HazardWarning = ({ hazards }) => {
         <span>Hazards Detected</span>
       </div>
       <ul style={{
-        fontSize: 10,
+        fontSize: '0.625rem',
         color: '#fca5a5',
         listStyle: 'none',
         padding: 0,
@@ -483,7 +483,7 @@ const StatBar = ({ label, value, max = 100 }) => {
       display: 'flex',
       alignItems: 'center',
       gap: 8,
-      fontSize: 10,
+      fontSize: '0.625rem',
       fontFamily: FM,
       padding: '2px 0',
     }}>
@@ -534,7 +534,7 @@ const CargoBar = ({ capacity, used }) => {
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
-        fontSize: 9,
+        fontSize: '0.5625rem',
         fontFamily: FM,
         marginBottom: 4,
         letterSpacing: 0.5,
@@ -603,14 +603,14 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{
             color: '#3a5a6a',
-            fontSize: 9,
+            fontSize: '0.5625rem',
             fontFamily: FM,
             letterSpacing: 0.5,
           }}>#{deposit.slot_number}</span>
-          <span style={{ fontSize: 14 }}>{CATEGORY_INFO[deposit.category]?.icon || '📦'}</span>
+          <span style={{ fontSize: '0.875rem' }}>{CATEGORY_INFO[deposit.category]?.icon || '📦'}</span>
           <span style={{
             fontWeight: 700,
-            fontSize: 12,
+            fontSize: '0.75rem',
             fontFamily: F,
             color: RARITY_INFO[deposit.rarity]?.color || '#e2e8f0',
             letterSpacing: 0.3,
@@ -620,7 +620,7 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
         </div>
         {tier && (
           <span style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             padding: '2px 7px',
             borderRadius: 2,
             background: `${tier.color}22`,
@@ -642,7 +642,7 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
-            fontSize: 9,
+            fontSize: '0.5625rem',
             fontFamily: FM,
             color: '#4a6580',
             marginBottom: 3,
@@ -682,7 +682,7 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
       {isMyActiveDeposit ? (
         <div style={{
           color: GOLD.light,
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontWeight: 700,
           fontFamily: F,
           display: 'flex',
@@ -700,28 +700,28 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
       ) : isDepleted ? (
         <div style={{
           color: '#3a5a6a',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           letterSpacing: 0.5,
         }}>DEPLETED — RESPAWNS IN ~24H</div>
       ) : isOccupiedByOther ? (
         <div style={{
           color: '#ef4444',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           letterSpacing: 0.5,
         }}>OCCUPIED BY ANOTHER PLAYER</div>
       ) : !deposit.stats ? (
         <div style={{
           color: '#3a5a6a',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           letterSpacing: 0.5,
         }}>GROUND SCAN REQUIRED</div>
       ) : hasActiveSession ? (
         <div style={{
           color: '#3a5a6a',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: FM,
           letterSpacing: 0.5,
         }}>STOP CURRENT SESSION TO MINE HERE</div>
@@ -793,18 +793,18 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
         marginBottom: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14, animation: 'pulse 1.5s ease-in-out infinite' }}>⛏️</span>
+          <span style={{ fontSize: '0.875rem', animation: 'pulse 1.5s ease-in-out infinite' }}>⛏️</span>
           <span style={{
             fontWeight: 800,
             color: GOLD.light,
-            fontSize: 11,
+            fontSize: '0.6875rem',
             fontFamily: F,
             letterSpacing: 1,
             textTransform: 'uppercase',
           }}>Mining Active</span>
         </div>
         <span style={{
-          fontSize: 9,
+          fontSize: '0.5625rem',
           color: '#4a6580',
           fontFamily: FM,
           letterSpacing: 0.5,
@@ -817,10 +817,10 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
         gap: 8,
         marginBottom: 10,
       }}>
-        <span style={{ fontSize: 14 }}>{CATEGORY_INFO[session.category]?.icon || '📦'}</span>
+        <span style={{ fontSize: '0.875rem' }}>{CATEGORY_INFO[session.category]?.icon || '📦'}</span>
         <span style={{
           fontWeight: 700,
-          fontSize: 12,
+          fontSize: '0.75rem',
           fontFamily: F,
           color: RARITY_INFO[session.rarity]?.color || '#e2e8f0',
           letterSpacing: 0.3,
@@ -829,7 +829,7 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
         </span>
         {tier && (
           <span style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             padding: '2px 7px',
             borderRadius: 2,
             background: `${tier.color}22`,
@@ -880,13 +880,13 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
             padding: '4px 7px',
           }}>
             <div style={{
-              fontSize: 8,
+              fontSize: '0.5rem',
               color: stat.accent ? GOLD.light : '#3a5a6a',
               fontFamily: FM,
               letterSpacing: 1,
             }}>{stat.label}</div>
             <div style={{
-              fontSize: 11,
+              fontSize: '0.6875rem',
               color: stat.color,
               fontFamily: FM,
               fontWeight: 700,
@@ -900,7 +900,7 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FM,
           color: '#4a6580',
           marginBottom: 3,
@@ -1018,11 +1018,11 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
           justifyContent: 'center',
           height: '100%',
           color: '#3a5a6a',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: F,
         }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 16, marginBottom: 4 }}>📭</div>
+            <div style={{ fontSize: '1rem', marginBottom: 4 }}>📭</div>
             <div style={{
               letterSpacing: 0.5,
               textTransform: 'uppercase',
@@ -1069,10 +1069,10 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
         marginBottom: 8,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>{icon}</span>
+          <span style={{ fontSize: '1rem' }}>{icon}</span>
           <div>
             <div style={{
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontWeight: 700,
               color: '#e2e8f0',
               fontFamily: F,
@@ -1081,7 +1081,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
               {harvester.harvester_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
             </div>
             <div style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               color: '#3a5a6a',
               fontFamily: FM,
               letterSpacing: 0.3,
@@ -1100,7 +1100,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
             animation: harvester.status === 'active' ? 'pulse 1.5s ease-in-out infinite' : 'none',
           }} />
           <span style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             color: statusColor,
             fontFamily: F,
             fontWeight: 700,
@@ -1131,14 +1131,14 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
               borderRadius: 2,
               padding: '5px 8px',
             }}>
-              <div style={{ fontSize: 10, fontFamily: F, flex: 1 }}>
+              <div style={{ fontSize: '0.625rem', fontFamily: F, flex: 1 }}>
                 <span style={{ color: '#4a6580' }}>Mining: </span>
                 <span style={{ color: '#22d3ee', fontWeight: 700 }}>{harvester.resource_name}</span>
-                <span style={{ color: '#3a5a6a', fontFamily: FM, fontSize: 9 }}> (slot {harvester.deposit_slot})</span>
+                <span style={{ color: '#3a5a6a', fontFamily: FM, fontSize: '0.5625rem' }}> (slot {harvester.deposit_slot})</span>
               </div>
               {tier && (
                 <span style={{
-                  fontSize: 8,
+                  fontSize: '0.5rem',
                   padding: '1px 5px',
                   borderRadius: 2,
                   fontWeight: 800,
@@ -1153,7 +1153,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
               <button
                 onClick={() => setShowDepositPicker(true)}
                 style={{
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   color: '#4a6580',
                   background: 'none',
                   border: 'none',
@@ -1191,7 +1191,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
           padding: 8,
         }}>
           <div style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             color: '#4a6580',
             fontFamily: FM,
             letterSpacing: 1,
@@ -1200,7 +1200,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
           }}>Available Deposits:</div>
           {availableDeposits.length === 0 ? (
             <div style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               color: '#3a5a6a',
               fontFamily: F,
             }}>No available deposits</div>
@@ -1226,7 +1226,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
                     borderRadius: 2,
                     background: 'rgba(4,8,16,0.6)',
                     border: `1px solid ${EDGE}`,
-                    fontSize: 10,
+                    fontSize: '0.625rem',
                     fontFamily: F,
                     cursor: 'pointer',
                     display: 'flex',
@@ -1239,7 +1239,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
                   </span>
                   {tier && (
                     <span style={{
-                      fontSize: 8,
+                      fontSize: '0.5rem',
                       padding: '1px 5px',
                       borderRadius: 2,
                       fontWeight: 800,
@@ -1259,7 +1259,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
           <button
             onClick={() => setShowDepositPicker(false)}
             style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               color: '#4a6580',
               background: 'none',
               border: 'none',
@@ -1294,7 +1294,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FM,
           marginBottom: 3,
           letterSpacing: 0.5,
@@ -1337,7 +1337,7 @@ const HarvesterSlotCard = ({ slot, harvester, onDeploy, onRefuel, onCollect, onA
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FM,
           marginBottom: 3,
           letterSpacing: 0.5,
@@ -1471,7 +1471,7 @@ const HarvesterItemTile = ({ stack, deployable, onClick }) => {
       </div>
       {stack.quantity > 1 && (
         <div
-          className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold px-1 rounded-sm leading-tight"
+          className="absolute -bottom-0.5 -right-0.5 text-[0.5625rem] font-bold px-1 rounded-sm leading-tight"
           style={{ backgroundColor: '#000000cc', color: '#ffffff', minWidth: 14, textAlign: 'center' }}
         >
           {stack.quantity}
@@ -1529,13 +1529,13 @@ const HarvesterCargoPanel = ({ firstEmptySlot, onDeployFromCargo }) => {
       {/* Header */}
       <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-700/40">
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 12 }}>📦</span>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
+          <span style={{ fontSize: '0.75rem' }}>📦</span>
+          <span className="text-[0.625rem] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
         </div>
         <button
           onClick={fetchInventory}
           title="Refresh from cargo"
-          className="text-[10px] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+          className="text-[0.625rem] text-slate-500 hover:text-cyan-300 transition-colors px-1"
         >
           ↻
         </button>
@@ -1544,10 +1544,10 @@ const HarvesterCargoPanel = ({ firstEmptySlot, onDeployFromCargo }) => {
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-1.5" style={{ scrollbarWidth: 'thin' }}>
         {loading && !hasAny && (
-          <div className="text-[10px] text-slate-600 text-center mt-3">Loading…</div>
+          <div className="text-[0.625rem] text-slate-600 text-center mt-3">Loading…</div>
         )}
         {!loading && !hasAny && (
-          <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
+          <div className="text-[0.625rem] text-slate-500 text-center mt-3 px-2 leading-snug">
             No items in cargo.
             <div className="text-slate-600 mt-1">Craft a harvester (or buy fuel cells) and they'll show up here.</div>
           </div>
@@ -1577,7 +1577,7 @@ const HarvesterCargoPanel = ({ firstEmptySlot, onDeployFromCargo }) => {
       </div>
 
       {/* Footer hint */}
-      <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
+      <div className="px-2 py-1 border-t border-slate-700/40 text-[0.5625rem] text-slate-500 text-center leading-tight">
         {canDeploy
           ? 'Click a glowing harvester to deploy'
           : 'All slots full — collect or remove one'}
@@ -1676,7 +1676,7 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
         textAlign: 'center',
         padding: '32px 0',
         color: '#4a6580',
-        fontSize: 11,
+        fontSize: '0.6875rem',
         fontFamily: F,
       }}>Loading harvesters...</div>
     );
@@ -1717,14 +1717,14 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
         }}>
           <div>
             <div style={{
-              fontSize: 12,
+              fontSize: '0.75rem',
               fontWeight: 800,
               color: '#ff8a44',
               fontFamily: F,
               letterSpacing: 0.5,
             }}>{data.planet_name} Surface</div>
             <div style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               color: '#4a6580',
               fontFamily: FM,
               letterSpacing: 0.5,
@@ -1732,7 +1732,7 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
             }}>{totalSlots} harvester slots available</div>
           </div>
           <div style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             color: '#a0b0c0',
             fontFamily: FM,
             fontWeight: 700,
@@ -1751,7 +1751,7 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
           textAlign: 'center',
           padding: '32px 16px',
           color: '#3a5a6a',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           fontFamily: F,
         }}>
           This body does not support automated harvesters.
@@ -1931,10 +1931,10 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
         textAlign: 'center',
         padding: '32px 16px',
       }}>
-        <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
+        <div style={{ fontSize: '1.75rem', marginBottom: 10 }}>🔍</div>
         <p style={{
           color: '#a0b0c0',
-          fontSize: 12,
+          fontSize: '0.75rem',
           marginBottom: 4,
           fontFamily: F,
           fontWeight: 700,
@@ -1942,7 +1942,7 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
         }}>Ground scan required</p>
         <p style={{
           color: '#4a6580',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontFamily: F,
           lineHeight: 1.5,
         }}>
@@ -1957,7 +1957,7 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
       <div style={{ textAlign: 'center', padding: '32px 0' }}>
         <div style={{
           color: '#4a6580',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           fontFamily: F,
         }}>Loading deposits...</div>
       </div>
@@ -1983,7 +1983,7 @@ const MineTab = ({ body, surveyStatus, effectiveBodyId }) => {
         {deposits.length === 0 ? (
           <p style={{
             color: '#3a5a6a',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             textAlign: 'center',
             padding: '16px 0',
             fontFamily: F,
@@ -2259,7 +2259,7 @@ const VendorTab = ({ body }) => {
       textAlign: 'center',
       padding: '32px 0',
       color: '#4a6580',
-      fontSize: 11,
+      fontSize: '0.6875rem',
       fontFamily: F,
     }}>Loading vendor...</div>
   );
@@ -2279,14 +2279,14 @@ const VendorTab = ({ body }) => {
         marginBottom: 10,
       }}>
         <span style={{
-          fontSize: 9,
+          fontSize: '0.5625rem',
           color: '#4a6580',
           fontFamily: FM,
           letterSpacing: 1,
           textTransform: 'uppercase',
         }}>BALANCE</span>
         <span style={{
-          fontSize: 13,
+          fontSize: '0.8125rem',
           fontWeight: 800,
           color: GOLD.light,
           fontFamily: FM,
@@ -2316,7 +2316,7 @@ const VendorTab = ({ body }) => {
                 borderLeft: isActive ? `2px solid ${GOLD.pri}` : `1px solid ${EDGE}`,
                 borderRadius: 2,
                 color: isActive ? GOLD.light : '#4a6580',
-                fontSize: 9,
+                fontSize: '0.5625rem',
                 fontWeight: 800,
                 fontFamily: F,
                 cursor: 'pointer',
@@ -2333,7 +2333,7 @@ const VendorTab = ({ body }) => {
               <span>{s.icon}</span>
               <span>{s.label}</span>
               <span style={{
-                fontSize: 8,
+                fontSize: '0.5rem',
                 color: isActive ? GOLD.light : '#3a5a6a',
                 opacity: 0.8,
               }}>{s.count}</span>
@@ -2360,7 +2360,7 @@ const VendorTab = ({ body }) => {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{
-                    fontSize: 12,
+                    fontSize: '0.75rem',
                     fontWeight: 700,
                     color: '#e2e8f0',
                     fontFamily: F,
@@ -2368,7 +2368,7 @@ const VendorTab = ({ body }) => {
                   <Pill color="#a0b0c0">{h.class}</Pill>
                 </div>
                 <div style={{
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   color: '#4a6580',
                   marginTop: 2,
                   fontFamily: F,
@@ -2377,7 +2377,7 @@ const VendorTab = ({ body }) => {
                   display: 'flex',
                   gap: 12,
                   marginTop: 5,
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   fontFamily: FM,
                 }}>
                   <span style={{ color: '#4a6580' }}>HULL <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{h.base_hull}</span></span>
@@ -2416,7 +2416,7 @@ const VendorTab = ({ body }) => {
                     boxShadow: `0 0 4px ${color}88`,
                   }} />
                   <span style={{
-                    fontSize: 10,
+                    fontSize: '0.625rem',
                     fontWeight: 800,
                     color,
                     textTransform: 'uppercase',
@@ -2467,13 +2467,13 @@ const VendorTab = ({ body }) => {
                         }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{
-                            fontSize: 11,
+                            fontSize: '0.6875rem',
                             color: '#e2e8f0',
                             fontWeight: 700,
                             fontFamily: F,
                           }}>{m.name}</div>
                           <div style={{
-                            fontSize: 9,
+                            fontSize: '0.5625rem',
                             color: '#4a6580',
                             fontFamily: FM,
                             letterSpacing: 0.3,
@@ -2506,7 +2506,7 @@ const VendorTab = ({ body }) => {
                             return (
                               <div style={{
                                 marginTop: 3,
-                                fontSize: 9,
+                                fontSize: '0.5625rem',
                                 color: '#7a8a9a',
                                 fontFamily: FM,
                                 letterSpacing: 0.3,
@@ -2545,7 +2545,7 @@ const VendorTab = ({ body }) => {
                             title={`Click to jump to ${tech?.name || techId} in the research tree`}
                             style={{
                               padding: '4px 10px',
-                              fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                              fontSize: '0.5625rem', fontWeight: 800, letterSpacing: 0.8,
                               textTransform: 'uppercase',
                               fontFamily: F,
                               color: '#fbbf24',
@@ -2572,7 +2572,7 @@ const VendorTab = ({ body }) => {
                             title={`Open Crafting with ${recipe.name} preselected`}
                             style={{
                               padding: '4px 8px',
-                              fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                              fontSize: '0.5625rem', fontWeight: 800, letterSpacing: 0.8,
                               textTransform: 'uppercase',
                               fontFamily: F,
                               color: '#a855f7',
@@ -2621,15 +2621,15 @@ const VendorTab = ({ body }) => {
                 alignItems: 'center',
                 gap: 10,
               }}>
-                <span style={{ fontSize: 18 }}>🚀</span>
+                <span style={{ fontSize: '1.125rem' }}>🚀</span>
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: 11, color: '#86efac', fontWeight: 800,
+                    fontSize: '0.6875rem', color: '#86efac', fontWeight: 800,
                     fontFamily: F, letterSpacing: 0.5,
                   }}>
                     RELOAD ALL FLEET MISSILES
                   </div>
-                  <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM }}>
+                  <div style={{ fontSize: '0.5625rem', color: '#4a6580', fontFamily: FM }}>
                     Tops up every launcher across your active fleet ({fleetLaunchers.length} launcher{fleetLaunchers.length === 1 ? '' : 's'}) from warheads in cargo.
                   </div>
                 </div>
@@ -2650,16 +2650,16 @@ const VendorTab = ({ body }) => {
               alignItems: 'center',
               gap: 8,
             }}>
-              <span style={{ fontSize: 16 }}>{s.icon}</span>
+              <span style={{ fontSize: '1rem' }}>{s.icon}</span>
               <div style={{ flex: 1 }}>
                 <div style={{
-                  fontSize: 11,
+                  fontSize: '0.6875rem',
                   color: '#e2e8f0',
                   fontWeight: 700,
                   fontFamily: F,
                 }}>{s.name}</div>
                 <div style={{
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   color: '#4a6580',
                   fontFamily: FM,
                   letterSpacing: 0.3,
@@ -2681,7 +2681,7 @@ const VendorTab = ({ body }) => {
               textAlign: 'center',
               padding: '24px 0',
               color: '#3a5a6a',
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontFamily: F,
             }}>Nothing to sell — go mine some resources!</div>
           ) : (
@@ -2690,7 +2690,7 @@ const VendorTab = ({ body }) => {
               {sellInventory.resources.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{
-                    fontSize: 9,
+                    fontSize: '0.5625rem',
                     color: '#4a6580',
                     fontFamily: FM,
                     letterSpacing: 1,
@@ -2717,13 +2717,13 @@ const VendorTab = ({ body }) => {
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{
-                                fontSize: 11,
+                                fontSize: '0.6875rem',
                                 color: '#e2e8f0',
                                 fontWeight: 700,
                                 fontFamily: F,
                               }}>{r.resource_name}</span>
                               <span style={{
-                                fontSize: 8,
+                                fontSize: '0.5rem',
                                 color: '#4a6580',
                                 fontFamily: FM,
                                 textTransform: 'uppercase',
@@ -2743,7 +2743,7 @@ const VendorTab = ({ body }) => {
                               )}
                             </div>
                             <div style={{
-                              fontSize: 9,
+                              fontSize: '0.5625rem',
                               color: '#4a6580',
                               fontFamily: FM,
                               letterSpacing: 0.3,
@@ -2763,7 +2763,7 @@ const VendorTab = ({ body }) => {
                             style={{ flex: 1, height: 4, accentColor: '#22c55e' }}
                           />
                           <span style={{
-                            fontSize: 9,
+                            fontSize: '0.5625rem',
                             color: '#a0b0c0',
                             fontFamily: FM,
                             fontWeight: 700,
@@ -2784,7 +2784,7 @@ const VendorTab = ({ body }) => {
               {sellInventory.items.length > 0 && (
                 <div>
                   <div style={{
-                    fontSize: 9,
+                    fontSize: '0.5625rem',
                     fontFamily: FM,
                     letterSpacing: 1,
                     marginBottom: 5,
@@ -2806,16 +2806,16 @@ const VendorTab = ({ body }) => {
                       alignItems: 'center',
                       gap: 8,
                     }}>
-                      <span style={{ fontSize: 16 }}>{item.item_icon || '📦'}</span>
+                      <span style={{ fontSize: '1rem' }}>{item.item_icon || '📦'}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
-                          fontSize: 11,
+                          fontSize: '0.6875rem',
                           color: '#e2e8f0',
                           fontWeight: 700,
                           fontFamily: F,
                         }}>{item.item_name}</div>
                         <div style={{
-                          fontSize: 9,
+                          fontSize: '0.5625rem',
                           color: '#4a6580',
                           fontFamily: FM,
                           letterSpacing: 0.3,
@@ -2849,12 +2849,12 @@ const NPCsStub = () => (
     textAlign: 'center',
     padding: '40px 16px',
     color: '#3a5a6a',
-    fontSize: 11,
+    fontSize: '0.6875rem',
     fontFamily: F,
   }}>
-    <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.5 }}>👥</div>
+    <div style={{ fontSize: '1.75rem', marginBottom: 8, opacity: 0.5 }}>👥</div>
     <div style={{ marginBottom: 4 }}>No NPCs available yet.</div>
-    <div style={{ fontSize: 9, color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
+    <div style={{ fontSize: '0.5625rem', color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
       QUEST GIVERS COMING SOON
     </div>
   </div>
@@ -2865,12 +2865,12 @@ const BuildingsStub = () => (
     textAlign: 'center',
     padding: '40px 16px',
     color: '#3a5a6a',
-    fontSize: 11,
+    fontSize: '0.6875rem',
     fontFamily: F,
   }}>
-    <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.5 }}>🏗️</div>
+    <div style={{ fontSize: '1.75rem', marginBottom: 8, opacity: 0.5 }}>🏗️</div>
     <div style={{ marginBottom: 4 }}>No constructions available.</div>
-    <div style={{ fontSize: 9, color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
+    <div style={{ fontSize: '0.5625rem', color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
       SETTLEMENTS &amp; FORTRESSES COMING SOON
     </div>
   </div>
@@ -2890,15 +2890,15 @@ const ShipManagerRow = ({ ship, isActiveShip, action, onClick, disabled, hint, e
     borderRadius: 3, marginBottom: 4,
   }}>
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', fontFamily: F }}>
-        {ship.name}{isActiveShip && <span style={{ color: '#60a5fa', marginLeft: 6, fontSize: 9 }}>· ACTIVE</span>}
+      <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#e2e8f0', fontFamily: F }}>
+        {ship.name}{isActiveShip && <span style={{ color: '#60a5fa', marginLeft: 6, fontSize: '0.5625rem' }}>· ACTIVE</span>}
       </div>
-      <div style={{ fontSize: 9, color: '#4a6580', fontFamily: FM, letterSpacing: 0.3 }}>
+      <div style={{ fontSize: '0.5625rem', color: '#4a6580', fontFamily: FM, letterSpacing: 0.3 }}>
         {ship.hull_name || ship.hull_type_id}
         {action === 'activate' && ship.storage_body_name && <span> · housed here</span>}
       </div>
       {extraHint && (
-        <div style={{ fontSize: 9, color: '#fbbf24aa', fontFamily: FM, marginTop: 2, letterSpacing: 0.2 }}>
+        <div style={{ fontSize: '0.5625rem', color: '#fbbf24aa', fontFamily: FM, marginTop: 2, letterSpacing: 0.2 }}>
           {extraHint}
         </div>
       )}
@@ -2979,7 +2979,7 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
 
   const sectionHeader = (label, accent) => (
     <div style={{
-      fontSize: 9, fontFamily: FM, letterSpacing: 1, marginTop: 10, marginBottom: 5,
+      fontSize: '0.5625rem', fontFamily: FM, letterSpacing: 1, marginTop: 10, marginBottom: 5,
       padding: '4px 8px', background: `linear-gradient(90deg, ${accent}18, transparent)`,
       borderLeft: `2px solid ${accent}`, textTransform: 'uppercase',
       fontWeight: 800, color: accent,
@@ -2999,18 +2999,18 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
   );
 
   if (loading && ships.length === 0) {
-    return <div style={{ padding: 24, textAlign: 'center', color: '#3a5a6a', fontSize: 11, fontFamily: F }}>Loading fleet…</div>;
+    return <div style={{ padding: 24, textAlign: 'center', color: '#3a5a6a', fontSize: '0.6875rem', fontFamily: F }}>Loading fleet…</div>;
   }
 
   return (
     <div>
-      <div style={{ fontSize: 10, color: '#5a7080', fontFamily: FM, letterSpacing: 0.5, marginBottom: 6 }}>
+      <div style={{ fontSize: '0.625rem', color: '#5a7080', fontFamily: FM, letterSpacing: 0.5, marginBottom: 6 }}>
         Fleet: {activeCount}/{fleetCap} active. Ships only move between active + storage while you're docked here.
       </div>
 
       {sectionHeader(`Stored at ${body.name} (${housedHere.length})`, GOLD.pri)}
       {housedHere.length === 0 ? (
-        <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: 10, fontFamily: F, fontStyle: 'italic' }}>
+        <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: '0.625rem', fontFamily: F, fontStyle: 'italic' }}>
           No ships stored here yet. Store from your active fleet below to park ships at this station.
         </div>
       ) : housedHere.map(ship => rowFor(ship, {
@@ -3022,7 +3022,7 @@ const ShipsTab = ({ body, effectiveBodyId }) => {
 
       {sectionHeader(`Active fleet (${activeCount}/${fleetCap})`, '#60a5fa')}
       {activeShips.length === 0 ? (
-        <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: 10, fontFamily: F, fontStyle: 'italic' }}>
+        <div style={{ padding: '14px 8px', color: '#3a5a6a', fontSize: '0.625rem', fontFamily: F, fontStyle: 'italic' }}>
           No active ships.
         </div>
       ) : activeShips.map(ship => {
@@ -3073,7 +3073,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
                 borderRadius: 3,
                 color: active ? GOLD.light : '#5a7080',
                 fontFamily: F,
-                fontSize: 10,
+                fontSize: '0.625rem',
                 fontWeight: 700,
                 cursor: 'pointer',
                 letterSpacing: 0.6,
@@ -3084,7 +3084,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
                 gap: 5,
               }}
             >
-              <span style={{ fontSize: 12 }}>{s.icon}</span>
+              <span style={{ fontSize: '0.75rem' }}>{s.icon}</span>
               {s.label.toUpperCase()}
             </button>
           );
@@ -3129,7 +3129,7 @@ const PilotsTab = ({ effectiveBodyId }) => {
 
   if (!presence.isEnabled()) {
     return (
-      <div style={{ padding: 20, color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic', textAlign: 'center' }}>
+      <div style={{ padding: 20, color: '#475569', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic', textAlign: 'center' }}>
         Realtime presence is disabled.
       </div>
     );
@@ -3138,7 +3138,7 @@ const PilotsTab = ({ effectiveBodyId }) => {
   return (
     <div>
       <div style={{
-        fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1,
+        fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
         textTransform: 'uppercase', marginBottom: 6, padding: '0 2px',
       }}>
         Pilots Docked Here
@@ -3148,7 +3148,7 @@ const PilotsTab = ({ effectiveBodyId }) => {
       </div>
       {others.length === 0 ? (
         <div style={{
-          padding: 20, color: '#475569', fontSize: 11, fontFamily: F,
+          padding: 20, color: '#475569', fontSize: '0.6875rem', fontFamily: F,
           fontStyle: 'italic', textAlign: 'center',
           background: 'rgba(4,8,16,0.5)',
           border: `1px solid ${EDGE}`,
@@ -3191,11 +3191,11 @@ const PilotsTab = ({ effectiveBodyId }) => {
                   background: `linear-gradient(135deg, ${BLUE.pri}, ${BLUE.dim})`,
                   border: `1px solid ${BLUE.light}55`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, flexShrink: 0,
+                  fontSize: '0.8125rem', flexShrink: 0,
                 }}>👤</div>
                 <span style={{
                   flex: 1,
-                  fontSize: 12, fontFamily: F, fontWeight: 700,
+                  fontSize: '0.75rem', fontFamily: F, fontWeight: 700,
                   color: '#e2e8f0',
                 }}>{p.name}</span>
               </div>
@@ -3216,7 +3216,7 @@ const PilotsTab = ({ effectiveBodyId }) => {
                   background: `${GOLD.light}1c`,
                   border: `1px solid ${GOLD.light}66`,
                   color: GOLD.light,
-                  fontSize: 10, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+                  fontSize: '0.625rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
                   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
                   flexShrink: 0,
                 }}
@@ -3245,10 +3245,10 @@ const ScanProgressPanel = ({ label, accent, startMs, durationMs, onCancel }) => 
         display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8,
       }}>
         <span style={{
-          fontSize: 11, color: accent, fontFamily: F, fontWeight: 700,
+          fontSize: '0.6875rem', color: accent, fontFamily: F, fontWeight: 700,
           letterSpacing: 1, textTransform: 'uppercase', flex: 1,
         }}>{label}</span>
-        <span style={{ fontSize: 10, color: '#7a8a9a', fontFamily: FM }}>
+        <span style={{ fontSize: '0.625rem', color: '#7a8a9a', fontFamily: FM }}>
           {remainSec.toFixed(1)}s
         </span>
       </div>
@@ -3270,11 +3270,11 @@ const ScanProgressPanel = ({ label, accent, startMs, durationMs, onCancel }) => 
           background: 'transparent',
           border: `1px solid ${EDGE}`,
           color: '#7a8a9a',
-          fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+          fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
           textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
         }}
       >Cancel</button>
-      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
+      <div style={{ fontSize: '0.5625rem', color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
         Probe consumed on completion · cancel to preserve.
       </div>
     </>
@@ -3569,7 +3569,7 @@ export const PlanetInteractionWindow = ({ body }) => {
           padding: '6px 14px',
           borderBottom: `1px solid ${EDGE}`,
           gap: 14,
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FM,
           color: '#3a5a6a',
           background: 'rgba(6,10,20,0.5)',
@@ -3618,9 +3618,9 @@ export const PlanetInteractionWindow = ({ body }) => {
                     filter: isActive ? `drop-shadow(0 0 4px ${tab.color}33)` : 'none',
                   }}
                 >
-                  <span style={{ fontSize: 15 }}>{tab.icon}</span>
+                  <span style={{ fontSize: '0.9375rem' }}>{tab.icon}</span>
                   <span style={{
-                    fontSize: 7,
+                    fontSize: '0.4375rem',
                     color: isActive ? tab.color : '#2a3a4a',
                     fontWeight: 700,
                     fontFamily: F,
@@ -3642,7 +3642,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                     borderRadius: 3,
                     padding: 10,
                     color: '#f87171',
-                    fontSize: 11,
+                    fontSize: '0.6875rem',
                     marginBottom: 10,
                   }}>{error}</div>
                 )}
@@ -3669,7 +3669,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                       <HazardWarning hazards={orbitalResults.hazards} />
                     </>
                   ) : surveyStatus.orbital_scanned ? (
-                    <p style={{ color: '#64748b', fontSize: 11, margin: 0 }}>Scan data available. View deposits in the Mine tab.</p>
+                    <p style={{ color: '#64748b', fontSize: '0.6875rem', margin: 0 }}>Scan data available. View deposits in the Mine tab.</p>
                   ) : scanning?.kind === 'orbital' ? (
                     <ScanProgressPanel
                       label="Orbital scan in progress"
@@ -3680,7 +3680,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                     />
                   ) : (
                     <>
-                      <p style={{ color: '#4a5a6a', fontSize: 11, margin: '0 0 10px', lineHeight: 1.5 }}>
+                      <p style={{ color: '#4a5a6a', fontSize: '0.6875rem', margin: '0 0 10px', lineHeight: 1.5 }}>
                         Deploy a scanner probe to detect resource types and abundance levels on the surface.
                       </p>
                       <button
@@ -3693,7 +3693,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                             : 'linear-gradient(180deg, #22d3ee22, #22d3ee08)',
                           border: `1px solid ${(loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? '#1e293b' : '#22d3ee55'}`,
                           color: (loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? '#475569' : '#22d3ee',
-                          fontSize: 11,
+                          fontSize: '0.6875rem',
                           fontFamily: F,
                           fontWeight: 800,
                           cursor: (loading || !hasScanner || probes.scanner_probes < 1 || scanning != null) ? 'not-allowed' : 'pointer',
@@ -3704,7 +3704,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                       >
                         {loading ? 'SCANNING...' : 'DEPLOY PROBE'}
                       </button>
-                      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
+                      <div style={{ fontSize: '0.5625rem', color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
                         {!hasScanner
                           ? 'Requires a Sensor Suite fitted to any active ship'
                           : `Requires 1 Scanner Probe · ${Math.round(getFleetScanTimeMs(ships, activeBonuses) / 100) / 10}s scan`}
@@ -3726,14 +3726,14 @@ export const PlanetInteractionWindow = ({ body }) => {
                   padding: 10,
                 }}>
                   {!surveyStatus.orbital_scanned ? (
-                    <p style={{ color: '#4a5a6a', fontSize: 11, margin: 0 }}>Requires orbital scan first.</p>
+                    <p style={{ color: '#4a5a6a', fontSize: '0.6875rem', margin: 0 }}>Requires orbital scan first.</p>
                   ) : surveyStatus.ground_scanned && groundResults ? (
                     <GroundScanResults
                       deposits={groundResults.deposits}
                       probeQuality={groundResults.probe_quality}
                     />
                   ) : surveyStatus.ground_scanned ? (
-                    <p style={{ color: '#64748b', fontSize: 11, margin: 0 }}>Detailed scan data available.</p>
+                    <p style={{ color: '#64748b', fontSize: '0.6875rem', margin: 0 }}>Detailed scan data available.</p>
                   ) : scanning?.kind === 'ground' ? (
                     <ScanProgressPanel
                       label="Ground scan in progress"
@@ -3744,7 +3744,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                     />
                   ) : (
                     <>
-                      <p style={{ color: '#4a5a6a', fontSize: 11, margin: '0 0 10px', lineHeight: 1.5 }}>
+                      <p style={{ color: '#4a5a6a', fontSize: '0.6875rem', margin: '0 0 10px', lineHeight: 1.5 }}>
                         Deploy an advanced probe to analyze deposit composition and quality.
                       </p>
                       <button
@@ -3757,7 +3757,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                             : 'linear-gradient(180deg, #8b5cf622, #8b5cf608)',
                           border: `1px solid ${(loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? '#1e293b' : '#8b5cf655'}`,
                           color: (loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? '#475569' : '#8b5cf6',
-                          fontSize: 11,
+                          fontSize: '0.6875rem',
                           fontFamily: F,
                           fontWeight: 800,
                           cursor: (loading || !hasScanner || probes.advanced_scanner_probes < 1 || scanning != null) ? 'not-allowed' : 'pointer',
@@ -3768,7 +3768,7 @@ export const PlanetInteractionWindow = ({ body }) => {
                       >
                         {loading ? 'SCANNING...' : 'DEPLOY PROBE'}
                       </button>
-                      <div style={{ fontSize: 9, color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
+                      <div style={{ fontSize: '0.5625rem', color: '#3a4a5a', marginTop: 6, fontFamily: FM }}>
                         {!hasScanner
                           ? 'Requires a Sensor Suite fitted to any active ship'
                           : `Requires 1 Advanced Scanner Probe · ${Math.round(getFleetScanTimeMs(ships, activeBonuses) / 100) / 10}s scan`}

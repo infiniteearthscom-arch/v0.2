@@ -64,7 +64,7 @@ const BrowseView = ({ rows, onClaim, onlyCurrentSystem, setOnlyCurrentSystem, cu
             background: onlyCurrentSystem ? `${BLUE.pri}22` : 'transparent',
             border: `1px solid ${onlyCurrentSystem ? BLUE.pri + '88' : EDGE}`,
             color: onlyCurrentSystem ? BLUE.light : '#7a8a9a',
-            fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+            fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >
@@ -73,7 +73,7 @@ const BrowseView = ({ rows, onClaim, onlyCurrentSystem, setOnlyCurrentSystem, cu
             : 'Filter to current system'}
         </button>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 9, color: '#475569', fontFamily: FM }}>
+        <span style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM }}>
           {rows.length} open
         </span>
       </div>
@@ -106,31 +106,31 @@ const BountyRow = ({ bounty, onClaim }) => {
       alignItems: 'center',
     }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: '#e2e8f0', fontFamily: F, fontWeight: 700 }}>
+        <div style={{ fontSize: '0.75rem', color: '#e2e8f0', fontFamily: F, fontWeight: 700 }}>
           <span style={{ color: RED.light }}>Kill</span>
           <span style={{ color: '#cbd5e1', marginLeft: 4 }}>
             {bounty.target_hull_class === 'any' ? 'any pirate' : `Pirate ${bounty.target_hull_class}`}
           </span>
           {bounty.target_system_id && (
-            <span style={{ color: '#475569', marginLeft: 6, fontSize: 10, fontFamily: FM }}>
+            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.625rem', fontFamily: FM }}>
               in {bounty.target_system_id}
             </span>
           )}
         </div>
         {bounty.description && (
-          <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: F, marginTop: 2, lineHeight: 1.3 }}>
+          <div style={{ fontSize: '0.625rem', color: '#94a3b8', fontFamily: F, marginTop: 2, lineHeight: 1.3 }}>
             "{bounty.description}"
           </div>
         )}
-        <div style={{ fontSize: 9, color: '#475569', fontFamily: FM, marginTop: 4 }}>
+        <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, marginTop: 4 }}>
           Posted by {bounty.poster_name} · {fmtAge(bounty.created_at)}
         </div>
       </div>
       <div style={{ textAlign: 'right' }}>
-        <div style={{ fontSize: 14, color: GOLD.light, fontWeight: 800, fontFamily: FM }}>
+        <div style={{ fontSize: '0.875rem', color: GOLD.light, fontWeight: 800, fontFamily: FM }}>
           {fmtNum(bounty.reward_credits)}
         </div>
-        <div style={{ fontSize: 8, color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase' }}>
+        <div style={{ fontSize: '0.5rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase' }}>
           credits
         </div>
       </div>
@@ -147,7 +147,7 @@ const BountyRow = ({ bounty, onClaim }) => {
             background: isMine ? 'transparent' : (systemMatches ? `${GREEN.pri}22` : 'rgba(20,30,50,0.4)'),
             border: `1px solid ${isMine ? EDGE : (systemMatches ? GREEN.pri + '88' : EDGE)}`,
             color: isMine ? '#475569' : (systemMatches ? GREEN.light : '#475569'),
-            fontSize: 10, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+            fontSize: '0.625rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
             textTransform: 'uppercase',
             cursor: (isMine || !systemMatches) ? 'not-allowed' : 'pointer',
             borderRadius: 3,
@@ -195,7 +195,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
       padding: 14,
     }}>
       <div style={{
-        fontSize: 12, color: GOLD.light, fontWeight: 800, letterSpacing: 1.5,
+        fontSize: '0.75rem', color: GOLD.light, fontWeight: 800, letterSpacing: 1.5,
         textTransform: 'uppercase', fontFamily: F, marginBottom: 10,
       }}>Post New Bounty</div>
       <div style={{ marginBottom: 8 }}>
@@ -217,7 +217,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
               onClick={() => setSystemId(currentSystem)}
               style={{
                 background: 'transparent', border: `1px solid ${EDGE}`,
-                color: '#7a8a9a', fontSize: 9, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                color: '#7a8a9a', fontSize: '0.5625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                 textTransform: 'uppercase', padding: '4px 8px', cursor: 'pointer', borderRadius: 2,
               }}
             >use current ({currentSystem})</button>
@@ -243,7 +243,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
         />
       </div>
 
-      <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
+      <div style={{ fontSize: '0.625rem', color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
         Escrow: <span style={{ color: GOLD.light, fontWeight: 700 }}>{fmtNum(reward)} cr</span>
         <span style={{ color: '#475569', marginLeft: 8 }}>locked when posted; refunded on cancel</span>
       </div>
@@ -254,7 +254,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
           style={{
             padding: '8px 12px',
             background: 'transparent', border: `1px solid ${EDGE}`,
-            color: '#7a8a9a', fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+            color: '#7a8a9a', fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >Cancel</button>
@@ -267,7 +267,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
             background: `${GOLD.pri}24`,
             border: `1px solid ${GOLD.pri}88`,
             color: GOLD.light,
-            fontSize: 11, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+            fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
             opacity: (busy || reward <= 0) ? 0.5 : 1,
           }}
@@ -298,24 +298,24 @@ const MyBountiesView = ({ rows, onCancel }) => {
           alignItems: 'center',
         }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: '#e2e8f0', fontFamily: F, fontWeight: 700 }}>
+            <div style={{ fontSize: '0.75rem', color: '#e2e8f0', fontFamily: F, fontWeight: 700 }}>
               {b.target_hull_class === 'any' ? 'Any pirate' : `Pirate ${b.target_hull_class}`}
               {b.target_system_id && (
-                <span style={{ color: '#475569', marginLeft: 6, fontSize: 10, fontFamily: FM }}>in {b.target_system_id}</span>
+                <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.625rem', fontFamily: FM }}>in {b.target_system_id}</span>
               )}
             </div>
-            <div style={{ fontSize: 9, color: '#475569', fontFamily: FM, marginTop: 4 }}>
+            <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, marginTop: 4 }}>
               {b.status === 'claimed' && b.claimer_name
                 ? `Claimed by ${b.claimer_name} ${fmtAge(b.claimed_at)}`
                 : `Posted ${fmtAge(b.created_at)}`}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 12, color: GOLD.light, fontWeight: 800, fontFamily: FM }}>
+            <div style={{ fontSize: '0.75rem', color: GOLD.light, fontWeight: 800, fontFamily: FM }}>
               {fmtNum(b.reward_credits)} cr
             </div>
             <div style={{
-              fontSize: 9, fontFamily: FM, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+              fontSize: '0.5625rem', fontFamily: FM, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
               color: b.status === 'open' ? BLUE.light : b.status === 'claimed' ? GREEN.light : '#475569',
             }}>{b.status}</div>
           </div>
@@ -329,7 +329,7 @@ const MyBountiesView = ({ rows, onCancel }) => {
                   background: 'transparent',
                   border: `1px solid ${RED.pri}55`,
                   color: RED.light,
-                  fontSize: 9, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                  fontSize: '0.5625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 2,
                 }}
               >Cancel</button>
@@ -417,7 +417,7 @@ export const BountyBoardWindow = () => {
                 background: tab === t.id ? `${GOLD.pri}24` : 'transparent',
                 border: `1px solid ${tab === t.id ? GOLD.pri + '88' : EDGE}`,
                 color: tab === t.id ? GOLD.light : '#7a8a9a',
-                fontSize: 11, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                fontSize: '0.6875rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                 textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
               }}
             >{t.label}</button>
@@ -430,7 +430,7 @@ export const BountyBoardWindow = () => {
               style={{
                 padding: '6px 10px',
                 background: 'transparent', border: `1px solid ${EDGE}`,
-                color: '#7a8a9a', fontSize: 12, cursor: 'pointer', borderRadius: 3,
+                color: '#7a8a9a', fontSize: '0.75rem', cursor: 'pointer', borderRadius: 3,
               }}
             >↻</button>
           )}
@@ -464,27 +464,27 @@ export const BountyBoardWindow = () => {
 // STYLE HELPERS
 // ============================================
 const Loading = () => (
-  <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic' }}>
+  <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic' }}>
     Loading...
   </div>
 );
 const Empty = ({ children }) => (
   <div style={{
     padding: 30, textAlign: 'center', color: '#475569',
-    fontSize: 11, fontFamily: F, fontStyle: 'italic',
+    fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic',
     background: 'rgba(4,8,16,0.4)', border: `1px solid ${EDGE}`, borderRadius: 3,
   }}>
     {children}
   </div>
 );
 const Label = ({ children }) => (
-  <div style={{ fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );
 const inputStyle = {
   width: '100%',
-  fontSize: 12, fontFamily: FM,
+  fontSize: '0.75rem', fontFamily: FM,
   background: '#0b1424', border: `1px solid ${EDGE}`,
   color: '#cbd5e1', padding: '5px 8px', borderRadius: 2, outline: 'none',
   boxSizing: 'border-box',
@@ -492,7 +492,7 @@ const inputStyle = {
 const errorStyle = {
   padding: '6px 8px', marginBottom: 8,
   background: 'rgba(127,29,29,0.3)', border: `1px solid ${RED.pri}66`,
-  color: RED.light, fontSize: 11, fontFamily: F, borderRadius: 2,
+  color: RED.light, fontSize: '0.6875rem', fontFamily: F, borderRadius: 2,
 };
 
 export default BountyBoardWindow;

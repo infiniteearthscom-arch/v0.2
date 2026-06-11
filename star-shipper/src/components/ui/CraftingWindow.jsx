@@ -98,10 +98,10 @@ const RecipeCard = ({ recipe, isSelected, onClick }) => {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 14 }}>{recipe.icon}</span>
+        <span style={{ fontSize: '0.875rem' }}>{recipe.icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             fontWeight: 700,
             color: isSelected ? COLORS.TEXT.primary : COLORS.TEXT.secondary,
             fontFamily: FONT.ui,
@@ -110,7 +110,7 @@ const RecipeCard = ({ recipe, isSelected, onClick }) => {
             textOverflow: 'ellipsis',
           }}>{recipe.name}</div>
           <div style={{
-            fontSize: 8,
+            fontSize: '0.5rem',
             color: COLORS.TEXT.dim,
             fontFamily: FONT.mono,
             letterSpacing: 0.3,
@@ -214,7 +214,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
         marginBottom: 5,
       }}>
         <span style={{
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontWeight: 700,
           color,
           fontFamily: FONT.ui,
@@ -224,7 +224,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
           {resourceName}
         </span>
         <span style={{
-          fontSize: 9,
+          fontSize: '0.5625rem',
           color: COLORS.TEXT.dim,
           fontFamily: FONT.mono,
           letterSpacing: 0.3,
@@ -257,7 +257,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
         </div>
 
         <span style={{
-          fontSize: 9,
+          fontSize: '0.5625rem',
           fontFamily: FONT.mono,
           fontWeight: 700,
           color: isFilled ? COLORS.GREEN.light : isPartial ? COLORS.GOLD.light : COLORS.TEXT.dim,
@@ -287,7 +287,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
                 gap: 4,
                 padding: '2px 6px',
                 borderRadius: 2,
-                fontSize: 9,
+                fontSize: '0.5625rem',
                 fontFamily: FONT.mono,
                 cursor: 'pointer',
                 background: `${color}22`,
@@ -307,7 +307,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
       {!assigned && (
         <div style={{
           marginTop: 5,
-          fontSize: 9,
+          fontSize: '0.5625rem',
           color: COLORS.TEXT.dim,
           textAlign: 'center',
           fontFamily: FONT.ui,
@@ -394,7 +394,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
       padding: 10,
     }}>
       <div style={{
-        fontSize: 9,
+        fontSize: '0.5625rem',
         color: COLORS.GOLD.light,
         fontFamily: FONT.mono,
         letterSpacing: 1,
@@ -404,16 +404,16 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
       }}>◆ Output</div>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 18, lineHeight: 1, marginTop: 2 }}>{recipe.icon}</span>
+        <span style={{ fontSize: '1.125rem', lineHeight: 1, marginTop: 2 }}>{recipe.icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 12,
+            fontSize: '0.75rem',
             fontWeight: 700,
             color: COLORS.GOLD.light,
             fontFamily: FONT.ui,
           }}>{recipe.name}</div>
           <div style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             color: COLORS.TEXT.dim,
             fontFamily: FONT.mono,
           }}>×{recipe.output_quantity}</div>
@@ -425,7 +425,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
           {(recipe.item_description || recipe.description) && (
             <div style={{
               marginTop: 4,
-              fontSize: 10,
+              fontSize: '0.625rem',
               lineHeight: 1.4,
               color: COLORS.TEXT.secondary,
               fontFamily: FONT.ui,
@@ -446,7 +446,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
             marginBottom: 6,
           }}>
             <span style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               color: COLORS.TEXT.muted,
               fontFamily: FONT.mono,
               letterSpacing: 0.5,
@@ -472,7 +472,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
               />
             </div>
             <span style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               fontFamily: FONT.mono,
               fontWeight: 700,
               color: COLORS.TEXT.primary,
@@ -500,7 +500,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'baseline',
-                fontSize: 10,
+                fontSize: '0.625rem',
                 fontFamily: FONT.mono,
                 padding: '2px 0',
                 borderBottom: '1px solid rgba(26,48,80,0.3)',
@@ -645,7 +645,7 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLe
       </div>
       {stack.quantity > 1 && (
         <div
-          className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold px-1 rounded-sm leading-tight"
+          className="absolute -bottom-0.5 -right-0.5 text-[0.5625rem] font-bold px-1 rounded-sm leading-tight"
           style={{ backgroundColor: '#000000cc', color: '#ffffff', minWidth: 14, textAlign: 'center' }}
         >
           {stack.quantity}
@@ -739,13 +739,13 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
       {/* Header */}
       <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-700/40">
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 12 }}>📦</span>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
+          <span style={{ fontSize: '0.75rem' }}>📦</span>
+          <span className="text-[0.625rem] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
         </div>
         <button
           onClick={fetchInventory}
           title="Refresh from cargo"
-          className="text-[10px] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+          className="text-[0.625rem] text-slate-500 hover:text-cyan-300 transition-colors px-1"
         >
           ↻
         </button>
@@ -754,10 +754,10 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-1.5" style={{ scrollbarWidth: 'thin' }}>
         {loading && !hasAny && (
-          <div className="text-[10px] text-slate-600 text-center mt-3">Loading…</div>
+          <div className="text-[0.625rem] text-slate-600 text-center mt-3">Loading…</div>
         )}
         {!loading && !hasAny && (
-          <div className="text-[10px] text-slate-500 text-center mt-3 px-2 leading-snug">
+          <div className="text-[0.625rem] text-slate-500 text-center mt-3 px-2 leading-snug">
             Cargo is empty.
             <div className="text-slate-600 mt-1">Mine asteroids or planet deposits to fill cargo with resources.</div>
           </div>
@@ -787,7 +787,7 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
       </div>
 
       {/* Footer hint */}
-      <div className="px-2 py-1 border-t border-slate-700/40 text-[9px] text-slate-500 text-center leading-tight">
+      <div className="px-2 py-1 border-t border-slate-700/40 text-[0.5625rem] text-slate-500 text-center leading-tight">
         {selectedRecipe
           ? 'Click a glowing tile to add it · X on a slot to remove'
           : 'Select a recipe first, then click cargo tiles to add'}
@@ -1032,7 +1032,7 @@ export const CraftingWindow = () => {
         }}>
           {loading && recipes.length === 0 ? (
             <div style={{
-              fontSize: 10,
+              fontSize: '0.625rem',
               color: COLORS.TEXT.muted,
               padding: 8,
               fontFamily: FONT.ui,
@@ -1071,10 +1071,10 @@ export const CraftingWindow = () => {
                       fontFamily: FONT.ui,
                     }}
                   >
-                    <span style={{ fontSize: 9, color: COLORS.TEXT.dim, width: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
-                    <span style={{ fontSize: 12 }}>{CATEGORY_ICONS[cat]}</span>
+                    <span style={{ fontSize: '0.5625rem', color: COLORS.TEXT.dim, width: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
+                    <span style={{ fontSize: '0.75rem' }}>{CATEGORY_ICONS[cat]}</span>
                     <span style={{
-                      fontSize: 10,
+                      fontSize: '0.625rem',
                       color: COLORS.TEXT.secondary,
                       fontWeight: 700,
                       flex: 1,
@@ -1084,7 +1084,7 @@ export const CraftingWindow = () => {
                     }}>{CATEGORY_LABELS[cat] || cat}</span>
                     {craftableInCat > 0 && (
                       <span style={{
-                        fontSize: 8,
+                        fontSize: '0.5rem',
                         background: `${COLORS.GREEN.pri}22`,
                         color: COLORS.GREEN.light,
                         padding: '1px 5px',
@@ -1095,7 +1095,7 @@ export const CraftingWindow = () => {
                       }}>{craftableInCat}</span>
                     )}
                     <span style={{
-                      fontSize: 8,
+                      fontSize: '0.5rem',
                       color: COLORS.TEXT.dim,
                       fontFamily: FONT.mono,
                     }}>{totalInCat}</span>
@@ -1131,7 +1131,7 @@ export const CraftingWindow = () => {
                                 fontFamily: FONT.ui,
                               }}
                             >
-                              <span style={{ fontSize: 8, color: COLORS.TEXT.dim, width: 8 }}>{isSubCollapsed ? '▸' : '▾'}</span>
+                              <span style={{ fontSize: '0.5rem', color: COLORS.TEXT.dim, width: 8 }}>{isSubCollapsed ? '▸' : '▾'}</span>
                               <span style={{
                                 width: 6,
                                 height: 6,
@@ -1140,7 +1140,7 @@ export const CraftingWindow = () => {
                                 flexShrink: 0,
                               }} />
                               <span style={{
-                                fontSize: 9,
+                                fontSize: '0.5625rem',
                                 color: COLORS.TEXT.muted,
                                 flex: 1,
                                 textAlign: 'left',
@@ -1206,7 +1206,7 @@ export const CraftingWindow = () => {
               alignItems: 'center',
               justifyContent: 'center',
               color: COLORS.TEXT.muted,
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontFamily: FONT.ui,
               letterSpacing: 0.5,
             }}>
@@ -1226,17 +1226,17 @@ export const CraftingWindow = () => {
                 borderLeft: `2px solid ${COLORS.PURPLE.light}`,
                 borderRadius: 3,
               }}>
-                <span style={{ fontSize: 22 }}>{selectedRecipe.icon}</span>
+                <span style={{ fontSize: '1.375rem' }}>{selectedRecipe.icon}</span>
                 <div>
                   <div style={{
-                    fontSize: 13,
+                    fontSize: '0.8125rem',
                     fontWeight: 700,
                     color: COLORS.TEXT.primary,
                     fontFamily: FONT.ui,
                     letterSpacing: 0.3,
                   }}>{selectedRecipe.name}</div>
                   <div style={{
-                    fontSize: 10,
+                    fontSize: '0.625rem',
                     color: COLORS.TEXT.dim,
                     fontFamily: FONT.ui,
                   }}>{selectedRecipe.item_description || selectedRecipe.description}</div>
@@ -1305,11 +1305,11 @@ export const CraftingWindow = () => {
                     borderLeft: '3px solid #fbbf24',
                   }}>
                     <div style={{
-                      fontSize: 10, color: '#fbbf24', fontFamily: FONT.ui,
+                      fontSize: '0.625rem', color: '#fbbf24', fontFamily: FONT.ui,
                       fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase',
                       marginBottom: 4,
                     }}>🔒 Research Required</div>
-                    <div style={{ fontSize: 11, color: '#e2e8f0', fontFamily: FONT.ui, marginBottom: 8 }}>
+                    <div style={{ fontSize: '0.6875rem', color: '#e2e8f0', fontFamily: FONT.ui, marginBottom: 8 }}>
                       Unlock <span style={{ color: '#fbbf24', fontWeight: 700 }}>{tech?.name || techId}</span> in the research tree first.
                     </div>
                     <button
@@ -1319,7 +1319,7 @@ export const CraftingWindow = () => {
                       }}
                       style={{
                         padding: '6px 12px',
-                        fontSize: 10, fontWeight: 800, letterSpacing: 1,
+                        fontSize: '0.625rem', fontWeight: 800, letterSpacing: 1,
                         textTransform: 'uppercase', fontFamily: FONT.ui,
                         color: '#fbbf24',
                         background: 'rgba(133,77,14,0.35)',
@@ -1346,7 +1346,7 @@ export const CraftingWindow = () => {
                     borderRadius: 3,
                     fontFamily: FONT.ui,
                     fontWeight: 800,
-                    fontSize: 12,
+                    fontSize: '0.75rem',
                     letterSpacing: 1.5,
                     textTransform: 'uppercase',
                     cursor: (canCraftNow && !crafting) ? 'pointer' : 'not-allowed',
@@ -1384,7 +1384,7 @@ export const CraftingWindow = () => {
                   marginTop: 4,
                   padding: '4px 12px',
                   width: '100%',
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   borderRadius: 2,
                   background: 'rgba(127,29,29,0.25)',
                   border: '1px solid rgba(239,68,68,0.4)',

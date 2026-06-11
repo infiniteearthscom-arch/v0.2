@@ -45,11 +45,11 @@ const SectionHeader = ({ title, right, accent = BLUE.light }) => (
     marginBottom: 6, marginTop: 4,
   }}>
     <span style={{
-      fontSize: 10, color: accent, fontWeight: 800,
+      fontSize: '0.625rem', color: accent, fontWeight: 800,
       fontFamily: F, letterSpacing: 1.5, textTransform: 'uppercase',
       flex: 1,
     }}>{title}</span>
-    {right && <span style={{ fontSize: 9, color: '#475569', fontFamily: FM }}>{right}</span>}
+    {right && <span style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM }}>{right}</span>}
   </div>
 );
 
@@ -85,9 +85,9 @@ const SummaryView = ({ rows, onDrill, onSwitchView }) => {
           onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(20,30,50,0.6)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(4,8,16,0.4)'; }}
         >
-          <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 700, fontSize: 11 }}>
+          <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 700, fontSize: '0.6875rem' }}>
             {displayName(r)}
-            <span style={{ color: '#475569', marginLeft: 6, fontSize: 9, fontFamily: FM }}>
+            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.5625rem', fontFamily: FM }}>
               {r.item_type === 'resource' ? 'RES' : 'ITEM'}
             </span>
           </span>
@@ -143,10 +143,10 @@ const BookView = ({ stationBodyId, target, onBack, onAfter }) => {
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 8 }}>
         <button onClick={() => { playSound('button_click'); onBack(); }} style={backBtnStyle}>← Back</button>
-        <span style={{ fontSize: 13, color: '#e2e8f0', fontFamily: F, fontWeight: 800, letterSpacing: 1, marginLeft: 8 }}>
+        <span style={{ fontSize: '0.8125rem', color: '#e2e8f0', fontFamily: F, fontWeight: 800, letterSpacing: 1, marginLeft: 8 }}>
           {displayName(target)}
         </span>
-        <span style={{ fontSize: 9, color: '#475569', marginLeft: 8, fontFamily: FM }}>
+        <span style={{ fontSize: '0.5625rem', color: '#475569', marginLeft: 8, fontFamily: FM }}>
           {target.item_type === 'resource' ? 'RES' : 'ITEM'}
         </span>
       </div>
@@ -238,7 +238,7 @@ const OrderRow = ({ order, actionLabel, busy, target, onAct }) => {
   return (
     <div style={orderRowStyle}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px', alignItems: 'center', gap: 6, padding: '6px 8px' }}>
-        <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: FM, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '0.625rem', color: '#94a3b8', fontFamily: FM, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {order.poster_name}
           {target.item_type === 'resource' && order.side === 'sell' && order.stat_purity != null && (
             <span style={{ color: '#475569', marginLeft: 4 }}>
@@ -246,10 +246,10 @@ const OrderRow = ({ order, actionLabel, busy, target, onAct }) => {
             </span>
           )}
         </span>
-        <span style={{ fontSize: 11, color: order.side === 'buy' ? GREEN.light : GOLD.light, fontFamily: FM, fontWeight: 700, textAlign: 'right' }}>
+        <span style={{ fontSize: '0.6875rem', color: order.side === 'buy' ? GREEN.light : GOLD.light, fontFamily: FM, fontWeight: 700, textAlign: 'right' }}>
           {fmtNum(order.price_per_unit)} cr
         </span>
-        <span style={{ fontSize: 11, color: '#cbd5e1', fontFamily: FM, fontWeight: 700, textAlign: 'right' }}>
+        <span style={{ fontSize: '0.6875rem', color: '#cbd5e1', fontFamily: FM, fontWeight: 700, textAlign: 'right' }}>
           ×{fmtNum(order.quantity_remaining)}
         </span>
       </div>
@@ -263,7 +263,7 @@ const OrderRow = ({ order, actionLabel, busy, target, onAct }) => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {isBuyOrder && stacks != null && stacks.length === 0 && (
-              <span style={{ fontSize: 9, color: RED.light, fontFamily: FM }}>You have no matching stacks to sell.</span>
+              <span style={{ fontSize: '0.5625rem', color: RED.light, fontFamily: FM }}>You have no matching stacks to sell.</span>
             )}
             {isBuyOrder && stacks && stacks.length > 0 && (
               <select
@@ -386,7 +386,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 10 }}>
         <button onClick={() => { playSound('button_click'); onBack(); }} style={backBtnStyle}>← Back</button>
-        <span style={{ fontSize: 13, color: '#e2e8f0', fontFamily: F, fontWeight: 800, letterSpacing: 1, marginLeft: 8 }}>
+        <span style={{ fontSize: '0.8125rem', color: '#e2e8f0', fontFamily: F, fontWeight: 800, letterSpacing: 1, marginLeft: 8 }}>
           Post New Order
         </span>
       </div>
@@ -408,7 +408,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
               color: side === s
                 ? (s === 'sell' ? GOLD.light : GREEN.light)
                 : '#475569',
-              fontSize: 11, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+              fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
               textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
             }}
           >{s === 'sell' ? 'Sell (offer items)' : 'Buy (request items)'}</button>
@@ -441,7 +441,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
                     background: itemTypeForBuy === t ? `${BLUE.pri}24` : 'transparent',
                     border: `1px solid ${itemTypeForBuy === t ? BLUE.pri + '88' : EDGE}`,
                     color: itemTypeForBuy === t ? BLUE.light : '#7a8a9a',
-                    fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                    fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                     textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
                   }}
                 >{t}</button>
@@ -484,7 +484,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
         </div>
       </div>
 
-      <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
+      <div style={{ fontSize: '0.625rem', color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
         Total escrow: <span style={{ color: GOLD.light, fontWeight: 700 }}>{fmtNum(price * qty)} cr</span>
         {side === 'sell' && (
           <span style={{ color: '#475569', marginLeft: 8 }}>(items locked from your cargo until cancelled/filled)</span>
@@ -505,7 +505,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
           background: side === 'sell' ? `${GOLD.pri}33` : `${GREEN.pri}33`,
           border: `1px solid ${side === 'sell' ? GOLD.pri : GREEN.pri}88`,
           color: side === 'sell' ? GOLD.light : GREEN.light,
-          fontSize: 11, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+          fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
           textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
         }}
       >
@@ -539,14 +539,14 @@ const MyOrdersPanel = ({ refreshKey, onChanged }) => {
           padding: '6px 8px',
           background: 'rgba(4,8,16,0.4)',
           borderBottom: `1px solid rgba(26,48,80,0.2)`,
-          fontSize: 11, fontFamily: FM,
+          fontSize: '0.6875rem', fontFamily: FM,
         }}>
-          <span style={{ color: o.side === 'sell' ? GOLD.light : GREEN.light, fontWeight: 800, letterSpacing: 1, fontSize: 9 }}>
+          <span style={{ color: o.side === 'sell' ? GOLD.light : GREEN.light, fontWeight: 800, letterSpacing: 1, fontSize: '0.5625rem' }}>
             {o.side.toUpperCase()}
           </span>
           <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {o.item_type === 'resource' ? o.resource_type_id : o.item_id}
-            <span style={{ color: '#475569', marginLeft: 6, fontSize: 9 }}>@ {o.station_name || 'this station'}</span>
+            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.5625rem' }}>@ {o.station_name || 'this station'}</span>
           </span>
           <span style={{ color: GOLD.light, textAlign: 'right' }}>{fmtNum(o.price_per_unit)} cr</span>
           <span style={{ color: '#cbd5e1', textAlign: 'right' }}>×{fmtNum(o.quantity_remaining)}</span>
@@ -643,14 +643,14 @@ export const MarketPanel = ({ stationBodyId }) => {
 // STYLE HELPERS
 // ============================================
 const Loading = () => (
-  <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: 11, fontFamily: F, fontStyle: 'italic' }}>
+  <div style={{ padding: 30, textAlign: 'center', color: '#475569', fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic' }}>
     Loading...
   </div>
 );
 const Empty = ({ children }) => (
   <div style={{
     padding: 30, textAlign: 'center', color: '#475569',
-    fontSize: 11, fontFamily: F, fontStyle: 'italic',
+    fontSize: '0.6875rem', fontFamily: F, fontStyle: 'italic',
     background: 'rgba(4,8,16,0.4)', border: `1px solid ${EDGE}`, borderRadius: 3,
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
   }}>
@@ -658,21 +658,21 @@ const Empty = ({ children }) => (
   </div>
 );
 const Label = ({ children }) => (
-  <div style={{ fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );
 const postLinkStyle = {
   background: 'transparent', border: `1px solid ${BLUE.pri}55`,
   color: BLUE.light, padding: '4px 10px', borderRadius: 3,
-  fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+  fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
   textTransform: 'uppercase', cursor: 'pointer',
 };
 const tableHeaderStyle = {
   display: 'grid',
   gridTemplateColumns: '1fr 90px 90px 80px 80px',
   padding: '4px 10px',
-  fontSize: 9, color: '#475569', fontFamily: FM,
+  fontSize: '0.5625rem', color: '#475569', fontFamily: FM,
   textTransform: 'uppercase', letterSpacing: 1,
 };
 const tableRowStyle = {
@@ -685,10 +685,10 @@ const tableRowStyle = {
   cursor: 'pointer',
   transition: 'background 80ms ease',
 };
-const numCellStyle = { textAlign: 'right', fontSize: 11, fontFamily: FM, fontWeight: 700 };
+const numCellStyle = { textAlign: 'right', fontSize: '0.6875rem', fontFamily: FM, fontWeight: 700 };
 const backBtnStyle = {
   background: 'transparent', border: `1px solid ${EDGE}`,
-  color: '#7a8a9a', fontSize: 10, fontFamily: F, fontWeight: 700,
+  color: '#7a8a9a', fontSize: '0.625rem', fontFamily: F, fontWeight: 700,
   padding: '4px 8px', cursor: 'pointer', borderRadius: 3,
   letterSpacing: 1, textTransform: 'uppercase',
 };
@@ -704,51 +704,51 @@ const fulfillBtnStyle = (side, primary) => ({
   background: side === 'buy' ? `${GREEN.pri}24` : `${GOLD.pri}24`,
   border: `1px solid ${side === 'buy' ? GREEN.pri + '88' : GOLD.pri + '88'}`,
   color: side === 'buy' ? GREEN.light : GOLD.light,
-  fontSize: 9, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+  fontSize: '0.5625rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 2,
 });
 const cancelBtnStyle = {
   background: 'transparent', border: `1px solid ${RED.pri}55`,
-  color: RED.light, fontSize: 11, fontFamily: FM, cursor: 'pointer',
+  color: RED.light, fontSize: '0.6875rem', fontFamily: FM, cursor: 'pointer',
   padding: '0 8px', borderRadius: 2,
 };
 const cancelOrderBtnStyle = {
   background: 'transparent', border: `1px solid ${RED.pri}55`,
-  color: RED.light, fontSize: 9, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+  color: RED.light, fontSize: '0.5625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
   textTransform: 'uppercase', padding: '4px 8px', cursor: 'pointer', borderRadius: 2,
 };
 const qtyInputStyle = {
-  width: 60, fontSize: 11, fontFamily: FM,
+  width: 60, fontSize: '0.6875rem', fontFamily: FM,
   background: '#0b1424', border: `1px solid ${EDGE}`,
   color: '#cbd5e1', textAlign: 'center', padding: 2, borderRadius: 2,
 };
 const selectStyle = {
-  width: '100%', fontSize: 11, fontFamily: FM,
+  width: '100%', fontSize: '0.6875rem', fontFamily: FM,
   background: '#0b1424', border: `1px solid ${EDGE}`,
   color: '#cbd5e1', padding: 4, borderRadius: 2,
 };
 const textInputStyle = {
-  width: '100%', fontSize: 12, fontFamily: FM,
+  width: '100%', fontSize: '0.75rem', fontFamily: FM,
   background: '#0b1424', border: `1px solid ${EDGE}`,
   color: '#cbd5e1', padding: '4px 6px', borderRadius: 2,
 };
 const errorStyle = {
   padding: '6px 8px', marginBottom: 8,
   background: 'rgba(127,29,29,0.3)', border: `1px solid ${RED.pri}66`,
-  color: RED.light, fontSize: 11, fontFamily: F, borderRadius: 2,
+  color: RED.light, fontSize: '0.6875rem', fontFamily: F, borderRadius: 2,
 };
 const navBtnStyle = (active) => ({
   padding: '6px 12px',
   background: active ? `${BLUE.pri}22` : 'transparent',
   border: `1px solid ${active ? BLUE.pri + '88' : EDGE}`,
   color: active ? BLUE.light : '#7a8a9a',
-  fontSize: 11, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+  fontSize: '0.6875rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
 });
 const refreshBtnStyle = {
   padding: '6px 10px',
   background: 'transparent', border: `1px solid ${EDGE}`,
-  color: '#7a8a9a', fontSize: 12, cursor: 'pointer', borderRadius: 3,
+  color: '#7a8a9a', fontSize: '0.75rem', cursor: 'pointer', borderRadius: 3,
 };
 
 export default MarketPanel;

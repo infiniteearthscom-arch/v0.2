@@ -56,10 +56,10 @@ const StatTile = ({ label, value, color = '#e2e8f0' }) => (
     borderRadius: 3,
     padding: '8px 10px',
   }}>
-    <div style={{ fontSize: 8, color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+    <div style={{ fontSize: '0.5rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
       {label}
     </div>
-    <div style={{ fontSize: 14, color, fontWeight: 800, fontFamily: F }}>
+    <div style={{ fontSize: '0.875rem', color, fontWeight: 800, fontFamily: F }}>
       {value}
     </div>
   </div>
@@ -150,12 +150,12 @@ export const ProfileWindow = () => {
         minHeight: 320,
       }}>
         {loading && (
-          <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 12, fontFamily: F }}>
+          <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: '0.75rem', fontFamily: F }}>
             Loading profile...
           </div>
         )}
         {error && !loading && (
-          <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', fontSize: 12, fontFamily: F }}>
+          <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', fontSize: '0.75rem', fontFamily: F }}>
             {error}
           </div>
         )}
@@ -176,10 +176,10 @@ export const ProfileWindow = () => {
                 background: `linear-gradient(135deg, ${BLUE.pri}, ${BLUE.dim})`,
                 border: `1px solid ${BLUE.light}55`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 22, flexShrink: 0,
+                fontSize: '1.375rem', flexShrink: 0,
               }}>👤</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#e2e8f0', fontFamily: F }}>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#e2e8f0', fontFamily: F }}>
                   {profile.corp?.ticker && (
                     <span style={{ color: GOLD.light, fontFamily: FM, marginRight: 6 }}>
                       [{profile.corp.ticker}]
@@ -187,12 +187,12 @@ export const ProfileWindow = () => {
                   )}
                   CMDR {profile.username}
                   {isSelf && (
-                    <span style={{ color: BLUE.light, marginLeft: 8, fontSize: 9, fontFamily: FM, fontWeight: 700 }}>
+                    <span style={{ color: BLUE.light, marginLeft: 8, fontSize: '0.5625rem', fontFamily: FM, fontWeight: 700 }}>
                       (YOU)
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 10, color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
+                <div style={{ fontSize: '0.625rem', color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
                   Member since {formatMemberSince(profile.member_since)}
                   {profile.corp && (
                     <>
@@ -223,7 +223,7 @@ export const ProfileWindow = () => {
                       background: targetCoDocked ? `${GOLD.light}22` : 'rgba(20,30,50,0.4)',
                       border: `1px solid ${targetCoDocked ? GOLD.light + '88' : EDGE}`,
                       color: targetCoDocked ? GOLD.light : '#475569',
-                      fontSize: 11,
+                      fontSize: '0.6875rem',
                       fontFamily: F,
                       fontWeight: 800,
                       letterSpacing: 1,
@@ -235,7 +235,7 @@ export const ProfileWindow = () => {
                     🤝 Trade
                   </button>
                   {tradeError && (
-                    <span style={{ fontSize: 9, color: '#f87171', fontFamily: FM, maxWidth: 140, textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.5625rem', color: '#f87171', fontFamily: FM, maxWidth: 140, textAlign: 'right' }}>
                       {tradeError}
                     </span>
                   )}
@@ -254,7 +254,7 @@ export const ProfileWindow = () => {
             {/* Ship classes flown */}
             <div>
               <div style={{
-                fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1,
+                fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
                 textTransform: 'uppercase', marginBottom: 6,
               }}>
                 Ship Classes Flown
@@ -265,7 +265,7 @@ export const ProfileWindow = () => {
                   border: `1px solid ${EDGE}`,
                   borderRadius: 3,
                   padding: '10px 12px',
-                  fontSize: 11, color: '#475569', fontFamily: F, fontStyle: 'italic',
+                  fontSize: '0.6875rem', color: '#475569', fontFamily: F, fontStyle: 'italic',
                 }}>
                   No ships owned yet.
                 </div>
@@ -285,7 +285,7 @@ export const ProfileWindow = () => {
                       background: `${BLUE.pri}18`,
                       border: `1px solid ${BLUE.dim}`,
                       borderRadius: 2,
-                      fontSize: 10,
+                      fontSize: '0.625rem',
                       fontFamily: FM,
                       color: BLUE.light,
                     }}>
@@ -302,7 +302,7 @@ export const ProfileWindow = () => {
             {/* Leaderboard ranks */}
             <div>
               <div style={{
-                fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1,
+                fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
                 textTransform: 'uppercase', marginBottom: 6,
               }}>
                 Leaderboard Ranks
@@ -321,11 +321,11 @@ export const ProfileWindow = () => {
                       gridTemplateColumns: '24px 1fr 80px 80px',
                       alignItems: 'center',
                       padding: '6px 12px',
-                      fontSize: 11,
+                      fontSize: '0.6875rem',
                       fontFamily: FM,
                       borderBottom: `1px solid rgba(26,48,80,0.2)`,
                     }}>
-                      <span style={{ fontSize: 13 }}>{meta.icon}</span>
+                      <span style={{ fontSize: '0.8125rem' }}>{meta.icon}</span>
                       <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 600 }}>
                         {r.title}
                       </span>
@@ -340,7 +340,7 @@ export const ProfileWindow = () => {
                       <span style={{ color: '#94a3b8', textAlign: 'right' }}>
                         {formatValue(r.value)}
                         {r.value_suffix && (
-                          <span style={{ color: '#3a4a5a', marginLeft: 3, fontSize: 9 }}>
+                          <span style={{ color: '#3a4a5a', marginLeft: 3, fontSize: '0.5625rem' }}>
                             {r.value_suffix}
                           </span>
                         )}

@@ -98,7 +98,7 @@ const ShipCard = ({
                   if (e.key === 'Escape') finishRename(null);
                 }}
                 style={{
-                  fontSize: 13,
+                  fontSize: '0.8125rem',
                   fontWeight: 700,
                   background: 'rgba(2,4,10,0.8)',
                   border: `1px solid ${COLORS.BLUE.pri}55`,
@@ -114,7 +114,7 @@ const ShipCard = ({
               <span
                 onClick={() => startRename(ship)}
                 style={{
-                  fontSize: 13,
+                  fontSize: '0.8125rem',
                   fontWeight: 700,
                   color: COLORS.TEXT.primary,
                   cursor: 'pointer',
@@ -137,7 +137,7 @@ const ShipCard = ({
 
           {/* Hull type subtitle */}
           <div style={{
-            fontSize: 9,
+            fontSize: '0.5625rem',
             color: COLORS.TEXT.dim,
             fontFamily: FONT.mono,
             marginBottom: 6,
@@ -153,7 +153,7 @@ const ShipCard = ({
           <div style={{
             display: 'flex',
             gap: 12,
-            fontSize: 9,
+            fontSize: '0.5625rem',
             fontFamily: FONT.mono,
             marginBottom: 6,
           }}>
@@ -183,7 +183,7 @@ const ShipCard = ({
               );
             })}
             <span style={{
-              fontSize: 8,
+              fontSize: '0.5rem',
               color: COLORS.TEXT.dim,
               marginLeft: 4,
               fontFamily: FONT.mono,
@@ -345,8 +345,8 @@ export const FleetWindow = () => {
               padding: '6px 8px',
               borderRadius: 3,
             }}>
-              <div style={{ fontSize: 8, color: COLORS.TEXT.muted, fontFamily: FONT.mono, letterSpacing: 1 }}>{stat.label}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: stat.color, fontFamily: FONT.ui }}>{stat.value}</div>
+              <div style={{ fontSize: '0.5rem', color: COLORS.TEXT.muted, fontFamily: FONT.mono, letterSpacing: 1 }}>{stat.label}</div>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: stat.color, fontFamily: FONT.ui }}>{stat.value}</div>
             </div>
           ))}
         </div>
@@ -358,7 +358,7 @@ export const FleetWindow = () => {
             borderLeft: `2px solid ${COLORS.GOLD.pri}`,
             borderRadius: 3,
             padding: '6px 10px',
-            fontSize: 9,
+            fontSize: '0.5625rem',
             color: COLORS.GOLD.light,
             fontFamily: FONT.ui,
             lineHeight: 1.4,
@@ -383,7 +383,7 @@ export const FleetWindow = () => {
         <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
           {loading ? (
             <div style={{
-              fontSize: 11,
+              fontSize: '0.6875rem',
               color: COLORS.TEXT.muted,
               padding: '20px 0',
               textAlign: 'center',
@@ -394,7 +394,7 @@ export const FleetWindow = () => {
               textAlign: 'center',
               padding: '24px 0',
               color: COLORS.TEXT.muted,
-              fontSize: 11,
+              fontSize: '0.6875rem',
               fontFamily: FONT.ui,
             }}>
               No ships — buy a hull at a station vendor
@@ -428,7 +428,7 @@ export const FleetWindow = () => {
                 <div style={{
                   marginTop: 12,
                   marginBottom: 6,
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                   fontFamily: FONT.mono,
                   color: COLORS.GOLD.light,
                   letterSpacing: 1,

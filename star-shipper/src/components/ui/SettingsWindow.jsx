@@ -35,7 +35,7 @@ const ValueChip = ({ text, accent = COLORS.BLUE.light, width = 56 }) => (
   <span style={{
     minWidth: width,
     textAlign: 'right',
-    fontSize: 10,
+    fontSize: '0.625rem',
     fontFamily: FONT.mono,
     color: accent,
     fontWeight: 700,
@@ -61,7 +61,7 @@ const AudioSection = () => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <span style={{
           flex: 1,
-          fontSize: 11,
+          fontSize: '0.6875rem',
           color: COLORS.TEXT.primary,
           fontFamily: FONT.ui,
           fontWeight: 600,
@@ -70,7 +70,7 @@ const AudioSection = () => {
           onClick={() => { playSound('button_click'); toggleAudioMuted(); }}
           style={{
             padding: '5px 14px',
-            fontSize: 10,
+            fontSize: '0.625rem',
             fontWeight: 800,
             letterSpacing: 1,
             textTransform: 'uppercase',
@@ -86,14 +86,14 @@ const AudioSection = () => {
 
       {/* Master volume */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, opacity: muted ? 0.4 : 1 }}>
-        <span style={{ width: 78, fontSize: 10, color: COLORS.TEXT.muted, fontFamily: FONT.ui }}>Master</span>
+        <span style={{ width: 78, fontSize: '0.625rem', color: COLORS.TEXT.muted, fontFamily: FONT.ui }}>Master</span>
         <Slider value={master} min={0} max={1} step={0.05} onChange={setMasterVolume} />
         <ValueChip text={`${Math.round(master * 100)}%`} />
       </div>
 
       {/* SFX volume */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: muted ? 0.4 : 1 }}>
-        <span style={{ width: 78, fontSize: 10, color: COLORS.TEXT.muted, fontFamily: FONT.ui }}>Effects</span>
+        <span style={{ width: 78, fontSize: '0.625rem', color: COLORS.TEXT.muted, fontFamily: FONT.ui }}>Effects</span>
         <Slider value={sfx} min={0} max={1} step={0.05} onChange={setSfxVolume} />
         <ValueChip text={`${Math.round(sfx * 100)}%`} />
       </div>
@@ -120,7 +120,7 @@ const InterfaceSection = () => {
   return (
     <Card>
       <div style={{
-        fontSize: 11,
+        fontSize: '0.6875rem',
         color: COLORS.TEXT.primary,
         fontFamily: FONT.ui,
         fontWeight: 600,
@@ -143,7 +143,7 @@ const InterfaceSection = () => {
               onClick={() => { playSound('button_click'); setUiScale(p.value); }}
               style={{
                 padding: '4px 10px',
-                fontSize: 9,
+                fontSize: '0.5625rem',
                 fontWeight: 800,
                 fontFamily: FONT.ui,
                 letterSpacing: 1,
@@ -184,7 +184,7 @@ const InterfaceSection = () => {
 
       <div style={{
         marginTop: 10,
-        fontSize: 9,
+        fontSize: '0.5625rem',
         color: COLORS.TEXT.dim,
         fontFamily: FONT.ui,
         letterSpacing: 0.4,

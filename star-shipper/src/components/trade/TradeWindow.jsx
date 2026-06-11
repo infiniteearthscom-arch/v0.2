@@ -52,13 +52,13 @@ const StackTile = ({ stack, count, onClick, dim, removable, onRemove, label }) =
         flexShrink: 0,
       }}
     >
-      <span style={{ fontSize: 10, fontFamily: FM, color: '#cbd5e1', fontWeight: 700 }}>
+      <span style={{ fontSize: '0.625rem', fontFamily: FM, color: '#cbd5e1', fontWeight: 700 }}>
         {RESOURCE_ICON(name)}
       </span>
       <span style={{
         position: 'absolute',
         bottom: 1, right: 2,
-        fontSize: 9, fontFamily: FM, color: GOLD.light, fontWeight: 700,
+        fontSize: '0.5625rem', fontFamily: FM, color: GOLD.light, fontWeight: 700,
         textShadow: '0 0 3px rgba(0,0,0,0.8)',
       }}>{count || stack.quantity}</span>
       {removable && (
@@ -69,7 +69,7 @@ const StackTile = ({ stack, count, onClick, dim, removable, onRemove, label }) =
             position: 'absolute', top: -6, right: -6,
             width: 14, height: 14, borderRadius: 7,
             background: RED.pri, border: 'none', color: '#fff',
-            fontSize: 9, fontWeight: 800, cursor: 'pointer',
+            fontSize: '0.5625rem', fontWeight: 800, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: 0, lineHeight: 1,
           }}
@@ -115,12 +115,12 @@ const OfferPane = ({
         borderBottom: `1px solid ${EDGE}`,
       }}>
         <span style={{
-          fontSize: 11, color: accent, fontWeight: 800,
+          fontSize: '0.6875rem', color: accent, fontWeight: 800,
           fontFamily: F, letterSpacing: 1, textTransform: 'uppercase',
           flex: 1,
         }}>{title}</span>
         <span style={{
-          fontSize: 9, fontFamily: FM,
+          fontSize: '0.5625rem', fontFamily: FM,
           color: participant.confirmed ? GREEN.light : '#475569',
           fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
         }}>
@@ -136,7 +136,7 @@ const OfferPane = ({
       }}>
         {offerRows.length === 0 && (
           <div style={{
-            fontSize: 10, color: '#475569', fontFamily: F, fontStyle: 'italic',
+            fontSize: '0.625rem', color: '#475569', fontFamily: F, fontStyle: 'italic',
             padding: '20px 4px',
           }}>
             {isOther ? 'No items offered yet.' : 'No items in your offer.'}
@@ -167,7 +167,7 @@ const OfferPane = ({
                     onAdjustItem?.(row.stack_id, n);
                   }}
                   style={{
-                    width: 44, fontSize: 9, fontFamily: FM,
+                    width: 44, fontSize: '0.5625rem', fontFamily: FM,
                     background: '#0b1424', border: `1px solid ${EDGE}`,
                     color: '#cbd5e1', textAlign: 'center', padding: 1, borderRadius: 2,
                   }}
@@ -187,10 +187,10 @@ const OfferPane = ({
         border: `1px solid ${EDGE}`,
         borderRadius: 2,
       }}>
-        <span style={{ fontSize: 11 }}>⬡</span>
-        <span style={{ fontSize: 10, color: '#475569', fontFamily: FM, marginRight: 4 }}>CR</span>
+        <span style={{ fontSize: '0.6875rem' }}>⬡</span>
+        <span style={{ fontSize: '0.625rem', color: '#475569', fontFamily: FM, marginRight: 4 }}>CR</span>
         {isOther ? (
-          <span style={{ fontSize: 12, color: GOLD.light, fontWeight: 700, fontFamily: FM }}>
+          <span style={{ fontSize: '0.75rem', color: GOLD.light, fontWeight: 700, fontFamily: FM }}>
             {fmt(participant.credits)}
           </span>
         ) : (
@@ -200,7 +200,7 @@ const OfferPane = ({
             value={participant.credits}
             onChange={(e) => onSetCredits?.(Math.max(0, parseInt(e.target.value) || 0))}
             style={{
-              flex: 1, fontSize: 12, fontFamily: FM,
+              flex: 1, fontSize: '0.75rem', fontFamily: FM,
               background: '#0b1424', border: `1px solid ${EDGE}`,
               color: GOLD.light, padding: '2px 6px', borderRadius: 2,
             }}
@@ -218,7 +218,7 @@ const OfferPane = ({
               background: pickerOpen ? `${BLUE.pri}1c` : 'transparent',
               border: `1px solid ${BLUE.pri}55`,
               color: BLUE.light,
-              fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+              fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
               textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
               marginBottom: 8,
             }}
@@ -236,7 +236,7 @@ const OfferPane = ({
               marginBottom: 10,
             }}>
               {cargoStacks.length === 0 && (
-                <div style={{ fontSize: 10, color: '#475569', fontFamily: F, fontStyle: 'italic', padding: 8 }}>
+                <div style={{ fontSize: '0.625rem', color: '#475569', fontFamily: F, fontStyle: 'italic', padding: 8 }}>
                   Your cargo is empty.
                 </div>
               )}
@@ -265,7 +265,7 @@ const OfferPane = ({
               background: participant.confirmed ? `${GREEN.pri}24` : `${GOLD.pri}24`,
               border: `1px solid ${participant.confirmed ? GREEN.pri : GOLD.pri}88`,
               color: participant.confirmed ? GREEN.light : GOLD.light,
-              fontSize: 11, fontFamily: F, fontWeight: 800, letterSpacing: 1,
+              fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
               textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
             }}
           >
@@ -292,15 +292,15 @@ const TerminalOverlay = ({ result, partnerName, onClose }) => {
         cursor: 'pointer',
       }}
     >
-      <div style={{ fontSize: 40 }}>{isOk ? '🤝' : '✕'}</div>
+      <div style={{ fontSize: '2.5rem' }}>{isOk ? '🤝' : '✕'}</div>
       <div style={{
-        fontSize: 18, color: isOk ? GREEN.light : RED.light,
+        fontSize: '1.125rem', color: isOk ? GREEN.light : RED.light,
         fontFamily: F, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase',
       }}>
         {isOk ? 'Trade Complete' : 'Trade Cancelled'}
       </div>
       {!isOk && (
-        <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: FM }}>
+        <div style={{ fontSize: '0.6875rem', color: '#94a3b8', fontFamily: FM }}>
           {result.reason || 'unknown reason'}
         </div>
       )}
@@ -311,7 +311,7 @@ const TerminalOverlay = ({ result, partnerName, onClose }) => {
           background: 'transparent',
           border: `1px solid ${EDGE}`,
           color: '#cbd5e1',
-          fontSize: 11, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+          fontSize: '0.6875rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
           textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           marginTop: 6,
         }}
@@ -472,9 +472,9 @@ export const TradeWindow = () => {
           borderBottom: `1px solid ${EDGE}`,
           display: 'flex', alignItems: 'center', gap: 10,
         }}>
-          <span style={{ fontSize: 16 }}>🤝</span>
+          <span style={{ fontSize: '1rem' }}>🤝</span>
           <span style={{
-            fontSize: 14, color: GOLD.light, fontWeight: 800,
+            fontSize: '0.875rem', color: GOLD.light, fontWeight: 800,
             letterSpacing: 2, textTransform: 'uppercase', flex: 1,
           }}>
             Trade with {partnerName}
@@ -487,7 +487,7 @@ export const TradeWindow = () => {
               background: 'transparent',
               border: `1px solid ${EDGE}`,
               color: '#7a8a9a',
-              fontSize: 10, fontFamily: F, fontWeight: 700, letterSpacing: 1,
+              fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
               textTransform: 'uppercase', cursor: active ? 'pointer' : 'default',
               borderRadius: 3,
             }}
@@ -527,7 +527,7 @@ export const TradeWindow = () => {
             padding: '8px 16px',
             borderTop: `1px solid ${EDGE}`,
             background: 'rgba(0,0,0,0.3)',
-            fontSize: 9, color: '#475569', fontFamily: FM, letterSpacing: 1,
+            fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
             textAlign: 'center',
           }}>
             When both sides confirm, the swap is atomic. Editing any offer voids both confirms.

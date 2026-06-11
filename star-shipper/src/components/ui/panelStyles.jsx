@@ -55,9 +55,9 @@ export const SectionHead = ({ title, accent = COLORS.BLUE.light, icon, right, ma
     background: `linear-gradient(90deg, ${accent}18, transparent)`,
     padding: '5px 10px',
   }}>
-    {icon && <span style={{ marginRight: 6, fontSize: 12 }}>{icon}</span>}
+    {icon && <span style={{ marginRight: 6, fontSize: '0.75rem' }}>{icon}</span>}
     <span style={{
-      fontSize: 11,
+      fontSize: '0.6875rem',
       fontWeight: 800,
       color: accent,
       letterSpacing: 1.5,
@@ -67,7 +67,7 @@ export const SectionHead = ({ title, accent = COLORS.BLUE.light, icon, right, ma
     }}>{title}</span>
     {right && (
       <span style={{
-        fontSize: 9,
+        fontSize: '0.5625rem',
         color: COLORS.TEXT.dim,
         fontFamily: FONT.mono,
         letterSpacing: 0.5,
@@ -108,7 +108,7 @@ export const StatRow = ({ label, value, color = COLORS.TEXT.primary, mono = true
     display: 'flex',
     justifyContent: 'space-between',
     padding: '4px 2px',
-    fontSize: 10,
+    fontSize: '0.625rem',
     fontFamily: FONT.mono,
     borderBottom: '1px solid rgba(26,48,80,0.3)',
   }}>
@@ -129,7 +129,7 @@ export const StatRow = ({ label, value, color = COLORS.TEXT.primary, mono = true
 export const Pill = ({ children, color = COLORS.BLUE.light, filled = false, style }) => (
   <span style={{
     display: 'inline-block',
-    fontSize: 8,
+    fontSize: '0.5rem',
     fontWeight: 800,
     color: filled ? '#0a0e18' : color,
     background: filled ? color : `${color}18`,
@@ -151,9 +151,9 @@ export const Pill = ({ children, color = COLORS.BLUE.light, filled = false, styl
 
 export const PanelButton = ({ children, onClick, disabled, accent = COLORS.BLUE.light, size = 'md', style, ...props }) => {
   const sizes = {
-    sm: { padding: '4px 10px', fontSize: 9 },
-    md: { padding: '6px 14px', fontSize: 10 },
-    lg: { padding: '8px 20px', fontSize: 11 },
+    sm: { padding: '4px 10px', fontSize: '0.5625rem' },
+    md: { padding: '6px 14px', fontSize: '0.625rem' },
+    lg: { padding: '8px 20px', fontSize: '0.6875rem' },
   };
   const s = sizes[size] || sizes.md;
   return (
@@ -201,7 +201,7 @@ export const MessageBar = ({ type = 'info', children }) => {
       border: `1px solid ${c.border}`,
       borderRadius: 3,
       padding: '6px 10px',
-      fontSize: 11,
+      fontSize: '0.6875rem',
       color: c.text,
       fontFamily: FONT.ui,
       fontWeight: 600,
