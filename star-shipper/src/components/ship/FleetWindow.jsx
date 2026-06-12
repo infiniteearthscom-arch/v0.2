@@ -3,6 +3,7 @@ import { ContextPanel } from '@/components/ui/ContextPanel';
 import { fittingAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { getShipImage, MAX_FLEET_SIZE } from '@/utils/shipRenderer';
+import { computeFleetStats } from '@/utils/fleetStats';
 import {
   COLORS, FONT, SectionHead, Pill, PanelButton, MessageBar, glow,
 } from '@/components/ui/panelStyles';
@@ -302,6 +303,16 @@ export const FleetWindow = () => {
   };
 
   const totalCargo = ships.reduce((sum, s) => sum + (s.total_cargo || s.computed_cargo || 0), 0);
+
+  // Fleet-wide combat aggregation — the SAME computeFleetStats the
+  // SystemView combat pool runs on (pooled shield/armor/hull, DPS by
+  // damage type, mass-adjusted mobility, quality multipliers included),
+  // so what this panel shows is exactly what the fleet fights with.
+  // Stored ships are excluded — they don't fly (pitfall #15).
+  const fleetStats = useMemo(
+    () => computeFleetStats(ships.filter(s => s.storage_body_id == null)),
+    [ships]
+  );
   const canActivateForCap = activeFleetCount < fleetCap;
   // Storage match by name (works for both Sol aliases + procedural UUIDs --
   // celestial body NAMES are unique within a system, and the player can
@@ -367,6 +378,57 @@ export const FleetWindow = () => {
             Dock at a station and use the Ships tab there to store ships.
           </div>
         )}
+
+        {/* Fleet combat stats — pooled defense layers (same colors as
+            the bottom-center combat readout) + DPS by damage type +
+            mass-adjusted mobility. */}
+        <SectionHead
+          title="Combat Stats"
+          accent={COLORS.PURPLE.light}
+          icon="⚔️"
+          right={`${fleetStats.dpsTotal} DPS · ${fleetStats.weaponCount} WPN`}
+        />
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          gap: 6,
+        }}>
+          {[
+            { label: 'SHIELD', value: fleetStats.totalShield, accent: '#818cf8' },
+            { label: 'ARMOR', value: fleetStats.totalArmor, accent: '#d8a24a' },
+            { label: 'HULL', value: fleetStats.totalHull, accent: COLORS.GREEN.light },
+          ].map((stat, i) => (
+            <div key={i} style={{
+              background: COLORS.ROW_BG,
+              border: `1px solid ${COLORS.EDGE}`,
+              borderLeft: `2px solid ${stat.accent}`,
+              padding: '6px 8px',
+              borderRadius: 3,
+            }}>
+              <div style={{ fontSize: '0.5rem', color: COLORS.TEXT.muted, fontFamily: FONT.mono, letterSpacing: 1 }}>{stat.label}</div>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: stat.accent, fontFamily: FONT.ui }}>{stat.value}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 8,
+          background: COLORS.ROW_BG,
+          border: `1px solid ${COLORS.EDGE}`,
+          borderRadius: 3,
+          padding: '5px 10px',
+          fontSize: '0.5625rem',
+          fontFamily: FONT.mono,
+          letterSpacing: 0.5,
+          marginBottom: 4,
+        }}>
+          <span style={{ color: COLORS.TEXT.muted }}>DPS <span style={{ color: '#66aaff', fontWeight: 700 }}>{fleetStats.dpsKinetic} KIN</span> · <span style={{ color: '#d8a24a', fontWeight: 700 }}>{fleetStats.dpsLaser} LSR</span> · <span style={{ color: '#ff6666', fontWeight: 700 }}>{fleetStats.dpsMissile} MSL</span></span>
+          <span style={{ color: COLORS.TEXT.muted }}>SPD <span style={{ color: COLORS.TEXT.primary, fontWeight: 700 }}>{fleetStats.fleetSpeed}</span></span>
+          <span style={{ color: COLORS.TEXT.muted }}>MNV <span style={{ color: COLORS.TEXT.primary, fontWeight: 700 }}>{fleetStats.fleetManeuver}</span></span>
+          <span style={{ color: COLORS.TEXT.muted }}>MASS <span style={{ color: COLORS.TEXT.primary, fontWeight: 700 }}>{fleetStats.fleetMass}</span></span>
+        </div>
 
         {/* Ship list */}
         <SectionHead
