@@ -32,13 +32,17 @@ export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', width,
 
   return (
     <div className="fixed inset-0 z-50" style={{ display: 'flex' }} onClick={() => closeWindow(windowId)}>
-      {/* Backdrop */}
+      {/* Backdrop. No backdrop-filter blur: SystemView keeps animating
+          at 60fps behind the modal, so a full-screen blur(2px) forced
+          the browser to re-blur the entire viewport every frame for as
+          long as any modal was open — a constant GPU tax on the Galaxy
+          Map / Ship Designer themselves. A slightly deeper plain dim
+          reads nearly the same and costs nothing. */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(2,4,10,0.6)',
-          backdropFilter: 'blur(2px)',
+          background: 'rgba(2,4,10,0.72)',
         }}
       />
 

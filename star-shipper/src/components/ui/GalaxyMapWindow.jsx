@@ -111,6 +111,10 @@ export const GalaxyMapWindow = () => {
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const cameraStart = useRef({ x: 0, y: 0 });
+  // rAF batching for pan + wheel (one state commit per frame max).
+  const inputRafRef = useRef(0);
+  const camPendingRef = useRef(null);
+  const wheelPendingRef = useRef(null);
   const svgRef = useRef(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
 
@@ -142,6 +146,261 @@ export const GalaxyMapWindow = () => {
     }
   }, [isOpen]);
 
+  const uiScale = 1 / zoom;
+  const selectedSys = selectedSystem;
+
+  // Stable click handler so the memoized systems layer's closures stay
+  // valid across renders (setState setters are identity-stable).
+  const handleClickSystem = useCallback((sys) => {
+    setSelectedSystem(sys);
+  }, []);
+
+  // ============================================
+  // MEMOIZED RENDER LAYERS (perf)
+  // --------------------------------------------
+  // Panning only changes the svg viewBox; these layers don't depend on
+  // the camera, so memoizing them means a drag re-render reconciles a
+  // handful of stable elements instead of rebuilding ~1500 SVG nodes
+  // per mousemove (the old choppiness). Zoom DOES invalidate them
+  // (uiScale sizes everything) but is rAF-batched below.
+  // ============================================
+
+  const bgStarsLayer = useMemo(() => (
+    <g>
+      {bgStars.map((s, i) => (
+        <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#aabbcc" opacity={s.opacity} />
+      ))}
+    </g>
+  ), [bgStars]);
+
+  const regionLayer = useMemo(() => (
+    <g>
+      {/* Region borders — the Voronoi cell polygons computed in the
+          generator, drawn as faint tier-colored dashed lines so region
+          territory reads at a glance. Fog-gated like the labels. */}
+      {(galaxy.regions || []).map(reg => {
+        const known = reg.systemIds.some(id => discoveredSet.has(id));
+        if (!known || !reg.boundary || reg.boundary.length < 3) return null;
+        return (
+          <polygon key={`rb-${reg.id}`}
+            points={reg.boundary.map(p => `${p.x},${p.y}`).join(' ')}
+            fill="none"
+            stroke={tierColor(reg.tier)}
+            strokeWidth={1.2 * uiScale}
+            strokeDasharray={`${10 * uiScale},${6 * uiScale}`}
+            opacity={0.22}
+            style={{ pointerEvents: 'none' }}
+          />
+        );
+      })}
+      {/* Region name labels (EVE-style) — faint, tier-colored, at each
+          region's centroid. Constant screen size via uiScale. */}
+      {(galaxy.regions || []).map(reg => {
+        const known = reg.systemIds.some(id => discoveredSet.has(id));
+        if (!known) return null;
+        return (
+          <text key={reg.id}
+            x={reg.cx} y={reg.cy}
+            textAnchor="middle"
+            fill={tierColor(reg.tier)}
+            opacity={0.18}
+            fontSize={26 * uiScale}
+            fontFamily="'Rajdhani', sans-serif"
+            fontWeight="800"
+            letterSpacing={6 * uiScale}
+            style={{ pointerEvents: 'none', textTransform: 'uppercase' }}
+          >
+            {reg.name.toUpperCase()}
+            <tspan fontSize={16 * uiScale} opacity={0.8}> · {tierLabel(reg.tier)}</tspan>
+          </text>
+        );
+      })}
+    </g>
+  ), [galaxy.regions, discoveredSet, uiScale]);
+
+  const connectionsLayer = useMemo(() => (
+    <g>
+      {connections.map(([a, b], i) => {
+        const isHighlighted = selectedSys && (
+          (a.id === currentSystemId && b.id === selectedSys.id) ||
+          (b.id === currentSystemId && a.id === selectedSys.id)
+        );
+        // Constant SCREEN width via uiScale + a visible blue — the old
+        // #1a3050 @ 0.3 opacity in raw world units was ~0.6px of
+        // near-background color (user-reported invisible).
+        return (
+          <line key={i}
+            x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+            stroke={isHighlighted ? '#00ff88' : '#4477aa'}
+            strokeWidth={(isHighlighted ? 2 : 1.1) * uiScale}
+            strokeDasharray={isHighlighted ? `${8 * uiScale},${4 * uiScale}` : `${5 * uiScale},${4 * uiScale}`}
+            opacity={isHighlighted ? 0.8 : 0.45}
+          />
+        );
+      })}
+    </g>
+  ), [connections, selectedSys, currentSystemId, uiScale]);
+
+  const systemsLayer = useMemo(() => (
+    <g>
+      {systems.map(sys => {
+        const discovered = discoveredSet.has(sys.id);
+        // Tier C fog of war: undiscovered systems render as a
+        // generic small gray dot with no faction halo, no star
+        // glow, no name. Hovering an undiscovered system reveals
+        // "Unknown System" so the player can still target it for
+        // exploration (jump planning still works -- the player
+        // just doesn't know what's there).
+        const color = discovered ? (STAR_COLORS[sys.starType] || '#ffdd44') : '#5a6678';
+        const size = (discovered ? (STAR_SIZES[sys.starType] || 5) : 3) * uiScale;
+        const factionColor = discovered ? (FACTION_COLORS[sys.faction] || '#666') : null;
+        const isCurrent = sys.id === currentSystemId;
+        const isSelected = selectedSys?.id === sys.id;
+        const isHovered = hoveredSystem?.id === sys.id;
+        const isTarget = galaxyAutopilotTarget?.id === sys.id;
+        const showLabel = (discovered && zoom > 0.12) || isCurrent || isSelected || isHovered || isTarget;
+
+        return (
+          <g key={sys.id}
+            onClick={(e) => { e.stopPropagation(); handleClickSystem(sys); }}
+            onMouseEnter={() => setHoveredSystem(sys)}
+            onMouseLeave={() => setHoveredSystem(null)}
+            style={{ cursor: 'pointer' }}
+          >
+            {/* Faction halo -- only on discovered systems
+                (fog of war hides faction allegiance). */}
+            {discovered && factionColor && (
+              <circle cx={sys.x} cy={sys.y} r={size * 3}
+                fill="none" stroke={factionColor} strokeWidth={1 * uiScale} opacity={0.15} />
+            )}
+
+            {/* Current system marker */}
+            {isCurrent && (
+              <circle cx={sys.x} cy={sys.y} r={size * 5}
+                fill="none" stroke="#44ff88" strokeWidth={1.5 * uiScale}
+                strokeDasharray={`${4 * uiScale},${3 * uiScale}`} opacity={0.6}
+              >
+                <animateTransform attributeName="transform" type="rotate"
+                  from={`0 ${sys.x} ${sys.y}`} to={`360 ${sys.x} ${sys.y}`}
+                  dur="6s" repeatCount="indefinite" />
+              </circle>
+            )}
+
+            {/* Selected ring */}
+            {isSelected && !isCurrent && (
+              <circle cx={sys.x} cy={sys.y} r={size * 4}
+                fill="none" stroke="#ffffff" strokeWidth={1.5 * uiScale} opacity={0.6} />
+            )}
+
+            {/* Autopilot target ring */}
+            {isTarget && (
+              <circle cx={sys.x} cy={sys.y} r={size * 4.5}
+                fill="none" stroke="#00ff88" strokeWidth={1.5 * uiScale}
+                strokeDasharray={`${3 * uiScale},${2 * uiScale}`} opacity={0.8}
+              />
+            )}
+
+            {/* Hover highlight */}
+            {isHovered && !isSelected && (
+              <circle cx={sys.x} cy={sys.y} r={size * 3.5}
+                fill="none" stroke={color} strokeWidth={1 * uiScale} opacity={0.5} />
+            )}
+
+            {/* Star glow -- discovered systems only. Radial gradient
+                per star TYPE (7 shared defs), replacing the old
+                per-system feGaussianBlur filter: 200 live blur
+                filters re-rasterized on every pan/zoom frame and were
+                the single biggest paint cost in the map. */}
+            {discovered && (
+              <circle cx={sys.x} cy={sys.y} r={size * 3}
+                fill={`url(#gm-glow-${sys.starType})`} pointerEvents="none" />
+            )}
+
+            {/* Star dot */}
+            <circle cx={sys.x} cy={sys.y} r={size}
+              fill={color} opacity={discovered ? 1 : 0.4} />
+
+            {/* Station marker -- discovered systems with at
+                least one station get a small gold rect tucked
+                next to the star dot. Fog-of-war keeps it
+                hidden until the player has actually been there
+                (sys.hasStation is precomputed but undiscovered
+                systems shouldn't leak the fact). */}
+            {discovered && sys.hasStation && (
+              <g pointerEvents="none">
+                <rect
+                  x={sys.x + size + 1 * uiScale}
+                  y={sys.y - (size + 2.5 * uiScale)}
+                  width={3.5 * uiScale}
+                  height={3.5 * uiScale}
+                  fill="#fbbf24"
+                  stroke="#451a03"
+                  strokeWidth={0.4 * uiScale}
+                  opacity={0.95}
+                />
+                <line
+                  x1={sys.x + size + 1 * uiScale}
+                  y1={sys.y - (size + 0.75 * uiScale)}
+                  x2={sys.x + size + 4.5 * uiScale}
+                  y2={sys.y - (size + 0.75 * uiScale)}
+                  stroke="#451a03"
+                  strokeWidth={0.4 * uiScale}
+                />
+              </g>
+            )}
+
+            {/* Label -- discovered systems show their real name;
+                undiscovered show "Unknown" only when hovered /
+                selected / autopilot-targeted (no static label
+                noise filling the map). */}
+            {showLabel && (
+              <text x={sys.x} y={sys.y + size + 10 * uiScale}
+                textAnchor="middle"
+                fill={isCurrent ? '#44ff88' : isSelected ? '#ffffff' : isTarget ? '#00ff88' : discovered ? '#aabbcc' : '#556677'}
+                fontSize={9 * uiScale} fontFamily="monospace"
+                opacity={isCurrent || isSelected || isHovered ? 0.9 : 0.5}
+              >
+                {discovered ? sys.name : 'Unknown'}
+              </text>
+            )}
+
+            {/* Population badge -- "N here" when at least one
+                pilot is in this system room. Sits under the name
+                label (or where the name would be, if none). Only
+                drawn when count > 0 so empty systems stay clean. */}
+            {bySystem[sys.id] > 0 && (
+              <text
+                x={sys.x}
+                y={sys.y + size + (showLabel ? 19 : 10) * uiScale}
+                textAnchor="middle"
+                fill="#22d3ee"
+                fontSize={8 * uiScale}
+                fontFamily="monospace"
+                opacity={0.85}
+              >
+                👥 {bySystem[sys.id]}
+              </text>
+            )}
+
+            {/* Danger indicator -- drops down when the population
+                badge is taking the row above. */}
+            {showLabel && sys.dangerLevel >= 3 && (
+              <text x={sys.x} y={sys.y + size + (bySystem[sys.id] > 0 ? 28 : 20) * uiScale}
+                textAnchor="middle" fill="#ff4444"
+                fontSize={7 * uiScale} fontFamily="monospace"
+              >
+                {'⚠'.repeat(Math.min(sys.dangerLevel, 5))}
+              </text>
+            )}
+
+            {/* Clickable hitbox */}
+            <circle cx={sys.x} cy={sys.y} r={Math.max(size * 4, 15 * uiScale)} fill="transparent" />
+          </g>
+        );
+      })}
+    </g>
+  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem]);
+
   if (!isOpen) return null;
 
   // ViewBox — world coordinates
@@ -151,13 +410,39 @@ export const GalaxyMapWindow = () => {
     width: viewportSize.width / zoom,
     height: viewportSize.height / zoom,
   };
-  const uiScale = 1 / zoom;
 
-  // Input handlers
+  // Input handlers — rAF-batched. Mouse/wheel events fire far faster
+  // than the display refresh; committing state once per frame collapses
+  // the bursts (the other half of the old choppiness).
   const handleWheel = (e) => {
     e.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
     const factor = e.deltaY > 0 ? 0.85 : 1.18;
-    setZoom(z => Math.max(0.01, Math.min(2.0, z * factor)));
+    const acc = wheelPendingRef.current;
+    wheelPendingRef.current = {
+      factor: (acc?.factor || 1) * factor,
+      mx: e.clientX - (rect?.left || 0),
+      my: e.clientY - (rect?.top || 0),
+    };
+    if (inputRafRef.current) return;
+    inputRafRef.current = requestAnimationFrame(() => {
+      inputRafRef.current = 0;
+      const w = wheelPendingRef.current;
+      wheelPendingRef.current = null;
+      if (!w) return;
+      // Zoom TO THE CURSOR: keep the world point under the pointer
+      // fixed while the scale changes (the old version zoomed around
+      // the screen center, which made "zoom into that cluster" a
+      // zoom-then-drag-then-zoom dance).
+      const newZoom = Math.max(0.01, Math.min(2.0, zoom * w.factor));
+      const wx = camera.x + (w.mx - viewportSize.width / 2) / zoom;
+      const wy = camera.y + (w.my - viewportSize.height / 2) / zoom;
+      setZoom(newZoom);
+      setCamera({
+        x: wx - (w.mx - viewportSize.width / 2) / newZoom,
+        y: wy - (w.my - viewportSize.height / 2) / newZoom,
+      });
+    });
   };
   const handleMouseDown = (e) => {
     if (e.button !== 0) return;
@@ -169,19 +454,19 @@ export const GalaxyMapWindow = () => {
     if (!dragging) return;
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
-    setCamera({
+    camPendingRef.current = {
       x: cameraStart.current.x - dx / zoom,
       y: cameraStart.current.y - dy / zoom,
+    };
+    if (inputRafRef.current) return;
+    inputRafRef.current = requestAnimationFrame(() => {
+      inputRafRef.current = 0;
+      if (camPendingRef.current) setCamera(camPendingRef.current);
     });
   };
   const handleMouseUp = () => setDragging(false);
 
-  const handleClickSystem = (sys) => {
-    setSelectedSystem(sys);
-  };
-
   const currentSys = galaxy.systemMap[currentSystemId];
-  const selectedSys = selectedSystem;
   const canJump = viewMode === 'system' && selectedSys && selectedSys.id !== currentSystemId &&
     currentSys?.hasJumpGate && currentSys?.jumpConnections?.includes(selectedSys.id);
 
@@ -207,236 +492,31 @@ export const GalaxyMapWindow = () => {
                 <stop offset="60%" stopColor="#0a1020" stopOpacity="0.15" />
                 <stop offset="100%" stopColor="#030308" stopOpacity="0" />
               </radialGradient>
-              <filter id="gm-glow" x="-100%" y="-100%" width="300%" height="300%">
-                <feGaussianBlur stdDeviation="2" />
-              </filter>
+              {/* Per-star-type glow gradients — 7 shared defs replace
+                  the old feGaussianBlur filter that was applied to a
+                  circle per discovered system (~200 live blur filters
+                  re-rasterizing on every pan/zoom frame). */}
+              {Object.entries(STAR_COLORS).map(([type, c]) => (
+                <radialGradient key={type} id={`gm-glow-${type}`}>
+                  <stop offset="0%" stopColor={c} stopOpacity="0.30" />
+                  <stop offset="55%" stopColor={c} stopOpacity="0.10" />
+                  <stop offset="100%" stopColor={c} stopOpacity="0" />
+                </radialGradient>
+              ))}
             </defs>
 
             {/* Galaxy core glow */}
             <circle cx={0} cy={0} r={3000} fill="url(#gm-center)" />
 
-            {/* Background stars */}
-            {bgStars.map((s, i) => (
-              <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#aabbcc" opacity={s.opacity} />
-            ))}
+            {/* Memoized layers — see the MEMOIZED RENDER LAYERS block
+                above. Panning only changes the svg viewBox attribute;
+                these elements are reference-stable so React skips
+                them entirely during a drag. */}
+            {bgStarsLayer}
+            {regionLayer}
+            {connectionsLayer}
 
-            {/* Region borders — the Voronoi cell polygons computed in
-                the generator, drawn as faint tier-colored dashed lines
-                so region territory reads at a glance. Same fog gate as
-                the labels. pointer-events off so panning/hover pass
-                through. */}
-            {(galaxy.regions || []).map(reg => {
-              const known = reg.systemIds.some(id => discoveredSet.has(id));
-              if (!known || !reg.boundary || reg.boundary.length < 3) return null;
-              return (
-                <polygon key={`rb-${reg.id}`}
-                  points={reg.boundary.map(p => `${p.x},${p.y}`).join(' ')}
-                  fill="none"
-                  stroke={tierColor(reg.tier)}
-                  strokeWidth={1.2 * uiScale}
-                  strokeDasharray={`${10 * uiScale},${6 * uiScale}`}
-                  opacity={0.22}
-                  style={{ pointerEvents: 'none' }}
-                />
-              );
-            })}
-
-            {/* Region name labels (EVE-style) — faint, tier-colored,
-                anchored at each region's centroid UNDER the system
-                layer. Constant screen size via uiScale. Fog of war:
-                a region's name appears once any of its systems is
-                discovered. */}
-            {(galaxy.regions || []).map(reg => {
-              const known = reg.systemIds.some(id => discoveredSet.has(id));
-              if (!known) return null;
-              return (
-                <text key={reg.id}
-                  x={reg.cx} y={reg.cy}
-                  textAnchor="middle"
-                  fill={tierColor(reg.tier)}
-                  opacity={0.18}
-                  fontSize={26 * uiScale}
-                  fontFamily="'Rajdhani', sans-serif"
-                  fontWeight="800"
-                  letterSpacing={6 * uiScale}
-                  style={{ pointerEvents: 'none', textTransform: 'uppercase' }}
-                >
-                  {reg.name.toUpperCase()}
-                  <tspan fontSize={16 * uiScale} opacity={0.8}> · {tierLabel(reg.tier)}</tspan>
-                </text>
-              );
-            })}
-
-            {/* Jump gate connections */}
-            {connections.map(([a, b], i) => {
-              const isHighlighted = selectedSys && (
-                (a.id === currentSystemId && b.id === selectedSys.id) ||
-                (b.id === currentSystemId && a.id === selectedSys.id)
-              );
-              return (
-                <line key={i}
-                  x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                  stroke={isHighlighted ? '#00ff88' : '#1a3050'}
-                  strokeWidth={isHighlighted ? 2 : 1}
-                  strokeDasharray={isHighlighted ? '8,4' : '4,8'}
-                  opacity={isHighlighted ? 0.7 : 0.3}
-                />
-              );
-            })}
-
-            {/* Star systems */}
-            {systems.map(sys => {
-              const discovered = discoveredSet.has(sys.id);
-              // Tier C fog of war: undiscovered systems render as a
-              // generic small gray dot with no faction halo, no star
-              // glow, no name. Hovering an undiscovered system reveals
-              // "Unknown System" so the player can still target it for
-              // exploration (jump planning still works -- the player
-              // just doesn't know what's there).
-              const color = discovered ? (STAR_COLORS[sys.starType] || '#ffdd44') : '#5a6678';
-              const size = (discovered ? (STAR_SIZES[sys.starType] || 5) : 3) * uiScale;
-              const factionColor = discovered ? (FACTION_COLORS[sys.faction] || '#666') : null;
-              const isCurrent = sys.id === currentSystemId;
-              const isSelected = selectedSys?.id === sys.id;
-              const isHovered = hoveredSystem?.id === sys.id;
-              const isTarget = galaxyAutopilotTarget?.id === sys.id;
-              const showLabel = (discovered && zoom > 0.12) || isCurrent || isSelected || isHovered || isTarget;
-
-              return (
-                <g key={sys.id}
-                  onClick={(e) => { e.stopPropagation(); handleClickSystem(sys); }}
-                  onMouseEnter={() => setHoveredSystem(sys)}
-                  onMouseLeave={() => setHoveredSystem(null)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {/* Faction halo -- only on discovered systems
-                      (fog of war hides faction allegiance). */}
-                  {discovered && factionColor && (
-                    <circle cx={sys.x} cy={sys.y} r={size * 3}
-                      fill="none" stroke={factionColor} strokeWidth={1 * uiScale} opacity={0.15} />
-                  )}
-
-                  {/* Current system marker */}
-                  {isCurrent && (
-                    <circle cx={sys.x} cy={sys.y} r={size * 5}
-                      fill="none" stroke="#44ff88" strokeWidth={1.5 * uiScale}
-                      strokeDasharray={`${4 * uiScale},${3 * uiScale}`} opacity={0.6}
-                    >
-                      <animateTransform attributeName="transform" type="rotate"
-                        from={`0 ${sys.x} ${sys.y}`} to={`360 ${sys.x} ${sys.y}`}
-                        dur="6s" repeatCount="indefinite" />
-                    </circle>
-                  )}
-
-                  {/* Selected ring */}
-                  {isSelected && !isCurrent && (
-                    <circle cx={sys.x} cy={sys.y} r={size * 4}
-                      fill="none" stroke="#ffffff" strokeWidth={1.5 * uiScale} opacity={0.6} />
-                  )}
-
-                  {/* Autopilot target ring */}
-                  {isTarget && (
-                    <circle cx={sys.x} cy={sys.y} r={size * 4.5}
-                      fill="none" stroke="#00ff88" strokeWidth={1.5 * uiScale}
-                      strokeDasharray={`${3 * uiScale},${2 * uiScale}`} opacity={0.8}
-                    />
-                  )}
-
-                  {/* Hover highlight */}
-                  {isHovered && !isSelected && (
-                    <circle cx={sys.x} cy={sys.y} r={size * 3.5}
-                      fill="none" stroke={color} strokeWidth={1 * uiScale} opacity={0.5} />
-                  )}
-
-                  {/* Star glow -- discovered systems only. Undiscovered
-                      stay as the bare gray dot. */}
-                  {discovered && (
-                    <circle cx={sys.x} cy={sys.y} r={size * 2}
-                      fill={color} opacity={0.15} filter="url(#gm-glow)" />
-                  )}
-
-                  {/* Star dot */}
-                  <circle cx={sys.x} cy={sys.y} r={size}
-                    fill={color} opacity={discovered ? 1 : 0.4} />
-
-                  {/* Station marker -- discovered systems with at
-                      least one station get a small gold rect tucked
-                      next to the star dot. Fog-of-war keeps it
-                      hidden until the player has actually been there
-                      (sys.hasStation is precomputed but undiscovered
-                      systems shouldn't leak the fact). */}
-                  {discovered && sys.hasStation && (
-                    <g pointerEvents="none">
-                      <rect
-                        x={sys.x + size + 1 * uiScale}
-                        y={sys.y - (size + 2.5 * uiScale)}
-                        width={3.5 * uiScale}
-                        height={3.5 * uiScale}
-                        fill="#fbbf24"
-                        stroke="#451a03"
-                        strokeWidth={0.4 * uiScale}
-                        opacity={0.95}
-                      />
-                      <line
-                        x1={sys.x + size + 1 * uiScale}
-                        y1={sys.y - (size + 0.75 * uiScale)}
-                        x2={sys.x + size + 4.5 * uiScale}
-                        y2={sys.y - (size + 0.75 * uiScale)}
-                        stroke="#451a03"
-                        strokeWidth={0.4 * uiScale}
-                      />
-                    </g>
-                  )}
-
-                  {/* Label -- discovered systems show their real name;
-                      undiscovered show "Unknown" only when hovered /
-                      selected / autopilot-targeted (no static label
-                      noise filling the map). */}
-                  {showLabel && (
-                    <text x={sys.x} y={sys.y + size + 10 * uiScale}
-                      textAnchor="middle"
-                      fill={isCurrent ? '#44ff88' : isSelected ? '#ffffff' : isTarget ? '#00ff88' : discovered ? '#aabbcc' : '#556677'}
-                      fontSize={9 * uiScale} fontFamily="monospace"
-                      opacity={isCurrent || isSelected || isHovered ? 0.9 : 0.5}
-                    >
-                      {discovered ? sys.name : 'Unknown'}
-                    </text>
-                  )}
-
-                  {/* Population badge -- "N here" when at least one
-                      pilot is in this system room. Sits under the name
-                      label (or where the name would be, if none). Only
-                      drawn when count > 0 so empty systems stay clean. */}
-                  {bySystem[sys.id] > 0 && (
-                    <text
-                      x={sys.x}
-                      y={sys.y + size + (showLabel ? 19 : 10) * uiScale}
-                      textAnchor="middle"
-                      fill="#22d3ee"
-                      fontSize={8 * uiScale}
-                      fontFamily="monospace"
-                      opacity={0.85}
-                    >
-                      👥 {bySystem[sys.id]}
-                    </text>
-                  )}
-
-                  {/* Danger indicator -- drops down when the population
-                      badge is taking the row above. */}
-                  {showLabel && sys.dangerLevel >= 3 && (
-                    <text x={sys.x} y={sys.y + size + (bySystem[sys.id] > 0 ? 28 : 20) * uiScale}
-                      textAnchor="middle" fill="#ff4444"
-                      fontSize={7 * uiScale} fontFamily="monospace"
-                    >
-                      {'⚠'.repeat(Math.min(sys.dangerLevel, 5))}
-                    </text>
-                  )}
-
-                  {/* Clickable hitbox */}
-                  <circle cx={sys.x} cy={sys.y} r={Math.max(size * 4, 15 * uiScale)} fill="transparent" />
-                </g>
-              );
-            })}
+            {systemsLayer}
 
             {/* Galaxy autopilot line */}
             {viewMode === 'galaxy' && galaxyAutopilotTarget && (() => {
