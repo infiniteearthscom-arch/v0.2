@@ -137,12 +137,18 @@ export const getShipWeapons = (ship) => {
     // WEAPON_DEFAULTS so the migration row is source of truth. These
     // are type-level defaults so they stay on `.stats`, NOT `.quality`.
     const serverStats = fittedValue?.stats || fittedValue?.module_data?.stats;
+    // 5-tier system (migration 062): modules whose stats carry
+    // "combat_tuned": true define their OWN damage/fire_rate/range in
+    // the tuned unit shape, so a T5 weapon actually outhits a T2.
+    // Old module types have stale pre-rework stats in different units —
+    // without the flag we keep the per-TYPE defaults, exactly as before.
+    const tuned = serverStats?.combat_tuned === true;
     const loaded = fittedValue?.loaded;
     weapons.push({
       ...base,
-      damage:    Math.round(base.damage * qMult),
-      range:     Math.round((serverStats?.range ?? base.range) * qRangeMult),
-      fire_rate: base.fire_rate * qCycleMult,
+      damage:    Math.round((tuned ? (serverStats.damage ?? base.damage) : base.damage) * qMult),
+      range:     Math.round((tuned ? (serverStats.range ?? base.range) : base.range) * qRangeMult),
+      fire_rate: (tuned ? (serverStats.fire_rate ?? base.fire_rate) : base.fire_rate) * qCycleMult,
       slot_id: slot.id,
       quality_mult: qMult,
       // Pass through server-overrides for missile-only fields if present

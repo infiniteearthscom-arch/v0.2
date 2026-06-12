@@ -24,6 +24,7 @@
 // ============================================
 
 import React from 'react';
+import { tierColor, tierLabel } from '@/utils/tiers';
 
 // ============================================
 // SHARED TOOLTIP SHELL
@@ -109,7 +110,9 @@ export const ItemTooltipContent = ({ item }) => {
           {tier != null && (
             <span style={{ fontSize: '0.5625rem', color: '#94a3b8' }}>
               <span style={{ color: '#64748b' }}>Tier </span>
-              <span style={{ color: '#e2e8f0', fontWeight: 700 }}>{tier}</span>
+              {/* Unified 5-tier scale — rarity-ramp color + roman
+                  numeral matching the zone bands (utils/tiers.js). */}
+              <span style={{ color: tierColor(tier), fontWeight: 700 }}>{tierLabel(tier)}</span>
             </span>
           )}
           {stackQty != null && (

@@ -336,12 +336,18 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
         );
       }
 
-      // Add to ship's fitted modules
+      // Add to ship's fitted modules. `stats` is a snapshot of the
+      // module type's stats so the client combat loop can read per-
+      // module numbers (5-tier system, migration 062). The client only
+      // honors them when stats carry "combat_tuned": true — old module
+      // types lack the flag and keep their type-default combat behavior
+      // even after a refit, so this adds zero balance drift.
       const itemData = cargoItem.item_data || {};
       fitted[slot_id] = {
         module_type_id: mod.id,
         quality: itemData.quality || null,
         name: mod.name,
+        stats: mod.stats || null,
       };
 
       await client.query(

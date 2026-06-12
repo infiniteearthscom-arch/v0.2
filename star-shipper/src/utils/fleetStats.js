@@ -134,6 +134,25 @@ const getShipModuleBonuses = (ship) => {
     const bonus = MODULE_BONUSES[role];
     if (!bonus) continue;
     const qMult = getQualityMultiplier(fittedValue);
+
+    // 5-tier system (migration 062): modules whose fitted stats carry
+    // "combat_tuned": true define their OWN contribution (shield_hp /
+    // armor_hp / mass), so higher tiers actually tank more than the
+    // flat per-role constants. Old modules lack the flag and keep the
+    // flat MODULE_BONUSES exactly as before.
+    const stats = fittedValue?.stats;
+    if (stats?.combat_tuned === true) {
+      if (role === 'shield') {
+        bonuses.shield += (stats.shield_hp ?? bonus.shield ?? 0) * qMult;
+        continue;
+      }
+      if (role === 'armor') {
+        bonuses.armor += (stats.armor_hp ?? bonus.armor ?? 0) * qMult;
+        bonuses.mass  += (stats.mass ?? bonus.mass ?? 0); // mass doesn't scale with quality
+        continue;
+      }
+    }
+
     for (const [k, v] of Object.entries(bonus)) {
       bonuses[k] = (bonuses[k] || 0) + v * qMult;
     }

@@ -37,6 +37,7 @@ Combat depth gives the player the **tools** (the damage triangle + readable flee
 | **Rarity coupling** | **Hard gate** — rarest exotics + top-quality rolls practically only in tier III+ |
 | **Enemy scaling** | **All four** — tankier/typed defenses, elite bosses, coordinated formations, faction enemy types |
 | **Travel model** | **Warp-drive range + gate routing** — reach becomes a progression axis |
+| **Unified 5-tier scale** *(added 2026-06-11)* | One 1–5 tier ladder shared by **modules, resource rarity, galaxy zones (B1's five bands), enemy fleets, and eventually hulls/systems**. Gradual encroachment, no hard wall: T1–T2 commons (zones I–II), T3 rare-driven (zone III), T4 rares + first exotics (zone IV), T5 exotic-heavy (zone V). T3+ modules are craft-only. Module tier badges use the rarity color ramp (gray→green→blue→purple→gold, `utils/tiers.js`). **Enemy fleet difficulty is RELATIVE to player tier**: a player fleet fighting +1 tier must play crafty; +2 tiers is high difficulty; +3 is deadly/avoid. Shipped as migration 062 (18 modules T1–T5 incl. the new armor family + 7 tech nodes to tree-tier 4 + 18 recipes). |
 | **Architecture** | Real-time sim stays **client-local**; server authority only at persistence boundaries (kills→loot, death→ejection). Server-authoritative combat remains deferred. |
 
 ---
@@ -192,7 +193,7 @@ Smallest-risk first; combat depth precedes the deep-enemy roster because typed d
 | ✅ | **Combat P0+P1** — armor layer + damage triangle | none | SHIPPED 2026-06-02. Loadout now matters. |
 | ~~—~~ | ~~Combat P2 (Starfield pips)~~ | — | **CUT 2026-06-03** (built then reverted). Replaced by the A2 fleet-entity model. |
 | 2 | **Fleet-entity combat rebuild** — enemy fleets as collective entities (pooled S/A/H, formation, visual attrition, per-fleet bars, per-fleet targeting); player-fleet attrition → pod. The new combat core. | none (client model) | Biggest combat lift. Touches the protected loop + rendering — spec the hull→ship-death mapping first. |
-| 3 | **Exotic recipe pass** — author exotic/rare-requiring high-tier recipes | next free | Crafting audit done; gives the hard-gate something to bite |
+| ✅ 3 | **Exotic recipe pass / 5-tier module system** — 18 modules T1–T5 (new armor family in defense slots; one weapon per damage type at T3+T5; drives/reactors/shields/mining), 18 craft recipes keyed to resource rarity, 7 research nodes extending trees to tier 4, `combat_tuned` stats convention so module tiers have real combat numbers | **062** | SHIPPED (build-verified) 2026-06-11. T3+ craft-only. |
 | 4 | **Zoning generator** — tier bands + star bias + danger-scaled rarity/quantity/quality | (mostly code; recipe/resource tweaks via migration) | Re-rolls galaxy — warn before push |
 | 5 | **Travel gating** — `warp_range` stat + galaxy-flight range + tier-aware gate topology | next free | Touches protected travel views |
 | 6 | **Deep-enemy roster** — tankier/typed/elite-flagship/faction fleets (B4) | next free | Difficulty tuned against the fleet-entity model |

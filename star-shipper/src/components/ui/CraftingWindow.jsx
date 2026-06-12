@@ -39,12 +39,13 @@ const MODULE_SUBCATEGORIES = {
   cargo:   { label: 'Cargo',    icon: '📦', color: '#ddaa22' },
   weapon:  { label: 'Weapons',  icon: '🔫', color: '#ff2244' },
   shield:  { label: 'Shields',  icon: '🛡️', color: '#8844ff' },
+  armor:   { label: 'Armor',    icon: '🧱', color: '#d8a24a' },
   scanner: { label: 'Scanners', icon: '📡', color: '#22d3ee' },
   utility: { label: 'Utility',  icon: '🔧', color: '#22ccaa' },
   mining:  { label: 'Mining',   icon: '⛏️', color: '#aa66ff' },
 };
 
-const MODULE_SUBCAT_ORDER = ['engine', 'reactor', 'cargo', 'weapon', 'shield', 'scanner', 'utility', 'mining'];
+const MODULE_SUBCAT_ORDER = ['engine', 'reactor', 'cargo', 'weapon', 'shield', 'armor', 'scanner', 'utility', 'mining'];
 
 // Bucket a module recipe into a subcategory. Most modules use the
 // output_item_id prefix (engine_/reactor_/etc.) but scanners + the
