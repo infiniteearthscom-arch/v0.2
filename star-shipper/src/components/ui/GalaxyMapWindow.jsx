@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, FACTIONS } from '@/utils/galaxyGenerator';
+import { tierColor, tierLabel } from '@/utils/tiers';
 import presence from '@/utils/presence';
 
 // ============================================
@@ -218,6 +219,32 @@ export const GalaxyMapWindow = () => {
             {bgStars.map((s, i) => (
               <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#aabbcc" opacity={s.opacity} />
             ))}
+
+            {/* Region name labels (EVE-style) — faint, tier-colored,
+                anchored at each region's centroid UNDER the system
+                layer. Constant screen size via uiScale. Fog of war:
+                a region's name appears once any of its systems is
+                discovered. */}
+            {(galaxy.regions || []).map(reg => {
+              const known = reg.systemIds.some(id => discoveredSet.has(id));
+              if (!known) return null;
+              return (
+                <text key={reg.id}
+                  x={reg.cx} y={reg.cy}
+                  textAnchor="middle"
+                  fill={tierColor(reg.tier)}
+                  opacity={0.18}
+                  fontSize={26 * uiScale}
+                  fontFamily="'Rajdhani', sans-serif"
+                  fontWeight="800"
+                  letterSpacing={6 * uiScale}
+                  style={{ pointerEvents: 'none', textTransform: 'uppercase' }}
+                >
+                  {reg.name.toUpperCase()}
+                  <tspan fontSize={16 * uiScale} opacity={0.8}> · {tierLabel(reg.tier)}</tspan>
+                </text>
+              );
+            })}
 
             {/* Jump gate connections */}
             {connections.map(([a, b], i) => {
@@ -461,6 +488,12 @@ export const GalaxyMapWindow = () => {
                       <span className="text-slate-500">Faction</span>
                       <span style={{ color: FACTION_COLORS[selectedSys.faction] }}>
                         {FACTIONS[selectedSys.faction]?.name || selectedSys.faction}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Region</span>
+                      <span style={{ color: tierColor(selectedSys.regionTier) }}>
+                        {selectedSys.regionName} · Tier {tierLabel(selectedSys.regionTier)}
                       </span>
                     </div>
                     <div className="flex justify-between">

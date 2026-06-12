@@ -23,6 +23,7 @@ export function buildFleets(members) {
       f = {
         id: fid,
         faction: m.faction,
+        tier: m.tier || 1, // region tier (unified 5-tier scale)
         shield: 0, maxShield: 0,
         armor: 0,  maxArmor: 0,
         hull: 0,   maxHull: 0,

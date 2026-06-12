@@ -1873,7 +1873,7 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
 
     // 1. Ensure star_system exists
     let system = await queryOne(
-      `SELECT id FROM star_systems WHERE procedural_id = $1`,
+      `SELECT id, danger_level FROM star_systems WHERE procedural_id = $1`,
       [system_procedural_id]
     );
 
@@ -1883,6 +1883,17 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
         VALUES ($1, 0, 0, $2, 1.0, $3, $4)
         RETURNING id
       `, [system_name || system_procedural_id, star_type || 'yellow_star', danger_level || 0, system_procedural_id]);
+    } else if (danger_level != null && system.danger_level !== danger_level) {
+      // Keep the stored danger in sync with the client's deterministic
+      // galaxy — when the generator changes (e.g. the region-tier
+      // zoning re-roll), already-registered systems would otherwise
+      // keep their stale danger forever, and danger drives the
+      // deposit rarity/quantity/quality rolls. NEW deposit spawns use
+      // the updated value; existing un-depleted deposits are untouched.
+      await query(
+        `UPDATE star_systems SET danger_level = $1 WHERE id = $2`,
+        [danger_level, system.id]
+      );
     }
 
     // City decision is deterministic from the system seed + the body's

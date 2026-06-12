@@ -161,40 +161,37 @@ const applyStarMultiplier = (resources, starType) => {
   })).filter(r => r.spawn_weight > 0);
 };
 
-// Select a resource for a deposit slot (with optional star-type
-// weighting + danger-scaled rarity buckets — see dangerScaledChances).
-const selectResourceForDeposit = async (planetType, starType = null, dangerLevel = 0) => {
-  const chances = dangerScaledChances(dangerLevel);
+// Select a resource for a deposit slot (with optional star-type weighting)
+const selectResourceForDeposit = async (planetType, starType = null) => {
   const roll = randomInt(1, 100);
-
-  if (roll <= chances.planetCommon) {
-    // Planet's common resources
+  
+  if (roll <= SPAWN_CHANCES.PLANET_COMMON) {
+    // 70% - Planet's common resources
     let planetResources = await getResourcesForPlanetType(planetType);
     if (starType) planetResources = applyStarMultiplier(planetResources, starType);
     const commonResources = planetResources.filter(r => r.rarity === 'common');
-
+    
     if (commonResources.length > 0) {
       return selectWeightedResource(commonResources);
     }
-  } else if (roll <= chances.planetCommon + chances.planetRare) {
-    // Planet's rare resources
+  } else if (roll <= SPAWN_CHANCES.PLANET_COMMON + SPAWN_CHANCES.PLANET_RARE) {
+    // 20% - Planet's rare resources
     let planetResources = await getResourcesForPlanetType(planetType);
     if (starType) planetResources = applyStarMultiplier(planetResources, starType);
     const rareResources = planetResources.filter(r => r.rarity === 'rare' || r.rarity === 'exotic');
-
+    
     if (rareResources.length > 0) {
       return selectWeightedResource(rareResources);
     }
-  } else if (roll <= chances.planetCommon + chances.planetRare + chances.anyCommon) {
-    // Any common resource (also weighted by star type)
+  } else if (roll <= SPAWN_CHANCES.PLANET_COMMON + SPAWN_CHANCES.PLANET_RARE + SPAWN_CHANCES.ANY_COMMON) {
+    // 8% - Any common resource (also weighted by star type)
     let allCommon = await getResourcesByRarity('common');
     if (starType) allCommon = applyStarMultiplier(allCommon, starType);
     if (allCommon.length > 0) {
       return selectWeightedResource(allCommon);
     }
   } else {
-    // Any rare/exotic resource (boosted by star type; bucket grows
-    // with danger — this is THE exotic faucet for the 5-tier ladder)
+    // 2% - Any rare/exotic resource (boosted by star type)
     let allRare = await getResourcesByRarity('rare');
     let allExotic = await getResourcesByRarity('exotic');
     if (starType) {
@@ -202,12 +199,12 @@ const selectResourceForDeposit = async (planetType, starType = null, dangerLevel
       allExotic = applyStarMultiplier(allExotic, starType);
     }
     const combined = [...allRare, ...allExotic];
-
+    
     if (combined.length > 0) {
       return selectWeightedResource(combined);
     }
   }
-
+  
   // Fallback: get any common resource
   const fallback = await getResourcesByRarity('common');
   return fallback[0];
@@ -274,25 +271,23 @@ const spawnDepositsForBody = async (celestialBody) => {
     return []; // Stations, etc. don't have deposits
   }
   
-  // Danger bonus for stats — amplified from +3 to +6/level (zoning B2.3)
-  // so deep-region mining is the only practical path to top-quality
-  // inputs. At danger 5 every stat roll gets +30 on the triangular curve.
-  const dangerBonus = danger_level * 6;
-
+  // Danger bonus for stats
+  const dangerBonus = danger_level * 3; // +3 per danger level
+  
   const deposits = [];
-
+  
   for (let slot = 1; slot <= numSlots; slot++) {
-    // Select resource (weighted by star type + danger-scaled rarity)
-    const resource = await selectResourceForDeposit(effectivePlanetType, star_type, danger_level);
-
+    // Select resource (weighted by star type if available)
+    const resource = await selectResourceForDeposit(effectivePlanetType, star_type);
+    
     if (!resource) continue;
-
+    
     // Generate stats
     const isExotic = resource.rarity === 'exotic';
     const stats = generateStats(isExotic, dangerBonus);
-
-    // Generate quantity (danger-scaled)
-    const quantity = generateQuantity(resource.rarity, danger_level);
+    
+    // Generate quantity
+    const quantity = generateQuantity(resource.rarity);
     
     // Insert deposit
     const result = await queryOne(`
@@ -353,31 +348,22 @@ const respawnDepletedDeposits = async (celestialBodyId) => {
     return [];
   }
   
-  // Get body info for respawning. danger_level lives on star_systems,
-  // not celestial_bodies — the previous bare SELECT meant respawns
-  // (and initial spawns via ensureDepositsExist) always rolled at
-  // danger 0, silently disabling the danger quality bonus.
+  // Get body info for respawning
   const body = await queryOne(`
-    SELECT cb.*, COALESCE(ss.danger_level, 0) AS danger_level
-    FROM celestial_bodies cb
-    LEFT JOIN star_systems ss ON cb.system_id = ss.id
-    WHERE cb.id = $1
+    SELECT * FROM celestial_bodies WHERE id = $1
   `, [celestialBodyId]);
-
+  
   const respawned = [];
-
+  
   for (const deposit of depleted) {
-    // Select new resource (could be different!) — same danger-scaled
-    // rarity + quality + quantity as initial spawns.
-    const resource = await selectResourceForDeposit(
-      body.planet_type || body.body_type, body.star_type, body.danger_level
-    );
-
+    // Select new resource (could be different!)
+    const resource = await selectResourceForDeposit(body.planet_type || body.body_type);
+    
     if (!resource) continue;
-
+    
     const isExotic = resource.rarity === 'exotic';
-    const stats = generateStats(isExotic, body.danger_level * 6);
-    const quantity = generateQuantity(resource.rarity, body.danger_level);
+    const stats = generateStats(isExotic, 0);
+    const quantity = generateQuantity(resource.rarity);
     
     const result = await queryOne(`
       UPDATE resource_deposits
@@ -420,13 +406,9 @@ const respawnDepletedDeposits = async (celestialBodyId) => {
 
 // Ensure a body has deposits (call when player visits)
 const ensureDepositsExist = async (celestialBodyId) => {
-  // Get body info — JOIN star_systems for danger_level (see note in
-  // respawnDepletedDeposits; the bare SELECT made spawn danger 0).
+  // Get body info
   const body = await queryOne(`
-    SELECT cb.*, COALESCE(ss.danger_level, 0) AS danger_level
-    FROM celestial_bodies cb
-    LEFT JOIN star_systems ss ON cb.system_id = ss.id
-    WHERE cb.id = $1
+    SELECT * FROM celestial_bodies WHERE id = $1
   `, [celestialBodyId]);
   
   if (!body) {

@@ -265,10 +265,7 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies, systemTier = 
       enemies.push({
         id: `pirate_${nextId++}`,
         hullId, icon, faction: 'pirate',
-        // Region tier leads the name so threat level reads instantly
-        // ("T3 Pirate Destroyer (Heavy Cannon)").
-        tier: systemTier,
-        name: `T${systemTier} ${FACTIONS.pirate.name} ${sizeLabel} (${weapon.label})`,
+        name: `${FACTIONS.pirate.name} ${sizeLabel} (${weapon.label})`,
         x: startX, y: startY,
         vx: 0, vy: 0,
         rotation: rng.range(-180, 180),

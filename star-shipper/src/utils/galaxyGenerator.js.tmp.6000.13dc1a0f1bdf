@@ -365,33 +365,28 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     reg.cy = Math.round(reg.cy / n);
   }
 
-  // Tier each region by its RANK in centroid distance (quantiles, not
-  // raw distance — the center-clustered placement pushes most centroids
-  // to mid radii, which made raw-distance tiers collapse into a giant
-  // T3 band with almost no T1/T2 on-ramp). Rank buckets guarantee an
-  // even spread of regions per tier; ±1 jitter then forms the EVE-like
-  // pockets (a T3 region can sit nearer than a T2). Sol's region is
-  // pinned to tier 1, and every tier 1-5 keeps at least one region.
-  const byDist = regions
-    .slice()
-    .sort((a, b) => (a.cx * a.cx + a.cy * a.cy) - (b.cx * b.cx + b.cy * b.cy));
-  byDist.forEach((reg, rank) => {
-    let tier = 1 + Math.floor((rank / byDist.length) * 5);
-    if (rng.chance(0.25)) tier += rng.chance(0.5) ? 1 : -1;
+  // Tier each region: rough core→rim gradient from centroid distance,
+  // with jitter so tier pockets form (a T3 region can sit nearer than
+  // a T2 — that's the EVE feel). Sol's region is pinned to tier 1, and
+  // every tier 1-5 is guaranteed at least one region.
+  for (const reg of regions) {
+    const nd = Math.min(1, Math.sqrt(reg.cx * reg.cx + reg.cy * reg.cy) / GALAXY_RADIUS);
+    let tier = 1 + Math.floor(nd * 4.2);
+    if (rng.chance(0.35)) tier += rng.chance(0.5) ? 1 : -1;
     reg.tier = Math.min(5, Math.max(1, tier));
-  });
+  }
   regions[0].tier = 1;
   for (let t = 1; t <= 5; t++) {
     if (regions.some(r => r.tier === t)) continue;
-    // Re-tier the duplicated-tier region whose distance rank best fits t.
+    // Re-tier the duplicated-tier region whose distance best fits t.
     let bestR = null, bestErr = Infinity;
-    byDist.forEach((reg, rank) => {
-      if (reg === regions[0]) return;
-      if (regions.filter(o => o.tier === reg.tier).length < 2) return;
-      const ideal = 1 + (rank / byDist.length) * 5;
-      const err = Math.abs(ideal - t);
+    for (const reg of regions) {
+      if (reg === regions[0]) continue;
+      if (regions.filter(o => o.tier === reg.tier).length < 2) continue;
+      const nd = Math.min(1, Math.sqrt(reg.cx * reg.cx + reg.cy * reg.cy) / GALAXY_RADIUS);
+      const err = Math.abs((1 + nd * 4) - t);
       if (err < bestErr) { bestErr = err; bestR = reg; }
-    });
+    }
     if (bestR) bestR.tier = t;
   }
 
@@ -651,9 +646,6 @@ export const generateSystemContent = (system) => {
     bodies,
     faction: system.faction,
     dangerLevel: system.dangerLevel,
-    regionId: system.regionId,
-    regionName: system.regionName,
-    regionTier: system.regionTier,
   };
 };
 
