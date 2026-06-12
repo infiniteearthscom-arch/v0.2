@@ -395,6 +395,47 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     if (bestR) bestR.tier = t;
   }
 
+  // Region BOUNDARIES — since membership is nearest-seed, the exact
+  // region borders are the Voronoi cells of the seed systems. Each
+  // cell = the galaxy disc clipped by the perpendicular-bisector
+  // half-plane against every other seed (Sutherland-Hodgman). 15 seeds
+  // × 14 clips on tiny polygons = trivial one-time cost. The polygons
+  // are drawn on the galaxy map as region border lines.
+  const DISC_SEGMENTS = 48;
+  const discPoly = [];
+  for (let i = 0; i < DISC_SEGMENTS; i++) {
+    const a = (i / DISC_SEGMENTS) * Math.PI * 2;
+    discPoly.push({ x: Math.cos(a) * GALAXY_RADIUS * 1.06, y: Math.sin(a) * GALAXY_RADIUS * 1.06 });
+  }
+  // Keep the side of the bisector closer to seed `a` than seed `b`:
+  // dist(P,a) <= dist(P,b)  ⇔  (b-a)·P <= (|b|² - |a|²) / 2
+  const clipHalfPlane = (poly, a, b) => {
+    const nx = b.x - a.x, ny = b.y - a.y;
+    const c = (b.x * b.x + b.y * b.y - a.x * a.x - a.y * a.y) / 2;
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const cur = poly[i], nxt = poly[(i + 1) % poly.length];
+      const dCur = nx * cur.x + ny * cur.y - c;
+      const dNxt = nx * nxt.x + ny * nxt.y - c;
+      if (dCur <= 0) out.push(cur);
+      if ((dCur <= 0) !== (dNxt <= 0)) {
+        const t = dCur / (dCur - dNxt);
+        out.push({ x: cur.x + (nxt.x - cur.x) * t, y: cur.y + (nxt.y - cur.y) * t });
+      }
+    }
+    return out;
+  };
+  for (let r = 0; r < regions.length; r++) {
+    const seedSys = systems[seedIdxs[r]];
+    let poly = discPoly;
+    for (let o = 0; o < regions.length; o++) {
+      if (o === r) continue;
+      poly = clipHalfPlane(poly, seedSys, systems[seedIdxs[o]]);
+      if (poly.length === 0) break;
+    }
+    regions[r].boundary = poly.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+  }
+
   // Region names — Sol's home region is always the Core Worlds.
   const usedRegionNames = new Set();
   for (const reg of regions) {

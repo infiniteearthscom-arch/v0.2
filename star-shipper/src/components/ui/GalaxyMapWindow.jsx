@@ -220,6 +220,27 @@ export const GalaxyMapWindow = () => {
               <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#aabbcc" opacity={s.opacity} />
             ))}
 
+            {/* Region borders — the Voronoi cell polygons computed in
+                the generator, drawn as faint tier-colored dashed lines
+                so region territory reads at a glance. Same fog gate as
+                the labels. pointer-events off so panning/hover pass
+                through. */}
+            {(galaxy.regions || []).map(reg => {
+              const known = reg.systemIds.some(id => discoveredSet.has(id));
+              if (!known || !reg.boundary || reg.boundary.length < 3) return null;
+              return (
+                <polygon key={`rb-${reg.id}`}
+                  points={reg.boundary.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke={tierColor(reg.tier)}
+                  strokeWidth={1.2 * uiScale}
+                  strokeDasharray={`${10 * uiScale},${6 * uiScale}`}
+                  opacity={0.22}
+                  style={{ pointerEvents: 'none' }}
+                />
+              );
+            })}
+
             {/* Region name labels (EVE-style) — faint, tier-colored,
                 anchored at each region's centroid UNDER the system
                 layer. Constant screen size via uiScale. Fog of war:
