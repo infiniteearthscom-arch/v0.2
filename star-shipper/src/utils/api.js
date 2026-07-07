@@ -403,6 +403,23 @@ export const tradeAPI = {
   get: (tradeId) => request(`/trade/${encodeURIComponent(tradeId)}`),
 };
 
+// Combat persistence boundary (combat F4). The real-time sim is client-
+// local; these endpoints validate its outcomes server-side. claimLoot
+// replaces the old fittingAPI.awardLoot — the server checks the enemy id
+// against its deterministic pirate manifest and pays ITS number, so the
+// client can't mint credits. enterSystem resets the per-visit claim set
+// (fired from the pirate-spawn effect, i.e. whenever kills respawn).
+export const combatAPI = {
+  enterSystem: (systemId) => request('/combat/enter-system', {
+    method: 'POST',
+    body: JSON.stringify({ system_id: systemId }),
+  }),
+  claimLoot: (systemId, enemyId) => request('/combat/claim-loot', {
+    method: 'POST',
+    body: JSON.stringify({ system_id: systemId, enemy_id: enemyId }),
+  }),
+};
+
 // Wrecks — lootable spatial entities. Replaces the old direct-credit
 // awardLoot flow: enemy kills now spawn a wreck the player flies to.
 export const wrecksAPI = {
@@ -540,10 +557,6 @@ export const fittingAPI = {
   sellItem: (inventoryId, quantity) => request('/fitting/sell-item', {
     method: 'POST',
     body: JSON.stringify({ inventory_id: inventoryId, quantity: quantity || 1 }),
-  }),
-  awardLoot: (credits) => request('/fitting/award-loot', {
-    method: 'POST',
-    body: JSON.stringify({ credits }),
   }),
   // Podding (replaces /repair-cost respawn). Destroys active ship +
   // mints an Escape Pod the player flies back to a station to disembark.

@@ -5,10 +5,10 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HUL
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
-import { buildFleets, damageFleet } from '@/utils/fleetEntities';
+import { buildFleets, damageFleet, fleetFrontLayer } from '@/utils/fleetEntities';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
-import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI } from '@/utils/api';
+import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
@@ -2362,6 +2362,15 @@ export const SystemView = () => {
       enemies = generatePiratesForSystem(galaxySys?.seed || 1, dangerLevel, currentSystem.bodies, galaxySys?.regionTier ?? 1);
     }
     
+    // Combat F4: stamp the system id on every enemy — the wreck-claim path
+    // reads it off the wreck (the game loop's closure copy of
+    // currentSystemId can be stale, pitfall #7) — and reset the server-side
+    // loot-claim set for this visit (spawning IS the respawn event, so
+    // claims become re-earnable exactly now). Fire-and-forget: if it fails,
+    // stale claims just reject until the next system entry.
+    for (const e of enemies) e.systemId = currentSystemId;
+    combatAPI.enterSystem(currentSystemId).catch(() => {});
+
     enemiesRef.current = enemies;
     // Combat F1: build the pooled fleet entities from the spawned members.
     fleetsRef.current = buildFleets(enemies);
@@ -2839,17 +2848,37 @@ export const SystemView = () => {
             m.hull = 0;
             effects.push({ x: m.x, y: m.y, type: 'explosion', age: 0, size: m.displaySize });
             playSound('ship_destroyed_metal');
-            const loot = m.lootCredits || 0;
+            // F4 flagship payout: the flagship's wreck adds the fleet bounty
+            // (escorts' loot × FLAGSHIP_FLEET_BONUS_FRAC, precomputed in
+            // buildFleets). Display value only — on pickup the server pays
+            // its own manifest number for this enemy id.
+            const loot = (m.lootCredits || 0) + (m.isFlagship ? (fleet.flagshipBonus || 0) : 0);
             if (loot > 0) {
               wrecksRef.current.push({
                 id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                 x: m.x, y: m.y,
+                enemyId: m.id,
+                systemId: m.systemId,
                 contents: { credits: loot },
                 expires_at_ms: Date.now() + 5 * 60 * 1000,
               });
             }
-            // Clear target-lock if the destroyed ship was the designated one.
-            if (designatedEnemyIdRef.current === m.id) clearDesignatedEnemy();
+            // Fleet-sticky targeting (F4): when the designated ship dies,
+            // shift the lock to the fleet's next-to-die member instead of
+            // dropping it — focus stays on this fleet until the flagship
+            // falls. Ref is written immediately too: the state mirror only
+            // catches up on the next render, and a multi-kill hit resolves
+            // the whole chain inside this frame.
+            if (designatedEnemyIdRef.current === m.id) {
+              const next = fleet.deathOrder.find(o => o.hull > 0);
+              if (next) {
+                setDesignatedEnemy(next.id);
+                designatedEnemyIdRef.current = next.id;
+              } else {
+                clearDesignatedEnemy();
+                designatedEnemyIdRef.current = null;
+              }
+            }
             if (m.isFlagship) {
               // Flagship down (last to die) = whole fleet destroyed.
               playSound('ship_destroyed');
@@ -3162,21 +3191,33 @@ export const SystemView = () => {
             continue;
           }
 
-          // Target selection: designated enemy wins if it's alive AND
-          // within weapon range. Otherwise fall back to nearest-in-
-          // range (the legacy behavior). This stops missile-lock
-          // thrashing in dense clusters and lets the player pin all
-          // weapons on a specific high-priority target.
+          // Target selection (F4 fleet-focus): the designated enemy wins
+          // if it's alive AND within weapon range; failing that, the
+          // nearest LIVING member of the designated ship's FLEET in range;
+          // only then nearest-any (the legacy behavior). Weapons chew
+          // through one fleet's pool instead of splitting damage across
+          // whichever fleet drifts closest mid-fight.
           let nearest = null, nearestDist = w.range;
           const designId = designatedEnemyIdRef.current;
+          let designFleetId = null;
           if (designId) {
-            const d = enemies.find(e => e.id === designId && e.hull > 0);
+            const d = enemies.find(e => e.id === designId);
             if (d) {
-              const dist = Math.sqrt((d.x - sx) ** 2 + (d.y - sy) ** 2);
-              if (dist < w.range) {
-                nearest = d;
-                nearestDist = dist;
+              designFleetId = d.fleetId;
+              if (d.hull > 0) {
+                const dist = Math.sqrt((d.x - sx) ** 2 + (d.y - sy) ** 2);
+                if (dist < w.range) {
+                  nearest = d;
+                  nearestDist = dist;
+                }
               }
+            }
+          }
+          if (!nearest && designFleetId) {
+            for (const e of enemies) {
+              if (e.hull <= 0 || e.fleetId !== designFleetId) continue;
+              const dist = Math.sqrt((e.x - sx) ** 2 + (e.y - sy) ** 2);
+              if (dist < nearestDist) { nearest = e; nearestDist = dist; }
             }
           }
           if (!nearest) {
@@ -3748,10 +3789,11 @@ export const SystemView = () => {
 
       // --- Wreck proximity claim ---
       // Local-only wreckage: expire old wrecks (5-min TTL) and on
-      // pickup, award credits via fittingAPI.awardLoot (which works
-      // today) instead of wrecksAPI.claim (which 500s on missing
-      // table). claimingWrecksRef dedupes mid-flight requests so a
-      // 60fps loop doesn't fire awardLoot multiple times per wreck.
+      // pickup, claim via combatAPI.claimLoot (combat F4) — the server
+      // validates the enemy id against its deterministic pirate manifest
+      // and pays ITS number; the wreck's credits are display-only.
+      // claimingWrecksRef dedupes mid-flight requests so a 60fps loop
+      // doesn't fire the claim multiple times per wreck.
       if (wrecksRef.current.length > 0) {
         const now = Date.now();
         // Drop expired wrecks first (avoid claiming a stale wreck)
@@ -3765,20 +3807,28 @@ export const SystemView = () => {
           if (dx * dx + dy * dy < PICKUP_RANGE * PICKUP_RANGE) {
             claimingWrecksRef.current.add(w.id);
             const wreckId = w.id;
-            const credits = w.contents?.credits || 0;
-            fittingAPI.awardLoot(credits)
-              .then(() => {
+            combatAPI.claimLoot(w.systemId, w.enemyId)
+              .then((res) => {
                 wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
                 const fc = useGameStore.getState().fetchCredits;
                 if (fc) fc();
                 const pt = useGameStore.getState().pushToast;
-                if (pt && credits > 0) {
-                  pt({ kind: 'success', text: `+${credits} cr salvaged`, duration: 2500 });
+                const awarded = res?.awarded || 0;
+                if (pt && awarded > 0) {
+                  pt({ kind: 'success', text: `+${awarded} cr salvaged`, duration: 2500 });
                 }
                 claimingWrecksRef.current.delete(wreckId);
               })
               .catch(err => {
-                console.warn('salvage award failed:', err);
+                console.warn('salvage claim failed:', err);
+                // Validation rejects (already claimed this visit / not in
+                // the manifest) are permanent for this wreck — drop it so
+                // the loop stops re-firing. Network/5xx keeps the wreck
+                // so flying past it again retries.
+                const msg = String(err?.message || '');
+                if (msg.includes('Already salvaged') || msg.includes('No such enemy')) {
+                  wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
+                }
                 claimingWrecksRef.current.delete(wreckId);
               });
           }
@@ -4530,7 +4580,7 @@ export const SystemView = () => {
                      kind: 'info',
                      text: isDesignated
                        ? `Cleared target lock on ${enemy.name}`
-                       : `Targeting ${enemy.name} — fleet weapons + missile lock prioritize this enemy`,
+                       : `Targeting ${enemy.name} — weapons focus its fleet until the flagship falls`,
                      duration: 2200,
                    });
                  }}
@@ -4569,9 +4619,21 @@ export const SystemView = () => {
                     </g>
                   );
                 })()}
-                {/* Enemy glow */}
-                <circle cx={enemy.x} cy={enemy.y} r={enemy.displaySize + 3}
-                  fill={enemy.engineColor + '15'} />
+                {/* Enemy glow — battlefield tint (F4): color reads the
+                    fleet's CURRENT front defense layer so the right weapon
+                    choice is visible at a glance: blue = shields up (bring
+                    kinetic), amber = armor exposed (bring laser), engine
+                    color = layers stripped, ships are dying. */}
+                {(() => {
+                  const layer = fleetFrontLayer(fleetsRef.current.get(enemy.fleetId));
+                  const glow = layer === 'shield' ? '#4488ff33'
+                             : layer === 'armor' ? '#d8a24a2e'
+                             : enemy.engineColor + '15';
+                  return (
+                    <circle cx={enemy.x} cy={enemy.y} r={enemy.displaySize + 3}
+                      fill={glow} />
+                  );
+                })()}
                 {/* Enemy ship icon */}
                 {enemy.icon && (
                   <image

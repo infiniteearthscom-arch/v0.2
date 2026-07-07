@@ -1170,21 +1170,9 @@ router.post('/sell-item', authMiddleware, async (req, res) => {
   }
 });
 
-// ============================================
-// COMBAT: Award loot credits
-// ============================================
-
-router.post('/award-loot', authMiddleware, async (req, res) => {
-  try {
-    const { credits } = req.body;
-    if (!credits || credits <= 0) return res.status(400).json({ error: 'Invalid credits' });
-    const amt = Math.min(credits, 1000); // Cap per kill
-    await query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [amt, req.user.id]);
-    res.json({ success: true, awarded: amt });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to award loot' });
-  }
-});
+// (award-loot REMOVED, combat F4 -- it trusted the client's credit number,
+// the game's one credit-mint exploit. Salvage now goes through
+// /api/combat/claim-loot, validated against the server's pirate manifest.)
 
 // ============================================
 // COMBAT: Deduct repair cost on death

@@ -73,6 +73,8 @@ These have all caused real bugs. Don't relearn them:
 
 15. **Module-fit checks must be FLEET-WIDE, not active-ship-only.** "Does the player have a scanner / mining laser / sensor sweep fitted?" must enumerate every active fleet ship, not just `playerShip`. A wingman carrying the module satisfies the gate exactly like the primary. Bit mining-laser-on-non-primary, then again with scanner-on-non-primary. Client: use the `fleetHas(predicate)` helper in `SystemView.jsx` (reads `fleetShipsRef.current` — always-current, no closure staleness). Server: `SELECT fitted_modules FROM ships WHERE user_id = $1 AND storage_body_id IS NULL`. The `storage_body_id IS NULL` clause is mandatory — stored ships are parked at a station and must NOT contribute capability in space. Every future module gate (salvager, tractor beam, system-wide sweep, ...) should follow this pattern out of the gate.
 
+16. **The server's `src/game/galaxyGenerator.js` and `src/game/pirateManifest.js` are SYNC-COPIES of client code** (combat F4 loot validation). galaxyGenerator is a verbatim copy of `star-shipper/src/utils/galaxyGenerator.js`; pirateManifest hand-mirrors the pirate-spawn RNG stream from `SystemView.jsx` (`generatePiratesForSystem` + the Sol `PIRATE_SPAWN_ZONES` block) plus the loot-relevant hull numbers from `shipRenderer.js`. Any edit to those client files — including merely REORDERING `rng.*` calls — must be mirrored server-side, or `/api/combat/claim-loot` silently rejects legitimate salvage / pays wrong amounts. If you touch the client spawn code or the galaxy generator, update the server copies in the same pass.
+
 ---
 
 ## Code patterns

@@ -10,6 +10,13 @@
 import { applyDamage } from './combat';
 import { FORMATION_OFFSETS } from './shipRenderer';
 
+// Flagship payout (combat F4): the flagship's wreck pays its own loot plus
+// this fraction of its escorts' combined loot — killing the whole fleet is
+// the big payday. MUST match FLAGSHIP_FLEET_BONUS_FRAC in the server's
+// star-shipper-server/src/game/pirateManifest.js (the server pays the
+// authoritative number on claim; this one is the wreck's display value).
+export const FLAGSHIP_FLEET_BONUS_FRAC = 0.5;
+
 // Build the fleetId -> fleet-pool Map from a flat member array. Also stamps
 // `isFlagship` on each member (heaviest hull in its fleet). Returns the Map.
 export function buildFleets(members) {
@@ -48,11 +55,16 @@ export function buildFleets(members) {
     if (hp > f._flagHp) { f._flagHp = hp; f.flagshipId = m.id; }
   }
 
-  // Current pools start full; drop the scratch field.
+  // Current pools start full; drop the scratch field. flagshipBonus is the
+  // fleet bounty added to the flagship's wreck (escort loot × the shared
+  // fraction — same formula the server manifest uses).
   for (const f of fleets.values()) {
     f.shield = f.maxShield;
     f.armor  = f.maxArmor;
     f.hull   = f.maxHull;
+    const escortLoot = f.members.reduce(
+      (sum, m) => sum + (m.id === f.flagshipId ? 0 : (m.lootCredits || 0)), 0);
+    f.flagshipBonus = Math.round(FLAGSHIP_FLEET_BONUS_FRAC * escortLoot);
     delete f._flagHp;
   }
 
