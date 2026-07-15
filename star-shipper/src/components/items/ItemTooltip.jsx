@@ -47,7 +47,7 @@ export const TooltipShell = ({ accent = '#60a5fa', title, subtitle, children }) 
             </div>
           )}
           {subtitle && (
-            <div style={{ fontSize: '0.625rem', color: '#94a3b8', marginTop: 2, textTransform: 'capitalize' }}>
+            <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: 2, textTransform: 'capitalize' }}>
               {subtitle}
             </div>
           )}
@@ -62,7 +62,7 @@ export const TooltipShell = ({ accent = '#60a5fa', title, subtitle, children }) 
 // QUALITY BAR
 // ============================================
 const QualityBar = ({ label, value, color }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.625rem' }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.9rem' }}>
     <span style={{ color: '#64748b', width: 36, flexShrink: 0 }}>{label}</span>
     <div style={{ flex: 1, height: 4, background: 'rgba(15,25,45,0.6)', borderRadius: 2, overflow: 'hidden' }}>
       <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, value))}%`, background: color, borderRadius: 2 }} />
@@ -108,7 +108,7 @@ export const ItemTooltipContent = ({ item }) => {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           {tier != null && (
-            <span style={{ fontSize: '0.5625rem', color: '#94a3b8' }}>
+            <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
               <span style={{ color: '#64748b' }}>Tier </span>
               {/* Unified 5-tier scale — rarity-ramp color + roman
                   numeral matching the zone bands (utils/tiers.js). */}
@@ -116,13 +116,13 @@ export const ItemTooltipContent = ({ item }) => {
             </span>
           )}
           {stackQty != null && (
-            <span style={{ fontSize: '0.5625rem', color: '#94a3b8' }}>
+            <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
               <span style={{ color: '#64748b' }}>Qty </span>
               <span style={{ color: '#e2e8f0', fontWeight: 700 }}>×{stackQty}</span>
             </span>
           )}
           {hasQuality && (
-            <span style={{ fontSize: '0.5625rem', color: qColor, fontWeight: 700 }}>
+            <span style={{ fontSize: '0.9rem', color: qColor, fontWeight: 700 }}>
               Q{avgQ}
             </span>
           )}
@@ -152,7 +152,7 @@ export const ItemTooltipContent = ({ item }) => {
           paddingTop: 4, borderTop: '1px solid rgba(100,180,255,0.08)',
         }}>
           {stats.map((s, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem' }}>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
               <span style={{ color: '#64748b', textTransform: 'capitalize' }}>{s.label}</span>
               <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>
                 {s.value}
@@ -169,7 +169,7 @@ export const ItemTooltipContent = ({ item }) => {
       {/* Description */}
       {description && (
         <div style={{
-          fontSize: '0.625rem', color: '#94a3b8', lineHeight: 1.4, fontStyle: 'italic',
+          fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.4, fontStyle: 'italic',
           paddingTop: 4, borderTop: '1px solid rgba(100,180,255,0.08)',
         }}>
           {description}
@@ -198,17 +198,17 @@ export const ItemTooltipContent = ({ item }) => {
       {(flags?.required || flags?.equipped || flags?.outOfStock) && (
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
           {flags.required && (
-            <span style={{ fontSize: '0.5625rem', padding: '1px 6px', borderRadius: 2, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 700 }}>
+            <span style={{ fontSize: '0.9rem', padding: '1px 6px', borderRadius: 2, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 700 }}>
               REQUIRED
             </span>
           )}
           {flags.equipped && (
-            <span style={{ fontSize: '0.5625rem', padding: '1px 6px', borderRadius: 2, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>
+            <span style={{ fontSize: '0.9rem', padding: '1px 6px', borderRadius: 2, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>
               FITTED
             </span>
           )}
           {flags.outOfStock && (
-            <span style={{ fontSize: '0.5625rem', padding: '1px 6px', borderRadius: 2, background: 'rgba(100,116,139,0.15)', color: '#64748b', border: '1px solid rgba(100,116,139,0.3)', fontWeight: 700 }}>
+            <span style={{ fontSize: '0.9rem', padding: '1px 6px', borderRadius: 2, background: 'rgba(100,116,139,0.15)', color: '#64748b', border: '1px solid rgba(100,116,139,0.3)', fontWeight: 700 }}>
               OUT OF STOCK
             </span>
           )}

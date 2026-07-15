@@ -68,7 +68,7 @@ const InboxList = ({ messages, expandedId, onExpand, onDelete, busy }) => {
               }}
             >
               <span style={{
-                fontSize: '0.625rem', fontFamily: FM,
+                fontSize: '0.9rem', fontFamily: FM,
                 color: m.system_sent ? GOLD.light : '#cbd5e1',
                 fontWeight: 700,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -82,7 +82,7 @@ const InboxList = ({ messages, expandedId, onExpand, onDelete, busy }) => {
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>{m.subject}</span>
               <span style={{
-                fontSize: '0.5625rem', color: '#475569', fontFamily: FM,
+                fontSize: '0.9rem', color: '#475569', fontFamily: FM,
                 textAlign: 'right',
               }}>{fmtTs(m.sent_at)}</span>
               <button
@@ -194,7 +194,7 @@ const ComposeView = ({ onSent, onCancel }) => {
           style={{
             padding: '8px 12px',
             background: 'transparent', border: `1px solid ${EDGE}`,
-            color: '#7a8a9a', fontSize: '0.625rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+            color: '#7a8a9a', fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >Cancel</button>
@@ -356,7 +356,7 @@ const Empty = ({ children }) => (
   </div>
 );
 const Label = ({ children }) => (
-  <div style={{ fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );

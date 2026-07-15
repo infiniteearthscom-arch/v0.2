@@ -538,6 +538,10 @@ export const useGameStore = create(
           state.windows[windowId].minimized = false;
           state.topZIndex += 1;
           state.windowZIndex[windowId] = state.topZIndex;
+          // Galaxy map and system map are mutually exclusive nav surfaces
+          if (windowId === 'galaxyMap' && state.windows.systemMap) {
+            state.windows.systemMap.open = false;
+          }
         }
       }),
 
@@ -550,6 +554,10 @@ export const useGameStore = create(
             state.windows[windowId].minimized = false;
             state.topZIndex += 1;
             state.windowZIndex[windowId] = state.topZIndex;
+            // Galaxy map and system map are mutually exclusive nav surfaces
+            if (windowId === 'galaxyMap' && state.windows.systemMap) {
+              state.windows.systemMap.open = false;
+            }
           }
         }
       }),
@@ -640,6 +648,10 @@ export const useGameStore = create(
         if (state.windows.galaxyMap) {
           state.windows.galaxyMap.open = true;
           state.windows.galaxyMap.minimized = false;
+        }
+        // Galaxy map and system map are mutually exclusive nav surfaces
+        if (state.windows.systemMap) {
+          state.windows.systemMap.open = false;
         }
       }),
       

@@ -205,7 +205,7 @@ export const ActivityTicker = () => {
           <span style={{ fontSize: '0.75rem' }}>{f.icon}</span>
           <span style={{ color: f.color, fontWeight: 700, letterSpacing: 0.3 }}>{f.text}</span>
         </div>
-        <span style={{ color: '#475569', fontFamily: FM, fontSize: '0.5625rem' }}>
+        <span style={{ color: '#475569', fontFamily: FM, fontSize: '0.9rem' }}>
           {formatAge(latest.ts, now)} ago
         </span>
       </div>
@@ -248,7 +248,7 @@ const ActivityExpandedPanel = ({ now, onClose }) => {
         borderBottom: `1px solid ${EDGE}`,
         marginBottom: 4,
       }}>
-        <span style={{ fontSize: '0.5625rem', color: '#7a8a9a', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
+        <span style={{ fontSize: '0.9rem', color: '#7a8a9a', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
           Galaxy Activity
         </span>
         <button
@@ -261,7 +261,7 @@ const ActivityExpandedPanel = ({ now, onClose }) => {
         >×</button>
       </div>
       {recent.length === 0 ? (
-        <div style={{ padding: 12, color: '#475569', fontSize: '0.625rem', fontStyle: 'italic', textAlign: 'center' }}>
+        <div style={{ padding: 12, color: '#475569', fontSize: '0.9rem', fontStyle: 'italic', textAlign: 'center' }}>
           No activity yet.
         </div>
       ) : recent.map((evt) => {
@@ -278,7 +278,7 @@ const ActivityExpandedPanel = ({ now, onClose }) => {
             <span style={{ color: f.color, fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {f.text}
             </span>
-            <span style={{ color: '#475569', fontFamily: FM, fontSize: '0.5625rem' }}>
+            <span style={{ color: '#475569', fontFamily: FM, fontSize: '0.9rem' }}>
               {formatAge(evt.ts, now)} ago
             </span>
           </div>

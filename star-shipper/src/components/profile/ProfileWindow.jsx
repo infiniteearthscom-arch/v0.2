@@ -187,12 +187,12 @@ export const ProfileWindow = () => {
                   )}
                   CMDR {profile.username}
                   {isSelf && (
-                    <span style={{ color: BLUE.light, marginLeft: 8, fontSize: '0.5625rem', fontFamily: FM, fontWeight: 700 }}>
+                    <span style={{ color: BLUE.light, marginLeft: 8, fontSize: '0.9rem', fontFamily: FM, fontWeight: 700 }}>
                       (YOU)
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: '0.625rem', color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
+                <div style={{ fontSize: '0.9rem', color: BLUE.light, fontFamily: FM, letterSpacing: 1 }}>
                   Member since {formatMemberSince(profile.member_since)}
                   {profile.corp && (
                     <>
@@ -235,7 +235,7 @@ export const ProfileWindow = () => {
                     🤝 Trade
                   </button>
                   {tradeError && (
-                    <span style={{ fontSize: '0.5625rem', color: '#f87171', fontFamily: FM, maxWidth: 140, textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.9rem', color: '#f87171', fontFamily: FM, maxWidth: 140, textAlign: 'right' }}>
                       {tradeError}
                     </span>
                   )}
@@ -254,7 +254,7 @@ export const ProfileWindow = () => {
             {/* Ship classes flown */}
             <div>
               <div style={{
-                fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
+                fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
                 textTransform: 'uppercase', marginBottom: 6,
               }}>
                 Ship Classes Flown
@@ -285,7 +285,7 @@ export const ProfileWindow = () => {
                       background: `${BLUE.pri}18`,
                       border: `1px solid ${BLUE.dim}`,
                       borderRadius: 2,
-                      fontSize: '0.625rem',
+                      fontSize: '0.9rem',
                       fontFamily: FM,
                       color: BLUE.light,
                     }}>
@@ -302,7 +302,7 @@ export const ProfileWindow = () => {
             {/* Leaderboard ranks */}
             <div>
               <div style={{
-                fontSize: '0.5625rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
+                fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
                 textTransform: 'uppercase', marginBottom: 6,
               }}>
                 Leaderboard Ranks
@@ -340,7 +340,7 @@ export const ProfileWindow = () => {
                       <span style={{ color: '#94a3b8', textAlign: 'right' }}>
                         {formatValue(r.value)}
                         {r.value_suffix && (
-                          <span style={{ color: '#3a4a5a', marginLeft: 3, fontSize: '0.5625rem' }}>
+                          <span style={{ color: '#3a4a5a', marginLeft: 3, fontSize: '0.9rem' }}>
                             {r.value_suffix}
                           </span>
                         )}

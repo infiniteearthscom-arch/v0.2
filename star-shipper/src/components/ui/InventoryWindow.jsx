@@ -90,7 +90,7 @@ const CargoBar = ({ capacity, used, slotCount, usedSlots, shipCount }) => {
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: '0.5625rem',
+          fontSize: '0.9rem',
           fontFamily: FONT.mono,
           marginBottom: 5,
           letterSpacing: 0.5,
@@ -486,7 +486,7 @@ export const InventoryWindow = () => {
 
                       {stack.quantity > 1 && (
                         <div
-                          className="absolute -bottom-0.5 -right-0.5 text-[0.5625rem] font-bold px-1 rounded-sm leading-tight"
+                          className="absolute -bottom-0.5 -right-0.5 text-[0.9rem] font-bold px-1 rounded-sm leading-tight"
                           style={{ backgroundColor: '#000000cc', color: '#ffffff', minWidth: 14, textAlign: 'center' }}
                         >
                           {stack.quantity}
@@ -558,7 +558,7 @@ export const InventoryWindow = () => {
           >
             <span style={{ fontSize: '0.8125rem' }}>🗑️</span>
             <span style={{
-              fontSize: '0.625rem',
+              fontSize: '0.9rem',
               color: trashDragOver ? COLORS.RED.light : COLORS.TEXT.dim,
               fontFamily: FONT.ui,
               fontWeight: 700,
@@ -593,7 +593,7 @@ export const InventoryWindow = () => {
               fontFamily: FONT.ui,
             }}>
               <div style={{
-                fontSize: '0.5625rem',
+                fontSize: '0.9rem',
                 color: COLORS.RED.light,
                 fontFamily: FONT.mono,
                 letterSpacing: 1.5,
@@ -611,7 +611,7 @@ export const InventoryWindow = () => {
                 </span>?
               </div>
               <div style={{
-                fontSize: '0.625rem',
+                fontSize: '0.9rem',
                 color: COLORS.TEXT.muted,
                 fontFamily: FONT.mono,
                 marginBottom: 16,
@@ -650,7 +650,7 @@ export const InventoryWindow = () => {
           marginTop: 8,
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: '0.5625rem',
+          fontSize: '0.9rem',
           fontFamily: FONT.mono,
           color: COLORS.TEXT.muted,
           letterSpacing: 0.5,
@@ -663,7 +663,7 @@ export const InventoryWindow = () => {
               border: 'none',
               color: COLORS.BLUE.light,
               cursor: 'pointer',
-              fontSize: '0.5625rem',
+              fontSize: '0.9rem',
               fontFamily: FONT.mono,
               letterSpacing: 0.5,
               padding: 0,

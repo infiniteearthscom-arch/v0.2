@@ -37,6 +37,33 @@ router.get('/visits', async (req, res) => {
 });
 
 // ============================================
+// GET /galaxy/discoverers -- galaxy-wide map of system procedural id ->
+// username of the FIRST pilot ever to enter it (earliest
+// first_visited_at, user_id tie-break for determinism). Backs the
+// "Discovered by" row in the galaxy-map info panel. Sol is excluded:
+// every pilot starts there, so its earliest visit reflects
+// registration order, not exploration.
+// ============================================
+router.get('/discoverers', async (req, res) => {
+  try {
+    const rows = await queryAll(
+      `SELECT DISTINCT ON (v.system_procedural_id)
+              v.system_procedural_id, u.username
+         FROM player_system_visits v
+         JOIN users u ON u.id = v.user_id
+        WHERE v.system_procedural_id <> 'sol'
+        ORDER BY v.system_procedural_id, v.first_visited_at ASC, v.user_id`
+    );
+    const discoverers = {};
+    for (const r of rows) discoverers[r.system_procedural_id] = r.username;
+    res.json({ discoverers });
+  } catch (e) {
+    console.error('Error fetching discoverers:', e);
+    res.status(500).json({ error: 'Failed to fetch discoverers' });
+  }
+});
+
+// ============================================
 // POST /galaxy/visit -- mark a system as visited. Idempotent (ON
 // CONFLICT DO NOTHING preserves the first_visited_at timestamp).
 // Fired by the client's enterSystem store action; no harm if it

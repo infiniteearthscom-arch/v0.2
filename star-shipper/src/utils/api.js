@@ -254,6 +254,9 @@ export const asteroidsAPI = {
 // systems (drives fog of war in GalaxyMapWindow + GalaxyFlightView).
 export const galaxyAPI = {
   visits: () => request('/galaxy/visits'),
+  // System id -> username of the first pilot ever to enter it (Sol
+  // excluded server-side). Backs the "Discovered by" info-panel row.
+  discoverers: () => request('/galaxy/discoverers'),
   // systemName is optional -- passed when the caller knows it so the
   // server can include it in the activity_events payload (used by the
   // ticker for "<pilot> discovered <name>"). When omitted, the server

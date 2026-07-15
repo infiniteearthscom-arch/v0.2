@@ -67,7 +67,7 @@ export const SectionHead = ({ title, accent = COLORS.BLUE.light, icon, right, ma
     }}>{title}</span>
     {right && (
       <span style={{
-        fontSize: '0.5625rem',
+        fontSize: '0.9rem',
         color: COLORS.TEXT.dim,
         fontFamily: FONT.mono,
         letterSpacing: 0.5,
@@ -108,7 +108,7 @@ export const StatRow = ({ label, value, color = COLORS.TEXT.primary, mono = true
     display: 'flex',
     justifyContent: 'space-between',
     padding: '4px 2px',
-    fontSize: '0.625rem',
+    fontSize: '0.9rem',
     fontFamily: FONT.mono,
     borderBottom: '1px solid rgba(26,48,80,0.3)',
   }}>
@@ -151,8 +151,8 @@ export const Pill = ({ children, color = COLORS.BLUE.light, filled = false, styl
 
 export const PanelButton = ({ children, onClick, disabled, accent = COLORS.BLUE.light, size = 'md', style, ...props }) => {
   const sizes = {
-    sm: { padding: '4px 10px', fontSize: '0.5625rem' },
-    md: { padding: '6px 14px', fontSize: '0.625rem' },
+    sm: { padding: '4px 10px', fontSize: '0.9rem' },
+    md: { padding: '6px 14px', fontSize: '0.9rem' },
     lg: { padding: '8px 20px', fontSize: '0.6875rem' },
   };
   const s = sizes[size] || sizes.md;

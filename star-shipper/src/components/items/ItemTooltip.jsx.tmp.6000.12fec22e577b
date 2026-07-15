@@ -46,7 +46,7 @@ export const TooltipShell = ({ accent = '#60a5fa', title, subtitle, children }) 
             </div>
           )}
           {subtitle && (
-            <div style={{ fontSize: '0.625rem', color: '#94a3b8', marginTop: 2, textTransform: 'capitalize' }}>
+            <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: 2, textTransform: 'capitalize' }}>
               {subtitle}
             </div>
           )}
@@ -61,7 +61,7 @@ export const TooltipShell = ({ accent = '#60a5fa', title, subtitle, children }) 
 // QUALITY BAR
 // ============================================
 const QualityBar = ({ label, value, color }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.625rem' }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.9rem' }}>
     <span style={{ color: '#64748b', width: 36, flexShrink: 0 }}>{label}</span>
     <div style={{ flex: 1, height: 4, background: 'rgba(15,25,45,0.6)', borderRadius: 2, overflow: 'hidden' }}>
       <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, value))}%`, background: color, borderRadius: 2 }} />
@@ -149,7 +149,7 @@ export const ItemTooltipContent = ({ item }) => {
           paddingTop: 4, borderTop: '1px solid rgba(100,180,255,0.08)',
         }}>
           {stats.map((s, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem' }}>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
               <span style={{ color: '#64748b', textTransform: 'capitalize' }}>{s.label}</span>
               <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>
                 {s.value}
@@ -166,7 +166,7 @@ export const ItemTooltipContent = ({ item }) => {
       {/* Description */}
       {description && (
         <div style={{
-          fontSize: '0.625rem', color: '#94a3b8', lineHeight: 1.4, fontStyle: 'italic',
+          fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.4, fontStyle: 'italic',
           paddingTop: 4, borderTop: '1px solid rgba(100,180,255,0.08)',
         }}>
           {description}
