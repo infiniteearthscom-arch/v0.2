@@ -64,7 +64,7 @@ const BrowseView = ({ rows, onClaim, onlyCurrentSystem, setOnlyCurrentSystem, cu
             background: onlyCurrentSystem ? `${BLUE.pri}22` : 'transparent',
             border: `1px solid ${onlyCurrentSystem ? BLUE.pri + '88' : EDGE}`,
             color: onlyCurrentSystem ? BLUE.light : '#7a8a9a',
-            fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+            fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >
@@ -73,7 +73,7 @@ const BrowseView = ({ rows, onClaim, onlyCurrentSystem, setOnlyCurrentSystem, cu
             : 'Filter to current system'}
         </button>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM }}>
+        <span style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM }}>
           {rows.length} open
         </span>
       </div>
@@ -112,17 +112,17 @@ const BountyRow = ({ bounty, onClaim }) => {
             {bounty.target_hull_class === 'any' ? 'any pirate' : `Pirate ${bounty.target_hull_class}`}
           </span>
           {bounty.target_system_id && (
-            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.9rem', fontFamily: FM }}>
+            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.8rem', fontFamily: FM }}>
               in {bounty.target_system_id}
             </span>
           )}
         </div>
         {bounty.description && (
-          <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontFamily: F, marginTop: 2, lineHeight: 1.3 }}>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: F, marginTop: 2, lineHeight: 1.3 }}>
             "{bounty.description}"
           </div>
         )}
-        <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, marginTop: 4 }}>
+        <div style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM, marginTop: 4 }}>
           Posted by {bounty.poster_name} · {fmtAge(bounty.created_at)}
         </div>
       </div>
@@ -147,7 +147,7 @@ const BountyRow = ({ bounty, onClaim }) => {
             background: isMine ? 'transparent' : (systemMatches ? `${GREEN.pri}22` : 'rgba(20,30,50,0.4)'),
             border: `1px solid ${isMine ? EDGE : (systemMatches ? GREEN.pri + '88' : EDGE)}`,
             color: isMine ? '#475569' : (systemMatches ? GREEN.light : '#475569'),
-            fontSize: '0.9rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
+            fontSize: '0.8rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
             textTransform: 'uppercase',
             cursor: (isMine || !systemMatches) ? 'not-allowed' : 'pointer',
             borderRadius: 3,
@@ -217,7 +217,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
               onClick={() => setSystemId(currentSystem)}
               style={{
                 background: 'transparent', border: `1px solid ${EDGE}`,
-                color: '#7a8a9a', fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                color: '#7a8a9a', fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                 textTransform: 'uppercase', padding: '4px 8px', cursor: 'pointer', borderRadius: 2,
               }}
             >use current ({currentSystem})</button>
@@ -243,7 +243,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
         />
       </div>
 
-      <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
+      <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
         Escrow: <span style={{ color: GOLD.light, fontWeight: 700 }}>{fmtNum(reward)} cr</span>
         <span style={{ color: '#475569', marginLeft: 8 }}>locked when posted; refunded on cancel</span>
       </div>
@@ -254,7 +254,7 @@ const PostView = ({ onBack, onPosted, currentSystem }) => {
           style={{
             padding: '8px 12px',
             background: 'transparent', border: `1px solid ${EDGE}`,
-            color: '#7a8a9a', fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+            color: '#7a8a9a', fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
             textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
           }}
         >Cancel</button>
@@ -301,10 +301,10 @@ const MyBountiesView = ({ rows, onCancel }) => {
             <div style={{ fontSize: '0.75rem', color: '#e2e8f0', fontFamily: F, fontWeight: 700 }}>
               {b.target_hull_class === 'any' ? 'Any pirate' : `Pirate ${b.target_hull_class}`}
               {b.target_system_id && (
-                <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.9rem', fontFamily: FM }}>in {b.target_system_id}</span>
+                <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.8rem', fontFamily: FM }}>in {b.target_system_id}</span>
               )}
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, marginTop: 4 }}>
+            <div style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM, marginTop: 4 }}>
               {b.status === 'claimed' && b.claimer_name
                 ? `Claimed by ${b.claimer_name} ${fmtAge(b.claimed_at)}`
                 : `Posted ${fmtAge(b.created_at)}`}
@@ -315,7 +315,7 @@ const MyBountiesView = ({ rows, onCancel }) => {
               {fmtNum(b.reward_credits)} cr
             </div>
             <div style={{
-              fontSize: '0.9rem', fontFamily: FM, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+              fontSize: '0.8rem', fontFamily: FM, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
               color: b.status === 'open' ? BLUE.light : b.status === 'claimed' ? GREEN.light : '#475569',
             }}>{b.status}</div>
           </div>
@@ -329,7 +329,7 @@ const MyBountiesView = ({ rows, onCancel }) => {
                   background: 'transparent',
                   border: `1px solid ${RED.pri}55`,
                   color: RED.light,
-                  fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                  fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 2,
                 }}
               >Cancel</button>
@@ -478,7 +478,7 @@ const Empty = ({ children }) => (
   </div>
 );
 const Label = ({ children }) => (
-  <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );

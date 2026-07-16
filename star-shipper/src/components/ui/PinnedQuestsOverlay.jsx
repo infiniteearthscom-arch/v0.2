@@ -132,7 +132,7 @@ const PinnedTile = ({ quest, onUnpin }) => {
           </span>
         </div>
         <div style={{
-          fontSize: '0.9rem', color: '#a8b4c5', fontFamily: F,
+          fontSize: '0.8rem', color: '#a8b4c5', fontFamily: F,
           lineHeight: 1.4, marginTop: 2,
         }}>
           {quest.description}
@@ -148,7 +148,7 @@ const PinnedTile = ({ quest, onUnpin }) => {
           color: '#5a6a7a', width: 20, height: 20,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', borderRadius: 2,
-          fontSize: '0.9rem', fontFamily: F, lineHeight: 1,
+          fontSize: '0.8rem', fontFamily: F, lineHeight: 1,
           flexShrink: 0, marginTop: 1,
         }}
         onMouseEnter={(e) => { e.currentTarget.style.color = '#a04040'; e.currentTarget.style.borderColor = '#5a3030'; }}

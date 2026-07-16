@@ -165,7 +165,7 @@ export const LeaderboardsWindow = () => {
                 border: `1px solid ${EDGE}`,
                 color: '#7a8a9a',
                 padding: '4px 10px',
-                fontSize: '0.9rem',
+                fontSize: '0.8rem',
                 fontFamily: FM,
                 cursor: 'pointer',
                 borderRadius: 3,
@@ -237,7 +237,7 @@ export const LeaderboardsWindow = () => {
                 </span>
               )}
             </span>
-            <span style={{ color: '#3a4a5a', fontSize: '0.9rem' }}>
+            <span style={{ color: '#3a4a5a', fontSize: '0.8rem' }}>
               {state.generated_at ? `as of ${new Date(state.generated_at).toLocaleTimeString()}` : ''}
             </span>
           </div>
@@ -262,7 +262,7 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
         display: 'grid',
         gridTemplateColumns: '60px 1fr 140px',
         padding: '6px 12px',
-        fontSize: '0.9rem',
+        fontSize: '0.8rem',
         fontFamily: FM,
         color: '#475569',
         textTransform: 'uppercase',
@@ -307,11 +307,11 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
               fontWeight: isMe ? 800 : 600,
               fontSize: '0.75rem',
             }}>
-              {e.username}{isMe && <span style={{ color: BLUE.light, marginLeft: 6, fontSize: '0.9rem', fontFamily: FM }}>(YOU)</span>}
+              {e.username}{isMe && <span style={{ color: BLUE.light, marginLeft: 6, fontSize: '0.8rem', fontFamily: FM }}>(YOU)</span>}
             </span>
             <span style={{ color: '#e2e8f0', textAlign: 'right', fontWeight: 700 }}>
               {formatValue(e.value)}
-              <span style={{ color: '#3a4a5a', marginLeft: 4, fontSize: '0.9rem' }}>{board.value_suffix}</span>
+              <span style={{ color: '#3a4a5a', marginLeft: 4, fontSize: '0.8rem' }}>{board.value_suffix}</span>
             </span>
           </div>
         );
@@ -323,7 +323,7 @@ const BoardTable = ({ board, entries, yourRank, myUserId, onOpenProfile }) => {
           padding: 12,
           textAlign: 'center',
           color: '#475569',
-          fontSize: '0.9rem',
+          fontSize: '0.8rem',
           fontFamily: FM,
           fontStyle: 'italic',
         }}>

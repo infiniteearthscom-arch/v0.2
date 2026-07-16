@@ -107,7 +107,7 @@ const OnlineRosterIndicator = () => {
       }}
       title={tooltip}
     >
-      <span style={{ fontSize: '0.9rem' }}>👥</span>
+      <span style={{ fontSize: '0.8rem' }}>👥</span>
       <span className="font-bold">{total}</span>
       <span style={{ color: '#3a4a5a', fontSize: '0.5rem' }}>ONLINE</span>
       {here > 0 && (
@@ -190,13 +190,13 @@ const TopBar = () => {
       {/* Logo */}
       <div className="flex items-center gap-1.5 mr-3 h-full pr-3" style={{ borderRight: `1px solid ${EDGE}`, background: `linear-gradient(135deg, ${BLUE.pri}20, transparent)` }}>
         <div className="w-5 h-5 flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${BLUE.pri}, ${BLUE.dark})`, clipPath: 'polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px)' }}>
-          <span className="text-white text-[0.9rem] font-black">★</span>
+          <span className="text-white text-[0.8rem] font-black">★</span>
         </div>
         <span className="text-xs font-extrabold tracking-widest" style={{ color: BLUE.light }}>STAR SHIPPER</span>
       </div>
 
       {/* Credits + Fleet count */}
-      <div className="flex items-center gap-0.5" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.9rem' }}>
+      <div className="flex items-center gap-0.5" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.8rem' }}>
         <div className="flex items-center gap-1 px-2 h-5" style={{ borderRight: `1px solid ${EDGE}` }} title="Credits">
           <span style={{ fontSize: '0.6875rem' }}>⬡</span>
           <span className="font-bold" style={{ color: GOLD.light }}>{credits.toLocaleString()}</span>
@@ -217,7 +217,7 @@ const TopBar = () => {
           Active training indicator sits first so it has a consistent
           spot regardless of whether the conditional indicators (enemies,
           autopilot) are visible. Clickable -> opens Skills & Research. */}
-      <div className="flex items-center gap-3 flex-1 ml-3" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.9rem' }}>
+      <div className="flex items-center gap-3 flex-1 ml-3" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.8rem' }}>
         <ActiveTrainingIndicator
           variant="compact"
           onOpenSkills={() => {
@@ -252,22 +252,22 @@ const TopBar = () => {
       </div>
 
       {/* Right cluster: ship name, user, reset */}
-      <div className="flex items-center gap-2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.9rem' }}>
+      <div className="flex items-center gap-2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.8rem' }}>
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
         {/* Ship name */}
         <div className="px-2 py-0.5" style={{ borderLeft: `2px solid ${BLUE.dim}`, background: `rgba(12,26,51,0.4)` }}>
-          <div className="text-[0.9rem] font-bold" style={{ color: '#c8d6e5' }}>{activeShip?.name || 'No Ship'}</div>
+          <div className="text-[0.8rem] font-bold" style={{ color: '#c8d6e5' }}>{activeShip?.name || 'No Ship'}</div>
           <div className="text-[0.4375rem]" style={{ color: '#3a5a6a' }}>{activeShip?.hull_name || ''}</div>
         </div>
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
         {/* User */}
-        <span className="text-[0.9rem] mr-1" style={{ color: '#5a6a7a' }}>{user?.username}</span>
+        <span className="text-[0.8rem] mr-1" style={{ color: '#5a6a7a' }}>{user?.username}</span>
         <button
           onClick={() => { playSound('button_click'); logout(); }}
-          className="text-[0.9rem] px-1.5 py-0.5 rounded hover:text-red-400 transition-colors"
+          className="text-[0.8rem] px-1.5 py-0.5 rounded hover:text-red-400 transition-colors"
           style={{ color: '#3a4a5a', border: `1px solid ${EDGE}` }}
           title="Sign Out"
         >✕</button>
@@ -277,7 +277,7 @@ const TopBar = () => {
         {/* Settings */}
         <button
           onClick={() => { playSound('button_click'); toggleWindow('settings'); }}
-          className="text-[0.9rem] px-1.5 py-0.5 rounded transition-colors ml-1"
+          className="text-[0.8rem] px-1.5 py-0.5 rounded transition-colors ml-1"
           style={{
             color: settingsOpen ? BLUE.light : '#7a8a9a',
             border: `1px solid ${settingsOpen ? `${BLUE.pri}55` : EDGE}`,
@@ -418,7 +418,7 @@ const LeftToolbar = () => {
                       padding: '0 4px',
                       background: '#ef4444',
                       color: '#fff',
-                      fontSize: '0.9rem', fontWeight: 800,
+                      fontSize: '0.8rem', fontWeight: 800,
                       fontFamily: "'Share Tech Mono', monospace",
                       borderRadius: 7,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -454,7 +454,7 @@ const LeftToolbar = () => {
           border: `1px solid ${EDGE}`,
           borderRadius: 3,
           color: BLUE.light,
-          fontSize: '0.9rem',
+          fontSize: '0.8rem',
           fontFamily: "'Share Tech Mono', monospace",
           cursor: 'pointer',
           padding: 0,

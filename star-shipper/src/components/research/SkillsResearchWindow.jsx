@@ -149,7 +149,7 @@ const SkillsTab = () => {
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Categories sidebar */}
         <div style={{ width: 180, borderRight: `1px solid ${EDGE}`, overflowY: 'auto', flexShrink: 0 }}>
-          <div style={{ padding: '8px 12px', fontSize: '0.9rem', fontFamily: FM, color: '#3a5a6a', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+          <div style={{ padding: '8px 12px', fontSize: '0.8rem', fontFamily: FM, color: '#3a5a6a', letterSpacing: 1.5, textTransform: 'uppercase' }}>
             Categories
           </div>
           {categories.map(c => {
@@ -173,7 +173,7 @@ const SkillsTab = () => {
                 }}
               >
                 <span>{c.name}</span>
-                <span style={{ fontSize: '0.9rem', color: '#3a5a6a', fontFamily: FM }}>{c.count}</span>
+                <span style={{ fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM }}>{c.count}</span>
               </div>
             );
           })}
@@ -181,7 +181,7 @@ const SkillsTab = () => {
 
         {/* Skill list */}
         <div style={{ flex: '0 0 320px', borderRight: `1px solid ${EDGE}`, overflowY: 'auto' }}>
-          <div style={{ padding: '8px 12px', fontSize: '0.9rem', fontFamily: FM, color: '#3a5a6a', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+          <div style={{ padding: '8px 12px', fontSize: '0.8rem', fontFamily: FM, color: '#3a5a6a', letterSpacing: 1.5, textTransform: 'uppercase' }}>
             {selectedCategory || 'Skills'}
           </div>
           {(() => {
@@ -250,7 +250,7 @@ const SkillsTab = () => {
                     {s.name}
                   </span>
                   <span style={{
-                    fontSize: '0.9rem',
+                    fontSize: '0.8rem',
                     color: isTraining
                       ? GREEN.light
                       : isMaxed
@@ -264,7 +264,7 @@ const SkillsTab = () => {
                   </span>
                 </div>
                 <div style={{
-                  fontSize: '0.9rem',
+                  fontSize: '0.8rem',
                   color: isMaxed ? GOLD.light : (isCompleted ? '#86efac' : '#4a6580'),
                   fontFamily: FM, marginTop: 2, letterSpacing: 0.3,
                   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
@@ -343,7 +343,7 @@ const SkillsTab = () => {
                 <div style={{ fontSize: '1.125rem', fontFamily: F, fontWeight: 800, color: '#e2e8f0', letterSpacing: 0.5 }}>
                   {selected.name} <span style={{ color: BLUE.light, fontSize: '0.875rem' }}>{ROMAN[selected.level] || '—'}</span>
                 </div>
-                <div style={{ fontSize: '0.9rem', fontFamily: FM, color: '#5a7080', marginTop: 4, letterSpacing: 0.5 }}>
+                <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080', marginTop: 4, letterSpacing: 0.5 }}>
                   RANK {selected.rank_multiplier} · {selected.category}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginTop: 12, lineHeight: 1.5, fontFamily: F }}>
@@ -352,7 +352,7 @@ const SkillsTab = () => {
                 {bonusText && (
                   <div style={{
                     marginTop: 12, padding: '8px 10px', background: `${BLUE.pri}10`,
-                    borderLeft: `2px solid ${BLUE.pri}`, fontSize: '0.9rem', fontFamily: FM, color: BLUE.light,
+                    borderLeft: `2px solid ${BLUE.pri}`, fontSize: '0.8rem', fontFamily: FM, color: BLUE.light,
                   }}>
                     {bonusText}
                   </div>
@@ -360,7 +360,7 @@ const SkillsTab = () => {
 
                 {/* SP progress */}
                 <div style={{ marginTop: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', fontFamily: FM, color: '#5a7080', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontFamily: FM, color: '#5a7080', marginBottom: 4 }}>
                     <span>SP: {selected.sp.toLocaleString()}</span>
                     <span>Next: {selected.sp_for_next_level ? selected.sp_for_next_level.toLocaleString() : '— maxed —'}</span>
                   </div>
@@ -386,7 +386,7 @@ const SkillsTab = () => {
                     borderRadius: 2,
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                   }}>
-                    <div style={{ fontSize: '0.9rem', fontFamily: FM, color: GOLD.light, letterSpacing: 0.5 }}>
+                    <div style={{ fontSize: '0.8rem', fontFamily: FM, color: GOLD.light, letterSpacing: 0.5 }}>
                       🔒 Requires research: <span style={{ color: '#fde68a', fontWeight: 700 }}>{selected.requires_tech_name || selected.requires_tech}</span>
                     </div>
                     <button
@@ -402,7 +402,7 @@ const SkillsTab = () => {
                         color: GOLD.light,
                         padding: '4px 10px',
                         cursor: 'pointer',
-                        fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
+                        fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
                         textTransform: 'uppercase', borderRadius: 2, whiteSpace: 'nowrap',
                       }}
                     >
@@ -414,7 +414,7 @@ const SkillsTab = () => {
                 {/* Train buttons */}
                 <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {isMaxed ? (
-                    <div style={{ fontSize: '0.9rem', fontFamily: FM, color: GOLD.light }}>★ MAX LEVEL</div>
+                    <div style={{ fontSize: '0.8rem', fontFamily: FM, color: GOLD.light }}>★ MAX LEVEL</div>
                   ) : (() => {
                     const techLocked = selected.requires_tech && !selected.tech_unlocked;
                     const disabled = queueFull || techLocked;
@@ -429,14 +429,14 @@ const SkillsTab = () => {
                             color: disabled ? '#4a5a6a' : BLUE.light,
                             padding: '6px 12px',
                             cursor: disabled ? 'not-allowed' : 'pointer',
-                            fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
+                            fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
                             textTransform: 'uppercase', borderRadius: 2,
                           }}
                         >
                           Queue Train → {ROMAN[nextLevel]}
                         </button>
                         {queueFull && !techLocked && (
-                          <div style={{ fontSize: '0.9rem', color: '#7a4040', fontFamily: FM, alignSelf: 'center' }}>
+                          <div style={{ fontSize: '0.8rem', color: '#7a4040', fontFamily: FM, alignSelf: 'center' }}>
                             Queue full ({maxQueue})
                           </div>
                         )}
@@ -447,7 +447,7 @@ const SkillsTab = () => {
               </>
             );
           })() : (
-            <div style={{ fontSize: '0.9rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
+            <div style={{ fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
               Select a skill to view details.
             </div>
           )}
@@ -477,17 +477,17 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove }) => {
         marginBottom: 6,
       }}>
         <div style={{
-          fontSize: '0.9rem', fontFamily: FM, color: '#5a7080',
+          fontSize: '0.8rem', fontFamily: FM, color: '#5a7080',
           letterSpacing: 1.5, textTransform: 'uppercase',
         }}>
           Training Queue ({queue.length}/10)
         </div>
-        <div style={{ fontSize: '0.9rem', fontFamily: FM, color: '#5a7080' }}>
+        <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080' }}>
           {spPerMin} SP/min
         </div>
       </div>
       {queue.length === 0 ? (
-        <div style={{ fontSize: '0.9rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
+        <div style={{ fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
           No skills queued. Pick a skill above and queue a level.
         </div>
       ) : (
@@ -514,7 +514,7 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove }) => {
                     {isHead && <span style={{ color: GREEN.light, marginLeft: 8, fontSize: '0.5rem', fontFamily: FM, letterSpacing: 0.5 }}>TRAINING</span>}
                   </div>
                 </div>
-                <div style={{ fontSize: '0.9rem', fontFamily: FM, color: '#7a8a9a' }}>
+                <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#7a8a9a' }}>
                   {formatDuration(remaining)}
                 </div>
                 <button
@@ -522,7 +522,7 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove }) => {
                   style={{
                     background: 'transparent', border: '1px solid #5a3030',
                     color: '#a04040', padding: '2px 6px', cursor: 'pointer',
-                    fontSize: '0.9rem', borderRadius: 2, fontFamily: F,
+                    fontSize: '0.8rem', borderRadius: 2, fontFamily: F,
                   }}
                   title="Cancel"
                 >
@@ -589,7 +589,7 @@ const ResearchTab = ({ initialTree }) => {
           <span style={{ fontSize: '0.6875rem', fontFamily: FM, color: GREEN.light, fontWeight: 700 }}>
             {liveRp.toLocaleString()} RP
           </span>
-          <span style={{ fontSize: '0.9rem', fontFamily: FM, color: '#5a7080' }}>· {RP_PER_MIN}/min</span>
+          <span style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080' }}>· {RP_PER_MIN}/min</span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {TREES.map(t => {
@@ -603,7 +603,7 @@ const ResearchTab = ({ initialTree }) => {
                   background: active ? `${t.accent}20` : 'rgba(10,16,28,0.4)',
                   border: `1px solid ${active ? t.accent : EDGE}`,
                   color: active ? t.accent : '#7a8a9a',
-                  fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
+                  fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5,
                   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 2,
                 }}
               >
@@ -859,7 +859,7 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
           {tech.description}
         </div>
         {unlockLines.length > 0 && (
-          <div style={{ marginTop: 12, padding: '8px 10px', background: `${GREEN.pri}10`, borderLeft: `2px solid ${GREEN.pri}`, fontSize: '0.9rem', fontFamily: FM, color: GREEN.light }}>
+          <div style={{ marginTop: 12, padding: '8px 10px', background: `${GREEN.pri}10`, borderLeft: `2px solid ${GREEN.pri}`, fontSize: '0.8rem', fontFamily: FM, color: GREEN.light }}>
             {unlockLines.map((l, i) => <div key={i}>{l}</div>)}
           </div>
         )}
@@ -872,7 +872,7 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
             style={{
               background: 'transparent', border: `1px solid ${EDGE}`,
               color: '#7a8a9a', padding: '6px 14px', cursor: 'pointer',
-              fontSize: '0.9rem', fontFamily: F, letterSpacing: 0.5, textTransform: 'uppercase',
+              fontSize: '0.8rem', fontFamily: F, letterSpacing: 0.5, textTransform: 'uppercase',
             }}
           >
             Cancel
@@ -885,7 +885,7 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
               border: `1px solid ${canAfford ? GREEN.pri : EDGE}`,
               color: canAfford ? GREEN.light : '#4a5a6a',
               padding: '6px 14px', cursor: canAfford ? 'pointer' : 'not-allowed',
-              fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+              fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
             }}
           >
             Research
@@ -983,7 +983,7 @@ export const SkillsResearchWindow = () => {
                     background: active ? `${BLUE.pri}20` : 'transparent',
                     border: `1px solid ${active ? BLUE.pri : EDGE}`,
                     color: active ? BLUE.light : '#7a8a9a',
-                    fontSize: '0.9rem', fontFamily: F, fontWeight: 700,
+                    fontSize: '0.8rem', fontFamily: F, fontWeight: 700,
                     letterSpacing: 1, textTransform: 'uppercase',
                     cursor: 'pointer', borderRadius: 2,
                   }}

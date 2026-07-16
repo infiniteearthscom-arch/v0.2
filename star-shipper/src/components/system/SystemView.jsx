@@ -4845,7 +4845,7 @@ export const SystemView = () => {
                     <>
                       <div style={{
                         marginBottom: 6, color: '#a0c860', fontWeight: 700,
-                        fontSize: '0.9rem', letterSpacing: 0.5, textTransform: 'uppercase',
+                        fontSize: '0.8rem', letterSpacing: 0.5, textTransform: 'uppercase',
                       }}>
                         Asteroid Contents
                       </div>
@@ -4863,7 +4863,7 @@ export const SystemView = () => {
                             marginBottom: 6, paddingBottom: 6,
                             borderBottom: '1px solid #2a3a4a',
                           }}>
-                            <span style={{ color: '#8a99aa', fontSize: '0.9rem' }}>Quality</span>
+                            <span style={{ color: '#8a99aa', fontSize: '0.8rem' }}>Quality</span>
                             <span style={{ color: tier.color, fontWeight: 700 }}>
                               {tier.name} <span style={{ color: '#7a8a9a', fontWeight: 400 }}>(Q{avg})</span>
                             </span>
@@ -4888,7 +4888,7 @@ export const SystemView = () => {
                       {isMineTarget && (
                         <div style={{
                           marginTop: 6, paddingTop: 6, borderTop: '1px solid #2a3a4a',
-                          color: '#ffaa44', fontSize: '0.9rem', letterSpacing: 0.5,
+                          color: '#ffaa44', fontSize: '0.8rem', letterSpacing: 0.5,
                         }}>
                           ▸ MINING ACTIVE ({assignedLaserCount} laser{assignedLaserCount === 1 ? '' : 's'})
                         </div>
@@ -4897,7 +4897,7 @@ export const SystemView = () => {
                   ) : (
                     <div style={{ color: '#888' }}>
                       Unsurveyed asteroid<br />
-                      <span style={{ color: '#666', fontSize: '0.9rem' }}>Click to scan</span>
+                      <span style={{ color: '#666', fontSize: '0.8rem' }}>Click to scan</span>
                     </div>
                   )}
                 </div>
@@ -5126,7 +5126,7 @@ export const SystemView = () => {
                   return (
                     <div key={r.label} className="flex items-center gap-2" style={{ height: 15 }}>
                       <span style={{ color: has ? r.color : '#3a4a5a', fontSize: '0.5rem', width: 8 }}>{r.icon}</span>
-                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: '0.9rem', width: 30 }}>{r.label}</span>
+                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: '0.8rem', width: 30 }}>{r.label}</span>
                       <div style={{ flex: 1, height: 6, background: r.track, borderRadius: 2, overflow: 'hidden' }}>
                         {has && (
                           <div style={{
@@ -5137,7 +5137,7 @@ export const SystemView = () => {
                           }} />
                         )}
                       </div>
-                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: '0.9rem', width: 62, textAlign: 'right' }}>
+                      <span style={{ color: has ? r.color : '#3a4a5a', fontSize: '0.8rem', width: 62, textAlign: 'right' }}>
                         {has ? `${r.cur}/${r.max}` : '—'}
                       </span>
                     </div>
@@ -5181,7 +5181,7 @@ export const SystemView = () => {
                         : 'linear-gradient(180deg, #22d3ee22, #22d3ee08)',
                       border: `1px solid ${areaActive ? '#fbbf24aa' : '#22d3ee55'}`,
                       color: areaActive ? '#fbbf24' : '#22d3ee',
-                      fontSize: '0.9rem', fontWeight: 800, letterSpacing: 1,
+                      fontSize: '0.8rem', fontWeight: 800, letterSpacing: 1,
                       textTransform: 'uppercase', cursor: 'pointer',
                       borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
                     }}
@@ -5204,7 +5204,7 @@ export const SystemView = () => {
                           : 'linear-gradient(180deg, #a855f722, #a855f708)',
                         border: `1px solid ${disabled ? '#1e293b' : '#a855f755'}`,
                         color: disabled ? '#475569' : '#c084fc',
-                        fontSize: '0.9rem', fontWeight: 800, letterSpacing: 1,
+                        fontSize: '0.8rem', fontWeight: 800, letterSpacing: 1,
                         textTransform: 'uppercase',
                         cursor: disabled ? 'not-allowed' : 'pointer',
                         borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
@@ -5232,7 +5232,7 @@ export const SystemView = () => {
                           : 'linear-gradient(180deg, #f59e0b22, #f59e0b08)'),
                       border: `1px solid ${sweepActive ? '#fbbf24' : (sweepCooldownRemain > 0 ? '#1e293b' : '#f59e0b55')}`,
                       color: sweepActive ? '#fde68a' : (sweepCooldownRemain > 0 ? '#475569' : '#f59e0b'),
-                      fontSize: '0.9rem', fontWeight: 800, letterSpacing: 1,
+                      fontSize: '0.8rem', fontWeight: 800, letterSpacing: 1,
                       textTransform: 'uppercase',
                       cursor: sweepCooldownRemain > 0 && !sweepActive ? 'not-allowed' : 'pointer',
                       borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",

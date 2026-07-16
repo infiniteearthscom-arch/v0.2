@@ -45,11 +45,11 @@ const SectionHeader = ({ title, right, accent = BLUE.light }) => (
     marginBottom: 6, marginTop: 4,
   }}>
     <span style={{
-      fontSize: '0.9rem', color: accent, fontWeight: 800,
+      fontSize: '0.8rem', color: accent, fontWeight: 800,
       fontFamily: F, letterSpacing: 1.5, textTransform: 'uppercase',
       flex: 1,
     }}>{title}</span>
-    {right && <span style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM }}>{right}</span>}
+    {right && <span style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM }}>{right}</span>}
   </div>
 );
 
@@ -87,7 +87,7 @@ const SummaryView = ({ rows, onDrill, onSwitchView }) => {
         >
           <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 700, fontSize: '0.6875rem' }}>
             {displayName(r)}
-            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.9rem', fontFamily: FM }}>
+            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.8rem', fontFamily: FM }}>
               {r.item_type === 'resource' ? 'RES' : 'ITEM'}
             </span>
           </span>
@@ -146,7 +146,7 @@ const BookView = ({ stationBodyId, target, onBack, onAfter }) => {
         <span style={{ fontSize: '0.8125rem', color: '#e2e8f0', fontFamily: F, fontWeight: 800, letterSpacing: 1, marginLeft: 8 }}>
           {displayName(target)}
         </span>
-        <span style={{ fontSize: '0.9rem', color: '#475569', marginLeft: 8, fontFamily: FM }}>
+        <span style={{ fontSize: '0.8rem', color: '#475569', marginLeft: 8, fontFamily: FM }}>
           {target.item_type === 'resource' ? 'RES' : 'ITEM'}
         </span>
       </div>
@@ -238,7 +238,7 @@ const OrderRow = ({ order, actionLabel, busy, target, onAct }) => {
   return (
     <div style={orderRowStyle}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 70px', alignItems: 'center', gap: 6, padding: '6px 8px' }}>
-        <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontFamily: FM, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: FM, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {order.poster_name}
           {target.item_type === 'resource' && order.side === 'sell' && order.stat_purity != null && (
             <span style={{ color: '#475569', marginLeft: 4 }}>
@@ -263,7 +263,7 @@ const OrderRow = ({ order, actionLabel, busy, target, onAct }) => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {isBuyOrder && stacks != null && stacks.length === 0 && (
-              <span style={{ fontSize: '0.9rem', color: RED.light, fontFamily: FM }}>You have no matching stacks to sell.</span>
+              <span style={{ fontSize: '0.8rem', color: RED.light, fontFamily: FM }}>You have no matching stacks to sell.</span>
             )}
             {isBuyOrder && stacks && stacks.length > 0 && (
               <select
@@ -441,7 +441,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
                     background: itemTypeForBuy === t ? `${BLUE.pri}24` : 'transparent',
                     border: `1px solid ${itemTypeForBuy === t ? BLUE.pri + '88' : EDGE}`,
                     color: itemTypeForBuy === t ? BLUE.light : '#7a8a9a',
-                    fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                    fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                     textTransform: 'uppercase', cursor: 'pointer', borderRadius: 3,
                   }}
                 >{t}</button>
@@ -484,7 +484,7 @@ const PostView = ({ stationBodyId, onBack, onAfter }) => {
         </div>
       </div>
 
-      <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
+      <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: FM, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 2 }}>
         Total escrow: <span style={{ color: GOLD.light, fontWeight: 700 }}>{fmtNum(price * qty)} cr</span>
         {side === 'sell' && (
           <span style={{ color: '#475569', marginLeft: 8 }}>(items locked from your cargo until cancelled/filled)</span>
@@ -541,12 +541,12 @@ const MyOrdersPanel = ({ refreshKey, onChanged }) => {
           borderBottom: `1px solid rgba(26,48,80,0.2)`,
           fontSize: '0.6875rem', fontFamily: FM,
         }}>
-          <span style={{ color: o.side === 'sell' ? GOLD.light : GREEN.light, fontWeight: 800, letterSpacing: 1, fontSize: '0.9rem' }}>
+          <span style={{ color: o.side === 'sell' ? GOLD.light : GREEN.light, fontWeight: 800, letterSpacing: 1, fontSize: '0.8rem' }}>
             {o.side.toUpperCase()}
           </span>
           <span style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {o.item_type === 'resource' ? o.resource_type_id : o.item_id}
-            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.9rem' }}>@ {o.station_name || 'this station'}</span>
+            <span style={{ color: '#475569', marginLeft: 6, fontSize: '0.8rem' }}>@ {o.station_name || 'this station'}</span>
           </span>
           <span style={{ color: GOLD.light, textAlign: 'right' }}>{fmtNum(o.price_per_unit)} cr</span>
           <span style={{ color: '#cbd5e1', textAlign: 'right' }}>×{fmtNum(o.quantity_remaining)}</span>
@@ -658,21 +658,21 @@ const Empty = ({ children }) => (
   </div>
 );
 const Label = ({ children }) => (
-  <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );
 const postLinkStyle = {
   background: 'transparent', border: `1px solid ${BLUE.pri}55`,
   color: BLUE.light, padding: '4px 10px', borderRadius: 3,
-  fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+  fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
   textTransform: 'uppercase', cursor: 'pointer',
 };
 const tableHeaderStyle = {
   display: 'grid',
   gridTemplateColumns: '1fr 90px 90px 80px 80px',
   padding: '4px 10px',
-  fontSize: '0.9rem', color: '#475569', fontFamily: FM,
+  fontSize: '0.8rem', color: '#475569', fontFamily: FM,
   textTransform: 'uppercase', letterSpacing: 1,
 };
 const tableRowStyle = {
@@ -688,7 +688,7 @@ const tableRowStyle = {
 const numCellStyle = { textAlign: 'right', fontSize: '0.6875rem', fontFamily: FM, fontWeight: 700 };
 const backBtnStyle = {
   background: 'transparent', border: `1px solid ${EDGE}`,
-  color: '#7a8a9a', fontSize: '0.9rem', fontFamily: F, fontWeight: 700,
+  color: '#7a8a9a', fontSize: '0.8rem', fontFamily: F, fontWeight: 700,
   padding: '4px 8px', cursor: 'pointer', borderRadius: 3,
   letterSpacing: 1, textTransform: 'uppercase',
 };
@@ -704,7 +704,7 @@ const fulfillBtnStyle = (side, primary) => ({
   background: side === 'buy' ? `${GREEN.pri}24` : `${GOLD.pri}24`,
   border: `1px solid ${side === 'buy' ? GREEN.pri + '88' : GOLD.pri + '88'}`,
   color: side === 'buy' ? GREEN.light : GOLD.light,
-  fontSize: '0.9rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
+  fontSize: '0.8rem', fontFamily: F, fontWeight: 800, letterSpacing: 1,
   textTransform: 'uppercase', cursor: 'pointer', borderRadius: 2,
 });
 const cancelBtnStyle = {
@@ -714,7 +714,7 @@ const cancelBtnStyle = {
 };
 const cancelOrderBtnStyle = {
   background: 'transparent', border: `1px solid ${RED.pri}55`,
-  color: RED.light, fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+  color: RED.light, fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
   textTransform: 'uppercase', padding: '4px 8px', cursor: 'pointer', borderRadius: 2,
 };
 const qtyInputStyle = {

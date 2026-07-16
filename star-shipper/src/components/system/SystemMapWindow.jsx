@@ -559,7 +559,7 @@ export const SystemMapWindow = () => {
               padding: '3px 9px',
               cursor: 'pointer',
               borderRadius: 2,
-              fontSize: '0.9rem',
+              fontSize: '0.8rem',
               fontFamily: F,
               fontWeight: 700,
               letterSpacing: 0.8,
@@ -624,7 +624,7 @@ export const SystemMapWindow = () => {
             }}>
               <div style={{
                 padding: '8px 12px 4px',
-                fontSize: '0.9rem', fontFamily: FM,
+                fontSize: '0.8rem', fontFamily: FM,
                 color: GOLD.light,
                 letterSpacing: 1.5,
                 textTransform: 'uppercase',
@@ -681,7 +681,7 @@ export const SystemMapWindow = () => {
                           textOverflow: 'ellipsis',
                         }}>{body.name}</div>
                         <div style={{
-                          fontSize: '0.9rem', color: '#5a7080', fontFamily: FM,
+                          fontSize: '0.8rem', color: '#5a7080', fontFamily: FM,
                           letterSpacing: 0.3,
                         }}>
                           {BODY_TYPE_LABEL[body.type] || body.type} · {formatDistance(distance)}
@@ -699,7 +699,7 @@ export const SystemMapWindow = () => {
         <div style={{
           padding: '6px 12px',
           borderTop: `1px solid ${EDGE}`,
-          fontSize: '0.9rem',
+          fontSize: '0.8rem',
           color: '#5a7080',
           fontFamily: FM,
           flexShrink: 0,
@@ -720,7 +720,7 @@ export const SystemMapWindow = () => {
                   padding: '2px 10px',
                   cursor: 'pointer',
                   borderRadius: 2,
-                  fontSize: '0.9rem',
+                  fontSize: '0.8rem',
                   fontFamily: F,
                   fontWeight: 700,
                   letterSpacing: 0.5,

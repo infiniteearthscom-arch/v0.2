@@ -138,7 +138,7 @@ const ShipCard = ({
 
           {/* Hull type subtitle */}
           <div style={{
-            fontSize: '0.9rem',
+            fontSize: '0.8rem',
             color: COLORS.TEXT.dim,
             fontFamily: FONT.mono,
             marginBottom: 6,
@@ -154,7 +154,7 @@ const ShipCard = ({
           <div style={{
             display: 'flex',
             gap: 12,
-            fontSize: '0.9rem',
+            fontSize: '0.8rem',
             fontFamily: FONT.mono,
             marginBottom: 6,
           }}>
@@ -369,7 +369,7 @@ export const FleetWindow = () => {
             borderLeft: `2px solid ${COLORS.GOLD.pri}`,
             borderRadius: 3,
             padding: '6px 10px',
-            fontSize: '0.9rem',
+            fontSize: '0.8rem',
             color: COLORS.GOLD.light,
             fontFamily: FONT.ui,
             lineHeight: 1.4,
@@ -419,7 +419,7 @@ export const FleetWindow = () => {
           border: `1px solid ${COLORS.EDGE}`,
           borderRadius: 3,
           padding: '5px 10px',
-          fontSize: '0.9rem',
+          fontSize: '0.8rem',
           fontFamily: FONT.mono,
           letterSpacing: 0.5,
           marginBottom: 4,
@@ -490,7 +490,7 @@ export const FleetWindow = () => {
                 <div style={{
                   marginTop: 12,
                   marginBottom: 6,
-                  fontSize: '0.9rem',
+                  fontSize: '0.8rem',
                   fontFamily: FONT.mono,
                   color: COLORS.GOLD.light,
                   letterSpacing: 1,

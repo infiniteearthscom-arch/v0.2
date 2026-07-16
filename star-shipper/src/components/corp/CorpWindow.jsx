@@ -38,7 +38,7 @@ const fmtDate = (iso) => {
 };
 
 const Label = ({ children }) => (
-  <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+  <div style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
     {children}
   </div>
 );
@@ -134,7 +134,7 @@ const PendingInvites = ({ invites, onChanged }) => {
           <div style={{ fontSize: '0.75rem', color: '#e2e8f0', fontFamily: F, fontWeight: 700, marginBottom: 4 }}>
             <span style={{ color: GOLD.light }}>[{inv.corp_ticker}]</span> {inv.corp_name}
           </div>
-          <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontFamily: FM, marginBottom: 8 }}>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: FM, marginBottom: 8 }}>
             Invited by {inv.inviter_name} · {inv.member_count} member{inv.member_count === 1 ? '' : 's'}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -230,7 +230,7 @@ const MemberView = ({ membership, onChanged }) => {
             {membership.name}
           </span>
           <span style={{
-            fontSize: '0.9rem', color: ROLE_COLOR[membership.role], fontFamily: FM,
+            fontSize: '0.8rem', color: ROLE_COLOR[membership.role], fontFamily: FM,
             fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
             padding: '2px 8px', border: `1px solid ${ROLE_COLOR[membership.role]}88`, borderRadius: 2,
           }}>{membership.role}</span>
@@ -240,14 +240,14 @@ const MemberView = ({ membership, onChanged }) => {
             {membership.description}
           </div>
         )}
-        <div style={{ fontSize: '0.9rem', color: '#475569', fontFamily: FM, marginTop: 8 }}>
+        <div style={{ fontSize: '0.8rem', color: '#475569', fontFamily: FM, marginTop: 8 }}>
           {membership.member_count} member{membership.member_count === 1 ? '' : 's'} · Joined {fmtDate(membership.joined_at)}
         </div>
       </div>
 
       {/* Roster */}
       <div style={{
-        fontSize: '0.9rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
+        fontSize: '0.8rem', color: '#475569', fontFamily: FM, letterSpacing: 1,
         textTransform: 'uppercase', marginBottom: 6,
       }}>Roster</div>
       <div style={{
@@ -257,7 +257,7 @@ const MemberView = ({ membership, onChanged }) => {
         padding: '4px 0',
         marginBottom: 12,
       }}>
-        {members == null && <div style={{ padding: 12, color: '#475569', fontSize: '0.9rem', fontFamily: F, fontStyle: 'italic' }}>Loading...</div>}
+        {members == null && <div style={{ padding: 12, color: '#475569', fontSize: '0.8rem', fontFamily: F, fontStyle: 'italic' }}>Loading...</div>}
         {members?.map(m => (
           <div key={m.user_id} style={{
             display: 'grid', gridTemplateColumns: '1fr 80px 80px',
@@ -271,9 +271,9 @@ const MemberView = ({ membership, onChanged }) => {
               title={`Open ${m.username}'s profile`}
               style={{ color: '#cbd5e1', fontFamily: F, fontWeight: 700, cursor: 'pointer' }}
             >{m.username}{m.user_id === myUserId && (
-              <span style={{ color: BLUE.light, marginLeft: 6, fontSize: '0.9rem' }}>(you)</span>
+              <span style={{ color: BLUE.light, marginLeft: 6, fontSize: '0.8rem' }}>(you)</span>
             )}</span>
-            <span style={{ color: ROLE_COLOR[m.role], fontWeight: 700, fontSize: '0.9rem', letterSpacing: 1, textTransform: 'uppercase' }}>
+            <span style={{ color: ROLE_COLOR[m.role], fontWeight: 700, fontSize: '0.8rem', letterSpacing: 1, textTransform: 'uppercase' }}>
               {m.role}
             </span>
             <span style={{ textAlign: 'right' }}>
@@ -282,7 +282,7 @@ const MemberView = ({ membership, onChanged }) => {
                   onClick={() => handleKick(m)}
                   style={{
                     background: 'transparent', border: `1px solid ${RED.pri}55`,
-                    color: RED.light, fontSize: '0.9rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
+                    color: RED.light, fontSize: '0.8rem', fontFamily: F, fontWeight: 700, letterSpacing: 1,
                     textTransform: 'uppercase', padding: '3px 8px', cursor: 'pointer', borderRadius: 2,
                   }}
                 >Kick</button>

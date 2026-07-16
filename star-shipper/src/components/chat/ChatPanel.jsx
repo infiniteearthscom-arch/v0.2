@@ -64,7 +64,7 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
           flex: 1,
           overflowY: 'auto',
           padding: '8px 10px',
-          fontSize: '0.9rem',
+          fontSize: '0.8rem',
           fontFamily: FM,
           color: '#3a5a6a',
           fontStyle: 'italic',
@@ -93,7 +93,7 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
         const isOwn = m.sender_id === ownUserId;
         return (
           <div key={m.id} style={{ marginBottom: 4 }}>
-            <span style={{ color: '#3a5a6a', fontSize: '0.9rem', marginRight: 6 }}>{formatTime(m.ts)}</span>
+            <span style={{ color: '#3a5a6a', fontSize: '0.8rem', marginRight: 6 }}>{formatTime(m.ts)}</span>
             <span
               onClick={() => m.sender_id && onOpenProfile?.(m.sender_id)}
               title={m.sender_id ? `Open ${m.sender_name}'s profile` : null}
@@ -226,7 +226,7 @@ export const ChatPanel = () => {
           borderRadius: 3,
           cursor: 'pointer',
           fontFamily: F,
-          fontSize: '0.9rem',
+          fontSize: '0.8rem',
           fontWeight: 700,
           color: BLUE.light,
           letterSpacing: 0.5,
@@ -246,7 +246,7 @@ export const ChatPanel = () => {
             color: '#fff',
             padding: '1px 6px',
             borderRadius: 8,
-            fontSize: '0.9rem',
+            fontSize: '0.8rem',
             fontFamily: FM,
             minWidth: 16,
             textAlign: 'center',
@@ -297,7 +297,7 @@ export const ChatPanel = () => {
                 borderRight: `1px solid ${EDGE}`,
                 borderBottom: isActive ? `2px solid ${c.color}` : '2px solid transparent',
                 color: isActive ? c.color : '#7a8a9a',
-                fontSize: '0.9rem',
+                fontSize: '0.8rem',
                 fontFamily: F,
                 fontWeight: 700,
                 letterSpacing: 0.5,
@@ -401,7 +401,7 @@ export const ChatPanel = () => {
             border: `1px solid ${draft.trim() ? BLUE.pri : EDGE}`,
             color: draft.trim() ? BLUE.light : '#4a5a6a',
             padding: '5px 12px',
-            fontSize: '0.9rem',
+            fontSize: '0.8rem',
             fontFamily: F,
             fontWeight: 700,
             letterSpacing: 0.5,
