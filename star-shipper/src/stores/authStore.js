@@ -56,8 +56,15 @@ export const useAuthStore = create((set, get) => ({
     set({ error: null, isLoading: true });
     try {
       const data = await authAPI.register(username, email, password);
+      // Mirror the login path: pull /me so `resources` is populated.
+      // App.jsx's hydration effect (fetchShips / fetchQuests / fog of
+      // war) is gated on `isLoggedIn && resources` — without resources
+      // set here, a fresh registration never fetched its ships and the
+      // new player flew an invisible Starter Scout.
+      const userData = await authAPI.getMe();
       set({
-        user: data.user,
+        user: userData.user,
+        resources: userData.resources,
         isLoggedIn: true,
         isLoading: false,
         error: null,

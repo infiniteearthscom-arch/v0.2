@@ -169,6 +169,13 @@ const TopBar = () => {
     try {
       await fittingAPI.resetAccount();
       resetGame();
+      // Hard reload so the login hydration path (App.jsx fetchShips /
+      // fetchQuests / hydrateDiscoveredSystems) re-runs. resetGame()
+      // empties the in-memory ships array and nothing refetches it —
+      // the login effect only fires on auth-state changes — so without
+      // this the freshly-granted Starter Scout never reaches the store
+      // and the player flies an invisible ship.
+      window.location.reload();
     } catch (err) {
       alert('Reset failed: ' + err.message);
     } finally {

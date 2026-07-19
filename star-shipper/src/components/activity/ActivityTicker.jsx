@@ -164,7 +164,12 @@ export const ActivityTicker = () => {
         title={expanded ? 'Hide activity log' : 'Click to see recent activity'}
         style={{
           position: 'fixed',
-          top: 38,
+          // top:100 sits directly below the fleet status readout
+          // (SystemView, top:38 + ~57px tall) so critical activity
+          // events are never obscured by it or by toasts. In galaxy
+          // view the readout doesn't render but the slot stays
+          // reserved so the ticker never jumps around.
+          top: 100,
           left: '50%',
           transform: 'translateX(-50%)',
           maxWidth: '60vw',
@@ -225,7 +230,7 @@ const ActivityExpandedPanel = ({ now, onClose }) => {
     <div
       style={{
         position: 'fixed',
-        top: 68,
+        top: 130,
         left: '50%',
         transform: 'translateX(-50%)',
         width: 420,

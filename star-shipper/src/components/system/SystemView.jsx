@@ -5079,17 +5079,20 @@ export const SystemView = () => {
 
           {/* HUD moved to GameFrame top bar (ship name, hull/shield, hostiles, autopilot) */}
 
-          {/* Fleet status readout — bottom-center. The player fleet's
-              pooled Shield → Armor → Hull, the same three layers the
-              per-fleet enemy bars show, promoted from the cramped top
-              bar to a prominent combat readout. Reads the combat refs
+          {/* Fleet status readout — top-center, just under the top bar
+              (moved from bottom-center 2026-07-19: toast notifications
+              were obscuring it there). The player fleet's pooled
+              Shield → Armor → Hull, the same three layers the
+              per-fleet enemy bars show. Reads the combat refs
               directly: this component re-renders every frame off
               frameCount, so the bars track damage in real time (the
               store push is only every 5 frames). `fixed` positioning
-              for the same viewport-reference reason as the scan tray;
-              bottom:44 clears the bottom bar. Armor row dims to '—'
-              when no armor is fitted (maxArmor 0), mirroring the old
-              top bar's no-shield treatment. */}
+              for the same viewport-reference reason as the scan tray.
+              The ActivityTicker (top:100) and PinnedQuestsOverlay
+              (top:132) stack below this — keep the three in sync if
+              any height changes. Armor row dims to '—' when no armor
+              is fitted (maxArmor 0), mirroring the old top bar's
+              no-shield treatment. */}
           {(() => {
             const hull = Math.max(0, Math.round(playerHullRef.current));
             const maxHull = Math.round(playerMaxHullRef.current);
@@ -5109,7 +5112,7 @@ export const SystemView = () => {
                 className="fixed"
                 style={{
                   zIndex: 40,
-                  bottom: 44,
+                  top: 38,
                   left: '50%',
                   transform: 'translateX(-50%)',
                   width: 250,

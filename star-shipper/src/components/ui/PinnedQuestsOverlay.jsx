@@ -1,7 +1,8 @@
 // PinnedQuestsOverlay
 // ====================
 // Persistent top-of-screen tiles for the player's pinned active
-// quests. Sits just below the GameFrame top bar, centered horizontally.
+// quests. Sits below the fleet-status readout + activity ticker stack,
+// centered horizontally.
 // Replaces the "Current Quest" section in the Outliner (which was
 // hard to spot among the rest of the sidebar density).
 //
@@ -69,7 +70,9 @@ export const PinnedQuestsOverlay = () => {
       <div
         className="fixed z-20"
         style={{
-          top: 52,
+          // Below the fleet status readout (top:38) + activity ticker
+          // (top:100, 24px tall) stack.
+          top: 132,
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',

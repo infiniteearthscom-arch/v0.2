@@ -22,6 +22,9 @@ export const ResourceBar = () => {
     try {
       await fittingAPI.resetAccount();
       resetGame();
+      // Reload so the login hydration path refetches ships — see
+      // GameFrame.handleReset for the full note.
+      window.location.reload();
     } catch (err) {
       alert('Reset failed: ' + err.message);
     } finally {
