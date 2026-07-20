@@ -557,9 +557,13 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
 
     if (!module_type_id) return res.status(400).json({ error: 'module_type_id required' });
 
-    // Starter Kit: special bundle purchase
+    // Starter Kit: special bundle purchase. FREE (was 500 cr), but
+    // one per account — kit items re-sell for ~5 cr each via
+    // /sell-item's flat fallback, so an unlimited free kit would be
+    // an infinite credit mint. Claimed-state marker is the Gear Up
+    // quest: the client completes it right after a successful buy.
     if (module_type_id === 'starter_kit') {
-      const STARTER_KIT_PRICE = 500;
+      const STARTER_KIT_PRICE = 0;
       // Kit must fill every slot the Starter Scout exposes -- otherwise
       // "Ready for Launch" (tutorial_fit_modules) never fires because
       // the all_slots_filled check stays false. mining_basic was added
@@ -577,6 +581,17 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       ];
 
       const kitResult = await transaction(async (client) => {
+        const claimed = await client.query(
+          `SELECT 1 FROM player_quests
+           WHERE user_id = $1 AND quest_id = 'tutorial_buy_starter_kit' AND status = 'completed'`,
+          [userId]
+        );
+        if (claimed.rows[0]) {
+          throw Object.assign(
+            new Error('Starter Kit already claimed — its modules are sold individually'),
+            { statusCode: 400 }
+          );
+        }
         const userRow = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
         const credits = parseInt(userRow.rows[0]?.credits || 0);
         if (credits < STARTER_KIT_PRICE) {
@@ -1391,8 +1406,16 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
     const userId = req.user.id;
 
     await transaction(async (client) => {
-      // 1. Null FKs that reference ships before we delete them
-      await client.query(`UPDATE users SET active_ship_id = NULL, credits = 1000 WHERE id = $1`, [userId]);
+      // 1. Null FKs that reference ships before we delete them.
+      // Also zero the RP pool (research points live on users, not
+      // player_research — that table only holds unlocked techs).
+      await client.query(
+        `UPDATE users
+         SET active_ship_id = NULL, credits = 1000,
+             research_points = 0, research_points_updated_at = NOW()
+         WHERE id = $1`,
+        [userId]
+      );
       await client.query(`UPDATE player_presence SET active_ship_id = NULL WHERE user_id = $1`, [userId]);
 
       // 2. Wipe active harvest sessions
@@ -1404,8 +1427,12 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
       // 4. Wipe all cargo / inventory (resources, modules, probes)
       await client.query(`DELETE FROM player_resource_inventory WHERE user_id = $1`, [userId]);
 
-      // 5. Wipe scan history
+      // 5. Wipe scan history — planet surveys AND per-asteroid scans.
+      // player_asteroid_scans is what makes rocks render as "scanned"
+      // (GET /asteroids LEFT JOINs it); it was missed when the table
+      // landed in migration 025, so scanned asteroids survived resets.
       await client.query(`DELETE FROM player_surveys WHERE user_id = $1`, [userId]);
+      await client.query(`DELETE FROM player_asteroid_scans WHERE user_id = $1`, [userId]);
 
       // 6. Delete ships (must come after nulling active_ship_id FKs)
       await client.query(`DELETE FROM ships WHERE user_id = $1`, [userId]);
@@ -1415,6 +1442,17 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
 
       // 8. Wipe quest progress (so tutorial restarts from scratch)
       await client.query(`DELETE FROM player_quests WHERE user_id = $1`, [userId]);
+
+      // 9. Wipe skills (queue first — FK on player_skills is per-user
+      // anyway, but the queue is meaningless without the levels).
+      await client.query(`DELETE FROM player_skill_queue WHERE user_id = $1`, [userId]);
+      await client.query(`DELETE FROM player_skills WHERE user_id = $1`, [userId]);
+
+      // 10. Wipe research unlocks (RP pool zeroed in step 1).
+      await client.query(`DELETE FROM player_research WHERE user_id = $1`, [userId]);
+
+      // 11. Wipe galaxy-map fog of war (visited systems).
+      await client.query(`DELETE FROM player_system_visits WHERE user_id = $1`, [userId]);
     });
 
     // 9. Re-grant the Starter Scout so RESET produces the same

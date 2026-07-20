@@ -117,7 +117,10 @@ const initialState = {
     planetInteraction: { open: false, x: 300, y: 100, minimized: false },
     galaxyMap: { open: false, x: 80, y: 60, minimized: false },
     questLog: { open: false, x: 250, y: 80, minimized: false },
-    systemMap: { open: true, x: 0, y: 0, minimized: false },
+    // Closed by default — window open state is not persisted, so this
+    // is what every page load / reset starts from; the player opens it
+    // per-session via the map toggle.
+    systemMap: { open: false, x: 0, y: 0, minimized: false },
     settings: { open: false, x: 280, y: 80, minimized: false },
     leaderboards: { open: false, x: 200, y: 100, minimized: false },
     profile: { open: false, x: 220, y: 110, minimized: false },

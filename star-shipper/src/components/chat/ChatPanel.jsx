@@ -116,7 +116,10 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
 };
 
 export const ChatPanel = () => {
-  const [collapsed, setCollapsed] = useState(false);
+  // Starts collapsed on every load/reset (component state is not
+  // persisted, so a page load always lands here); expanding is a
+  // per-session choice the player makes.
+  const [collapsed, setCollapsed] = useState(true);
   const [activeChannel, setActiveChannel] = useState('system');
   // Render-trigger tick. The chat singleton mutates its in-memory
   // buffer in place; we bump this state on each new message so React

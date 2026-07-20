@@ -2031,6 +2031,10 @@ const VendorTab = ({ body }) => {
   // change (vendor tx, combat loot, quest reward, future sources) reflects
   // here the same way it does in the top bar. Never maintain a separate copy.
   const credits = useGameStore(state => state.resources?.credits ?? 0);
+  // Same "has a reserve hull" criterion SystemView's pod logic uses:
+  // any non-pod ship (flying OR stored) counts. Drives hiding the
+  // free Starter Scout vendor row below.
+  const ownsRealShip = useGameStore(state => state.ships.some(s => s.hull_type_id !== 'pod'));
   const fetchCredits = useGameStore(state => state.fetchCredits);
   const fetchShips = useGameStore(state => state.fetchShips);
   const openWindow = useGameStore(state => state.openWindow);
@@ -2112,7 +2116,7 @@ const VendorTab = ({ body }) => {
       // Supplies are non-module purchasable items — fuel, probes etc
       // For now these come from a static list since they use the crafting system
       setSupplies([
-        { id: 'starter_kit', name: 'Starter Kit', icon: '🎒', price: 500, desc: 'Full basic loadout for a Scout: engine, reactor, cargo pod, laser, sensor suite, nav computer.' },
+        { id: 'starter_kit', name: 'Starter Kit', icon: '🎒', price: 0, desc: 'Full basic loadout for a Scout: engine, reactor, cargo pod, laser, sensor suite, nav computer. Free — one per captain.' },
         { id: 'fuel_cell', name: 'Fuel Cell', icon: '🔋', price: 100, desc: 'Powers a harvester for 6 hours.' },
         { id: 'scanner_probe', name: 'Scanner Probe', icon: '📡', price: 50, desc: 'Basic orbital scanner.' },
         { id: 'advanced_scanner_probe', name: 'Adv. Scanner Probe', icon: '🛰️', price: 150, desc: 'Ground-penetrating scanner.' },
@@ -2342,10 +2346,14 @@ const VendorTab = ({ body }) => {
         })}
       </div>
 
-      {/* Hulls */}
+      {/* Hulls. The free Starter Scout row only shows when the player
+          has no real (non-pod) ship — it exists as the pod-recovery
+          fallback. Every account is granted one at registration, so
+          showing a second FREE "Starter Scout" reads as a mislabeled
+          Starter Kit to new players. */}
       {section === 'hulls' && (
         <div>
-          {hulls.map(h => (
+          {hulls.filter(h => h.id !== 'starter_scout' || !ownsRealShip).map(h => (
             <div key={h.id} style={{
               background: 'rgba(4,8,16,0.5)',
               border: `1px solid ${EDGE}`,
@@ -2666,7 +2674,7 @@ const VendorTab = ({ body }) => {
                 }}>{s.desc}</div>
               </div>
               <PanelButton size="sm" accent={GOLD.pri} onClick={() => { playSound('button_click'); buySupply(s.id); }}>
-                {s.price} CR
+                {s.price > 0 ? `${s.price} CR` : 'FREE'}
               </PanelButton>
             </div>
           ))}
