@@ -65,6 +65,8 @@ const WIRED_BONUS_TYPES = new Set([
   'area_scan_radius_pct',       // SystemView handleAreaScan
   'bulk_belt_cooldown_pct',     // SystemView handleBeltScan
   'sweep_cooldown_pct',         // SystemView handleSystemSweep
+  // Research
+  'rp_rate_pct',                // api/research.js RP trickle scalar
 ]);
 
 // Skills wired by id rather than by bonus contract (e.g. queue cap
@@ -163,7 +165,7 @@ const SkillsTab = () => {
                   cursor: 'pointer',
                   background: active ? `${BLUE.pri}18` : 'transparent',
                   borderLeft: active ? `2px solid ${BLUE.pri}` : '2px solid transparent',
-                  fontSize: '0.6875rem',
+                  fontSize: '0.8rem',
                   color: active ? '#e2e8f0' : '#7a8a9a',
                   fontFamily: F,
                   fontWeight: active ? 700 : 500,
@@ -243,7 +245,7 @@ const SkillsTab = () => {
               >
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  fontSize: '0.6875rem', fontFamily: F, color: isCompleted ? '#e2e8f0' : '#cbd5e1', fontWeight: 600,
+                  fontSize: '0.8rem', fontFamily: F, color: isCompleted ? '#e2e8f0' : '#cbd5e1', fontWeight: 600,
                 }}>
                   <span>
                     {isCompleted && <span style={{ color: GREEN.light, marginRight: 4 }}>✓</span>}
@@ -278,7 +280,7 @@ const SkillsTab = () => {
                       border: `1px solid ${GOLD.pri}55`,
                       padding: '1px 5px',
                       borderRadius: 2,
-                      fontSize: '0.5rem',
+                      fontSize: '0.8rem',
                       letterSpacing: 0.5,
                     }}>
                       ↩ LAST TRAINED
@@ -293,7 +295,7 @@ const SkillsTab = () => {
                         border: '1px solid rgba(100,116,139,0.35)',
                         padding: '1px 5px',
                         borderRadius: 2,
-                        fontSize: '0.5rem',
+                        fontSize: '0.8rem',
                         letterSpacing: 0.5,
                         textTransform: 'uppercase',
                       }}
@@ -310,7 +312,7 @@ const SkillsTab = () => {
                         border: `1px solid ${GOLD.pri}55`,
                         padding: '1px 5px',
                         borderRadius: 2,
-                        fontSize: '0.5rem',
+                        fontSize: '0.8rem',
                         letterSpacing: 0.5,
                         textTransform: 'uppercase',
                       }}
@@ -346,7 +348,7 @@ const SkillsTab = () => {
                 <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080', marginTop: 4, letterSpacing: 0.5 }}>
                   RANK {selected.rank_multiplier} · {selected.category}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginTop: 12, lineHeight: 1.5, fontFamily: F }}>
+                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: 12, lineHeight: 1.5, fontFamily: F }}>
                   {selected.description}
                 </div>
                 {bonusText && (
@@ -509,9 +511,9 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove }) => {
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.6875rem', fontFamily: F, color: '#e2e8f0', fontWeight: 600 }}>
+                  <div style={{ fontSize: '0.8rem', fontFamily: F, color: '#e2e8f0', fontWeight: 600 }}>
                     {skill?.name || q.skill_id} <span style={{ color: BLUE.light, marginLeft: 4 }}>{ROMAN[q.target_level]}</span>
-                    {isHead && <span style={{ color: GREEN.light, marginLeft: 8, fontSize: '0.5rem', fontFamily: FM, letterSpacing: 0.5 }}>TRAINING</span>}
+                    {isHead && <span style={{ color: GREEN.light, marginLeft: 8, fontSize: '0.8rem', fontFamily: FM, letterSpacing: 0.5 }}>TRAINING</span>}
                   </div>
                 </div>
                 <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#7a8a9a' }}>
@@ -549,12 +551,12 @@ const TREES = [
   { id: 'society',    label: 'Society',    accent: '#22c55e' },
 ];
 
-const RP_PER_MIN = 1;
-
 const ResearchTab = ({ initialTree }) => {
   useSecondTick();
   const techs = useGameStore(s => s.techs);
   const rpStored = useGameStore(s => s.researchPoints);
+  // Effective RP/min from the server (base 1 × rp_rate_pct skill bonus).
+  const rpPerMin = useGameStore(s => s.rpPerMin) || 1;
   const unlockTech = useGameStore(s => s.unlockTech);
   const [activeTree, setActiveTree] = useState(initialTree || TREES[0].id);
   const [confirmTechId, setConfirmTechId] = useState(null);
@@ -585,11 +587,11 @@ const ResearchTab = ({ initialTree }) => {
           padding: '4px 10px', border: `1px solid ${GREEN.pri}55`,
           background: `${GREEN.pri}10`, borderRadius: 2,
         }}>
-          <span style={{ fontSize: '0.6875rem' }}>🔬</span>
-          <span style={{ fontSize: '0.6875rem', fontFamily: FM, color: GREEN.light, fontWeight: 700 }}>
+          <span style={{ fontSize: '0.8rem' }}>🔬</span>
+          <span style={{ fontSize: '0.8rem', fontFamily: FM, color: GREEN.light, fontWeight: 700 }}>
             {liveRp.toLocaleString()} RP
           </span>
-          <span style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080' }}>· {RP_PER_MIN}/min</span>
+          <span style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080' }}>· {rpPerMin}/min</span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {TREES.map(t => {
@@ -690,7 +692,7 @@ const TreeVisualizer = ({ tree, accent, techs, rp, onClickTech }) => {
 
   if (techs.length === 0) {
     return (
-      <div style={{ fontSize: '0.6875rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
+      <div style={{ fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
         No tech nodes in this tree.
       </div>
     );
@@ -795,15 +797,15 @@ const TechNode = ({ tech, x, y, accent, canAfford, onClick }) => {
       title={tech.description}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }}>
-        <div style={{ fontSize: '0.5rem', fontFamily: FM, color: '#5a7080', letterSpacing: 1, textTransform: 'uppercase' }}>
+        <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#5a7080', letterSpacing: 1, textTransform: 'uppercase' }}>
           Tier {tech.tier}
         </div>
-        <div style={{ fontSize: '0.6875rem', fontFamily: F, fontWeight: 700, color, lineHeight: 1.15 }}>
+        <div style={{ fontSize: '0.8rem', fontFamily: F, fontWeight: 700, color, lineHeight: 1.15 }}>
           {tech.name}
         </div>
         <div
           style={{
-            fontSize: '0.59375rem',
+            fontSize: '0.8rem',
             fontFamily: F,
             color: descColor,
             lineHeight: 1.35,
@@ -822,7 +824,7 @@ const TechNode = ({ tech, x, y, accent, canAfford, onClick }) => {
           {tech.description}
         </div>
       </div>
-      <div style={{ fontSize: '0.5rem', fontFamily: FM, color, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 6 }}>
+      <div style={{ fontSize: '0.8rem', fontFamily: FM, color, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 6 }}>
         {badge}
       </div>
     </div>
@@ -855,7 +857,7 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
         <div style={{ fontSize: '0.875rem', fontFamily: F, fontWeight: 800, color: '#e2e8f0', letterSpacing: 0.5 }}>
           Research: {tech.name}
         </div>
-        <div style={{ fontSize: '0.6875rem', color: '#cbd5e1', marginTop: 8, lineHeight: 1.5, fontFamily: F }}>
+        <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: 8, lineHeight: 1.5, fontFamily: F }}>
           {tech.description}
         </div>
         {unlockLines.length > 0 && (
@@ -863,7 +865,7 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
             {unlockLines.map((l, i) => <div key={i}>{l}</div>)}
           </div>
         )}
-        <div style={{ marginTop: 12, fontSize: '0.6875rem', fontFamily: FM, color: canAfford ? GOLD.light : '#a04040' }}>
+        <div style={{ marginTop: 12, fontSize: '0.8rem', fontFamily: FM, color: canAfford ? GOLD.light : '#a04040' }}>
           Cost: {tech.rp_cost} RP {canAfford ? '' : '(insufficient)'}
         </div>
         <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

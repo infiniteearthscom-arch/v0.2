@@ -94,7 +94,7 @@ export const ActiveTrainingIndicator = ({ variant = 'compact', onOpenSkills }) =
       <span style={{
         display: 'flex', alignItems: 'center', gap: 5,
         padding: '1px 8px',
-        fontSize: variant === 'expanded' ? 12 : 10,
+        fontSize: variant === 'expanded' ? '0.8rem' : '0.625rem',
         color: '#fca5a5',
         background: 'rgba(127,29,29,0.35)',
         border: '1px solid rgba(239,68,68,0.5)',
@@ -120,10 +120,10 @@ export const ActiveTrainingIndicator = ({ variant = 'compact', onOpenSkills }) =
 
     skillNode = (
       <>
-        <span style={{ fontSize: variant === 'expanded' ? 12 : 10 }}>🎓</span>
+        <span style={{ fontSize: variant === 'expanded' ? '0.8rem' : '0.625rem' }}>🎓</span>
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <div style={{
-            fontSize: variant === 'expanded' ? 11 : 9,
+            fontSize: variant === 'expanded' ? '0.8rem' : '0.5625rem',
             color: '#c8d6e5',
             fontWeight: 700,
             whiteSpace: 'nowrap',
@@ -151,7 +151,7 @@ export const ActiveTrainingIndicator = ({ variant = 'compact', onOpenSkills }) =
           </div>
         </div>
         <span style={{
-          fontSize: variant === 'expanded' ? 10 : 9,
+          fontSize: variant === 'expanded' ? '0.8rem' : '0.5625rem',
           color: '#7a8a9a',
           fontFamily: "'Share Tech Mono', monospace",
           minWidth: 36,
@@ -172,9 +172,9 @@ export const ActiveTrainingIndicator = ({ variant = 'compact', onOpenSkills }) =
       paddingLeft: variant === 'expanded' ? 12 : 8,
       borderLeft: '1px solid #1a3050',
     }}>
-      <span style={{ fontSize: variant === 'expanded' ? 12 : 10 }}>🔬</span>
+      <span style={{ fontSize: variant === 'expanded' ? '0.8rem' : '0.625rem' }}>🔬</span>
       <span style={{
-        fontSize: variant === 'expanded' ? 12 : 10,
+        fontSize: variant === 'expanded' ? '0.8rem' : '0.625rem',
         color: '#4ade80',
         fontWeight: 700,
         fontFamily: "'Share Tech Mono', monospace",
@@ -182,7 +182,7 @@ export const ActiveTrainingIndicator = ({ variant = 'compact', onOpenSkills }) =
         {researchPoints.toLocaleString()}
       </span>
       <span style={{
-        fontSize: variant === 'expanded' ? 9 : 8,
+        fontSize: variant === 'expanded' ? '0.8rem' : '0.5rem',
         color: '#3a5a6a',
         fontFamily: "'Share Tech Mono', monospace",
         letterSpacing: 0.5,

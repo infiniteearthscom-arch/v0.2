@@ -20,28 +20,42 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryAll, queryOne, transaction } from '../db/index.js';
+import { getPlayerBonuses } from '../util/playerBonuses.js';
 
 const router = express.Router();
 
 const RP_PER_MIN = 1;
 
-// live_rp = stored_rp + minutes_since(updated_at) * RP_PER_MIN.
+// Effective trickle rate: base 1/min scaled by the rp_rate_pct skill
+// bonus (Research Methodology, +5%/level — migration 064). Distinct
+// from research_time_pct, which is reserved for future blueprint
+// research.
+function effectiveRpPerMin(bonuses) {
+  const pct = bonuses?.rp_rate_pct || 0;
+  return RP_PER_MIN * (1 + pct / 100);
+}
+
+// live_rp = stored_rp + minutes_since(updated_at) * rpPerMin.
 // Returns integers (RP is whole numbers in the UI).
-function liveRpFromRow(userRow, now) {
+// Known approximation: the current rate applies to the whole window
+// since the last checkpoint, so a skill level completed mid-window
+// slightly over-credits that window. Checkpoints happen on every
+// unlock; not worth a per-level-completion checkpoint today.
+function liveRpFromRow(userRow, now, rpPerMin = RP_PER_MIN) {
   const stored = userRow.research_points || 0;
   const updated = new Date(userRow.research_points_updated_at);
   const elapsedMin = Math.max(0, (now.getTime() - updated.getTime()) / 60000);
-  return Math.floor(stored + elapsedMin * RP_PER_MIN);
+  return Math.floor(stored + elapsedMin * rpPerMin);
 }
 
 // Commit accrued RP to the DB and reset the checkpoint. Returns the
 // new stored RP. Caller passes an already-running client (transactional).
-async function commitRp(client, userId, now) {
+async function commitRp(client, userId, now, rpPerMin = RP_PER_MIN) {
   const userRow = await client.query(
     `SELECT research_points, research_points_updated_at FROM users WHERE id = $1 FOR UPDATE`,
     [userId]
   );
-  const live = liveRpFromRow(userRow.rows[0], now);
+  const live = liveRpFromRow(userRow.rows[0], now, rpPerMin);
   await client.query(
     `UPDATE users SET research_points = $1, research_points_updated_at = $2 WHERE id = $3`,
     [live, now, userId]
@@ -57,14 +71,16 @@ router.get('/', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const now = new Date();
 
-    const [userRow, defs, unlocked] = await Promise.all([
+    const [userRow, defs, unlocked, bonuses] = await Promise.all([
       queryOne(`SELECT research_points, research_points_updated_at FROM users WHERE id = $1`, [userId]),
       queryAll(`SELECT * FROM tech_definitions ORDER BY tree ASC, tier ASC, sort_order ASC`),
       queryAll(`SELECT tech_id, unlocked_at FROM player_research WHERE user_id = $1`, [userId]),
+      getPlayerBonuses(userId),
     ]);
 
     const unlockedSet = new Set(unlocked.map(u => u.tech_id));
-    const liveRp = liveRpFromRow(userRow, now);
+    const rpPerMin = effectiveRpPerMin(bonuses);
+    const liveRp = liveRpFromRow(userRow, now, rpPerMin);
 
     // Decorate each tech with its locked / available / unlocked status.
     // 'locked' = prereqs not all unlocked. 'available' = prereqs met + not yet unlocked.
@@ -94,7 +110,9 @@ router.get('/', authMiddleware, async (req, res) => {
     res.json({
       techs,
       research_points: liveRp,
-      rp_per_min: RP_PER_MIN,
+      // Effective rate (base × rp_rate_pct skill bonus), rounded for
+      // display — the client shows "· N/min" verbatim.
+      rp_per_min: Math.round(rpPerMin * 100) / 100,
       now: now.toISOString(),
     });
   } catch (error) {
@@ -152,8 +170,9 @@ router.post('/unlock', authMiddleware, async (req, res) => {
       }
 
       // Commit accrued RP first so we're spending against the *current*
-      // live RP, then validate cost.
-      const liveRp = await commitRp(client, userId, now);
+      // live RP, then validate cost. Rate bonus applies to the accrual.
+      const bonuses = await getPlayerBonuses(userId);
+      const liveRp = await commitRp(client, userId, now, effectiveRpPerMin(bonuses));
       if (liveRp < tech.rp_cost) {
         throw Object.assign(
           new Error(`Insufficient RP (have ${liveRp}, need ${tech.rp_cost})`),

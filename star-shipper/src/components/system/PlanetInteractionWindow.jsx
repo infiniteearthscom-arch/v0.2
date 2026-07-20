@@ -3240,15 +3240,40 @@ const PilotsTab = ({ effectiveBodyId }) => {
 // ============================================
 // SCAN PROGRESS PANEL
 // Used by the Scan tab for both orbital + ground in-flight scans.
-// Reads scanTick from props (mom-and-pop -- the parent's timer effect
-// bumps state every 100ms which re-renders us with a fresh Date.now()).
+// Self-animating: the fill bar runs on a CSS keyframe (computed once
+// on mount from how much of the scan already elapsed), so it fills
+// smoothly at the scan's real speed without depending on the parent
+// window re-rendering. The remaining-seconds readout ticks off the
+// panel's own 100ms interval for the same reason. Remount mid-scan
+// (tab switch away and back) resumes from the correct elapsed point.
 // ============================================
 const ScanProgressPanel = ({ label, accent, startMs, durationMs, onCancel }) => {
-  const elapsed = Math.min(durationMs, Date.now() - startMs);
-  const pct = elapsed / durationMs;
+  // Snapshot the animation start point once — re-renders must not
+  // restart the keyframe, so this never recomputes.
+  const [anim] = useState(() => {
+    const elapsedAtMount = Math.max(0, Math.min(durationMs, Date.now() - startMs));
+    return {
+      name: `scan-fill-${startMs}`,
+      fromPct: (elapsedAtMount / durationMs) * 100,
+      remainMs: Math.max(0, durationMs - elapsedAtMount),
+    };
+  });
+  // Own ticker for the countdown text.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(iv);
+  }, []);
+  const elapsed = Math.min(durationMs, now - startMs);
   const remainSec = Math.max(0, (durationMs - elapsed) / 1000);
   return (
     <>
+      <style>{`
+        @keyframes ${anim.name} {
+          from { width: ${anim.fromPct}%; }
+          to   { width: 100%; }
+        }
+      `}</style>
       <div style={{
         display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8,
       }}>
@@ -3266,9 +3291,9 @@ const ScanProgressPanel = ({ label, accent, startMs, durationMs, onCancel }) => 
         marginBottom: 10,
       }}>
         <div style={{
-          height: '100%', width: `${pct * 100}%`,
+          height: '100%', width: `${anim.fromPct}%`,
           background: `linear-gradient(90deg, ${accent}66, ${accent})`,
-          transition: 'width 0.1s linear',
+          animation: `${anim.name} ${anim.remainMs}ms linear forwards`,
         }} />
       </div>
       <button
@@ -3317,10 +3342,9 @@ export const PlanetInteractionWindow = ({ body }) => {
   const [resolvedBodyId, setResolvedBodyId] = useState(null);
   // Timed-scan state. `kind` is 'orbital' or 'ground'. startMs +
   // durationMs are snapshotted at scan-start so re-fits mid-scan don't
-  // yank the timer. scanTick is a render-trigger -- the interval bumps
-  // it every 100ms so the progress bar repaints.
+  // yank the timer. The progress bar animates itself (CSS keyframe in
+  // ScanProgressPanel) — the interval below only watches for completion.
   const [scanning, setScanning] = useState(null);
-  const [scanTick, setScanTick] = useState(0);
   // Phase A city seeding -- comes from /ensure-body for procedural bodies,
   // hardcoded for Sol. Drives the City tab visibility below. Stations are
   // populated regardless and use body.type, not this flag.
@@ -3455,8 +3479,6 @@ export const PlanetInteractionWindow = ({ body }) => {
             setLoading(false);
           }
         })();
-      } else {
-        setScanTick(t => t + 1);
       }
     }, 100);
     return () => clearInterval(tickInterval);

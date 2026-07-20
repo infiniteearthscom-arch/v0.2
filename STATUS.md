@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-07-06 (Combat **F4 polish** built + build-verified — server-validated loot manifest, flagship fleet-bounty payout, fleet-sticky targeting, battlefield tint; `/fitting/award-loot` removed. Migration 062 confirmed applied. Housekeeping: stray `*.tmp.*` editor leftovers deleted + gitignored.)
+**Last updated:** 2026-07-19 (Onboarding + UX repair session, built + build-verified, **not yet pushed**: HUD restack to top-center; invisible-ship-on-reset/register fixed; reset wipes made complete (asteroid scans, fog of war, skills, research); Starter Kit free + one-per-account with quest/vendor cleanup; chat + system map start closed; Skills window font floor; self-animating scan progress bar; new Research Methodology skill (rp_rate_pct); harvester fuel quest prompt. **Migrations 063–065 pending `npm run db:migrate` after deploy.**)
 
 ---
 
@@ -15,7 +15,7 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- DB schema: applied through migration **062** (five-tier modules — user confirmed run 2026-07-06) (009 was skipped)
+- DB schema: applied through migration **062** (five-tier modules — user confirmed run 2026-07-06) (009 was skipped). Migrations **063–065** authored 2026-07-19 (Gear Up free kit text / Research Methodology skill / Set & Forget fuel prompt) — **run `npm run db:migrate` after the next deploy.**
 
 ---
 
@@ -282,6 +282,30 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-07-19 — Onboarding + UX repair session (built + build-verified; migrations 063–065)
+
+Grab-bag session fixing new-player/reset bugs and HUD/UX complaints. Everything build-verified locally; **not yet pushed** at time of writing. After deploy: `npm run db:migrate` picks up 063–065.
+
+**HUD restack — fleet stats to top-center.** The pooled Shield/Armor/Hull readout moved from bottom-center (`bottom:44`) to top-center (`top:38`, `SystemView.jsx`) — toasts were obscuring it. The stack below it is now fixed order and must stay in sync if any height changes: **fleet readout (top:38) → ActivityTicker (top:100; expanded panel top:130) → PinnedQuestsOverlay (top:132)**. Rationale: the activity ticker carries critical "achievement" events and must never be obscured; it keeps its slot in galaxy view (where the readout doesn't render) so it never jumps. Memory `feedback_fleet_status_readout.md` updated — bottom-center is no longer the validated spot.
+
+**Invisible ship on reset + new registration — two hydration bugs.** (a) DEV reset: `resetGame()` emptied the in-memory `ships` array but nothing refetched it (App.jsx's hydration effect only fires on auth-state changes; Launch just sets a flag) — server had the re-granted Starter Scout, client fleet list stayed empty, so SystemView drew nothing while refs-based flight physics kept working. Fix: hard `window.location.reload()` after reset (GameFrame + the dead ResourceBar copy), re-running the login hydration path. (b) New accounts: `authStore.register()` set `isLoggedIn` but never set `resources`, and the hydration effect gates on `isLoggedIn && resources` — brand-new players never fetched ships until a manual refresh. Fix: register() now pulls `/me` like login() does.
+
+**Reset-account made complete.** `/reset-account` was missing per-user progress tables added after it was written: now also wipes `player_asteroid_scans` (rocks stayed "scanned" after reset — the reported bug), `player_system_visits` (fog of war), `player_skills` + `player_skill_queue`, `player_research`, and zeroes the RP pool (`users.research_points`, which lives on users, not player_research). Social data (chat/mail/corp/bounties/market) deliberately persists — reset means "restart progress," not "delete identity." ⚠ Convention going forward: **any migration adding a per-user progress table must add it to `/reset-account` in the same pass** (that's how asteroid scans got missed — table landed in 025, reset was written before it).
+
+**Gear Up quest + Starter Kit cleanup (migration 063).** Root confusion: the vendor sells TWO starter items — the free "Starter Scout" *hull* (Hulls tab, pod-recovery fallback) and the "Starter Kit" module bundle (Supplies tab, was 500 cr); the quest said 500 cr and players took the free hull row for a mislabeled kit. Fixes: kit is now **FREE + one-per-account** (server rejects a second claim once `tutorial_buy_starter_kit` is completed — an unlimited free kit would be a slow credit mint via /sell-item's ~5 cr fallback); quest text (063) says free and points at 🏪 → Supplies; vendor Supplies row shows FREE; the free Starter Scout hull row is **hidden unless the player owns no non-pod ship** (its actual purpose). Side effect: veterans who completed Gear Up can't re-buy the kit — its modules are all sold individually.
+
+**Windows start closed.** ChatPanel starts collapsed (`useState(true)`) and `windows.systemMap.open` initial flipped to false. Neither state persists, so every load/reset starts closed; in-session toggles stick until reload — exactly the requested behavior.
+
+**Skills & Research font floor.** All sub-0.8rem font sizes in `SkillsResearchWindow.jsx` (0.5 / 0.59375 / 0.6875 / 0.75rem) bumped to 0.8rem. `ActiveTrainingIndicator.jsx` was still raw px (missed by the 474d965 px→rem sweep, so it ignored the UI font scale): expanded variant now ≥0.8rem, compact top-bar variant converted to rem at its current visual size. Watch for crowding in the research-tree node cards; fix containers, not font size, if it bites.
+
+**Scan progress bar self-animating.** Orbital/ground scan bar didn't animate: the old design re-rendered the entire ~4000-line PlanetInteractionWindow every 100ms via a `scanTick` state pump just to repaint the bar. `ScanProgressPanel` now drives the fill with a **CSS keyframe** computed once on mount (elapsed% → 100% over remaining ms — resumes correctly after tab-switch remount) and runs its own 100ms interval for the countdown text. The render pump was removed; the parent interval now only watches for scan completion. Scan duration was already equipment-driven (best scanner's `computed_scan_time` × quality, `ast_scanning` bonus) — now visibly so.
+
+**Research Methodology skill (migration 064).** First skill boosting overall RP generation: `sci_research_methodology` (Science, rank 2, 5 levels), NEW bonus contract `rp_rate_pct` +5%/level (L5 = 1.25 RP/min). Deliberately not `research_time_pct` — that stays reserved for the future blueprint-research mechanic (user-confirmed distinction). Server `api/research.js`: trickle no longer a hard constant — `liveRpFromRow`/`commitRp` take an effective rate from `getPlayerBonuses`, GET returns `rp_per_min`. Known approximation: current rate applies to the whole accrual window since last checkpoint (checkpoints on every unlock), slight player-favoring drift when a level completes mid-window. Client: gameStore stores `rpPerMin`, Research tab "· N/min" shows the live rate, `rp_rate_pct` added to `WIRED_BONUS_TYPES`.
+
+**Harvester fuel quest prompt (migration 065).** "Set & Forget" (`tutorial_deploy_harvester`, the quest before "Coming Home") now tells the player to buy a Fuel Cell from Luna vendor Supplies and drag it onto the harvester — previously nothing in the chain mentioned fuel, so the tutorial harvester never ran.
+
+**Files touched (client):** `SystemView.jsx`, `ActivityTicker.jsx`, `PinnedQuestsOverlay.jsx`, `GameFrame.jsx`, `ResourceBar.jsx`, `authStore.js`, `gameStore.js`, `ChatPanel.jsx`, `PlanetInteractionWindow.jsx`, `SkillsResearchWindow.jsx`, `ActiveTrainingIndicator.jsx`. **(server):** `api/fitting.js` (reset + starter kit), `api/research.js`. **(migrations):** `063_gear_up_free_kit.sql`, `064_research_methodology_skill.sql`, `065_harvester_fuel_quest_text.sql`.
 
 ### 2026-05-31 — Social Multiplayer Step 9: Mail / inbox (roadmap complete)
 

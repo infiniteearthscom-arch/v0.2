@@ -59,6 +59,7 @@ const initialState = {
   // derived from skill levels -- combat + sensor-range gating reads
   // it directly so the UI updates the moment a level finishes.
   researchPoints: 0,
+  rpPerMin: 1,
   techs: [],                   // [{ id, tree, tier, name, description, rp_cost, prerequisites, unlocks, status }]
 
   // Sensor sweep activation timestamp (ms epoch). SystemView writes
@@ -421,6 +422,7 @@ export const useGameStore = create(
             if (researchData) {
               state.techs = researchData.techs || [];
               state.researchPoints = researchData.research_points || 0;
+              state.rpPerMin = researchData.rp_per_min || 1;
               state.researchLoaded = true;
             }
           });
