@@ -9,6 +9,7 @@ import {
   authMiddleware,
   getGoogleTokens,
   getGoogleUserProfile,
+  isDevAccount,
 } from '../auth/index.js';
 import { queryOne } from '../db/index.js';
 
@@ -201,6 +202,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         avatarUrl: req.user.avatar_url,
         authProvider: req.user.auth_provider,
         createdAt: req.user.created_at,
+        is_dev: isDevAccount(req.user),
       },
       resources: resources ? {
         credits: resources.credits,

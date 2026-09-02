@@ -228,6 +228,13 @@ export function setOffer({ sessionId, userId, items, credits }) {
     if (q <= 0) return [];
     return [{ stack_id: it.stack_id, quantity: q }];
   });
+  // Reject duplicate stack ids: [{X,10},{X,10}] on a 10-stack passes
+  // per-entry validation in executeSwap but credits the receiver twice
+  // while only debiting once — an item-duplication exploit.
+  const stackIds = new Set(cleanItems.map(it => it.stack_id));
+  if (stackIds.size !== cleanItems.length) {
+    throw makeErr(400, 'Duplicate stack in offer');
+  }
   const cleanCredits = Math.max(0, Math.floor(Number(credits) || 0));
 
   p.offer = cleanItems;
@@ -264,6 +271,12 @@ export async function setConfirmed({ sessionId, userId, confirmed }) {
   // surface as 500s to the caller. If the swap fails, the trade is
   // cancelled with reason 'swap_failed'.
   if (session.participants.every(x => x.confirmed)) {
+    // Flip status SYNCHRONOUSLY before the await: a second concurrent
+    // confirm arriving mid-swap must hit the `status !== 'active'`
+    // guard at the top of this function, not re-run the swap (double
+    // credit/item transfer). cancelSession/publicState both tolerate
+    // the transient 'executing' state.
+    session.status = 'executing';
     try {
       await executeSwap(session);
       session.status = 'completed';
@@ -319,8 +332,13 @@ async function executeSwap(session) {
     // Lock + validate every offered stack. We collect stack rows by
     // (givingUserId, stackId) so we can run the actual transfers next.
     const collectedOffers = []; // { fromUserId, toUserId, stackRow, qty }
+    const debitedStackIds = new Set(); // defense-in-depth vs duplicate stack entries
     for (const { from, to } of [{ from: pA, to: pB }, { from: pB, to: pA }]) {
       for (const off of from.offer) {
+        if (debitedStackIds.has(off.stack_id)) {
+          throw new Error('Duplicate stack in offer');
+        }
+        debitedStackIds.add(off.stack_id);
         const stackRes = await client.query(
           `SELECT * FROM player_resource_inventory
             WHERE id = $1 AND user_id = $2

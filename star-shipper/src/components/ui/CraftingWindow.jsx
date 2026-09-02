@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
+import { useAuthStore } from '@/stores/authStore';
 import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { resourcesAPI } from '@/utils/api';
@@ -808,6 +809,10 @@ export const CraftingWindow = () => {
   const windows = useGameStore(state => state.windows);
   const completeQuest = useGameStore(state => state.completeQuest);
   const isOpen = windows.crafting?.open;
+  // Dev-account gate for the cheat-craft button. The server enforces
+  // this independently (403 for non-dev accounts) — hiding the button
+  // is just UI hygiene.
+  const isDevUser = useAuthStore(state => state.user?.is_dev === true);
   // Tier B vendor → crafting deep link: when the vendor's "Craft this"
   // button is clicked it sets craftingTargetRecipeId then opens this
   // window. We watch the target, select the matching recipe on the
@@ -1365,8 +1370,9 @@ export const CraftingWindow = () => {
                 </button>
               )}
 
-              {/* DEV CHEAT: Craft without resources */}
-              <button
+              {/* DEV CHEAT: Craft without resources. Dev accounts only —
+                  server 403s everyone else regardless of this gate. */}
+              {isDevUser && <button
                 onClick={async () => {
                   setCrafting(true);
                   try {
@@ -1396,7 +1402,7 @@ export const CraftingWindow = () => {
                 }}
               >
                 🐛 DEV: Cheat Craft
-              </button>
+              </button>}
             </>
           )}
         </div>

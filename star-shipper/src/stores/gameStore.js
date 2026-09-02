@@ -793,8 +793,13 @@ export const useGameStore = create(
         };
         set(state => {
           state.toasts.push(t);
-          // Keep the queue bounded — drop oldest if more than 6 stack up.
-          if (state.toasts.length > 6) state.toasts.shift();
+          // Keep the queue bounded — drop the oldest if more than 6 stack
+          // up, but never evict a persistent (duration 0) toast: those
+          // stay until the player clicks their X.
+          if (state.toasts.length > 6) {
+            const idx = state.toasts.findIndex(x => x.duration !== 0);
+            if (idx !== -1) state.toasts.splice(idx, 1);
+          }
         });
         // Schedule auto-dismiss outside of the immer producer.
         if (t.duration > 0) {

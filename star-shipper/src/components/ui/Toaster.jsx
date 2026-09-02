@@ -64,13 +64,19 @@ const ToastCard = ({ toast, onDismiss }) => {
 
   const style = KIND_STYLES[toast.kind] || KIND_STYLES.info;
 
+  // Persistent toasts (duration 0) never auto-dismiss and only close via
+  // their X button — a stray click on the body shouldn't kill a reminder.
+  const persistent = toast.duration === 0;
+
+  const dismiss = () => {
+    setVisible(false);
+    // Wait for fade-out to finish before removing from store.
+    setTimeout(() => onDismiss(toast.id), 220);
+  };
+
   return (
     <div
-      onClick={() => {
-        setVisible(false);
-        // Wait for fade-out to finish before removing from store.
-        setTimeout(() => onDismiss(toast.id), 220);
-      }}
+      onClick={persistent ? undefined : dismiss}
       style={{
         background: style.bg,
         border: `1px solid ${style.border}`,
@@ -85,12 +91,12 @@ const ToastCard = ({ toast, onDismiss }) => {
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         pointerEvents: 'auto',
-        cursor: 'pointer',
+        cursor: persistent ? 'default' : 'pointer',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(12px)',
         transition: 'opacity 0.2s ease, transform 0.2s ease',
       }}
-      title="Click to dismiss"
+      title={persistent ? undefined : 'Click to dismiss'}
     >
       {/* Accent icon */}
       <div
@@ -123,6 +129,27 @@ const ToastCard = ({ toast, onDismiss }) => {
       >
         {toast.text}
       </div>
+      {/* Explicit close button for persistent toasts */}
+      {persistent && (
+        <button
+          onClick={dismiss}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#94a3b8',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            padding: '2px 4px',
+            lineHeight: 1,
+            flexShrink: 0,
+            fontFamily: "'Rajdhani', sans-serif",
+          }}
+          title="Dismiss"
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 };

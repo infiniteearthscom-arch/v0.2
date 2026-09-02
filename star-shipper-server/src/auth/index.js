@@ -171,6 +171,13 @@ export const findUserById = async (id) => {
   );
 };
 
+// DEV-only endpoint gate (cheat craft, etc.). The server-side check is
+// the authoritative one — the client's `is_dev` flag on /me only hides
+// UI. Add emails here to grant dev powers to an account.
+const DEV_ACCOUNT_EMAILS = new Set(['infiniteearths.com@gmail.com']);
+export const isDevAccount = (user) =>
+  !!user && DEV_ACCOUNT_EMAILS.has(String(user.email || '').toLowerCase());
+
 export const updateUserOnline = async (userId, isOnline) => {
   await query(
     `UPDATE users SET is_online = $1, last_seen_at = NOW() WHERE id = $2`,

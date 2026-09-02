@@ -2,7 +2,7 @@
 // Handles resource deposits, surveying, harvesting, and inventory
 
 import express from 'express';
-import { authMiddleware } from '../auth/index.js';
+import { authMiddleware, isDevAccount } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import {
   ensureDepositsExist,
@@ -429,56 +429,11 @@ router.get('/inventory', authMiddleware, async (req, res) => {
   }
 });
 
-// Add resources to player inventory
-router.post('/inventory/add', authMiddleware, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { resource_type_id, quantity, purity, stability, potency, density } = req.body;
-    
-    if (!resource_type_id || !quantity || quantity <= 0) {
-      return res.status(400).json({ error: 'Invalid resource data' });
-    }
-    
-    // Try to stack with existing (same stats)
-    const existing = await queryOne(`
-      SELECT * FROM player_resource_inventory
-      WHERE user_id = $1 
-        AND resource_type_id = $2
-        AND stat_purity = $3
-        AND stat_stability = $4
-        AND stat_potency = $5
-        AND stat_density = $6
-    `, [userId, resource_type_id, purity, stability, potency, density]);
-    
-    let result;
-    
-    if (existing) {
-      // Add to existing stack
-      result = await queryOne(`
-        UPDATE player_resource_inventory
-        SET quantity = quantity + $1, updated_at = NOW()
-        WHERE id = $2
-        RETURNING *
-      `, [quantity, existing.id]);
-    } else {
-      // Create new stack with next available slot
-      const nextSlot = await getNextSlotIndex(userId);
-      result = await queryOne(`
-        INSERT INTO player_resource_inventory (
-          user_id, resource_type_id, quantity,
-          stat_purity, stat_stability, stat_potency, stat_density,
-          slot_index
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING *
-      `, [userId, resource_type_id, quantity, purity, stability, potency, density, nextSlot]);
-    }
-    
-    res.json({ success: true, stack: result });
-  } catch (error) {
-    console.error('Error adding to inventory:', error);
-    res.status(500).json({ error: 'Failed to add to inventory' });
-  }
-});
+// (POST /inventory/add REMOVED, audit 2026-09-02 — it inserted arbitrary
+// resources/stats straight from the request body with no source check:
+// a free mint for any logged-in player. Every legitimate flow (mining,
+// crafting, trade, market, harvesters) has its own server-side insert;
+// no client code called this endpoint.)
 
 // Get cargo info (capacity, usage)
 router.get('/cargo', authMiddleware, async (req, res) => {
@@ -733,7 +688,23 @@ router.post('/craft', authMiddleware, async (req, res) => {
       let totalStatPurity = 0, totalStatStability = 0, totalStatPotency = 0, totalStatDensity = 0;
       let totalStatWeight = 0;
       
+      // Reject duplicate stack ids: [{A:5},{A:5}] satisfies a need of 10
+      // but the consume loop only debits the stack once (DELETE no-ops
+      // on the second pass) — half-price crafting.
+      const seenStackIds = new Set();
       for (const ing of ingredients) {
+        if (seenStackIds.has(ing.stack_id)) {
+          throw Object.assign(new Error('Duplicate stack in ingredients'), { statusCode: 400 });
+        }
+        seenStackIds.add(ing.stack_id);
+        // Reject non-positive/non-integer quantities: a negative entry
+        // paired with an over-providing stack sums to the requirement
+        // but subtracts its stack's stats from the weighted average —
+        // a quality-manipulation exploit (and `quantity - (-n)` would
+        // grow the stack on consume).
+        if (!Number.isInteger(ing.quantity) || ing.quantity <= 0) {
+          throw Object.assign(new Error('Ingredient quantities must be positive integers'), { statusCode: 400 });
+        }
         // Lock and fetch the stack
         const stackResult = await client.query(
           `SELECT pri.*, rt.name as resource_name
@@ -907,6 +878,11 @@ router.post('/inventory/trash', authMiddleware, async (req, res) => {
     const { item_id, quantity } = req.body;
 
     if (!item_id) return res.status(400).json({ error: 'item_id required' });
+    // Negative/fractional quantity would GROW the stack via
+    // `quantity - (-n)` — reject anything but a positive integer.
+    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity <= 0)) {
+      return res.status(400).json({ error: 'quantity must be a positive integer' });
+    }
 
     const item = await queryOne(
       `SELECT * FROM player_resource_inventory WHERE id = $1 AND user_id = $2`,
@@ -936,9 +912,14 @@ router.post('/inventory/trash', authMiddleware, async (req, res) => {
 // HARVESTING (Manual Mining)
 // ============================================
 
-// DEV ONLY: Cheat craft — creates item without consuming resources
+// DEV ONLY: Cheat craft — creates item without consuming resources.
+// Gated to dev accounts (auth/index.js DEV_ACCOUNT_EMAILS) — this was
+// previously open to every player, i.e. a free item mint.
 router.post('/craft/cheat', authMiddleware, async (req, res) => {
   try {
+    if (!isDevAccount(req.user)) {
+      return res.status(403).json({ error: 'Dev accounts only' });
+    }
     const userId = req.user.id;
     const { recipe_id } = req.body;
     if (!recipe_id) return res.status(400).json({ error: 'recipe_id required' });
@@ -1123,8 +1104,10 @@ router.post('/harvest/start', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Must ground-scan this body before mining' });
     }
 
-    // Base rate: 50 units/hr (future: modify by mining bay modules)
-    const harvestRate = 3600; // DEV: 1 unit/sec (change to 50 for production)
+    // Base rate: 50 units/hr (future: modify by mining bay modules).
+    // Was 3600 ("DEV: 1 unit/sec") — shipped to prod by accident and ran
+    // planet mining at 72x intended for months. Audit fix 2026-09-02.
+    const harvestRate = 50;
 
     // Create session
     const session = await queryOne(`

@@ -2142,7 +2142,13 @@ const VendorTab = ({ body }) => {
       const result = await fittingAPI.buyHull(hullId);
       if (result.success) {
         flash('success', `Purchased ${result.hull.name}!`);
-        openWindow('shipBuilder');
+        // Stay in the vendor — the player is likely buying modules next.
+        // duration: 0 = persistent; only the toast's X dismisses it.
+        if (pushToast) pushToast({
+          kind: 'info',
+          text: "Don't forget to buy or craft, then equip modules for your new ship before leaving the station.",
+          duration: 0,
+        });
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
@@ -2699,7 +2705,6 @@ const VendorTab = ({ body }) => {
                 <div style={{ marginBottom: 12 }}>
                   <div style={{
                     fontSize: '0.8rem',
-                    color: '#4a6580',
                     fontFamily: FM,
                     letterSpacing: 1,
                     marginBottom: 5,

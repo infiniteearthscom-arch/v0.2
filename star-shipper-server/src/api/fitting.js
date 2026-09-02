@@ -6,6 +6,7 @@ import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
+import { completeQuestInTx } from './quests.js';
 
 const router = express.Router();
 
@@ -581,6 +582,14 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       ];
 
       const kitResult = await transaction(async (client) => {
+        // Lock the users row FIRST so concurrent kit buys serialize —
+        // then check the claim marker under the lock. Previously the
+        // claim was only marked when the CLIENT later called
+        // /quests/complete, so skipping that call (or firing parallel
+        // buys) claimed unlimited free kits. Audit fix 2026-09-02: the
+        // quest is now completed server-side in this same transaction
+        // (with its rewards + chain triggers), closing both holes.
+        const userRow = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
         const claimed = await client.query(
           `SELECT 1 FROM player_quests
            WHERE user_id = $1 AND quest_id = 'tutorial_buy_starter_kit' AND status = 'completed'`,
@@ -592,7 +601,6 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
             { statusCode: 400 }
           );
         }
-        const userRow = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
         const credits = parseInt(userRow.rows[0]?.credits || 0);
         if (credits < STARTER_KIT_PRICE) {
           throw Object.assign(
@@ -624,7 +632,23 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
           `, [userId, item.id, nextSlot, JSON.stringify(itemData)]);
         }
 
-        return { module: 'Starter Kit', price: STARTER_KIT_PRICE };
+        // Server-authoritative claim marker: complete the Gear Up quest
+        // here (rewards + follow-on chain included). If the quest row
+        // isn't active (edge: veteran account that never had it), insert
+        // it directly as completed so the one-per-account gate still
+        // engages on the next attempt.
+        const questResult = await completeQuestInTx(client, userId, 'tutorial_buy_starter_kit');
+        if (questResult.already_complete) {
+          await client.query(
+            `INSERT INTO player_quests (user_id, quest_id, status, completed_at)
+             VALUES ($1, 'tutorial_buy_starter_kit', 'completed', NOW())
+             ON CONFLICT (user_id, quest_id)
+             DO UPDATE SET status = 'completed', completed_at = NOW()`,
+            [userId]
+          );
+        }
+
+        return { module: 'Starter Kit', price: STARTER_KIT_PRICE, quest: questResult.already_complete ? null : questResult };
       });
 
       return res.json({ success: true, ...kitResult });
@@ -1024,8 +1048,11 @@ router.post('/sell-resource', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { inventory_id, quantity } = req.body;
 
-    if (!inventory_id || !quantity || quantity <= 0) {
-      return res.status(400).json({ error: 'inventory_id and positive quantity required' });
+    // Integer check matters: a fractional quantity (0.4) used to pay
+    // credits on the fraction while the INTEGER inventory UPDATE
+    // rounded to no change — a credit mint. Audit fix 2026-09-02.
+    if (!inventory_id || !Number.isInteger(quantity) || quantity <= 0) {
+      return res.status(400).json({ error: 'inventory_id and positive integer quantity required' });
     }
 
     const result = await transaction(async (client) => {
@@ -1101,6 +1128,10 @@ router.post('/sell-item', authMiddleware, async (req, res) => {
 
     if (!inventory_id) {
       return res.status(400).json({ error: 'inventory_id required' });
+    }
+    // Same fractional-quantity credit-mint hole as /sell-resource.
+    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity <= 0)) {
+      return res.status(400).json({ error: 'quantity must be a positive integer' });
     }
 
     const sellQty = Math.max(1, quantity || 1);
