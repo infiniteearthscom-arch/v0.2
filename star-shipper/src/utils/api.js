@@ -26,7 +26,26 @@ const request = async (endpoint, options = {}) => {
   };
 
   const response = await fetch(`${API_URL}${endpoint}`, config);
-  const data = await response.json();
+
+  // Defensive parse: a DO edge 502/504 returns an HTML body, and
+  // response.json() on it used to throw "Unexpected token '<'" —
+  // masking the real status. Parse text and fall back to {} so the
+  // thrown error carries the HTTP status instead.
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = {}; }
+
+  // Expired/invalid session: force a clean logout so the player gets
+  // the login screen instead of a silently frozen game (polls used to
+  // fail forever with no prompt). Skipped for /auth/* endpoints — a
+  // wrong password on login is a 401 too, and must not nuke state.
+  // Lazy import to avoid a static api.js <-> authStore cycle.
+  if (response.status === 401 && token && !endpoint.startsWith('/auth/')) {
+    import('@/stores/authStore')
+      .then(({ useAuthStore }) => useAuthStore.getState().logout())
+      .catch(() => {});
+    throw new Error(data.error || 'Session expired — please log in again');
+  }
 
   if (!response.ok) {
     throw new Error(data.error || `Request failed: ${response.status}`);

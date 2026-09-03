@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { authAPI, handleOAuthCallback } from '@/utils/api';
+import { useGameStore } from '@/stores/gameStore';
+import socketBus from '@/utils/socket';
 
 export const useAuthStore = create((set, get) => ({
   // State
@@ -101,8 +103,23 @@ export const useAuthStore = create((set, get) => ({
     window.location.href = authAPI.getGoogleAuthUrl();
   },
 
-  // Logout
+  // Logout — also called by api.js's 401 handler on session expiry.
+  // Must tear down EVERYTHING account-scoped (audit fix 2026-09-02):
+  //  - the socket authenticates once at handshake, so without a
+  //    teardown a signed-out user stayed "online" to peers, and a
+  //    second account in the same tab reused the old socket (chat/
+  //    presence attributed to the PREVIOUS user);
+  //  - gameStore kept the old account's ships/quests/fog-of-war (and
+  //    persisted gameStarted), leaking state into the next login.
+  // Device prefs (audio, UI scale, toolbar) survive the reset.
   logout: () => {
+    try { socketBus.teardown(); } catch (e) { /* never block logout */ }
+    try {
+      const gs = useGameStore.getState();
+      const prefs = { audio: gs.audio, uiScale: gs.uiScale, toolbarExpanded: gs.toolbarExpanded };
+      gs.resetGame();
+      useGameStore.setState(prefs);
+    } catch (e) { /* never block logout */ }
     authAPI.logout();
     set({
       user: null,

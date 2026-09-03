@@ -37,6 +37,13 @@ const ENABLED = import.meta.env.VITE_PRESENCE_ENABLED === 'true';
 
 let socket = null;
 let connecting = false;
+// Throttle full socket rebuilds. Callers (presence's 100ms trailing-
+// flush nudge, chat sends) may invoke ensureSocket() rapidly while
+// offline; without this, each call between socket.io's own retry
+// attempts would tear down + rebuild the socket, defeating its
+// reconnection backoff and hammering the server.
+let lastBuildMs = 0;
+const REBUILD_MIN_MS = 5000;
 
 // Lifecycle subscribers (connect/disconnect/error/kicked).
 const lifecycleListeners = new Map();
@@ -71,11 +78,16 @@ function getToken() {
 }
 
 export function ensureSocket() {
-  if (socket && socket.connected) return socket;
+  // `active` covers "connected OR socket.io is mid-reconnection-cycle" —
+  // let its own backoff run instead of rebuilding over it.
+  if (socket && (socket.connected || socket.active)) return socket;
   if (connecting) return socket;
   if (!ENABLED) return null;
   const token = getToken();
   if (!token) return null;
+  const now = Date.now();
+  if (now - lastBuildMs < REBUILD_MIN_MS) return socket;
+  lastBuildMs = now;
 
   connecting = true;
   // If a previous socket exists but is dead (gave up reconnecting, was
@@ -102,14 +114,36 @@ export function ensureSocket() {
   });
 
   socket.on('disconnect', (reason) => {
+    // Clear `connecting` here too: a socket that connected then dropped
+    // must not leave the flag blocking the next ensureSocket() rebuild.
+    connecting = false;
     emitLifecycle('disconnect', { reason });
   });
 
   socket.on('connect_error', (err) => {
+    // CRITICAL: reset the flag. Before this (audit fix 2026-09-02), a
+    // failed FIRST connection attempt (stale token at page load, server
+    // mid-deploy) left `connecting = true` forever — every later
+    // ensureSocket() short-circuited on it and returned the dead
+    // socket, so chat/presence/trade never came online again without a
+    // full page reload, even after a fresh login.
+    connecting = false;
     if (err?.message === 'Authentication required' || err?.message === 'Invalid token') {
       socket.disconnect();
     }
     emitLifecycle('error', { message: err?.message || 'connection error' });
+  });
+
+  // socket.io gives up after reconnectionAttempts (~10 tries / ~50s of
+  // outage). Null the socket so the next ensureSocket() call — or the
+  // periodic nudge from presence's send loop — rebuilds from scratch
+  // instead of holding a permanently-dead instance.
+  socket.io.on('reconnect_failed', () => {
+    connecting = false;
+    const dead = socket;
+    socket = null;
+    try { dead.removeAllListeners(); dead.disconnect(); } catch (err) { /* already dead */ }
+    emitLifecycle('error', { message: 'reconnect_failed' });
   });
 
   socket.on('kicked', (payload) => {
@@ -122,6 +156,22 @@ export function ensureSocket() {
 
 export function getSocket() { return socket; }
 export function isEnabled() { return ENABLED; }
+
+// Full teardown — called on logout. The socket authenticates ONCE at
+// handshake, so without this a signed-out user stays "online" to peers
+// and a second account logging in on the same tab would reuse the old
+// socket, attributing chat/presence to the PREVIOUS user. Registered
+// onSocketEvent bindings survive (they re-bind when the next account's
+// ensureSocket() connects). Audit fix 2026-09-02.
+export function teardown() {
+  connecting = false;
+  lastBuildMs = 0; // next login connects immediately, no throttle wait
+  if (socket) {
+    const dead = socket;
+    socket = null;
+    try { dead.removeAllListeners(); dead.disconnect(); } catch (err) { /* already dead */ }
+  }
+}
 
 // Lifecycle subscription. Returns unsubscribe.
 export function on(event, fn) {
@@ -143,4 +193,4 @@ export function onSocketEvent(event, fn) {
   };
 }
 
-export default { ensureSocket, getSocket, isEnabled, on, onSocketEvent };
+export default { ensureSocket, getSocket, isEnabled, on, onSocketEvent, teardown };

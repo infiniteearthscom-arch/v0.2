@@ -298,7 +298,12 @@ export function sendPos(state) {
 
 // Catch the trailing edge: if the consumer stopped calling sendPos but
 // we have a pending coalesced update, flush it after the interval.
+// This interval doubles as the RECONNECT NUDGE: if socket.io exhausted
+// its reconnection attempts (>~50s outage), the bus nulled the socket —
+// and without this, nothing would rebuild it until the player changed
+// systems. ensureSocket() is a cheap no-op while connected.
 setInterval(() => {
+  if (ENABLED && currentSystemId) socketBus.ensureSocket();
   const s = socketBus.getSocket();
   if (!ENABLED || !pendingPos || !s?.connected || !currentSystemId) return;
   const now = Date.now();
