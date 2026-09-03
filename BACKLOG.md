@@ -415,6 +415,31 @@ Other perf:
 
 ---
 
+## Game balance / tuning (owner-flagged, 2026-09-02)
+
+Not bugs — economy/progression design work. Both need a numbers pass with live playtest
+feedback, and both touch the same lever: how fast players climb tiers.
+
+1. **Research Point curve vs. tree depth.** RP accrual (1 RP/min base, +5%/level from
+   Research Methodology) outpaces the tech-tree costs — deep research unlocks too easily.
+   Rework the RP-cost curve so descending the tree takes meaningfully longer per tier
+   (steeper node costs at T3+/T4+, or slower effective accrual, or both). Values to touch:
+   `tech_definitions` RP costs (migrations 031/053/055/062 — currently up to 2400/6000 RP at
+   tier 4), the 1 RP/min trickle in `api/research.js`, and the `rp_rate_pct` bonus contract.
+
+2. **Resource value / collection time vs. item value — full progression curve.** Balance
+   what resources are worth (base_price, rarity spawn rates), how long they take to gather
+   (mining yield, harvester rates — note the 72×→50/hr fix already landed), and what items
+   cost to buy/craft, so that: early progression is slower than today (but not grindy),
+   higher-tier items take meaningfully longer to reach, and each step still feels rewarding.
+   Related knobs: recipe ingredient quantities, vendor buy/sell prices + the 50% vendor
+   spread, T3+ craft-only gating, exotic spawn rates (danger-scaled since the zoning pass),
+   loot payouts (client `fleetEntities.js` + server `pirateManifest.js` — pitfall #16: change
+   together). NOTE: the Sol "TEST BUFF" pirate-spawn block (watch item below) should probably
+   revert as part of this same pass.
+
+---
+
 ## Watch items (not bugs today)
 
 - **Sol "⚠ TEST BUFF (2026-06-03)" in `PIRATE_SPAWN_ZONES` (`SystemView.jsx:55–58`)** — when
