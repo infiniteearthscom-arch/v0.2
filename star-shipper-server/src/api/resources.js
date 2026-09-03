@@ -36,7 +36,9 @@ const router = express.Router();
 // HELPER: Resolve body ID (handles both UUIDs and name aliases)
 // ============================================
 
-const resolveBodyId = async (bodyIdOrName) => {
+// Exported: api/market.js needs the same client-string -> UUID
+// translation for station body ids coming out of the presence layer.
+export const resolveBodyId = async (bodyIdOrName) => {
   // Check if it's already a valid UUID format
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   

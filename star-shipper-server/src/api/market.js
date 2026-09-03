@@ -21,6 +21,7 @@ import {
   postOrder, cancelOrder, fulfillOrder,
   listStationOrders, listStationItemSummary, listMyOrders,
 } from '../lib/market.js';
+import { resolveBodyId } from './resources.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -32,15 +33,25 @@ function sendErr(res, err) {
 }
 
 // Pulls the user's currently-docked body (via the presence module on
-// `app.get('io')`). Returns null if they're not docked.
-function dockedBodyForUser(req, userId) {
+// `app.get('io')`) and resolves it to a DB UUID. Returns null if they
+// aren't docked or the body can't be resolved.
+//
+// The resolve step matters (pitfall #12, audit fix 2026-09-02): the
+// client docks with STRING ids ("luna_station", "mars"), and that's
+// what presence hands back — but market_orders.station_body_id is a
+// UUID column, so posting at Luna Station 500'd with `invalid input
+// syntax for type uuid: "luna_station"` and fulfill's station-match
+// check could never pass.
+async function dockedBodyForUser(req, userId) {
   const presence = req.app.get('io')?.presence;
-  return presence?.getUserDockedBody?.(userId) || null;
+  const raw = presence?.getUserDockedBody?.(userId) || null;
+  if (!raw) return null;
+  return await resolveBodyId(String(raw));
 }
 
 router.post('/order', async (req, res) => {
   try {
-    const dockedAt = dockedBodyForUser(req, req.user.id);
+    const dockedAt = await dockedBodyForUser(req, req.user.id);
     if (!dockedAt) return res.status(400).json({ error: 'You must be docked to post orders' });
     const order = await postOrder({
       userId: req.user.id,
@@ -72,7 +83,7 @@ router.post('/order/:id/fulfill', async (req, res) => {
     // logic? Simpler: ask lib to validate that the user is at the
     // right station. We pass the user's current body and let the lib
     // compare; if mismatched it throws.
-    const dockedAt = dockedBodyForUser(req, req.user.id);
+    const dockedAt = await dockedBodyForUser(req, req.user.id);
     if (!dockedAt) return res.status(400).json({ error: 'You must be docked to fulfill orders' });
     const result = await fulfillOrder({
       userId: req.user.id,
@@ -87,7 +98,10 @@ router.post('/order/:id/fulfill', async (req, res) => {
 
 router.get('/station/:bodyId/summary', async (req, res) => {
   try {
-    const rows = await listStationItemSummary({ stationBodyId: req.params.bodyId });
+    // Client sends its string body id ("luna_station") — resolve to
+    // UUID or the WHERE clause errors on the uuid cast.
+    const stationBodyId = await resolveBodyId(String(req.params.bodyId));
+    const rows = await listStationItemSummary({ stationBodyId });
     res.json({ items: rows });
   } catch (err) { sendErr(res, err); }
 });
@@ -95,7 +109,7 @@ router.get('/station/:bodyId/summary', async (req, res) => {
 router.get('/station/:bodyId/book', async (req, res) => {
   try {
     const rows = await listStationOrders({
-      stationBodyId: req.params.bodyId,
+      stationBodyId: await resolveBodyId(String(req.params.bodyId)),
       itemType: req.query.item_type || null,
       resourceTypeId: req.query.resource_type_id || null,
       itemId: req.query.item_id || null,
