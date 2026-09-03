@@ -95,6 +95,14 @@ function levelFromSp(sp, rankMult, override = null) {
 async function loadAndCommit(client, userId) {
   const now = new Date();
 
+  // Per-user mutex: the client fires GET /skills from several
+  // components at once, and two concurrent commits both popped the
+  // same finished head entry then both ran the position-shift UPDATE,
+  // corrupting queue positions into negatives. Locking the users row
+  // serializes every skill operation for this user (reads commit the
+  // queue, so reads mutate too). Audit fix 2026-09-02.
+  await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+
   // Pull all skill defs first -- need rank_multiplier for cost calcs.
   const defsRes = await client.query(`SELECT * FROM skill_definitions ORDER BY sort_order ASC`);
   const defs = defsRes.rows;

@@ -227,47 +227,62 @@ export const getGoogleUserProfile = async (accessToken) => {
 // AUTH MIDDLEWARE
 // ============================================
 
+// NOTE: both middlewares MUST catch their own async errors. Express 4
+// does not catch rejected async middleware — on Node an unhandled
+// rejection kills the process, so a single transient DB error during
+// the auth lookup (pool timeout, failover blip) would crash the whole
+// server for every player. Audit fix 2026-09-02.
 export const authMiddleware = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const user = await findUserById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(500).json({ error: 'Authentication check failed' });
   }
-  
-  const token = authHeader.split(' ')[1];
-  const decoded = verifyToken(token);
-  
-  if (!decoded) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-  
-  const user = await findUserById(decoded.userId);
-  if (!user) {
-    return res.status(401).json({ error: 'User not found' });
-  }
-  
-  req.user = user;
-  next();
 };
 
 // Socket.IO auth middleware
 export const socketAuthMiddleware = async (socket, next) => {
-  const token = socket.handshake.auth.token;
-  
-  if (!token) {
-    return next(new Error('Authentication required'));
+  try {
+    const token = socket.handshake.auth.token;
+
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return next(new Error('Invalid token'));
+    }
+
+    const user = await findUserById(decoded.userId);
+    if (!user) {
+      return next(new Error('User not found'));
+    }
+
+    socket.user = user;
+    next();
+  } catch (error) {
+    console.error('Socket auth middleware error:', error);
+    next(new Error('Authentication check failed'));
   }
-  
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return next(new Error('Invalid token'));
-  }
-  
-  const user = await findUserById(decoded.userId);
-  if (!user) {
-    return next(new Error('User not found'));
-  }
-  
-  socket.user = user;
-  next();
 };

@@ -19,9 +19,14 @@ pool.on('connect', () => {
   console.log('📦 Database connected');
 });
 
+// Errors on IDLE pooled clients (server restart, network blip, DO
+// failover) land here. Log and let the pool replace the dead client —
+// exiting (the old behavior) turned a routine idle-connection drop
+// into a full multi-second outage for every player. In-flight query
+// errors are NOT handled here; they reject their own promises and are
+// handled by each endpoint's try/catch. Audit fix 2026-09-02.
 pool.on('error', (err) => {
-  console.error('❌ Unexpected database error:', err);
-  process.exit(-1);
+  console.error('❌ Idle database client error (pool will recover):', err.message);
 });
 
 // Query helper
@@ -46,7 +51,9 @@ export const transaction = async (callback) => {
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK');
+    // If the connection itself died, ROLLBACK will also throw — swallow
+    // that so the ORIGINAL error propagates, not the rollback failure.
+    try { await client.query('ROLLBACK'); } catch { /* connection gone */ }
     throw error;
   } finally {
     client.release();
