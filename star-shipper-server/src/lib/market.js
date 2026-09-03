@@ -179,6 +179,45 @@ export async function postOrder({
 }
 
 // ============================================================
+// ESCROW RETURN (shared by cancel + lazy expiry)
+// The market_orders row IS the escrow: sell orders hold the items in
+// their snapshot columns, buy orders represent deducted credits.
+// ============================================================
+async function returnEscrow(client, order) {
+  if (order.side === 'sell') {
+    // Return the items.
+    if (order.quantity_remaining > 0) {
+      if (order.item_type === 'resource') {
+        await depositResource(client, order.user_id, order.resource_type_id, order.quantity_remaining, order);
+      } else {
+        await depositItem(client, order.user_id, order.item_id, order.quantity_remaining, order.item_data || {});
+      }
+    }
+  } else {
+    // Return remaining credit escrow.
+    const refund = order.price_per_unit * order.quantity_remaining;
+    if (refund > 0) {
+      await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [refund, order.user_id]);
+    }
+  }
+}
+
+// Lazily expire an order (caller must hold FOR UPDATE on the row):
+// escrow back to the owner, status -> expired. There is no background
+// sweep — expiry is enforced at the read/fulfill touch points instead.
+async function expireOrderTx(client, order) {
+  await returnEscrow(client, order);
+  await client.query(
+    `UPDATE market_orders SET status = 'expired', quantity_remaining = 0 WHERE id = $1`,
+    [order.id]
+  );
+}
+
+function isExpired(order) {
+  return order.expires_at && new Date(order.expires_at) <= new Date();
+}
+
+// ============================================================
 // CANCEL ORDER
 // Returns escrow to the owner. Items rejoin inventory (merging into a
 // matching stack if any); credits return to users.credits.
@@ -194,22 +233,7 @@ export async function cancelOrder({ userId, orderId }) {
     if (order.user_id !== userId) throw makeErr(403, 'Not your order');
     if (order.status !== 'open') throw makeErr(400, `Cannot cancel (status=${order.status})`);
 
-    if (order.side === 'sell') {
-      // Return the items.
-      if (order.quantity_remaining > 0) {
-        if (order.item_type === 'resource') {
-          await depositResource(client, userId, order.resource_type_id, order.quantity_remaining, order);
-        } else {
-          await depositItem(client, userId, order.item_id, order.quantity_remaining, order.item_data || {});
-        }
-      }
-    } else {
-      // Return remaining credit escrow.
-      const refund = order.price_per_unit * order.quantity_remaining;
-      if (refund > 0) {
-        await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [refund, userId]);
-      }
-    }
+    await returnEscrow(client, order);
 
     await client.query(
       `UPDATE market_orders SET status = 'cancelled', quantity_remaining = 0 WHERE id = $1`,
@@ -244,6 +268,13 @@ export async function fulfillOrder({ userId, orderId, quantity, sourceStackId, c
     const order = orderRes.rows[0];
     if (!order) throw makeErr(404, 'Order not found');
     if (order.status !== 'open') throw makeErr(400, `Order is not open (status=${order.status})`);
+    // Expiry was previously decorative — expired orders stayed listed
+    // and fulfillable forever. Enforce lazily: expire + refund the
+    // owner's escrow, reject the fill. Audit fix 2026-09-02.
+    if (isExpired(order)) {
+      await expireOrderTx(client, order);
+      throw makeErr(400, 'Order has expired');
+    }
     if (order.user_id === userId) throw makeErr(400, "You can't fulfill your own order");
     // Must be docked at the order's station (passed through from the
     // API layer's presence lookup). Without this guard, remote
@@ -355,7 +386,7 @@ export async function fulfillOrder({ userId, orderId, quantity, sourceStackId, c
 // ============================================================
 export async function listStationOrders({ stationBodyId, itemType, resourceTypeId, itemId, side }) {
   if (!stationBodyId) return [];
-  const conds = ['station_body_id = $1', `status = 'open'`];
+  const conds = ['station_body_id = $1', `status = 'open'`, '(expires_at IS NULL OR expires_at > NOW())'];
   const params = [stationBodyId];
   if (itemType) { params.push(itemType); conds.push(`item_type = $${params.length}`); }
   if (resourceTypeId) { params.push(resourceTypeId); conds.push(`resource_type_id = $${params.length}`); }
@@ -395,6 +426,7 @@ export async function listStationItemSummary({ stationBodyId }) {
         COALESCE(SUM(CASE WHEN side = 'sell' THEN quantity_remaining END), 0)::BIGINT AS ask_volume
        FROM market_orders
       WHERE station_body_id = $1 AND status = 'open'
+        AND (expires_at IS NULL OR expires_at > NOW())
       GROUP BY item_type, resource_type_id, item_id
       ORDER BY (COALESCE(SUM(quantity_remaining), 0))::BIGINT DESC
       LIMIT 100`,
@@ -404,8 +436,25 @@ export async function listStationItemSummary({ stationBodyId }) {
 
 // ============================================================
 // LIST: the user's own open orders.
+// Doubles as the lazy expiry sweep for the caller's OWN orders: any
+// past-expiry open order is expired + escrow-refunded here, so simply
+// opening the market panel returns stuck escrow. (Other players'
+// expired orders get the same treatment when someone tries to fulfill
+// them; the browse queries just hide them.)
 // ============================================================
 export async function listMyOrders({ userId }) {
+  await transaction(async (client) => {
+    const expired = await client.query(
+      `SELECT * FROM market_orders
+        WHERE user_id = $1 AND status = 'open'
+          AND expires_at IS NOT NULL AND expires_at <= NOW()
+        FOR UPDATE`,
+      [userId]
+    );
+    for (const order of expired.rows) {
+      await expireOrderTx(client, order);
+    }
+  });
   return queryAll(
     `SELECT mo.*, b.name AS station_name
        FROM market_orders mo

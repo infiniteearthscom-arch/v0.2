@@ -173,6 +173,16 @@ export async function inviteToCorp({ inviterId, inviteeId }) {
     if (existingMembership.rows[0]) {
       throw makeErr(400, 'That pilot is already in a corporation');
     }
+    // Clear any EXPIRED invite first. The UNIQUE(corp_id, invitee_id)
+    // constraint + no cleanup meant an ignored invite permanently
+    // blocked re-inviting that pilot after its 7-day expiry (the
+    // invitee can't even see expired invites to reject them). Audit
+    // fix 2026-09-02.
+    await client.query(
+      `DELETE FROM corporation_invites
+        WHERE corp_id = $1 AND invitee_id = $2 AND expires_at <= NOW()`,
+      [corp_id, inviteeId]
+    );
     try {
       const ins = await client.query(
         `INSERT INTO corporation_invites (corp_id, inviter_id, invitee_id)

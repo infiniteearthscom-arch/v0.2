@@ -97,6 +97,10 @@ export async function claimBounty({ userId, bountyId, killedHullClass, killSyste
     if (bounty.status !== 'open') throw makeErr(400, `Bounty is not open (status=${bounty.status})`);
     if (bounty.poster_id === userId) throw makeErr(400, "You can't claim your own bounty");
     if (new Date(bounty.expires_at) < new Date()) {
+      // Previously this just rejected, leaving the poster's escrow
+      // locked invisibly forever. Lazy enforcement: mark expired +
+      // refund the poster here. Audit fix 2026-09-02.
+      await expireBountyTx(client, bounty);
       throw makeErr(400, 'Bounty has expired');
     }
 
@@ -135,6 +139,18 @@ export async function claimBounty({ userId, bountyId, killedHullClass, killSyste
 }
 
 // ============================================================
+// LAZY EXPIRY (no background sweep exists)
+// Caller must hold FOR UPDATE on the bounty row. Refunds the poster's
+// escrow + flips status. Enforced at the claim path and at the
+// poster's own "My Bounties" listing.
+// ============================================================
+async function expireBountyTx(client, bounty) {
+  await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`,
+    [bounty.reward_credits, bounty.poster_id]);
+  await client.query(`UPDATE bounties SET status = 'expired' WHERE id = $1`, [bounty.id]);
+}
+
+// ============================================================
 // LIST
 // ============================================================
 export async function listOpenBounties({ systemId } = {}) {
@@ -148,6 +164,7 @@ export async function listOpenBounties({ systemId } = {}) {
          FROM bounties b
          JOIN users u ON u.id = b.poster_id
         WHERE b.status = 'open'
+          AND (b.expires_at IS NULL OR b.expires_at > NOW())
           AND (b.target_system_id = $1 OR b.target_system_id IS NULL)
         ORDER BY b.reward_credits DESC, b.created_at DESC
         LIMIT 200`,
@@ -159,6 +176,7 @@ export async function listOpenBounties({ systemId } = {}) {
        FROM bounties b
        JOIN users u ON u.id = b.poster_id
       WHERE b.status = 'open'
+        AND (b.expires_at IS NULL OR b.expires_at > NOW())
       ORDER BY b.reward_credits DESC, b.created_at DESC
       LIMIT 200`,
     []
@@ -166,11 +184,25 @@ export async function listOpenBounties({ systemId } = {}) {
 }
 
 export async function listMyBounties({ userId }) {
+  // Lazy expiry sweep for the caller's own bounties: opening "My
+  // Bounties" refunds any past-expiry open escrow automatically.
+  await transaction(async (client) => {
+    const expired = await client.query(
+      `SELECT * FROM bounties
+        WHERE poster_id = $1 AND status = 'open'
+          AND expires_at IS NOT NULL AND expires_at <= NOW()
+        FOR UPDATE`,
+      [userId]
+    );
+    for (const bounty of expired.rows) {
+      await expireBountyTx(client, bounty);
+    }
+  });
   return queryAll(
     `SELECT b.*, u.username AS claimer_name
        FROM bounties b
        LEFT JOIN users u ON u.id = b.claimer_id
-      WHERE b.poster_id = $1 AND b.status IN ('open', 'claimed')
+      WHERE b.poster_id = $1 AND b.status IN ('open', 'claimed', 'expired')
       ORDER BY b.status ASC, b.created_at DESC
       LIMIT 100`,
     [userId]
