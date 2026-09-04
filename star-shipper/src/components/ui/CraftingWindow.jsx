@@ -989,6 +989,24 @@ export const CraftingWindow = () => {
     }
   };
 
+  // Collapsible state — start all collapsed. MUST be declared before
+  // the early return below: hooks after a conditional return violate
+  // the Rules of Hooks ("Rendered fewer hooks than expected" crash the
+  // moment this component is ever mounted unconditionally). Currently
+  // masked only because App.jsx mount-gates it. Audit fix 2026-09-03.
+  const [collapsed, setCollapsed] = useState(() => {
+    const init = {};
+    CATEGORY_ORDER.forEach(c => init[c] = true);
+    return init;
+  });
+  const [subCollapsed, setSubCollapsed] = useState(() => {
+    const init = {};
+    MODULE_SUBCAT_ORDER.forEach(s => init[s] = true);
+    return init;
+  });
+  const toggleCat = (cat) => setCollapsed(p => ({ ...p, [cat]: !p[cat] }));
+  const toggleSub = (key) => setSubCollapsed(p => ({ ...p, [key]: !p[key] }));
+
   if (!isOpen) return null;
 
   // Group recipes by category
@@ -1010,20 +1028,6 @@ export const CraftingWindow = () => {
       moduleSubgroups[sub].push(r);
     }
   }
-
-  // Collapsible state — start all collapsed
-  const [collapsed, setCollapsed] = useState(() => {
-    const init = {};
-    CATEGORY_ORDER.forEach(c => init[c] = true);
-    return init;
-  });
-  const [subCollapsed, setSubCollapsed] = useState(() => {
-    const init = {};
-    MODULE_SUBCAT_ORDER.forEach(s => init[s] = true);
-    return init;
-  });
-  const toggleCat = (cat) => setCollapsed(p => ({ ...p, [cat]: !p[cat] }));
-  const toggleSub = (key) => setSubCollapsed(p => ({ ...p, [key]: !p[key] }));
 
   return (
     <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent={COLORS.PURPLE.light} width={720}>

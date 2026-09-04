@@ -37,7 +37,7 @@ const formatTime = (ts) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
+const MessageList = ({ messages, ownUserId, onOpenProfile, renderTick }) => {
   // Auto-scroll to bottom on new message unless user has scrolled up.
   // We check the scrollTop / scrollHeight delta to detect "user is
   // reading history" (anything more than ~30px from the bottom).
@@ -50,10 +50,14 @@ const MessageList = ({ messages, ownUserId, onOpenProfile }) => {
     stickyRef.current = fromBottom < 30;
   };
 
+  // Dep on renderTick, not just messages: the chat singleton mutates
+  // the buffer in place (same array reference), so [messages] alone
+  // never re-fires now that the parent no longer remounts us per
+  // message.
   useEffect(() => {
     if (!ref.current) return;
     if (stickyRef.current) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [messages]);
+  }, [messages, renderTick]);
 
   if (!messages.length) {
     return (
@@ -347,12 +351,19 @@ export const ChatPanel = () => {
         </button>
       </div>
 
-      {/* Message list */}
+      {/* Message list. Key on the CHANNEL only — keying on renderTick
+          remounted the list on every incoming message, resetting the
+          sticky-scroll ref and yanking a reader back to the bottom
+          (the exact behavior the 30px check exists to prevent).
+          renderTick rides as a plain prop instead: the singleton
+          mutates its buffer in place, so the prop change is what
+          triggers the re-render. Audit fix 2026-09-03. */}
       <MessageList
         messages={messages}
         ownUserId={ownUserId}
         onOpenProfile={openProfile}
-        key={`${activeChannel}-${renderTick}`}
+        renderTick={renderTick}
+        key={activeChannel}
       />
 
       {/* Input */}

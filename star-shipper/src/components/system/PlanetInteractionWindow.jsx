@@ -13,6 +13,7 @@ import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyl
 import { STAT_META, fmtStatValue } from '@/utils/quality';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
+import { generateGalaxy } from '@/utils/galaxyGenerator';
 import { MarketPanel } from '@/components/market/MarketPanel';
 
 // ============================================
@@ -72,9 +73,27 @@ const SectionHead = ({ title, accent = BLUE.light, right, icon }) => (
 // LANDSCAPE BANNER (procedural terrain header)
 // ============================================
 
+// Resolve the current system's display name. 'sol' is hand-resolved
+// (not in the procedural set); procedural ids go through the same
+// cached deterministic generator ActivityTicker uses. The banner used
+// to hardcode "· Sol System" for every body in all 200 systems.
+let _bannerSystemMap = null;
+function bannerSystemName(systemId) {
+  if (!systemId || systemId === 'sol') return 'Sol';
+  if (!_bannerSystemMap) {
+    try {
+      _bannerSystemMap = generateGalaxy(12345, 200).systemMap;
+    } catch {
+      _bannerSystemMap = {};
+    }
+  }
+  return _bannerSystemMap[systemId]?.name || 'Unknown';
+}
+
 const PlanetBanner = ({ body, onClose }) => {
   const color = body?.color || '#4488aa';
   const bodyType = body?.planetType || body?.type || 'planet';
+  const systemName = bannerSystemName(useGameStore(state => state.currentSystem));
   const seed = hashSeed(body?.id || body?.name || 'unknown');
   const offset = (seed % 628) / 100; // 0 to 6.28
 
@@ -207,7 +226,7 @@ const PlanetBanner = ({ body, onClose }) => {
             color: '#6a8a9a',
             fontFamily: FM,
             textTransform: 'capitalize',
-          }}>{bodyType} · Sol System</div>
+          }}>{bodyType} · {systemName} System</div>
         </div>
       </div>
     </div>
@@ -2035,6 +2054,10 @@ const VendorTab = ({ body }) => {
   // any non-pod ship (flying OR stored) counts. Drives hiding the
   // free Starter Scout vendor row below.
   const ownsRealShip = useGameStore(state => state.ships.some(s => s.hull_type_id !== 'pod'));
+  // Subscribed (not getState) so the Reload All Missiles row appears/
+  // hides immediately when launchers are fitted/unfitted — a getState
+  // read only updated on unrelated re-renders. Audit fix 2026-09-03.
+  const fleetShips = useGameStore(state => state.ships);
   const fetchCredits = useGameStore(state => state.fetchCredits);
   const fetchShips = useGameStore(state => state.fetchShips);
   const openWindow = useGameStore(state => state.openWindow);
@@ -2055,6 +2078,11 @@ const VendorTab = ({ body }) => {
       await fetchCredits();
     } catch (e) {}
   };
+
+  // In-flight guard shared by all vendor purchases. Without it a
+  // double-click bought two hulls (thousands of credits) before the
+  // first response landed. Audit fix 2026-09-03.
+  const [purchasing, setPurchasing] = useState(false);
 
   const loadSellInventory = async () => {
     try {
@@ -2138,6 +2166,8 @@ const VendorTab = ({ body }) => {
   };
 
   const buyHull = async (hullId) => {
+    if (purchasing) return;
+    setPurchasing(true);
     try {
       const result = await fittingAPI.buyHull(hullId);
       if (result.success) {
@@ -2153,6 +2183,7 @@ const VendorTab = ({ body }) => {
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
     } finally {
+      setPurchasing(false);
       refreshCredits();
       // Sync the global ships array. SystemView's auto-disembark
       // useEffect watches `ships`; without this refresh, a podded
@@ -2163,17 +2194,22 @@ const VendorTab = ({ body }) => {
   };
 
   const buyModule = async (moduleId) => {
+    if (purchasing) return;
+    setPurchasing(true);
     try {
       const result = await fittingAPI.buyModule(moduleId);
       if (result.success) { flash('success', `Bought ${result.module} for ${result.price} cr`); }
     } catch (err) {
       flash('error', err.message || 'Failed to buy module');
     } finally {
+      setPurchasing(false);
       refreshCredits();
     }
   };
 
   const buySupply = async (itemId) => {
+    if (purchasing) return;
+    setPurchasing(true);
     try {
       const result = await fittingAPI.buyModule(itemId);
       if (result.success) {
@@ -2185,6 +2221,7 @@ const VendorTab = ({ body }) => {
     } catch (err) {
       flash('error', err.message || 'Failed to buy supply');
     } finally {
+      setPurchasing(false);
       refreshCredits();
     }
   };
@@ -2225,10 +2262,17 @@ const VendorTab = ({ body }) => {
   };
 
   const sellResource = async (inventoryId, quantity) => {
+    if (purchasing) return;
+    setPurchasing(true);
     try {
       const result = await fittingAPI.sellResource(inventoryId, quantity);
       if (result.success) {
         flash('success', `Sold ${result.sold} ${result.resource_name} for ${result.total_earned} cr`);
+        // Drop the stored quantity for this stack: after a partial
+        // sale the surviving stack keeps the same id, and a stale
+        // entry (e.g. 80 when only 20 remain) would submit an
+        // over-sale on the next click. Audit fix 2026-09-03.
+        setSellQuantities(q => { const next = { ...q }; delete next[inventoryId]; return next; });
         loadSellInventory();
         // Tutorial: first successful resource sale completes "Cash Out".
         // Hooked only on the resource sell path (not sellItem) because
@@ -2239,20 +2283,25 @@ const VendorTab = ({ body }) => {
     } catch (err) {
       flash('error', err.message || 'Failed to sell');
     } finally {
+      setPurchasing(false);
       refreshCredits();
     }
   };
 
   const sellItem = async (inventoryId, quantity) => {
+    if (purchasing) return;
+    setPurchasing(true);
     try {
       const result = await fittingAPI.sellItem(inventoryId, quantity);
       if (result.success) {
         flash('success', `Sold ${result.item_name} for ${result.total_earned} cr`);
+        setSellQuantities(q => { const next = { ...q }; delete next[inventoryId]; return next; });
         loadSellInventory();
       }
     } catch (err) {
       flash('error', err.message || 'Failed to sell');
     } finally {
+      setPurchasing(false);
       refreshCredits();
     }
   };
@@ -2617,8 +2666,7 @@ const VendorTab = ({ body }) => {
               consuming warheads from cargo. Each launcher has its
               own independent magazine (40 rounds at T1). */}
           {(() => {
-            const ships = useGameStore.getState().ships || [];
-            const fleetLaunchers = ships
+            const fleetLaunchers = (fleetShips || [])
               .filter(s => s.storage_body_id == null)
               .flatMap(s => Object.values(s.fitted_modules || {})
                 .filter(m => m?.module_type_id?.startsWith?.('weapon_missile')));
@@ -2716,7 +2764,10 @@ const VendorTab = ({ body }) => {
                     color: '#4ade80',
                   }}>RESOURCES</div>
                   {sellInventory.resources.map(r => {
-                    const qty = sellQuantities[r.id] ?? r.quantity;
+                    // Clamp at render as defense-in-depth: even if a
+                    // stale stored value survives, never submit more
+                    // than the stack holds.
+                    const qty = Math.min(sellQuantities[r.id] ?? r.quantity, r.quantity);
                     const total = r.sell_price * qty;
                     return (
                       <div key={r.id} style={{
@@ -3326,6 +3377,11 @@ const ScanProgressPanel = ({ label, accent, startMs, durationMs, onCancel }) => 
 export const PlanetInteractionWindow = ({ body }) => {
   const windows = useGameStore(state => state.windows);
   const closeWindow = useGameStore(state => state.closeWindow);
+  // Anchor right of the left toolbar, mirroring ContextPanel.jsx —
+  // hardcoding 56 put the window's icon-tab column UNDER the expanded
+  // (160px-wide, z-40) toolbar, so clicks aimed at Scan/Mine/Auto/City
+  // hit toolbar buttons instead. Audit fix 2026-09-03.
+  const toolbarExpanded = useGameStore(state => state.toolbarExpanded ?? true);
   const isOpen = windows.planetInteraction?.open;
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
   const completeQuest = useGameStore(state => state.completeQuest);
@@ -3563,7 +3619,7 @@ export const PlanetInteractionWindow = ({ body }) => {
       className="fixed z-30"
       style={{
         top: 46,
-        left: 56,
+        left: toolbarExpanded ? 178 : 56,
         bottom: 44,
         // 720 chosen so the Harvesters tab can split into a ~470px
         // slot column on the left + the 220px cargo pane on the right

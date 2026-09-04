@@ -797,19 +797,31 @@ export const ShipBuilderWindow = () => {
 
   const flash = (kind, text) => pushToast({ kind, text });
 
+  // In-flight guard: a double-click bought two hulls before the first
+  // response landed. Audit fix 2026-09-03.
+  const [buyingHull, setBuyingHull] = useState(false);
+
   const handleBuyHull = async (hullTypeId) => {
+    if (buyingHull) return;
+    setBuyingHull(true);
     try {
       const result = await fittingAPI.buyHull(hullTypeId);
       if (result.success) {
         flash('success', `Purchased ${result.hull.name}!`);
         await loadData();
         selectShip(result.ship.id);
-        if (hullTypeId === 'starter_scout') {
-          completeQuest('tutorial_buy_starter_scout');
-        }
+        // Sync the GLOBAL ships store too — this window keeps a local
+        // list, but SystemView's auto-disembark effect watches the
+        // store. Without this, a podded player buying a hull here
+        // stayed stuck in the pod (long-standing known issue).
+        // (Also removed: a completeQuest call for
+        // 'tutorial_buy_starter_scout', retired in migration 034.)
+        await fetchShips();
       }
     } catch (err) {
       flash('error', err.message || 'Failed to buy hull');
+    } finally {
+      setBuyingHull(false);
     }
   };
 

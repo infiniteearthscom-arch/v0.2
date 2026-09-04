@@ -86,10 +86,13 @@ export const GalaxyFlightView = () => {
   const discoveredSystems = useGameStore(state => state.discoveredSystems);
   
   const activeShip = useActiveShip();
-  
-  // Only render in galaxy mode
-  if (viewMode !== 'galaxy') return null;
-  
+
+  // NOTE: no early return here. App.jsx already mount-gates this
+  // component on viewMode === 'galaxy'; an in-component guard BEFORE
+  // the ~15 hooks below was a Rules-of-Hooks violation waiting to
+  // crash ("Rendered fewer hooks than expected") the first time
+  // anything rendered it unconditionally. Audit fix 2026-09-03.
+
   // Galaxy data
   const galaxy = useMemo(() => getGalaxy(), []);
   const systems = galaxy.systems;

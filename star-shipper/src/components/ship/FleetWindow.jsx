@@ -244,6 +244,7 @@ export const FleetWindow = () => {
   const openWindow = useGameStore(state => state.openWindow);
   const dockedBody = useGameStore(state => state.dockedBody);
   const pushToast = useGameStore(state => state.pushToast);
+  const fetchShips = useGameStore(state => state.fetchShips);
 
   useEffect(() => { loadFleet(); }, []);
 
@@ -270,6 +271,12 @@ export const FleetWindow = () => {
       if (result.success) {
         setActiveShipId(shipId);
         flash('success', `${result.ship_name} is now your active ship`);
+        // Sync the GLOBAL ships store — this window keeps a local copy,
+        // but SystemView flies whatever the store says. Without this,
+        // the server flipped the flagship while the player kept flying
+        // the old primary until an unrelated refresh. Audit fix
+        // 2026-09-03.
+        if (fetchShips) fetchShips();
       }
     } catch (err) { flash('error', err.message || 'Failed to set active ship'); }
   };
@@ -280,6 +287,9 @@ export const FleetWindow = () => {
       if (result.success) {
         flash('success', `${result.ship_name} added to active fleet`);
         await loadFleet();
+        // Same global-store sync as handleSetActive: an activated
+        // stored ship must join the flying fleet immediately.
+        if (fetchShips) fetchShips();
       }
     } catch (err) { flash('error', err.message || 'Failed to activate ship'); }
   };

@@ -5,7 +5,9 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-07-19 (Onboarding + UX repair session, built + build-verified, **not yet pushed**: HUD restack to top-center; invisible-ship-on-reset/register fixed; reset wipes made complete (asteroid scans, fog of war, skills, research); Starter Kit free + one-per-account with quest/vendor cleanup; chat + system map start closed; Skills window font floor; self-animating scan progress bar; new Research Methodology skill (rp_rate_pct); harvester fuel quest prompt. **Migrations 063–065 pending `npm run db:migrate` after deploy.**)
+**Last updated:** 2026-09-03 (Audit-fix sessions: full-codebase audit → `BACKLOG.md`, then batches shipped as merge commits — economy hardening P0s, server stability, client session robustness, DB hygiene w/ migration 066, UI correctness. **Discovery: migrations 064/065 were never applied in July — they only ran 2026-09-03** alongside 066, so Research Methodology + the harvester-fuel quest text just went live. The `wrecks` table EXISTS per `npm run db:verify` — the old 42P01 mystery is stale. New tool: `npm run db:verify` checks schema vs migration tracker.)
+
+*(Previous entry, 2026-07-19 — Onboarding + UX repair session, built + build-verified:* HUD restack to top-center; invisible-ship-on-reset/register fixed; reset wipes made complete (asteroid scans, fog of war, skills, research); Starter Kit free + one-per-account with quest/vendor cleanup; chat + system map start closed; Skills window font floor; self-animating scan progress bar; new Research Methodology skill (rp_rate_pct); harvester fuel quest prompt. **Migrations 063–065 pending `npm run db:migrate` after deploy.**)
 
 ---
 
@@ -15,7 +17,7 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- DB schema: applied through migration **062** (five-tier modules — user confirmed run 2026-07-06) (009 was skipped). Migrations **063–065** authored 2026-07-19 (Gear Up free kit text / Research Methodology skill / Set & Forget fuel prompt) — **run `npm run db:migrate` after the next deploy.**
+- DB schema: applied through migration **066** (db-hygiene — verified 2026-09-03 via `npm run db:verify`; 009 was skipped). Note: **064/065 sat unapplied from July until 2026-09-03** — the migrate run for 066 picked them up, so Research Methodology + the harvester-fuel quest text only just reached prod. Verify future migrations with `npm run db:verify` (checks actual schema vs the tracker).
 
 ---
 
@@ -273,9 +275,9 @@ Two coordinated changes: skills paired with the Tier B abilities, and galaxy-map
 Bugs noticed but not fixed; rough edges to revisit.
 
 - **Planet toolbar button missing intermittently** — user reports the 🪐 Planet button in the left toolbar doesn't appear when they expect to be docked. The button is conditional on `dockedBody` being truthy in the global store. SystemView mirrors local `dockedBody` to the store via a useEffect, and the dock-set path looks intact. **Diagnostic still pending**: need to confirm whether the planet window auto-opens when docked (→ store value is fine, toolbar render issue) or doesn't (→ store value never gets set).
-- **Wreckage server-side parked until multiplayer matters** — `/wrecks/spawn` and `/wrecks/list` returned PG `42P01` despite migrations 021 + 022 being recorded as applied. Root cause not pinned down. **Doesn't matter today** — gameplay works via the client-only wreck workaround. Revisit when multiplayer ships and we need race-safe server-side claims. At that point: add a `GET /api/diag/db` probe endpoint that dumps what the runtime sees vs what the migrations tracker recorded.
+- **Wreckage server-side: UPDATE 2026-09-03 — the `wrecks` table EXISTS** (confirmed by `npm run db:verify`), so the old `/wrecks/spawn` 42P01 diagnosis is stale (either it self-resolved on a later migrate run or the original diagnosis was off). The endpoints stay parked regardless: the audit recommends DELETING them (client-driven spawn = instant credit mint if revived) — the F4 `/api/combat/claim-loot` flow superseded them. The desired diag endpoint now exists as `npm run db:verify`.
 - **`/repair-cost` server endpoint is dead code** — kept for backward compat. Safe to remove once we confirm no client references remain.
-- **`ShipBuilderWindow.jsx:837` calls `fittingAPI.buyHull()`** without refreshing the global ships array. If we ever surface that flow to a podded player it'll have the same auto-disembark staleness bug the vendor had. Defensive `fetchShips()` if reachable from the podded state.
+- ~~**`ShipBuilderWindow.jsx` calls `fittingAPI.buyHull()`** without refreshing the global ships array~~ — FIXED 2026-09-03 (audit UI-correctness batch): `handleBuyHull` now calls `fetchShips()` + has a double-click guard; the dead `tutorial_buy_starter_scout` completeQuest call was removed.
 
 ---
 

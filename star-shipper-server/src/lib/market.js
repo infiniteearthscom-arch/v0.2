@@ -107,8 +107,30 @@ export async function postOrder({
   if (!(pricePerUnit > 0) || !Number.isInteger(pricePerUnit)) throw makeErr(400, 'price_per_unit must be a positive integer');
   if (itemType === 'resource' && !resourceTypeId) throw makeErr(400, 'resource_type_id required for resource orders');
   if (itemType === 'item' && !itemId) throw makeErr(400, 'item_id required for item orders');
+  // Escrow math must stay well inside integer-safe range (audit: values
+  // near 2^53 passed Number.isInteger and broke refund arithmetic).
+  if (pricePerUnit * quantity > 1e12) {
+    throw makeErr(400, 'Order total too large');
+  }
 
   return await transaction(async (client) => {
+    // BUY orders: validate the identity against the real catalogs.
+    // Sell orders inherit identity from an actual cargo stack, but the
+    // buy form's ids are free text and previously accepted anything —
+    // "Poop" produced a junk order with real credits escrowed (and a
+    // non-numeric resource id 500'd on the integer cast). Audit fix
+    // 2026-09-03.
+    if (side === 'buy') {
+      if (itemType === 'resource') {
+        const rtId = parseInt(resourceTypeId, 10);
+        if (!Number.isInteger(rtId)) throw makeErr(400, 'Unknown resource type');
+        const rt = await client.query(`SELECT 1 FROM resource_types WHERE id = $1`, [rtId]);
+        if (!rt.rows[0]) throw makeErr(400, 'Unknown resource type');
+      } else {
+        const idef = await client.query(`SELECT 1 FROM item_definitions WHERE id = $1`, [String(itemId)]);
+        if (!idef.rows[0]) throw makeErr(400, 'Unknown item id');
+      }
+    }
     if (side === 'sell') {
       if (!sourceStackId) throw makeErr(400, 'source_stack_id required for sell orders');
       // Lock + validate the source stack.
