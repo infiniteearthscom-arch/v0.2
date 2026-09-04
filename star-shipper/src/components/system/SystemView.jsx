@@ -850,10 +850,14 @@ const WarpPoint = ({ body, time, onClick, isTarget }) => {
 // ASTEROID BELT COMPONENT
 // ============================================
 
-const AsteroidBelt = ({ body }) => {
+// React.memo: geometry is static per body, but SystemView re-renders
+// at 60fps (setFrameCount) and re-diffing ~300 circles per belt per
+// frame was a top reconcile cost (perf audit 2026-09-04). With memo,
+// belts skip reconciliation entirely unless the body prop changes.
+const AsteroidBelt = React.memo(({ body }) => {
   // Generate asteroids with seeded random
   const rng = useMemo(() => new SeededRandom(body.id?.charCodeAt(0) || 999), [body.id]);
-  
+
   const asteroids = useMemo(() => {
     const arr = [];
     const count = body.density || 300;
@@ -886,36 +890,53 @@ const AsteroidBelt = ({ body }) => {
       ))}
     </g>
   );
-};
+});
 
 // ============================================
 // STARFIELD COMPONENT
 // ============================================
 
-const Starfield = ({ camera, zoom, time }) => {
+// Perf rework (audit 2026-09-04): this used to rebuild ~1,600 circle
+// elements per frame with per-star Math.sin twinkle — the single
+// biggest React reconcile cost in the view. Now:
+//   - parallax is a per-LAYER <g transform> (camera motion touches 3
+//     transform attributes per frame, not 1,600 cx/cy pairs);
+//   - twinkle is a CSS animation (per-star duration/delay), so star
+//     opacity animates on the compositor with zero per-frame JS;
+//   - the circle children are useMemo'd once — same element references
+//     every frame, so React skips diffing them entirely.
+// Base brightness rides fillOpacity (static attribute); the CSS
+// animation drives the `opacity` property on top — they multiply.
+const Starfield = ({ camera }) => {
+  const layerChildren = useMemo(() => {
+    const out = {};
+    for (const [layer, stars] of Object.entries(STAR_LAYERS)) {
+      out[layer] = stars.map(star => (
+        <circle
+          key={star.id}
+          cx={star.x}
+          cy={star.y}
+          r={star.size}
+          fill={star.color}
+          fillOpacity={star.opacity}
+          style={{
+            animation: `ss-twinkle ${(6.28 / (star.twinkleSpeed || 1)).toFixed(2)}s ease-in-out ${((star.twinkleOffset || 0) % 6.28).toFixed(2)}s infinite`,
+          }}
+        />
+      ));
+    }
+    return out;
+  }, []);
+
   return (
     <g>
-      {Object.entries(STAR_LAYERS).map(([layer, stars]) => (
-        <g key={layer}>
-          {stars.map(star => {
-            // Parallax based on layer
-            const px = star.x - camera.x * PARALLAX[layer];
-            const py = star.y - camera.y * PARALLAX[layer];
-            
-            // Twinkle
-            const twinkle = Math.sin(time * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
-            
-            return (
-              <circle
-                key={star.id}
-                cx={px}
-                cy={py}
-                r={star.size}
-                fill={star.color}
-                opacity={star.opacity * twinkle}
-              />
-            );
-          })}
+      <style>{`@keyframes ss-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
+      {Object.keys(STAR_LAYERS).map(layer => (
+        <g
+          key={layer}
+          transform={`translate(${-camera.x * PARALLAX[layer]}, ${-camera.y * PARALLAX[layer]})`}
+        >
+          {layerChildren[layer]}
         </g>
       ))}
     </g>
@@ -1243,8 +1264,11 @@ export const SystemView = () => {
         // Galaxy + system info passed through so the server can populate
         // star_systems on first call. system_planet_count is required by
         // the city-seeding code path but isn't relevant for belts; pass
-        // the real count for consistency.
-        const galaxy = generateGalaxy(12345, 200);
+        // the real count for consistency. (Perf audit 2026-09-04: was a
+        // direct generateGalaxy() call that re-generated all 200 systems
+        // + Voronoi regions on every belt-system entry — the cached
+        // singleton is 70 lines up.)
+        const galaxy = getGalaxy();
         const galaxySys = galaxy.systemMap[currentSystemId];
         const planetCount = (currentSystem.bodies || []).filter(b => b.type === 'planet').length;
         // Fire-and-forget; failures are harmless (next visit retries +
@@ -3709,9 +3733,17 @@ export const SystemView = () => {
       // returns contents; we patch the local asteroid so the SVG
       // render immediately reflects the new "scanned" state.
       if (activeScansRef.current.size > 0) {
+        // Perf (audit 2026-09-04): during a bulk-belt scan EVERY
+        // unscanned asteroid is an entry, and the old shape did an
+        // O(asteroids) .find() plus a fleet-iterating fleetScanRange()
+        // per entry per frame — O(scans × asteroids) ≈ 10⁴–10⁵ ops per
+        // frame for the whole scan. Build one id→asteroid Map and
+        // resolve the range once per frame instead.
+        const astById = new Map(asteroidsRef.current.map(a => [a.id, a]));
+        const frameScanRange = fleetScanRange();
         // Iterate a snapshot so deletes mid-loop are safe.
         for (const [astId, scan] of [...activeScansRef.current.entries()]) {
-          const ast = asteroidsRef.current.find(a => a.id === astId);
+          const ast = astById.get(astId);
           if (!ast) {
             activeScansRef.current.delete(astId);
             continue;
@@ -3724,7 +3756,7 @@ export const SystemView = () => {
           // unbounded skip, every bulk-belt scan would instantly
           // cancel for asteroids past scan_range and the player would
           // see nothing land on the map.
-          const cancelR = scan.viaArea ? fleetScanRange() : fleetScanRange() * 1.2;
+          const cancelR = scan.viaArea ? frameScanRange : frameScanRange * 1.2;
           if (!scan.unbounded && sdx * sdx + sdy * sdy > cancelR * cancelR) {
             activeScansRef.current.delete(astId);
             if (!scan.viaArea) {
@@ -4180,7 +4212,7 @@ export const SystemView = () => {
             />
 
             {/* Starfield */}
-            <Starfield camera={camera} zoom={zoom} time={time} />
+            <Starfield camera={camera} />
 
             {/* Asteroid belts (render first, behind planets) */}
             {currentSystem.bodies
@@ -4831,12 +4863,12 @@ export const SystemView = () => {
                 : 0;
               const ringR = a.size + 4;
               const circumference = 2 * Math.PI * ringR;
-              // Hover tooltip content -- captured as JSX so the
-              // existing TooltipProvider renders + positions it near
-              // the cursor. Recomputed each render so it always
-              // reflects the asteroid's current contents (which
-              // decrement live during mining).
-              const tooltipNode = (
+              // Hover tooltip content — built LAZILY on mouse-enter.
+              // This used to be a const JSX tree evaluated for every
+              // asteroid on every frame (thousands of allocations per
+              // frame in a belt) for nothing: showTooltip only ever
+              // captured it at hover time anyway. Perf audit 2026-09-04.
+              const buildTooltip = () => (
                 <div style={{
                   padding: '8px 12px', fontSize: '0.6875rem', fontFamily: 'monospace',
                   minWidth: 160,
@@ -4906,7 +4938,7 @@ export const SystemView = () => {
                 <g key={`ast-${a.id}`}
                    transform={`translate(${a.x}, ${a.y})`}
                    onClick={(e) => { e.stopPropagation(); handleAsteroidClick(a); }}
-                   onMouseEnter={(e) => showTooltip(tooltipNode, { left: e.clientX, top: e.clientY, width: 14, height: 14 })}
+                   onMouseEnter={(e) => showTooltip(buildTooltip(), { left: e.clientX, top: e.clientY, width: 14, height: 14 })}
                    onMouseLeave={() => hideTooltip()}
                    style={{ cursor: 'pointer' }}>
                   <polygon points={pts}

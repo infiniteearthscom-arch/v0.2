@@ -157,9 +157,12 @@ const TopBar = () => {
 
   useEffect(() => {
     fetchCredits();
-    // Poll every 3s as a safety net so the top-bar credits stay in sync
-    // even if a downstream refresh chain (vendor, combat) fails to fire.
-    const interval = setInterval(fetchCredits, 3000);
+    // Poll as a safety net so the top-bar credits stay in sync even if
+    // a downstream refresh chain (vendor, combat) fails to fire. 10s
+    // (was 3s — perf audit 2026-09-04): every direct credit change
+    // already refreshes explicitly, so the poll only exists to catch
+    // stragglers; a permanent 3s request stream per client was waste.
+    const interval = setInterval(fetchCredits, 10000);
     return () => clearInterval(interval);
   }, [fetchCredits]);
 
@@ -561,6 +564,12 @@ const MailUnreadPoller = () => {
 };
 
 export const GameFrame = ({ children }) => {
+  // Mount-gate the system map (perf audit 2026-09-04): mounted
+  // unconditionally, its 1s tick + shipPosition/scannerData/gameTime
+  // subscriptions kept it re-rendering ~12×/sec forever even while
+  // closed (it returned null but still did all the work). Gating the
+  // MOUNT stops the treadmill; open/close behavior is unchanged.
+  const systemMapOpen = useGameStore(s => s.windows.systemMap?.open);
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#030610' }}>
       <DockedBodyPresenceBridge />
@@ -568,7 +577,7 @@ export const GameFrame = ({ children }) => {
       <MailUnreadPoller />
       <TopBar />
       <LeftToolbar />
-      <SystemMapWindow />
+      {systemMapOpen && <SystemMapWindow />}
       <SystemMapToggle />
 
       {/* Game content area — fills space below the top bar */}

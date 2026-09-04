@@ -4,6 +4,17 @@ Deep-dive code audit, 2026-09-02. Six parallel review passes: game loop/renderin
 client stores/utils, server API + economy, realtime + sync-copies, DB schema + migrations.
 Every finding below was verified against actual code (file + approx line), not speculated.
 
+> **Status update 2 (2026-09-04):** batches 2–6 shipped as merge commits — server
+> stability (auth try/catch, pool error, skills lock), client session (socket brick,
+> logout teardown, 401), DB hygiene (migration 066 + lazy expiry w/ refunds + corp
+> invites + market body-id resolution), UI correctness (toolbar overlap, store syncs,
+> double-click guards, chat scroll, hooks defusals, market buy-order identity
+> validation), and the perf pass (Starfield/AsteroidBelt memo + CSS twinkle, lazy
+> asteroid tooltips, scan-loop Map, cached galaxy, galaxy-flight store throttle,
+> SystemMapWindow mount-gate, 10s credits poll). Deferred from the perf list: mining-
+> tick / weapon-targeting / contrail micro-allocations, the Set/Map-per-frame reuse,
+> and the delta-clamp/gameTime clock unification.
+>
 > **Status update (2026-09-02, branch `audit/economy-hardening`):** all six P0s fixed
 > (P0-3 cheat-craft kept per owner decision but gated to the dev account, server + client),
 > plus these P1s: starter-kit server-side claim gate, craft negative/duplicate-ingredient

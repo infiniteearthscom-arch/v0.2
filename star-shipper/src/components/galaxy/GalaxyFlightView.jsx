@@ -201,7 +201,11 @@ export const GalaxyFlightView = () => {
   useEffect(() => {
     let animationId;
     let lastTime = performance.now();
-    
+    // Store-sync throttle state (see the "Update store periodically"
+    // block below). Effect-scoped: resets cleanly on remount.
+    let storeSyncFrame = 0;
+    const lastStoreSync = { x: NaN, y: NaN, spd: NaN };
+
     const gameLoop = (currentTime) => {
       const delta = Math.min((currentTime - lastTime) / 1000, 0.05);
       lastTime = currentTime;
@@ -322,10 +326,29 @@ export const GalaxyFlightView = () => {
         cameraRef.current.y += (shipPosRef.current.y - cameraRef.current.y) * lerpSpeed;
       }
       
-      // Update store periodically
-      const currentSpd = Math.sqrt(shipVelRef.current.x ** 2 + shipVelRef.current.y ** 2);
-      updateGalaxyShipPosition(shipPosRef.current.x, shipPosRef.current.y, currentSpd);
-      
+      // Update store periodically. THROTTLED (perf audit 2026-09-04):
+      // this was called every frame — each call is a Zustand set →
+      // immer produce → persist-middleware serialize, and it forces
+      // the ~500-line GalaxyMapWindow (auto-opened during galaxy
+      // flight, subscribed to galaxyShipPosition) to re-render its
+      // 200-system SVG at 60fps. Every 10th frame (~6 Hz) is plenty
+      // for the map's ship marker, and a stationary ship writes
+      // nothing at all.
+      storeSyncFrame = (storeSyncFrame + 1) % 10;
+      if (storeSyncFrame === 0) {
+        const currentSpd = Math.sqrt(shipVelRef.current.x ** 2 + shipVelRef.current.y ** 2);
+        if (
+          Math.abs(shipPosRef.current.x - lastStoreSync.x) > 0.01 ||
+          Math.abs(shipPosRef.current.y - lastStoreSync.y) > 0.01 ||
+          Math.abs(currentSpd - lastStoreSync.spd) > 0.01
+        ) {
+          lastStoreSync.x = shipPosRef.current.x;
+          lastStoreSync.y = shipPosRef.current.y;
+          lastStoreSync.spd = currentSpd;
+          updateGalaxyShipPosition(lastStoreSync.x, lastStoreSync.y, currentSpd);
+        }
+      }
+
       // Trigger re-render
       setFrameCount(f => f + 1);
       
@@ -419,21 +442,9 @@ export const GalaxyFlightView = () => {
   // Speed for HUD
   const currentSpeed = Math.sqrt(shipVelRef.current.x ** 2 + shipVelRef.current.y ** 2);
   
-  // Nearby system detection
-  const nearbySystem = useMemo(() => {
-    let closest = null;
-    let closestDist = Infinity;
-    for (const sys of systems) {
-      const dx = sys.x - shipPosRef.current.x;
-      const dy = sys.y - shipPosRef.current.y;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d < closestDist) {
-        closestDist = d;
-        closest = sys;
-      }
-    }
-    return closestDist < SYSTEM_DOCK_RANGE * 2 ? closest : null;
-  }, [systems, frameCount]);
+  // (Dead `nearbySystem` memo removed, perf audit 2026-09-04: it ran an
+  // O(200) sqrt distance scan every frame and its result was never
+  // referenced — the Enter-key handler has its own nearest-system scan.)
 
   // Background stars (static, parallax-ish)
   const bgStars = useMemo(() => {
