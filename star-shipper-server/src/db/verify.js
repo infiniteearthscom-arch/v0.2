@@ -76,6 +76,17 @@ async function main() {
   report('idx_activity_type_user exists (066)', !!(await indexInfo('idx_activity_type_user')));
   report('idx_activity_user_created exists (066)', !!(await indexInfo('idx_activity_user_created')));
 
+  // --- migration 067 effects (Phase 0 combat quick wins) ---
+  const ml2 = await pool.query(`SELECT buy_price FROM module_types WHERE id = 'mining_laser_2'`);
+  report('mining_laser_2 obtainable (067: buy_price set)', ml2.rows[0]?.buy_price != null,
+    `buy_price=${ml2.rows[0]?.buy_price ?? 'NULL'}`);
+  const ml2r = await pool.query(`SELECT 1 FROM crafting_recipes WHERE id = 'craft_mining_laser_2'`);
+  report('craft_mining_laser_2 recipe exists (067)', !!ml2r.rows[0]);
+  const dtCount = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM module_types WHERE stats ? 'damage_type'`
+  );
+  report('weapons carry explicit damage_type (067)', dtCount.rows[0].n >= 8, `${dtCount.rows[0].n} modules typed`);
+
   // --- the old wrecks 42P01 mystery (migrations 021/022) ---
   report('wrecks table exists (021 — known 42P01 mystery)', await tableExists('wrecks'));
 

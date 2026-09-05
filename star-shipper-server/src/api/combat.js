@@ -23,6 +23,17 @@ router.use(authMiddleware);
 // players x systems visited since restart; trivially small.
 const claimsByUser = new Map();
 
+// userId -> systemId -> ms timestamp of the last claim-set re-arm.
+// Phase 0 (2026-09-04): enter-system used to reset claims on EVERY
+// call, so hop-out/hop-in re-earned a full system's loot instantly —
+// a scriptable farm loop. Now a system's loot manifest only re-arms
+// after RESPAWN_COOLDOWN; within the window, previously-claimed
+// enemies stay claimed (unclaimed ones remain claimable, so partial
+// clears keep their remaining loot). In-memory: a server restart
+// re-arms everything, same accepted noise as the claim sets.
+const lastRearmByUser = new Map();
+const RESPAWN_COOLDOWN_MS = 15 * 60 * 1000;
+
 function getClaimSet(userId, systemId) {
   let bySystem = claimsByUser.get(userId);
   if (!bySystem) { bySystem = new Map(); claimsByUser.set(userId, bySystem); }
@@ -44,9 +55,25 @@ router.post('/enter-system', (req, res) => {
   if (!system_id || typeof system_id !== 'string') {
     return res.status(400).json({ error: 'system_id required' });
   }
+  let rearms = lastRearmByUser.get(req.user.id);
+  if (!rearms) { rearms = new Map(); lastRearmByUser.set(req.user.id, rearms); }
+  const last = rearms.get(system_id) || 0;
+  const now = Date.now();
+  if (now - last < RESPAWN_COOLDOWN_MS) {
+    // Too soon — keep the existing claim set. The client still spawns
+    // its deterministic pirates; already-claimed kills just pay nothing
+    // until the cooldown lapses (claim returns 409, wreck is dropped
+    // client-side).
+    return res.json({
+      success: true,
+      re_armed: false,
+      retry_in_seconds: Math.ceil((RESPAWN_COOLDOWN_MS - (now - last)) / 1000),
+    });
+  }
+  rearms.set(system_id, now);
   const bySystem = claimsByUser.get(req.user.id);
   if (bySystem) bySystem.delete(system_id);
-  res.json({ success: true });
+  res.json({ success: true, re_armed: true });
 });
 
 // ============================================

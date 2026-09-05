@@ -86,6 +86,14 @@ const readModuleNameFields = (fittedValue) => {
 };
 
 export const detectWeaponType = (fittedValue) => {
+  // Explicit damage_type wins (Phase 0, migration 067): module stats
+  // now carry `damage_type: 'laser'|'kinetic'|'missile'` and fit-module
+  // snapshots it. The keyword heuristic below survives only as the
+  // fallback for modules fitted before the migration.
+  const explicit = fittedValue?.stats?.damage_type;
+  if (explicit === 'laser' || explicit === 'kinetic' || explicit === 'missile') {
+    return explicit;
+  }
   const fields = readModuleNameFields(fittedValue);
   for (const field of fields) {
     if (matchesAny(field, MISSILE_KEYWORDS)) return 'missile';

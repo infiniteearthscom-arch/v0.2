@@ -1208,9 +1208,13 @@ export const SystemView = () => {
   const SHIP_ACCELERATION = BASE_SHIP_ACCELERATION * Math.max(0.3, Math.min(3, speedMult));
   const SHIP_ROTATION_SPEED = BASE_SHIP_ROTATION_SPEED * Math.max(0.3, Math.min(3, maneuverMult));
 
-  // Keep refs so animation loop always reads latest
+  // Keep refs so animation loop always reads latest. SEED ONLY — the
+  // fleet-stats effect below (search "Override the ship physics ref")
+  // is the single writer after mount. A per-render write here used to
+  // clobber that effect every frame, which made the fleet-mass speed
+  // penalty dead code (armor/cargo mass never actually slowed the
+  // fleet). Phase 0 fix 2026-09-04 — do not re-add a render-body write.
   const shipPhysicsRef = useRef({ SHIP_MAX_SPEED, SHIP_ACCELERATION, SHIP_ROTATION_SPEED });
-  shipPhysicsRef.current = { SHIP_MAX_SPEED, SHIP_ACCELERATION, SHIP_ROTATION_SPEED };
   
   // Current system — Sol is hardcoded, everything else is procedurally generated
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
@@ -1522,7 +1526,7 @@ export const SystemView = () => {
   const missileLockRef = useRef({});
   const missileLastServerRef = useRef({});
   const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
-  const MINE_CYCLE_MS = 2000; // matches mining_basic.stats.mine_cycle * 1000
+  const MINE_CYCLE_MS = 2000; // fallback cycle when the fitted laser has no mine_cycle stat
 
   // Wingman world positions, lagged toward the formation slot so the
   // fleet *follows* the leader instead of pivoting rigidly around it.
@@ -3663,7 +3667,15 @@ export const SystemView = () => {
         const shipId = laserKey.slice(0, sepIdx);
         const slotKey = laserKey.slice(sepIdx + 2);
         const targetId = assignment.asteroidId;
-        assignment.cooldownMs = MINE_CYCLE_MS;
+        // Per-laser cycle from the fitted module's mine_cycle stat
+        // (snapshotted at fit time since migration 062). Previously a
+        // hardcoded 2s — the Resonance Laser's 1.6s cycle was inert.
+        // Phase 0 fix 2026-09-04. Older fits without stats fall back.
+        const laserShip = (fleetShipsRef.current || []).find(s => s.id === shipId);
+        const laserCycle = laserShip?.fitted_modules?.[slotKey]?.stats?.mine_cycle;
+        assignment.cooldownMs = (typeof laserCycle === 'number' && laserCycle > 0)
+          ? laserCycle * 1000
+          : MINE_CYCLE_MS;
         assignment.inFlight = true;
         asteroidsAPI.mine(targetId, shipId, slotKey)
           .then(({ mined, asteroid_remaining, asteroid_depleted, cargo_used, cargo_capacity }) => {

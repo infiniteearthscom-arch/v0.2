@@ -104,7 +104,13 @@ const getShipBaseStats = (ship) => {
     hull:      ship?.base_hull      ?? Math.round(hullSize * 4),  // ~120 for size 30
     shield:    ship?.base_shield    ?? Math.round(hullSize * 1.6),// ~50  for size 30
     armor:     ship?.base_armor     ?? 0,
-    speed:     ship?.base_speed     ?? 50,
+    // Prefer the server-computed speed (base + engine thrust × quality,
+    // migration 047) — reading raw base_speed here dropped engine-module
+    // progression when this became the physics source (Phase 0). When
+    // computed speed is present, the flat engine role bonus must NOT be
+    // added on top (it would double-count) — see speedIncludesEngines.
+    speed:     ship?.computed_max_speed ?? ship?.base_speed ?? 50,
+    speedIncludesEngines: ship?.computed_max_speed != null,
     maneuver:  ship?.base_maneuver  ?? 50,
     cargo:     ship?.cargo_capacity ?? 100,
     warpSpeed: ship?.warp_speed     ?? 1.0,
@@ -208,7 +214,7 @@ export const computeFleetStats = (ships) => {
   if (!ships || ships.length === 0) return result;
 
   // Sum base stats + module bonuses
-  let speedSum = 0, maneuverSum = 0, warpSum = 0;
+  let minSpeed = Infinity, minManeuver = Infinity, warpSum = 0;
   for (const ship of ships) {
     const base = getShipBaseStats(ship);
     const mods = getShipModuleBonuses(ship);
@@ -222,8 +228,11 @@ export const computeFleetStats = (ships) => {
     result.totalSensorRange += mods.sensor_range;
     result.fleetMass       += base.mass + mods.mass;
 
-    speedSum    += base.speed    + mods.speed;
-    maneuverSum += base.maneuver + mods.maneuver;
+    // Skip the flat engine speed bonus when the server-computed speed
+    // already folded engine thrust in (avoids double-counting).
+    const shipSpeed = base.speed + (base.speedIncludesEngines ? 0 : mods.speed);
+    minSpeed    = Math.min(minSpeed, shipSpeed);
+    minManeuver = Math.min(minManeuver, base.maneuver + mods.maneuver);
     warpSum     += base.warpSpeed;
 
     // Weapons (defer to weapons.js for breakdown)
@@ -240,19 +249,19 @@ export const computeFleetStats = (ships) => {
     result.shipCount += 1;
   }
 
-  // Average speed/maneuver across the fleet, then apply mass penalty.
-  // Per the locked design:
-  //   speed   = base − (mass × 0.02)
-  //   maneuver = base − (mass × 0.015)
-  // The fleet moves at the speed of the SLOWEST common denominator,
-  // so we average rather than sum.
+  // The fleet moves at the speed of the SLOWEST ship (matches the
+  // shipped in-flight behavior — a Leviathan tagging along genuinely
+  // slows the fleet), then the mass penalty applies on top. Per the
+  // locked design:
+  //   speed    = min(ship speeds) − (fleetMass × 0.02)
+  //   maneuver = min(ship maneuvers) − (fleetMass × 0.015)
+  // (Was written as an average, which never took effect anyway — the
+  // per-render physics writer this feeds was clobbered until Phase 0.)
   const n = result.shipCount;
-  const avgSpeed    = speedSum / n;
-  const avgManeuver = maneuverSum / n;
-  const avgWarp     = warpSum / n;
+  const avgWarp = warpSum / n;
 
-  result.fleetSpeed    = Math.max(10, avgSpeed    - result.fleetMass * 0.02);
-  result.fleetManeuver = Math.max(10, avgManeuver - result.fleetMass * 0.015);
+  result.fleetSpeed    = Math.max(10, minSpeed    - result.fleetMass * 0.02);
+  result.fleetManeuver = Math.max(10, minManeuver - result.fleetMass * 0.015);
   result.fleetWarpSpeed = avgWarp;
 
   // Round display values

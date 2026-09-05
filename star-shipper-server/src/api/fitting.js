@@ -1152,15 +1152,22 @@ router.post('/sell-item', authMiddleware, async (req, res) => {
       let pricePerUnit = 5; // minimum fallback
       let itemName = row.item_id || 'Unknown';
 
-      // Try to get module price
-      if (row.item_type === 'module' && row.item_data?.module_type_id) {
-        const mod = await client.query(
-          `SELECT buy_price, name FROM module_types WHERE id = $1`,
-          [row.item_data.module_type_id]
-        );
-        if (mod.rows[0]) {
-          pricePerUnit = Math.max(1, Math.round((mod.rows[0].buy_price || 10) * 0.4));
-          itemName = mod.rows[0].name;
+      // Module resale. Modules land in inventory as item_type='item'
+      // with item_id = the module_types id (buy-module, craft, unfit
+      // all insert that shape) — the old branch required a nonexistent
+      // item_type='module' row, so every module sold at the flat 5 cr
+      // fallback (a 6,000 cr Bulk Cargo Bay paid ~5). Phase 0 fix
+      // 2026-09-04: look the module up by item_id. Craft-only modules
+      // (buy_price NULL, T3+) still fall back — vendors lowball what
+      // they can't stock; the player market is the real outlet.
+      const mod = await client.query(
+        `SELECT buy_price, name FROM module_types WHERE id = $1`,
+        [row.item_id]
+      );
+      if (mod.rows[0]) {
+        itemName = mod.rows[0].name;
+        if (mod.rows[0].buy_price != null) {
+          pricePerUnit = Math.max(1, Math.round(mod.rows[0].buy_price * 0.4));
         }
       } else {
         // Items like fuel cells, probes — sell at flat rate
