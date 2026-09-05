@@ -54,8 +54,10 @@ export const STAT_META = {
   // Soft (sqrt) -- big bonuses don't double range
   range:            { label: 'Range',           power: 0.5 },
   maneuver:         { label: 'Maneuver',        power: 0.5 },
-  // Inverted (lower is better)
-  fire_rate:        { label: 'Cycle Time',      power: 0.5, invert: true, unit: 's', decimals: 2 },
+  // Cycle time no longer quality-scales (Phase 1 / plan B7 2026-09-04:
+  // ÷sqrt(Q) made DPS scale ×Q^1.5 — now damage alone carries quality,
+  // DPS ×Q linear). power: 0 → multiplier is always 1.0.
+  fire_rate:        { label: 'Cycle Time',      power: 0, unit: 's', decimals: 2 },
   lock_time:        { label: 'Lock Time',       power: 1,   invert: true, unit: 's', decimals: 2 },
   scan_time:        { label: 'Scan Time',       power: 1,   invert: true, unit: 's', decimals: 1 },
 };

@@ -2170,18 +2170,32 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
 
 const ASTEROIDS_PER_BELT_MIN = 20;
 const ASTEROIDS_PER_BELT_MAX = 40;
-const RARITY_WEIGHTS = { common: 0.70, rare: 0.25, exotic: 0.05 };
 const ASTEROID_RESPAWN_MINUTES = 10;
+
+// Danger-scaled rarity weights (Phase 1 / plan B5, 2026-09-04).
+// Belts previously used FIXED 70/25/5 weights in every system — the
+// starter system's rocks were as rare-rich as a danger-5 system's,
+// which flattened the entire "deeper = richer" income curve for the
+// game's main mining activity. Now mirrors the deposit scaling shape:
+//   d0: 89% common / 10% rare /  1% exotic   (Sol: leaner than before)
+//   d5: 50% common / 35% rare / 15% exotic
+function dangerAsteroidWeights(dangerLevel) {
+  const d = Math.max(0, Math.min(5, dangerLevel || 0));
+  const rare = 0.10 + d * 0.05;
+  const exotic = 0.01 + d * 0.028;
+  return { common: Math.max(0.2, 1 - rare - exotic), rare, exotic };
+}
 
 // Roll resource composition for one asteroid. Used by initial generation
 // (deterministic via shared SRng) and by lazy respawn (uses Math.random
 // since respawn is a stochastic world event, not seed-derived).
 // `rng` is { next, range, int } -- accepts SRng OR a Math.random adapter.
-function rollAsteroidContents(rng, resByRarity, size) {
+function rollAsteroidContents(rng, resByRarity, size, dangerLevel = 0) {
+  const weights = dangerAsteroidWeights(dangerLevel);
   const pickRarity = () => {
     const r = rng.next();
-    if (r < RARITY_WEIGHTS.common) return 'common';
-    if (r < RARITY_WEIGHTS.common + RARITY_WEIGHTS.rare) return 'rare';
+    if (r < weights.common) return 'common';
+    if (r < weights.common + weights.rare) return 'rare';
     return 'exotic';
   };
   const qtyFor = (rarity, sz) => {
@@ -2220,19 +2234,24 @@ function rollQualityStat(rng) {
   return Math.min(100, Math.max(0, Math.round(avg)));
 }
 
-function rollAsteroidQuality(rng) {
+// Danger quality bonus mirrors deposits.js (+6 per danger level to
+// every stat, clamp 100) so deep-zone rocks roll genuinely better —
+// previously belts had NO danger input on quality. Phase 1, 2026-09-04.
+function rollAsteroidQuality(rng, dangerLevel = 0) {
+  const bonus = Math.max(0, Math.min(5, dangerLevel || 0)) * 6;
+  const stat = () => Math.min(100, rollQualityStat(rng) + bonus);
   return {
-    purity:    rollQualityStat(rng),
-    stability: rollQualityStat(rng),
-    potency:   rollQualityStat(rng),
-    density:   rollQualityStat(rng),
+    purity:    stat(),
+    stability: stat(),
+    potency:   stat(),
+    density:   stat(),
   };
 }
 
 // Generates the asteroid set for a belt body. Returns rows ready for
 // bulk INSERT. Uses SRng for determinism so re-runs would produce the
 // same field (though in practice we only generate once per belt).
-async function buildAsteroidsForBelt(client, belt, systemSeed) {
+async function buildAsteroidsForBelt(client, belt, systemSeed, dangerLevel = 0) {
   // Per-belt seed: combine system seed + belt's orbit radius so each
   // belt in a multi-belt system gets a distinct field.
   const seed = (systemSeed | 0) + Math.round(belt.orbit_radius);
@@ -2251,7 +2270,7 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
     const radius = beltRadius + rng.range(-beltSize * 0.4, beltSize * 0.4);
     const size = rng.int(2, 6);
 
-    const quality = rollAsteroidQuality(rng);
+    const quality = rollAsteroidQuality(rng, dangerLevel);
     rows.push({
       system_id: belt.system_id,
       belt_body_id: belt.id,
@@ -2259,7 +2278,7 @@ async function buildAsteroidsForBelt(client, belt, systemSeed) {
       y: Math.sin(angle) * radius,
       size,
       rotation: rng.range(0, Math.PI * 2),
-      contents: rollAsteroidContents(rng, resByRarity, size),
+      contents: rollAsteroidContents(rng, resByRarity, size, dangerLevel),
       stat_purity:    quality.purity,
       stat_stability: quality.stability,
       stat_potency:   quality.potency,
@@ -2339,6 +2358,13 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         systemSeed = ((systemSeed << 5) - systemSeed + system_procedural_id.charCodeAt(i)) | 0;
       }
 
+      // System danger drives belt rarity + quality (Phase 1). Reads the
+      // same star_systems.danger_level the deposit spawner uses.
+      const dangerRow = await client.query(
+        `SELECT danger_level FROM star_systems WHERE id = $1`, [systemId]
+      );
+      const dangerLevel = dangerRow.rows[0]?.danger_level || 0;
+
       // For each belt, generate asteroids if none exist yet.
       for (const belt of belts.rows) {
         const existing = await client.query(
@@ -2347,7 +2373,7 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
         );
         if (existing.rows.length > 0) continue;
 
-        const rows = await buildAsteroidsForBelt(client, belt, systemSeed);
+        const rows = await buildAsteroidsForBelt(client, belt, systemSeed, dangerLevel);
         // Bulk insert. JSONB contents passed as stringified JSON per row.
         for (const r of rows) {
           await client.query(`
@@ -2375,10 +2401,10 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
       if (respawnable.rows.length > 0) {
         const resByRarity = await loadResByRarity(client);
         for (const a of respawnable.rows) {
-          const newContents = rollAsteroidContents(mathRng, resByRarity, a.size);
+          const newContents = rollAsteroidContents(mathRng, resByRarity, a.size, dangerLevel);
           // Fresh asteroid = fresh quality roll. Use mathRng (non-seeded)
           // so successive respawns at the same coordinates vary.
-          const q = rollAsteroidQuality(mathRng);
+          const q = rollAsteroidQuality(mathRng, dangerLevel);
           await client.query(`
             UPDATE asteroids
             SET contents = $1,

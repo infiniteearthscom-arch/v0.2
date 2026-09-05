@@ -38,8 +38,9 @@ class SeededRandom {
   int(min, max) { return Math.floor(this.range(min, max + 1)); }
 }
 
-const LOOT_CREDITS_MIN = 20;
-const LOOT_CREDITS_MAX = 80;
+// Phase 1 rebalance — mirrors SystemView.jsx (raised 20-80 → 35-120).
+const LOOT_CREDITS_MIN = 35;
+const LOOT_CREDITS_MAX = 120;
 
 // Flagship payout: the flagship wreck pays its own loot + this fraction of
 // its escorts' combined loot (the "fleet bounty"). MUST match
@@ -104,17 +105,18 @@ function pickHullClass(rng, tier) {
 }
 
 // --- Sol spawn zones (SystemView.jsx PIRATE_SPAWN_ZONES) ---
+// Phase 1 (plan B10): TEST BUFF reverted — small single/duo patrols.
 const PIRATE_SPAWN_ZONES = [
-  { name: 'Belt Raiders', radius: 220, count: 5,
-    types: ['pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_interceptor'] },
-  { name: 'Jupiter Siege Wing', radius: 220, count: 4,
-    types: ['pirate_destroyer', 'pirate_destroyer', 'pirate_destroyer', 'pirate_destroyer'] },
-  { name: 'Inner Pickets', radius: 200, count: 6,
-    types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor'] },
-  { name: 'Saturn Corsairs', radius: 260, count: 6,
-    types: ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_interceptor'] },
-  { name: 'Outer Dreadnought Wing', radius: 240, count: 5,
-    types: ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor'] },
+  { name: 'Belt Raiders', radius: 120, count: 2,
+    types: ['pirate_marauder', 'pirate_interceptor'] },
+  { name: 'Jupiter Siege Wing', radius: 120, count: 1,
+    types: ['pirate_interceptor'] },
+  { name: 'Inner Pickets', radius: 120, count: 2,
+    types: ['pirate_interceptor', 'pirate_interceptor'] },
+  { name: 'Saturn Corsairs', radius: 140, count: 2,
+    types: ['pirate_marauder', 'pirate_interceptor'] },
+  { name: 'Outer Dreadnought Wing', radius: 120, count: 1,
+    types: ['pirate_destroyer'] },
 ];
 
 // Sol members — mirrors the `currentSystemId === 'sol'` branch of the
@@ -159,7 +161,8 @@ function buildProceduralMembers(systemSeed, dangerLevel, systemTier) {
   const members = [];
   let nextId = 1;
 
-  const pirateCount = Math.floor(dangerLevel * 5 + rng.range(0, dangerLevel * 3));
+  // Phase 1: flattened curve, mirrors SystemView (was d*5 + rng(0..d*3)).
+  const pirateCount = Math.floor(dangerLevel * 3 + rng.range(0, dangerLevel * 2));
   if (pirateCount <= 0) return members;
 
   let remaining = pirateCount;

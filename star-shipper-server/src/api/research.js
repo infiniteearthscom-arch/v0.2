@@ -99,6 +99,9 @@ router.get('/', authMiddleware, async (req, res) => {
         name: d.name,
         description: d.description,
         rp_cost: d.rp_cost,
+        // Phase 1 (plan B6): T3+ nodes also cost materials, so research
+        // routes through the risk→resource loop like everything else.
+        material_cost: Array.isArray(d.material_cost) ? d.material_cost : [],
         prerequisites: prereqs,
         unlocks: d.unlocks,
         sort_order: d.sort_order,
@@ -178,6 +181,47 @@ router.post('/unlock', authMiddleware, async (req, res) => {
           new Error(`Insufficient RP (have ${liveRp}, need ${tech.rp_cost})`),
           { statusCode: 400 }
         );
+      }
+
+      // Material cost (Phase 1 / plan B6, migration 068). Consumed from
+      // cargo stacks worst-quality-first (player-friendly: research
+      // burns the junk, keeps the good rolls for crafting). All-or-
+      // nothing inside this transaction.
+      const materials = Array.isArray(tech.material_cost) ? tech.material_cost : [];
+      for (const mat of materials) {
+        if (!mat?.resource_name || !(mat.quantity > 0)) continue;
+        const stacks = await client.query(
+          `SELECT pri.id, pri.quantity,
+                  (COALESCE(pri.stat_purity,50) + COALESCE(pri.stat_stability,50) +
+                   COALESCE(pri.stat_potency,50) + COALESCE(pri.stat_density,50)) AS qsum
+             FROM player_resource_inventory pri
+             JOIN resource_types rt ON rt.id = pri.resource_type_id
+            WHERE pri.user_id = $1 AND pri.item_type = 'resource' AND rt.name = $2
+            ORDER BY qsum ASC
+            FOR UPDATE OF pri`,
+          [userId, mat.resource_name]
+        );
+        let need = mat.quantity;
+        const have = stacks.rows.reduce((s, r) => s + r.quantity, 0);
+        if (have < need) {
+          throw Object.assign(
+            new Error(`Requires ${mat.quantity} ${mat.resource_name} (have ${have})`),
+            { statusCode: 400 }
+          );
+        }
+        for (const stack of stacks.rows) {
+          if (need <= 0) break;
+          const take = Math.min(need, stack.quantity);
+          if (take >= stack.quantity) {
+            await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [stack.id]);
+          } else {
+            await client.query(
+              `UPDATE player_resource_inventory SET quantity = quantity - $1, updated_at = NOW() WHERE id = $2`,
+              [take, stack.id]
+            );
+          }
+          need -= take;
+        }
       }
 
       // Deduct + record. updated_at is already NOW from commitRp.

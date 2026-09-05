@@ -87,6 +87,18 @@ async function main() {
   );
   report('weapons carry explicit damage_type (067)', dtCount.rows[0].n >= 8, `${dtCount.rows[0].n} modules typed`);
 
+  // --- migration 068 effects (Phase 1 rebalance) ---
+  const t4 = await pool.query(`SELECT MIN(rp_cost)::int AS c FROM tech_definitions WHERE tier = 4`);
+  report('T4 tech costs 15000 RP (068)', t4.rows[0]?.c === 15000, `min=${t4.rows[0]?.c}`);
+  const matCost = await pool.query(
+    `SELECT jsonb_array_length(material_cost) AS n FROM tech_definitions WHERE id = 'tech_exotic_weapons'`
+  );
+  report('tech_exotic_weapons has material_cost (068)', (matCost.rows[0]?.n || 0) > 0);
+  const iron = await pool.query(`SELECT base_price FROM resource_types WHERE name = 'Iron'`);
+  report('Iron repriced to 6 (068)', parseInt(iron.rows[0]?.base_price) === 6, `price=${iron.rows[0]?.base_price}`);
+  const myield = await pool.query(`SELECT stats->>'mine_yield' AS y FROM module_types WHERE id = 'mining_basic'`);
+  report('mining_basic yield 3 (068)', myield.rows[0]?.y === '3', `yield=${myield.rows[0]?.y}`);
+
   // --- the old wrecks 42P01 mystery (migrations 021/022) ---
   report('wrecks table exists (021 — known 42P01 mystery)', await tableExists('wrecks'));
 

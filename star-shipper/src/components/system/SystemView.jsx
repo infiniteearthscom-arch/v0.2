@@ -45,34 +45,37 @@ const PROJECTILE_LIFETIME = 0.8; // seconds
 //  per-ship firing now reads weapon stats from each ship's fitted modules.)
 const SHIELD_REGEN_RATE = 2; // shield HP per second
 const SHIELD_REGEN_DELAY = 3; // seconds after last hit before regen starts
-const LOOT_CREDITS_MIN = 20;
-const LOOT_CREDITS_MAX = 80;
+// Phase 1 rebalance (plan B5): raised from 20-80 so combat income pulls
+// ahead of mining at equal tier. ⚠ MIRRORED in server pirateManifest.js.
+const LOOT_CREDITS_MIN = 35;
+const LOOT_CREDITS_MAX = 120;
 
 // Pirate spawn zones — defined by center point + radius. Each zone is one
 // FLEET (combat F1+): heaviest hull = flagship/leader, the rest fly in
 // formation behind it and peel off (attrition) as the pooled hull falls.
 //
-// ⚠ TEST BUFF (2026-06-03): hefty fleets for combat playtesting. Sol is the
-// newbie starter — REVERT to small single/duo patrols before real new
-// players matter. Smaller spawn radius = members start clustered so the
-// formation reads cleanly. Profiles are varied to exercise the damage
-// triangle (kinetic→shields, laser→armor, anything→hull).
+// Phase 1 (plan B10, 2026-09-04): TEST BUFF reverted. Sol is the newbie
+// starter — small single/duo patrols so a Starter Scout can learn to
+// fight without meeting a destroyer wall. One lone destroyer remains in
+// the far outer system as the "come back later" fight.
+// ⚠ Zone list is MIRRORED in server pirateManifest.js (names, counts,
+// types, radii — the RNG stream depends on them). Edit both together.
 const PIRATE_SPAWN_ZONES = [
-  // Shield-heavy gang — strip shields with KINETIC first. Medium fight.
-  { name: 'Belt Raiders', cx: 1400, cy: 200, radius: 220, count: 5,
-    types: ['pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_interceptor'] },
-  // Armor wall of destroyers — crack with LASER. Tanky, slow.
-  { name: 'Jupiter Siege Wing', cx: 2200, cy: -800, radius: 220, count: 4,
-    types: ['pirate_destroyer', 'pirate_destroyer', 'pirate_destroyer', 'pirate_destroyer'] },
-  // Interceptor swarm — bare hulls, fast, lots of small guns.
-  { name: 'Inner Pickets', cx: -900, cy: 900, radius: 200, count: 6,
-    types: ['pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor', 'pirate_interceptor'] },
-  // Big mixed battle fleet — destroyer flagship + mixed escorts. Attrition showcase.
-  { name: 'Saturn Corsairs', cx: -1200, cy: -2600, radius: 260, count: 6,
-    types: ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor', 'pirate_interceptor'] },
-  // Dreadnought escort wing — 1 heavy flagship + a screen that dies first.
-  { name: 'Outer Dreadnought Wing', cx: -2600, cy: 1400, radius: 240, count: 5,
-    types: ['pirate_destroyer', 'pirate_marauder', 'pirate_marauder', 'pirate_marauder', 'pirate_interceptor'] },
+  // Duo with a shield — teaches "kinetic strips shields."
+  { name: 'Belt Raiders', cx: 1400, cy: 200, radius: 120, count: 2,
+    types: ['pirate_marauder', 'pirate_interceptor'] },
+  // Lone picket near Jupiter.
+  { name: 'Jupiter Siege Wing', cx: 2200, cy: -800, radius: 120, count: 1,
+    types: ['pirate_interceptor'] },
+  // Interceptor pair — fast, fragile.
+  { name: 'Inner Pickets', cx: -900, cy: 900, radius: 120, count: 2,
+    types: ['pirate_interceptor', 'pirate_interceptor'] },
+  // Marauder duo out by Saturn.
+  { name: 'Saturn Corsairs', cx: -1200, cy: -2600, radius: 140, count: 2,
+    types: ['pirate_marauder', 'pirate_interceptor'] },
+  // The one armored destroyer — Sol's "come back with a laser" fight.
+  { name: 'Outer Dreadnought Wing', cx: -2600, cy: 1400, radius: 120, count: 1,
+    types: ['pirate_destroyer'] },
 ];
 
 // ============================================
@@ -180,15 +183,20 @@ const generatePiratesForSystem = (systemSeed, dangerLevel, bodies, systemTier = 
   const enemies = [];
   let nextId = 1;
   
-  // Aggressive scaling. 5-star systems should feel "full to the brim"
-  // (player-direction 2026-05-25). Curve:
+  // Phase 1 rebalance (plan §"fleet-count flattening", 2026-09-04):
+  // flattened ~40% from the old d×5+rng(0..d×3) curve. Deep-zone
+  // difficulty was mostly ambush-by-headcount (multiple fleets rallying
+  // = near-instant deaths); Phase 2's behavior tiers will make fewer
+  // enemies smarter instead. Curve:
   //   danger 0: 0
-  //   danger 1: 5-8
-  //   danger 3: 15-24
-  //   danger 5: 25-40
+  //   danger 1: 3-5
+  //   danger 3: 9-15
+  //   danger 5: 15-25
   // Spawn is still one-shot per system entry; kills stay dead until
-  // the player warps out + back in.
-  const pirateCount = Math.floor(dangerLevel * 5 + rng.range(0, dangerLevel * 3));
+  // the player warps out + back in (loot re-arms after 15 min server-side).
+  // ⚠ MIRRORED in server pirateManifest.js — same formula, same single
+  // rng.range call.
+  const pirateCount = Math.floor(dangerLevel * 3 + rng.range(0, dangerLevel * 2));
   if (pirateCount <= 0) return enemies;
 
   // Phase 2: hull + loadout are picked independently per pirate.

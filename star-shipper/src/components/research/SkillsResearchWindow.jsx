@@ -868,6 +868,15 @@ const UnlockConfirm = ({ tech, canAfford, onCancel, onConfirm }) => {
         <div style={{ marginTop: 12, fontSize: '0.8rem', fontFamily: FM, color: canAfford ? GOLD.light : '#a04040' }}>
           Cost: {tech.rp_cost} RP {canAfford ? '' : '(insufficient)'}
         </div>
+        {/* Phase 1 (plan B6): T3+ nodes also consume materials from
+            cargo. Server validates + burns worst-quality stacks first;
+            an "insufficient materials" unlock error surfaces via the
+            standard toast path. */}
+        {(tech.material_cost || []).length > 0 && (
+          <div style={{ marginTop: 6, fontSize: '0.8rem', fontFamily: FM, color: '#8a99aa' }}>
+            Materials: {(tech.material_cost || []).map(m => `${m.quantity}× ${m.resource_name}`).join(' · ')}
+          </div>
+        )}
         <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
             onClick={onCancel}

@@ -132,13 +132,17 @@ export const getShipWeapons = (ship) => {
 
     const type = detectWeaponType(fittedValue);
     const base = WEAPON_DEFAULTS[type];
-    // Quality scales different stats by different powers (Phase 3 spec):
+    // Quality scales different stats by different powers:
     //   damage ×Q       -- linear, biggest payoff for high-q crafts
     //   range  ×sqrt(Q) -- soft; q100 = 1.41x reach, not 2x
-    //   fire_rate /sqrt(Q) -- inverted because lower = faster cycle
+    //   fire_rate       -- NOT quality-scaled (Phase 1 / plan B7,
+    //     2026-09-04). It used to be ÷sqrt(Q), making DPS scale ×Q^1.5
+    //     (Q100 = ×2.83) — a stealth tier system that rivaled two whole
+    //     module tiers. DPS now scales linearly ×Q (Q100 = ×2.0).
+    //   lock_time ÷sqrt(Q) still applies (lock speed isn't DPS).
     const qMult       = qualityMultiplier(fittedValue);
     const qRangeMult  = qualityMultiplier(fittedValue, { power: 0.5 });
-    const qCycleMult  = qualityMultiplier(fittedValue, { power: 0.5, invert: true });
+    const qLockMult   = qualityMultiplier(fittedValue, { power: 0.5, invert: true });
 
     // Server-authoritative ammo count (`loaded`) for missile launchers;
     // server module_types.stats.ammo_capacity / lock_time override the
@@ -156,11 +160,11 @@ export const getShipWeapons = (ship) => {
       ...base,
       damage:    Math.round((tuned ? (serverStats.damage ?? base.damage) : base.damage) * qMult),
       range:     Math.round((tuned ? (serverStats.range ?? base.range) : base.range) * qRangeMult),
-      fire_rate: (tuned ? (serverStats.fire_rate ?? base.fire_rate) : base.fire_rate) * qCycleMult,
+      fire_rate: (tuned ? (serverStats.fire_rate ?? base.fire_rate) : base.fire_rate),
       slot_id: slot.id,
       quality_mult: qMult,
       // Pass through server-overrides for missile-only fields if present
-      lock_time: (serverStats?.lock_time ?? base.lock_time) * qCycleMult,
+      lock_time: (serverStats?.lock_time ?? base.lock_time) * qLockMult,
       ammo_capacity: serverStats?.ammo_capacity ?? base.ammo_capacity,
       loaded,  // server's last-known loaded count (number) or undefined
     });
