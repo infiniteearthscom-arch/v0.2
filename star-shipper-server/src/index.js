@@ -49,11 +49,38 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
+// DO App Platform terminates TLS + proxies to this process, so the
+// real client address arrives in X-Forwarded-For. Without this, req.ip
+// is the proxy's address for EVERY request and every player on the
+// server shares ONE rate-limit bucket (incident 2026-09-10: three
+// players -> 429 "Too Many Requests" within minutes).
+app.set('trust proxy', 1);
+
+// Health check -- registered BEFORE the limiter so it is never rate
+// limited. The client's AuthScreen polls this every 10s and renders
+// "Server offline" on any non-ok body; a 429 here looked like a crash.
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+// Rate limiting. Keyed per PLAYER (bearer token) when logged in so
+// friends behind one router / one proxy hop don't pool their budgets;
+// unauthenticated traffic (login/register) falls back to per-IP.
+// Budget: the client polls inventory (5s per open window), credits
+// (10s), harvesters (10s), skills/mail (60s) -- ~1 req/s with a few
+// windows open, so 1000/15min was already borderline for ONE player.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per windowMs
+  max: 4000, // ~4.4 req/s sustained per player/IP
   message: { error: 'Too many requests, please try again later' },
+  keyGenerator: (req) => {
+    const auth = req.headers.authorization;
+    if (auth && auth.startsWith('Bearer ')) return `u:${auth.slice(7)}`;
+    return `ip:${req.ip}`;
+  },
 });
 app.use('/api/', limiter);
 
@@ -63,14 +90,6 @@ app.use(express.json({ limit: '1mb' }));
 // ============================================
 // API ROUTES
 // ============================================
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
-});
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
-});
 
 // API routes
 app.use('/api/auth', authRoutes);

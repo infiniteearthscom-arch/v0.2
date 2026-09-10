@@ -5,7 +5,7 @@ Living doc. Skim this first when starting a new Claude Code chat — it's the sn
 > **Here:** current state, in-flight work, queue, recent themes.
 > **Not here:** architecture (→ `HANDOFF.md`), conventions/pitfalls (→ `CLAUDE.md`), aspirational scope (→ `docs/design-vision.md`).
 
-**Last updated:** 2026-09-03 (Audit-fix sessions: full-codebase audit → `BACKLOG.md`, then batches shipped as merge commits — economy hardening P0s, server stability, client session robustness, DB hygiene w/ migration 066, UI correctness. **Discovery: migrations 064/065 were never applied in July — they only ran 2026-09-03** alongside 066, so Research Methodology + the harvester-fuel quest text just went live. The `wrecks` table EXISTS per `npm run db:verify` — the old 42P01 mystery is stale. New tool: `npm run db:verify` checks schema vs migration tracker.)
+**Last updated:** 2026-09-10 (Rate-limiter incident fix — see Recently shipped. Previous: 2026-09-03 Audit-fix sessions: full-codebase audit → `BACKLOG.md`, then batches shipped as merge commits — economy hardening P0s, server stability, client session robustness, DB hygiene w/ migration 066, UI correctness. **Discovery: migrations 064/065 were never applied in July — they only ran 2026-09-03** alongside 066, so Research Methodology + the harvester-fuel quest text just went live. The `wrecks` table EXISTS per `npm run db:verify` — the old 42P01 mystery is stale. New tool: `npm run db:verify` checks schema vs migration tracker.)
 
 *(Previous entry, 2026-07-19 — Onboarding + UX repair session, built + build-verified:* HUD restack to top-center; invisible-ship-on-reset/register fixed; reset wipes made complete (asteroid scans, fog of war, skills, research); Starter Kit free + one-per-account with quest/vendor cleanup; chat + system map start closed; Skills window font floor; self-animating scan progress bar; new Research Methodology skill (rp_rate_pct); harvester fuel quest prompt. **Migrations 063–065 pending `npm run db:migrate` after deploy.**)
 
@@ -284,6 +284,10 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-09-10 — Rate limiter shared across all players ("Too Many Requests" + fake "Server offline")
+
+Three players in one session hit 429 within minutes and the login screen said "Server offline". The server never went down. Root cause: `express-rate-limit` keyed by `req.ip`, but the app runs behind DO's proxy with no `trust proxy`, so every request carried the proxy's address and **all players shared one 1000-req/15-min bucket**. The client polls inventory (5s per open window), credits (10s), harvesters (10s) — ~1 req/s per player — so three players blew the budget fast. `/api/health` sat behind the same limiter, so the AuthScreen health poll got a 429 body and rendered "Server offline". Fix (`src/index.js`, no migration): `app.set('trust proxy', 1)`; health routes registered before the limiter; limiter keyed per bearer token (per-IP only for unauthenticated calls) so friends behind one router don't pool; budget raised to 4000/15 min. Follow-up idea: a stricter separate limiter on `/api/auth/login|register` for brute-force protection.
 
 ### 2026-07-19 — Onboarding + UX repair session (built + build-verified; migrations 063–065)
 
