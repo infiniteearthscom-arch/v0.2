@@ -289,6 +289,8 @@ Most recent first. Group by session/theme. Trim entries older than ~2 weeks once
 
 Three players in one session hit 429 within minutes and the login screen said "Server offline". The server never went down. Root cause: `express-rate-limit` keyed by `req.ip`, but the app runs behind DO's proxy with no `trust proxy`, so every request carried the proxy's address and **all players shared one 1000-req/15-min bucket**. The client polls inventory (5s per open window), credits (10s), harvesters (10s) — ~1 req/s per player — so three players blew the budget fast. `/api/health` sat behind the same limiter, so the AuthScreen health poll got a 429 body and rendered "Server offline". Fix (`src/index.js`, no migration): `app.set('trust proxy', 1)`; health routes registered before the limiter; limiter keyed per bearer token (per-IP only for unauthenticated calls) so friends behind one router don't pool; budget raised to 4000/15 min. Follow-up idea: a stricter separate limiter on `/api/auth/login|register` for brute-force protection.
 
+**Also new: `npm run db:rename -- OLDNAME NEWNAME`** (`src/db/rename-user.js`) — admin player rename from the DO console (no in-game feature). Updates `users.username`/`display_name` plus the denormalized `chat_messages.sender_name` + `activity_events.sender_name` in one transaction; same validation as registration. Multi-line pastes don't survive the DO web console, hence a script.
+
 ### 2026-07-19 — Onboarding + UX repair session (built + build-verified; migrations 063–065)
 
 Grab-bag session fixing new-player/reset bugs and HUD/UX complaints. Everything build-verified locally; **not yet pushed** at time of writing. After deploy: `npm run db:migrate` picks up 063–065.
