@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 // DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
-import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, PIRATE_HULLS, FACTIONS } from '@/utils/shipRenderer';
+import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
+import { hydrateEnemies } from '@/utils/enemyManifest';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
@@ -45,129 +46,6 @@ const PROJECTILE_LIFETIME = 0.8; // seconds
 //  per-ship firing now reads weapon stats from each ship's fitted modules.)
 const SHIELD_REGEN_RATE = 2; // shield HP per second
 const SHIELD_REGEN_DELAY = 3; // seconds after last hit before regen starts
-// Phase 1 rebalance (plan B5): raised from 20-80 so combat income pulls
-// ahead of mining at equal tier. ⚠ MIRRORED in server pirateManifest.js.
-const LOOT_CREDITS_MIN = 35;
-const LOOT_CREDITS_MAX = 120;
-
-// Pirate spawn zones — defined by center point + radius. Each zone is one
-// FLEET (combat F1+): heaviest hull = flagship/leader, the rest fly in
-// formation behind it and peel off (attrition) as the pooled hull falls.
-//
-// Phase 1 (plan B10, 2026-09-04): TEST BUFF reverted. Sol is the newbie
-// starter — small single/duo patrols so a Starter Scout can learn to
-// fight without meeting a destroyer wall. One lone destroyer remains in
-// the far outer system as the "come back later" fight.
-// ⚠ Zone list is MIRRORED in server pirateManifest.js (names, counts,
-// types, radii — the RNG stream depends on them). Edit both together.
-const PIRATE_SPAWN_ZONES = [
-  // Duo with a shield — teaches "kinetic strips shields."
-  { name: 'Belt Raiders', cx: 1400, cy: 200, radius: 120, count: 2,
-    types: ['pirate_marauder', 'pirate_interceptor'] },
-  // Lone picket near Jupiter.
-  { name: 'Jupiter Siege Wing', cx: 2200, cy: -800, radius: 120, count: 1,
-    types: ['pirate_interceptor'] },
-  // Interceptor pair — fast, fragile.
-  { name: 'Inner Pickets', cx: -900, cy: 900, radius: 120, count: 2,
-    types: ['pirate_interceptor', 'pirate_interceptor'] },
-  // Marauder duo out by Saturn.
-  { name: 'Saturn Corsairs', cx: -1200, cy: -2600, radius: 140, count: 2,
-    types: ['pirate_marauder', 'pirate_interceptor'] },
-  // The one armored destroyer — Sol's "come back with a laser" fight.
-  { name: 'Outer Dreadnought Wing', cx: -2600, cy: 1400, radius: 120, count: 1,
-    types: ['pirate_destroyer'] },
-];
-
-// ============================================
-// PIRATE LOADOUTS (Phase 2 of enemy fleet upgrades)
-// ============================================
-// Each loadout describes a "fitted" pirate -- weapon + shield + engine
-// derive their combat stats independently of the hull. Hull provides
-// visual + base HP only; everything else (damage, fire rate, range,
-// shield, speed) comes from the loadout. Tier scales with danger so
-// 5-star systems field T3 pirates with heavy weapons + capital
-// shields. The flat fields the AI loop reads (enemy.damage, .range,
-// .fireRate, .speed, .maxShield) are computed at spawn and stored as
-// before; this is purely a richer SOURCE for those numbers than the
-// old hull.stats hardcode.
-
-// Tiered weapon archetypes. weaponLabel surfaces in the pirate's
-// display name so the player can read the threat from the HUD.
-const PIRATE_WEAPONS = {
-  laser_t1:   { label: 'Pulse Laser',     damage:  8, fireRate: 0.8, range: 130 },
-  laser_t2:   { label: 'Burst Laser',     damage: 14, fireRate: 0.6, range: 160 },
-  kinetic_t1: { label: 'Autocannon',      damage: 18, fireRate: 1.0, range: 180 },
-  kinetic_t2: { label: 'Heavy Cannon',    damage: 28, fireRate: 0.8, range: 200 },
-  missile_t1: { label: 'Light Missiles',  damage: 35, fireRate: 1.8, range: 260 },
-  missile_t2: { label: 'Heavy Missiles',  damage: 55, fireRate: 2.4, range: 320 },
-};
-const PIRATE_SHIELDS = {
-  shield_t1: { label: 'Light Deflector', maxShield:  20 },
-  shield_t2: { label: 'Med Deflector',   maxShield:  60 },
-  shield_t3: { label: 'Capital Shield',  maxShield: 140 },
-};
-const PIRATE_ENGINES = {
-  engine_t1: { label: 'Civilian Drive', speed: 150 },
-  engine_t2: { label: 'Combat Drive',   speed: 130 },
-  engine_t3: { label: 'Heavy Drive',    speed: 100 },
-};
-
-// Loadout templates per tier. Each entry = full pirate kit. RNG picks
-// one randomly from the tier's pool at spawn -- variety within tier
-// keeps encounters interesting (some pirates have lasers, others
-// missiles, etc.) even in the same fleet.
-const PIRATE_LOADOUT_TIERS = {
-  1: [
-    { weapon: 'laser_t1',   shield: 'shield_t1', engine: 'engine_t1' },
-    { weapon: 'kinetic_t1', shield: 'shield_t1', engine: 'engine_t1' },
-  ],
-  2: [
-    { weapon: 'laser_t2',   shield: 'shield_t2', engine: 'engine_t2' },
-    { weapon: 'kinetic_t1', shield: 'shield_t2', engine: 'engine_t2' },
-    { weapon: 'missile_t1', shield: 'shield_t2', engine: 'engine_t2' },
-  ],
-  3: [
-    { weapon: 'kinetic_t2', shield: 'shield_t3', engine: 'engine_t3' },
-    { weapon: 'missile_t2', shield: 'shield_t3', engine: 'engine_t3' },
-    { weapon: 'laser_t2',   shield: 'shield_t3', engine: 'engine_t3' },
-  ],
-};
-
-// Pirate hull pool now mixes the existing PIRATE_HULLS visuals (which
-// already render with pirate-themed palettes) AND a curated set of
-// player combat hulls so pirates have visible variety beyond the
-// three-pirate-silhouette repetition. Hull is purely visual + base
-// HP; loadout drives all combat stats. Size class drives the base HP.
-//   light  -- small/fast (interceptors)
-//   medium -- balanced
-//   heavy  -- slow tanks
-const PIRATE_HULL_POOL = {
-  light:  ['pirate_interceptor', 'fighter',  'scout'],
-  medium: ['pirate_marauder',    'frigate'],
-  heavy:  ['pirate_destroyer',   'capital'],
-};
-const PIRATE_HULL_BASE_HP = { light: 60, medium: 140, heavy: 280 };
-
-// Pick a loadout tier for a given danger level. Higher danger has a
-// chance of bumping up a tier (so a 5-star system mixes T3 with the
-// occasional T2 instead of being 100% endgame).
-function pickLoadoutTier(rng, dangerLevel) {
-  if (dangerLevel <= 2) return 1;
-  if (dangerLevel <= 4) return rng.range(0, 1) < 0.5 ? 1 : 2;
-  // danger 5+: mostly T3 with a smattering of T2
-  return rng.range(0, 1) < 0.25 ? 2 : 3;
-}
-
-// Pick a hull size class for the loadout tier. Tier-3 loadouts go on
-// heavier hulls (capital reactors / shields fit the tier theme); tier-
-// 1 sticks with light hulls so a pulse-laser pirate doesn't fly a
-// capital silhouette.
-function pickHullClass(rng, tier) {
-  if (tier === 3) return rng.range(0, 1) < 0.6 ? 'heavy' : 'medium';
-  if (tier === 2) return rng.range(0, 1) < 0.6 ? 'medium' : 'light';
-  return rng.range(0, 1) < 0.7 ? 'light' : 'medium';
-}
-
 // Galaxy singleton (same seed as GalaxyMapWindow)
 const GALAXY_SEED = 12345;
 const GALAXY_SYSTEM_COUNT = 200;
@@ -177,148 +55,44 @@ const getGalaxy = () => {
   return _galaxyCache;
 };
 
-// Generate pirates for any system from its seed + danger level
-const generatePiratesForSystem = (systemSeed, dangerLevel, bodies, systemTier = 1) => {
-  const rng = new SeededRandom(systemSeed + 7777);
-  const enemies = [];
-  let nextId = 1;
-  
-  // Phase 1 rebalance (plan §"fleet-count flattening", 2026-09-04):
-  // flattened ~40% from the old d×5+rng(0..d×3) curve. Deep-zone
-  // difficulty was mostly ambush-by-headcount (multiple fleets rallying
-  // = near-instant deaths); Phase 2's behavior tiers will make fewer
-  // enemies smarter instead. Curve:
-  //   danger 0: 0
-  //   danger 1: 3-5
-  //   danger 3: 9-15
-  //   danger 5: 15-25
-  // Spawn is still one-shot per system entry; kills stay dead until
-  // the player warps out + back in (loot re-arms after 15 min server-side).
-  // ⚠ MIRRORED in server pirateManifest.js — same formula, same single
-  // rng.range call.
-  const pirateCount = Math.floor(dangerLevel * 3 + rng.range(0, dangerLevel * 2));
-  if (pirateCount <= 0) return enemies;
+// (Pirate spawn catalogs + generatePiratesForSystem removed 2026-09-17 —
+//  combat redesign Phase 2. Enemies are assembled server-side from
+//  enemy_templates and delivered by POST /combat/enter-system; see
+//  utils/enemyManifest.js for the hydration into sim objects.)
 
-  // Phase 2: hull + loadout are picked independently per pirate.
-  // Loadout (weapon/shield/engine tier) drives combat stats; hull
-  // drives visual + base HP. Selection helpers are at module scope
-  // (pickLoadoutTier + pickHullClass) -- both biased by dangerLevel.
-
-  // Find the outermost orbit to place fleets near.
-  const maxOrbit = Math.max(800, ...bodies.filter(b => b.orbitRadius).map(b => b.orbitRadius));
-
-  // Group pirates into fleets that share a patrol center and rally
-  // together. Fleet size scales with danger -- 5-star systems run
-  // gangs of 3-4 vs solo patrols in 1-2 star systems.
-  let remaining = pirateCount;
-  let fleetIdx = 0;
-  while (remaining > 0) {
-    const fleetSize = Math.min(
-      remaining,
-      dangerLevel >= 5 ? rng.int(3, 4)
-        : dangerLevel >= 3 ? rng.int(2, 3)
-        : rng.int(1, 2)
-    );
-    const fleetId = `fleet_${fleetIdx++}`;
-    // Shared patrol center -- all members of this fleet orbit it.
-    const angle = rng.range(0, Math.PI * 2);
-    const dist = rng.range(maxOrbit * 0.3, maxOrbit * 0.9);
-    const patrolCenter = { x: Math.cos(angle) * dist, y: Math.sin(angle) * dist };
-    const patrolRadius = rng.range(80, 180);
-    for (let m = 0; m < fleetSize; m++) {
-      // Phase 2 spawn: roll loadout tier + hull class independently.
-      // Hull determines visual + base HP; loadout determines weapon
-      // damage/range/fireRate + shield + speed.
-      const tier = pickLoadoutTier(rng, dangerLevel);
-      const hullClass = pickHullClass(rng, tier);
-      const hullChoices = PIRATE_HULL_POOL[hullClass];
-      const hullId = hullChoices[rng.int(0, hullChoices.length - 1)];
-      // Lookup falls through PIRATE_HULLS first (pirate-themed visual)
-      // then HULL_SHAPES (player combat hulls). Both render the same
-      // way via getShipIcon.
-      const hull = PIRATE_HULLS[hullId] || HULL_SHAPES[hullId];
-      if (!hull) continue;
-      const loadoutPool = PIRATE_LOADOUT_TIERS[tier];
-      const loadout = loadoutPool[rng.int(0, loadoutPool.length - 1)];
-      const weapon = PIRATE_WEAPONS[loadout.weapon];
-      const shield = PIRATE_SHIELDS[loadout.shield];
-      const engine = PIRATE_ENGINES[loadout.engine];
-      // Base HP from hull class (overrides PIRATE_HULLS.stats.maxHull
-      // so capital + frigate hulls don't trail behind their pirate
-      // counterparts). Player hulls don't have stats at all, so this
-      // is the only HP source for them.
-      const baseHp = PIRATE_HULL_BASE_HP[hullClass];
-      // Player hulls (fighter/scout/frigate/capital) don't have
-      // palette.engine; fall back to a neutral color for engine glow.
-      const engineColor = hull.palette?.engine || '#ffaa44';
-      // Spawn close to the patrol center so the fleet appears grouped.
-      const memberA = rng.range(0, Math.PI * 2);
-      const memberD = rng.range(0, 40);
-      const startX = patrolCenter.x + Math.cos(memberA) * memberD;
-      const startY = patrolCenter.y + Math.sin(memberA) * memberD;
-      const icon = getShipIcon(hullId);
-      // Display name reflects loadout so the player can read the
-      // threat from the HUD ("Pirate Destroyer (Heavy Cannon)").
-      const sizeLabel = hullClass === 'heavy' ? 'Destroyer'
-                       : hullClass === 'medium' ? 'Marauder'
-                       : 'Interceptor';
-      // Armor layer: redistribute a slice of base HP into armor so total
-      // neutral EHP is unchanged, but the damage triangle now bites --
-      // heavies are armor-tanky (reward lasers), lights are bare. Weapon
-      // type drives both what the pirate fires AND (later) its loadout feel.
-      const armorFrac = hullClass === 'heavy' ? 0.35 : hullClass === 'medium' ? 0.2 : 0;
-      const enemyArmor = Math.round(baseHp * armorFrac);
-      const enemyHull = baseHp - enemyArmor;
-      const enemyWeaponType = String(loadout.weapon || '').split('_')[0] || 'kinetic';
-      enemies.push({
-        id: `pirate_${nextId++}`,
-        hullId, icon, faction: 'pirate',
-        // Region tier leads the name so threat level reads instantly
-        // ("T3 Pirate Destroyer (Heavy Cannon)").
-        tier: systemTier,
-        name: `T${systemTier} ${FACTIONS.pirate.name} ${sizeLabel} (${weapon.label})`,
-        x: startX, y: startY,
-        vx: 0, vy: 0,
-        rotation: rng.range(-180, 180),
-        hull: enemyHull,
-        maxHull: enemyHull,
-        armor: enemyArmor,
-        maxArmor: enemyArmor,
-        shield: shield.maxShield,
-        maxShield: shield.maxShield,
-        weaponType: enemyWeaponType,
-        speed: engine.speed,
-        damage: weapon.damage,
-        fireRate: weapon.fireRate,
-        range: weapon.range,
-        fireCooldown: 0,
-        shieldRegenTimer: 0,
-        engineColor,
-        displaySize: hull.displaySize,
-        state: 'patrol',
-        patrolCenter,
-        patrolAngle: rng.range(0, Math.PI * 2) + m * (Math.PI * 2 / fleetSize), // fan out around the orbit
-        patrolRadius,
-        targetId: null,
-        fleetId,
-        // Loadout metadata kept for future tooltips / debugging --
-        // not read by the AI loop. tier drives loot scaling.
-        loadoutTier: tier,
-        loadoutWeapon: loadout.weapon,
-        loadoutShield: loadout.shield,
-        loadoutEngine: loadout.engine,
-        lootCredits: Math.round(
-          rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX)
-          * (hull.displaySize / 6)
-          * (1 + dangerLevel * 0.3)
-          * tier  // T2 = 2x loot, T3 = 3x loot vs the base
-        ),
-      });
+// Phase 2: enemies fire EVERY fitted weapon on its own cooldown, each
+// with its own range + damage type (a Titan's lance, driver and torpedoes
+// all cycle independently). Called only while the enemy is in 'attack'
+// state and the player is inside its longest weapon's range. Enemies
+// without a `weapons` array (shouldn't exist post-manifest) fall back to
+// the legacy single-weapon fields.
+const fireEnemyWeapons = (enemy, dist, dx, dy, delta, projectiles) => {
+  const pAngle = Math.atan2(dy, dx);
+  const fire = (damage, weaponType) => {
+    projectiles.push({
+      x: enemy.x, y: enemy.y,
+      vx: Math.cos(pAngle) * PROJECTILE_SPEED * 0.7,
+      vy: Math.sin(pAngle) * PROJECTILE_SPEED * 0.7,
+      age: 0, fromPlayer: false, damage,
+      color: enemy.engineColor,
+      weapon_type: weaponType || 'kinetic',
+    });
+  };
+  const weapons = enemy.weapons;
+  if (!weapons || weapons.length === 0) {
+    enemy.fireCooldown -= delta;
+    if (enemy.fireCooldown <= 0) {
+      enemy.fireCooldown = enemy.fireRate;
+      fire(enemy.damage, enemy.weaponType);
     }
-    remaining -= fleetSize;
+    return;
   }
-
-  return enemies;
+  for (const w of weapons) {
+    w.cooldown -= delta;
+    if (w.cooldown > 0 || dist >= w.range) continue;
+    w.cooldown = w.fireRate;
+    fire(w.damage, w.damageType);
+  }
 };
 
 // ============================================
@@ -2343,73 +2117,45 @@ export const SystemView = () => {
     playerFireCooldownRef.current = 0;
     playerShieldRegenTimerRef.current = 0;
     trailsRef.current = {};
-    
-    let enemies;
-    if (currentSystemId === 'sol') {
-      // Sol uses hardcoded spawn zones
-      const rng = new SeededRandom(42);
-      enemies = [];
-      let nextId = 1;
-      for (const zone of PIRATE_SPAWN_ZONES) {
-        for (let i = 0; i < zone.count; i++) {
-          const hullId = zone.types[i % zone.types.length];
-          const hull = PIRATE_HULLS[hullId];
-          if (!hull) continue;
-          const angle = rng.range(0, Math.PI * 2);
-          const dist = rng.range(0, zone.radius);
-          const icon = getShipIcon(hullId);
-          // Armor layer redistributed from base HP by size (neutral EHP).
-          const solArmorFrac = hull.displaySize > 9 ? 0.35 : hull.displaySize > 7 ? 0.2 : 0;
-          const solArmor = Math.round(hull.stats.maxHull * solArmorFrac);
-          const solHull = hull.stats.maxHull - solArmor;
-          enemies.push({
-            id: `pirate_${nextId++}`, hullId, icon, faction: 'pirate',
-            name: `${FACTIONS.pirate.name} ${hull.displaySize > 9 ? 'Destroyer' : hull.displaySize > 7 ? 'Marauder' : 'Interceptor'}`,
-            x: zone.cx + Math.cos(angle) * dist, y: zone.cy + Math.sin(angle) * dist,
-            vx: 0, vy: 0, rotation: rng.range(-180, 180),
-            hull: solHull, maxHull: solHull,
-            armor: solArmor, maxArmor: solArmor,
-            shield: hull.stats.maxShield, maxShield: hull.stats.maxShield,
-            weaponType: 'kinetic',
-            speed: hull.stats.speed, damage: hull.stats.damage,
-            fireRate: hull.stats.fireRate, range: hull.stats.range,
-            fireCooldown: 0, shieldRegenTimer: 0,
-            engineColor: hull.palette.engine, displaySize: hull.displaySize,
-            state: 'patrol',
-            patrolCenter: { x: zone.cx + Math.cos(angle) * dist, y: zone.cy + Math.sin(angle) * dist },
-            patrolAngle: rng.range(0, Math.PI * 2), patrolRadius: rng.range(50, 150),
-            targetId: null,
-            // Each Sol spawn zone is one fleet (combat F1 entity model).
-            fleetId: `sol_${zone.name.replace(/\s+/g, '')}`,
-            lootCredits: Math.round(rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX) * (hull.displaySize / 6)),
-          });
-        }
-      }
-    } else {
-      // Procedural systems — generate pirates from seed + danger level.
-      // regionTier (unified 5-tier scale) stamps fleets so the player
-      // can read relative difficulty: +1 tier over yours = crafty
-      // fight, +2 = high difficulty, +3 = deadly.
-      const galaxy = getGalaxy();
-      const galaxySys = galaxy.systemMap[currentSystemId];
-      const dangerLevel = galaxySys?.dangerLevel || 0;
-      enemies = generatePiratesForSystem(galaxySys?.seed || 1, dangerLevel, currentSystem.bodies, galaxySys?.regionTier ?? 1);
-    }
-    
-    // Combat F4: stamp the system id on every enemy — the wreck-claim path
-    // reads it off the wreck (the game loop's closure copy of
-    // currentSystemId can be stale, pitfall #7) — and reset the server-side
-    // loot-claim set for this visit (spawning IS the respawn event, so
-    // claims become re-earnable exactly now). Fire-and-forget: if it fails,
-    // stale claims just reject until the next system entry.
-    for (const e of enemies) e.systemId = currentSystemId;
-    combatAPI.enterSystem(currentSystemId).catch(() => {});
 
-    enemiesRef.current = enemies;
-    // Combat F1: build the pooled fleet entities from the spawned members.
-    fleetsRef.current = buildFleets(enemies);
-    setEnemyCount(enemies.length);
-    
+    // Phase 2 (enemy template system): the SERVER owns the spawn. Drop
+    // the previous system's enemies immediately (nothing stale may fire
+    // during the fetch), then hydrate whatever the manifest says. The
+    // enter-system call also re-arms this player's loot claims for the
+    // system (spawning IS the respawn event). No client fallback: if the
+    // server can't be reached the system stays empty and we retry every
+    // 5s. A response for a system we've since left is dropped.
+    enemiesRef.current = [];
+    fleetsRef.current = buildFleets([]);
+    // Keep the "Baptism by Fire" watcher from seeing a fake N→0 clear
+    // while the new manifest is in flight.
+    prevEnemyCountRef.current = 0;
+    setEnemyCount(0);
+    let manifestCancelled = false;
+    let manifestRetry = null;
+    const loadManifest = async () => {
+      try {
+        const res = await combatAPI.enterSystem(currentSystemId);
+        if (manifestCancelled) return;
+        const enemies = hydrateEnemies(res?.manifest, currentSystemId);
+        enemiesRef.current = enemies;
+        fleetsRef.current = buildFleets(enemies);
+        prevEnemyCountRef.current = 0;
+        setEnemyCount(enemies.length);
+      } catch (err) {
+        if (manifestCancelled) return;
+        // A system the server doesn't know can't ever succeed -- leave it
+        // empty rather than hammering the endpoint every 5s.
+        if (err?.message === 'Unknown system') {
+          console.warn(`Server has no spawn manifest for system ${currentSystemId}`);
+          return;
+        }
+        console.warn('Enemy manifest fetch failed — retrying in 5s:', err?.message || err);
+        manifestRetry = setTimeout(loadManifest, 5000);
+      }
+    };
+    loadManifest();
+
     // Reset ship position when changing systems (not on first load)
     if (prevSystemIdRef.current !== currentSystemId) {
       prevSystemIdRef.current = currentSystemId;
@@ -2439,6 +2185,11 @@ export const SystemView = () => {
       playerShieldRef.current = playerMaxShieldRef.current;
       playerArmorRef.current = playerMaxArmorRef.current;
     }
+
+    return () => {
+      manifestCancelled = true;
+      if (manifestRetry) clearTimeout(manifestRetry);
+    };
   }, [currentSystemId, currentSystem]);
   
   // Calculate body position at current time
@@ -3046,19 +2797,7 @@ export const SystemView = () => {
           enemy.vx = 0; enemy.vy = 0;
           // Fire from formation (same rule as the leader).
           if (!dockedBodyRef.current && enemy.state === 'attack' && dist < enemy.range) {
-            enemy.fireCooldown -= delta;
-            if (enemy.fireCooldown <= 0) {
-              enemy.fireCooldown = enemy.fireRate;
-              const pAngle = Math.atan2(dy, dx);
-              projectiles.push({
-                x: enemy.x, y: enemy.y,
-                vx: Math.cos(pAngle) * PROJECTILE_SPEED * 0.7,
-                vy: Math.sin(pAngle) * PROJECTILE_SPEED * 0.7,
-                age: 0, fromPlayer: false, damage: enemy.damage,
-                color: enemy.engineColor,
-                weapon_type: enemy.weaponType || 'kinetic',
-              });
-            }
+            fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles);
           }
           continue; // skip the leader/free-agent state machine + movement
         }
@@ -3160,19 +2899,7 @@ export const SystemView = () => {
         
         // Fire at player (skip when docked)
         if (!dockedBodyRef.current && enemy.state === 'attack' && dist < enemy.range) {
-          enemy.fireCooldown -= delta;
-          if (enemy.fireCooldown <= 0) {
-            enemy.fireCooldown = enemy.fireRate;
-            const pAngle = Math.atan2(dy, dx);
-            projectiles.push({
-              x: enemy.x, y: enemy.y,
-              vx: Math.cos(pAngle) * PROJECTILE_SPEED * 0.7,
-              vy: Math.sin(pAngle) * PROJECTILE_SPEED * 0.7,
-              age: 0, fromPlayer: false, damage: enemy.damage,
-              color: enemy.engineColor,
-              weapon_type: enemy.weaponType || 'kinetic',
-            });
-          }
+          fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles);
         }
         
         // (Shield regen is now fleet-level — see the pre-pass above.)
@@ -5202,6 +4929,63 @@ export const SystemView = () => {
             );
           })()}
 
+
+          {/* Phase 2 (enemy template system): designated-target fit panel.
+              Enemies are real hull + module rows now, so the fit is
+              inspectable -- hull, HP, speed, and every module with its
+              rolled quality + resolved numbers. Sits right of the fleet
+              readout (top:38) so it never covers the activity ticker
+              (top:100). Re-renders on the same HUD tick as the readout. */}
+          {designatedEnemyId && (() => {
+            const enemy = enemiesRef.current.find(e => e.id === designatedEnemyId);
+            if (!enemy) return null;
+            const statText = (m) => {
+              if (m.damage != null) return `${m.damage} dmg · ${m.range} rng · ${m.fire_rate}s`;
+              if (m.shield_hp != null) return `+${m.shield_hp} shield`;
+              if (m.armor_hp != null) return `+${m.armor_hp} armor`;
+              if (m.speed_bonus != null) return `+${m.speed_bonus} speed`;
+              return '';
+            };
+            const statColor = (m) => {
+              if (m.damage != null) return WEAPON_DEFAULTS[m.damage_type]?.color || '#ccc';
+              if (m.shield_hp != null) return '#818cf8';
+              if (m.armor_hp != null) return '#d8a24a';
+              return '#7fb3d5';
+            };
+            return (
+              <div
+                className="fixed"
+                style={{
+                  zIndex: 40,
+                  top: 38,
+                  left: 'calc(50% + 135px)',
+                  width: 260,
+                  background: 'rgba(28,8,8,0.88)',
+                  border: `1px solid ${enemy.isElite ? '#d8a24a' : '#5a1a1a'}`,
+                  borderRadius: 3,
+                  padding: '5px 10px',
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: '0.8rem',
+                }}
+              >
+                <div style={{ color: enemy.isElite ? '#ffd166' : '#ff6b6b' }}>{enemy.name}</div>
+                <div style={{ color: '#7a8a9a' }}>
+                  {enemy.hullName || enemy.hullId} · {enemy.maxHull} hull
+                  {enemy.maxArmor > 0 ? ` · ${enemy.maxArmor} armr` : ''}
+                  {enemy.maxShield > 0 ? ` · ${enemy.maxShield} shld` : ''}
+                  {` · ${enemy.speed} spd`}
+                </div>
+                {(enemy.modules || []).map((m, i) => (
+                  <div key={i} className="flex justify-between gap-2" style={{ lineHeight: '15px' }}>
+                    <span style={{ color: '#c8d0d8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {m.name} <span style={{ color: '#6a7a8a' }}>Q{m.quality}</span>
+                    </span>
+                    <span style={{ color: statColor(m), whiteSpace: 'nowrap' }}>{statText(m)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Tier B scan-ability tray. Each button only renders when
               the matching module is fitted. Empty fleet -> nothing

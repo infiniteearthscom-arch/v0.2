@@ -1,20 +1,22 @@
-// combat.js -- server persistence boundary for the client-local combat sim
-// (combat F4 / spec A3 "server-validated loot"). The real-time fight stays
-// client-side; this router only validates its OUTCOMES against the
-// deterministic pirate manifest (src/game/pirateManifest.js) so loot claims
-// are capped to the real spawn. Replaces the old trust-the-client
-// /fitting/award-loot (removed -- it let DevTools mint credits).
+// combat.js -- server persistence boundary for the client-local combat sim.
+// The real-time fight stays client-side. This router:
+//   * SERVES the spawn manifest (Phase 2 enemy template system,
+//     src/game/enemyManifest.js) -- the client spawns exactly what it is
+//     handed; there is no client-side pirate generation any more.
+//   * validates loot claims against that same manifest (combat F4 /
+//     spec A3) so loot is capped to the real spawn. Replaces the old
+//     trust-the-client /fitting/award-loot (removed -- it minted credits).
 //
 // Claim tracking is IN-MEMORY, mirroring the client's spawn model: enemies
 // respawn when the player re-enters a system, so claims reset on the
-// enter-system ping the client fires from its pirate-spawn effect. A server
-// restart wipes the maps -- worst case a player can re-claim one spawn's
-// wrecks, which is noise at these stakes.
+// enter-system call the client makes when it spawns the system's pirates.
+// A server restart wipes the maps -- worst case a player can re-claim one
+// spawn's wrecks, which is noise at these stakes.
 
 import express from 'express';
-import { authMiddleware } from '../auth/index.js';
+import { authMiddleware, isDevAccount } from '../auth/index.js';
 import { query, queryOne } from '../db/index.js';
-import { getSystemManifest } from '../game/pirateManifest.js';
+import { getSystemManifest, invalidateManifests } from '../game/enemyManifest.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -43,37 +45,77 @@ function getClaimSet(userId, systemId) {
 }
 
 // ============================================
-// POST /combat/enter-system -- reset this player's loot claims for a
-// system. The client fires it whenever it (re)spawns the system's
-// pirates, which is exactly when kills become re-earnable. Known gap:
-// nothing verifies the fight happened before a claim -- that would
-// need server-side combat. This endpoint's job is only to cap total
-// loot per visit to the real spawn.
+// POST /combat/enter-system -- hand the client this system's spawn
+// manifest AND re-arm this player's loot claims for it (subject to the
+// respawn cooldown). The client calls it whenever it (re)spawns the
+// system's pirates, which is exactly when kills become re-earnable.
+// Known gap: nothing verifies the fight happened before a claim -- that
+// would need server-side combat. Loot is capped per visit to the real
+// spawn; that is this endpoint's whole job on the claims side.
 // ============================================
-router.post('/enter-system', (req, res) => {
-  const { system_id } = req.body;
-  if (!system_id || typeof system_id !== 'string') {
-    return res.status(400).json({ error: 'system_id required' });
-  }
-  let rearms = lastRearmByUser.get(req.user.id);
-  if (!rearms) { rearms = new Map(); lastRearmByUser.set(req.user.id, rearms); }
-  const last = rearms.get(system_id) || 0;
-  const now = Date.now();
-  if (now - last < RESPAWN_COOLDOWN_MS) {
-    // Too soon — keep the existing claim set. The client still spawns
-    // its deterministic pirates; already-claimed kills just pay nothing
-    // until the cooldown lapses (claim returns 409, wreck is dropped
-    // client-side).
-    return res.json({
+router.post('/enter-system', async (req, res) => {
+  try {
+    const { system_id } = req.body;
+    if (!system_id || typeof system_id !== 'string') {
+      return res.status(400).json({ error: 'system_id required' });
+    }
+    const entry = await getSystemManifest(system_id);
+    if (!entry) return res.status(404).json({ error: 'Unknown system' });
+
+    let rearms = lastRearmByUser.get(req.user.id);
+    if (!rearms) { rearms = new Map(); lastRearmByUser.set(req.user.id, rearms); }
+    const last = rearms.get(system_id) || 0;
+    const now = Date.now();
+    let reArmed = false;
+    let retryIn = 0;
+    if (now - last < RESPAWN_COOLDOWN_MS) {
+      // Too soon — keep the existing claim set. The client still spawns
+      // the manifest's pirates; already-claimed kills just pay nothing
+      // until the cooldown lapses (claim returns 409, wreck is dropped
+      // client-side).
+      retryIn = Math.ceil((RESPAWN_COOLDOWN_MS - (now - last)) / 1000);
+    } else {
+      rearms.set(system_id, now);
+      const bySystem = claimsByUser.get(req.user.id);
+      if (bySystem) bySystem.delete(system_id);
+      reArmed = true;
+    }
+    res.json({
       success: true,
-      re_armed: false,
-      retry_in_seconds: Math.ceil((RESPAWN_COOLDOWN_MS - (now - last)) / 1000),
+      re_armed: reArmed,
+      ...(retryIn ? { retry_in_seconds: retryIn } : {}),
+      manifest: entry.manifest,
     });
+  } catch (e) {
+    console.error('Error entering system:', e);
+    res.status(500).json({ error: 'Failed to load system manifest' });
   }
-  rearms.set(system_id, now);
-  const bySystem = claimsByUser.get(req.user.id);
-  if (bySystem) bySystem.delete(system_id);
-  res.json({ success: true, re_armed: true });
+});
+
+// ============================================
+// GET /combat/manifest/:systemId -- read-only view of a system's spawn
+// (debugging / tooling). Does not touch claims.
+// ============================================
+router.get('/manifest/:systemId', async (req, res) => {
+  try {
+    const entry = await getSystemManifest(req.params.systemId);
+    if (!entry) return res.status(404).json({ error: 'Unknown system' });
+    res.json(entry.manifest);
+  } catch (e) {
+    console.error('Error reading manifest:', e);
+    res.status(500).json({ error: 'Failed to load system manifest' });
+  }
+});
+
+// ============================================
+// POST /combat/reload-templates -- dev-only: drop the cached catalog +
+// manifests so edited enemy_templates rows take effect without a
+// redeploy. Claims are untouched.
+// ============================================
+router.post('/reload-templates', (req, res) => {
+  if (!isDevAccount(req.user)) return res.status(403).json({ error: 'Dev account only' });
+  invalidateManifests();
+  res.json({ success: true });
 });
 
 // ============================================
@@ -89,8 +131,8 @@ router.post('/claim-loot', async (req, res) => {
       return res.status(400).json({ error: 'system_id and enemy_id required' });
     }
 
-    const manifest = getSystemManifest(system_id);
-    const entry = manifest?.get(enemy_id);
+    const system = await getSystemManifest(system_id);
+    const entry = system?.claimIndex.get(enemy_id);
     if (!entry) {
       return res.status(404).json({ error: 'No such enemy in this system' });
     }

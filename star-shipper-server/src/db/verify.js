@@ -90,14 +90,37 @@ async function main() {
   // --- migration 068 effects (Phase 1 rebalance) ---
   const t4 = await pool.query(`SELECT MIN(rp_cost)::int AS c FROM tech_definitions WHERE tier = 4`);
   report('T4 tech costs 15000 RP (068)', t4.rows[0]?.c === 15000, `min=${t4.rows[0]?.c}`);
-  const matCost = await pool.query(
-    `SELECT jsonb_array_length(material_cost) AS n FROM tech_definitions WHERE id = 'tech_exotic_weapons'`
-  );
-  report('tech_exotic_weapons has material_cost (068)', (matCost.rows[0]?.n || 0) > 0);
+  // Column may not exist at all if 068 never ran (seen 2026-09-17) —
+  // a missing column must be a ❌ row, not a verifier crash.
+  if (await columnExists('tech_definitions', 'material_cost')) {
+    const matCost = await pool.query(
+      `SELECT jsonb_array_length(material_cost) AS n FROM tech_definitions WHERE id = 'tech_exotic_weapons'`
+    );
+    report('tech_exotic_weapons has material_cost (068)', (matCost.rows[0]?.n || 0) > 0);
+  } else {
+    report('tech_exotic_weapons has material_cost (068)', false, 'column material_cost MISSING — run npm run db:migrate');
+  }
   const iron = await pool.query(`SELECT base_price FROM resource_types WHERE name = 'Iron'`);
   report('Iron repriced to 6 (068)', parseInt(iron.rows[0]?.base_price) === 6, `price=${iron.rows[0]?.base_price}`);
   const myield = await pool.query(`SELECT stats->>'mine_yield' AS y FROM module_types WHERE id = 'mining_basic'`);
   report('mining_basic yield 3 (068)', myield.rows[0]?.y === '3', `yield=${myield.rows[0]?.y}`);
+
+  // --- migration 069 effects (Phase 2 enemy templates) ---
+  report('enemy_templates exists (069)', await tableExists('enemy_templates'));
+  report('enemy_template_modules exists (069)', await tableExists('enemy_template_modules'));
+  if (await tableExists('enemy_templates')) {
+    const tcount = await pool.query(`SELECT COUNT(*)::int AS n FROM enemy_templates`);
+    report('enemy_templates seeded (069)', tcount.rows[0].n >= 18, `${tcount.rows[0].n} templates`);
+    const orphanMods = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM enemy_template_modules tm
+        LEFT JOIN module_types mt ON mt.id = tm.module_type_id WHERE mt.id IS NULL`
+    );
+    report('enemy_template_modules all reference real modules (069)', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} orphans`);
+  }
+  const pirateHulls = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM hull_types WHERE id IN ('pirate_interceptor','pirate_marauder','pirate_destroyer')`
+  );
+  report('pirate hulls registered in hull_types (069)', pirateHulls.rows[0].n === 3, `${pirateHulls.rows[0].n}/3`);
 
   // --- the old wrecks 42P01 mystery (migrations 021/022) ---
   report('wrecks table exists (021 — known 42P01 mystery)', await tableExists('wrecks'));

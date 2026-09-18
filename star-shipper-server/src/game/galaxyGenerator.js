@@ -2,7 +2,7 @@
 // ⚠ VERBATIM COPY of star-shipper/src/utils/galaxyGenerator.js (except this
 // header). The server uses it to reproduce the client's deterministic galaxy
 // (system seeds / danger / region tiers) for pirate-loot manifest validation
-// (src/game/pirateManifest.js). ANY edit to the client generator MUST be
+// (src/game/enemyManifest.js reads seeds/danger/tier/bodies from it). ANY edit to the client generator MUST be
 // mirrored here or loot validation silently rejects legitimate claims.
 // Deterministic seed-based galaxy generation.
 // Same seed always produces the same galaxy.
