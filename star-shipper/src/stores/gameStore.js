@@ -275,27 +275,42 @@ export const useGameStore = create(
         state.pendingJump = null; // Clear any pending jump
         if (!state.discoveredSystems.includes(systemId)) {
           state.discoveredSystems.push(systemId);
-          // Fire-and-forget server-side record so fog of war survives
-          // login on a different device. Failures are harmless -- next
-          // visit retries; local state is the working copy.
-          galaxyAPI.recordVisit(systemId).catch(() => {});
         }
+        // Fire-and-forget on EVERY entry (not just first discovery): the
+        // server records fog of war idempotently AND stamps
+        // users.last_system_id so a refresh / re-login restores this
+        // system (migration 070). Failures are harmless -- local state
+        // is the working copy; the next entry retries.
+        galaxyAPI.recordVisit(systemId).catch(() => {});
       }),
 
-      // Seed discoveredSystems from the server's visit table. Called on
-      // app-load (App.jsx) so the galaxy map renders with correct fog
-      // of war on first paint, not just after the next system change.
+      // Seed discoveredSystems from the server's visit table and restore
+      // the player's last system. Called on app-load (App.jsx) so the
+      // galaxy map renders with correct fog of war on first paint and
+      // the player resumes where they left off instead of in Sol.
       hydrateDiscoveredSystems: async () => {
         try {
-          const { visits } = await galaxyAPI.visits();
+          const { visits, last_system_id } = await galaxyAPI.visits();
           set(state => {
             const merged = new Set(state.discoveredSystems || ['sol']);
             for (const v of visits) merged.add(v);
             state.discoveredSystems = Array.from(merged);
+            // Server is the truth for "where was I" (covers a different
+            // device); the locally-persisted currentSystem only bridges
+            // the gap until this response lands.
+            if (last_system_id && last_system_id !== state.currentSystem) {
+              state.currentSystem = last_system_id;
+              state.viewMode = 'system';
+              state.arrivalType = 'warp';
+              state.autopilotTarget = null;
+              state.galaxyAutopilotTarget = null;
+              state.pendingJump = null;
+            }
           });
         } catch (e) {
-          // Network blip on cold start -- local state retains 'sol' so
-          // the player can still play; next system change syncs.
+          // Network blip on cold start -- local state (persisted
+          // currentSystem, or 'sol') keeps the player playable; the
+          // next system change syncs.
         }
       },
 
@@ -669,8 +684,9 @@ export const useGameStore = create(
         state.pendingJump = null;
         if (!state.discoveredSystems.includes(systemId)) {
           state.discoveredSystems.push(systemId);
-          galaxyAPI.recordVisit(systemId).catch(() => {});
         }
+        // Every entry: fog-of-war record (idempotent) + last_system_id stamp.
+        galaxyAPI.recordVisit(systemId).catch(() => {});
       }),
 
       clearAutopilot: () => set(state => {
@@ -849,6 +865,10 @@ export const useGameStore = create(
         audio: state.audio,
         uiScale: state.uiScale,
         toolbarExpanded: state.toolbarExpanded,
+        // Last system, so a refresh resumes there instantly (no Sol
+        // flash). The server's users.last_system_id overrides this once
+        // hydrateDiscoveredSystems responds -- it wins across devices.
+        currentSystem: state.currentSystem,
       }),
       // Merge persisted state with initial state. Window open/minimized
       // state is NOT persisted — we always start with all panels closed

@@ -17,7 +17,7 @@ Live in prod with **realtime multiplayer presence + chat + live roster + activit
 
 - Live URL: https://star-shipper-fjrrq.ondigitalocean.app
 - Branch: `main` (auto-deploys on push)
-- DB schema: applied through migration **068** (verified via `npm run db:verify` 2026-09-17; 009 was skipped). **069 (enemy templates) is authored and ships with the Phase 2 push — run `npm run db:migrate` then `npm run db:verify` after that deploy; until then `/combat/enter-system` 500s (no template tables) and systems spawn empty.** Note: **068 sat unapplied from 2026-09-04 until 2026-09-17** — the Phase 1 rebalance numbers (RP ladder, material costs, resource prices, mining yields) only went live then. Always `npm run db:migrate` then `npm run db:verify` after a migration deploy. Note: **064/065 sat unapplied from July until 2026-09-03** — the migrate run for 066 picked them up, so Research Methodology + the harvester-fuel quest text only just reached prod. Verify future migrations with `npm run db:verify` (checks actual schema vs the tracker).
+- DB schema: applied through migration **068** (verified via `npm run db:verify` 2026-09-17; 009 was skipped). **069 (enemy templates) shipped 2026-09-17 and 070 (last_system_id) is authored — run `npm run db:migrate` then `npm run db:verify` after each deploy that carries one; until 070 runs, `/galaxy/visit` and `/galaxy/visits` 500 on the missing column.** Note: **068 sat unapplied from 2026-09-04 until 2026-09-17** — the Phase 1 rebalance numbers (RP ladder, material costs, resource prices, mining yields) only went live then. Always `npm run db:migrate` then `npm run db:verify` after a migration deploy. Note: **064/065 sat unapplied from July until 2026-09-03** — the migrate run for 066 picked them up, so Research Methodology + the harvester-fuel quest text only just reached prod. Verify future migrations with `npm run db:verify` (checks actual schema vs the tracker).
 
 ---
 
@@ -294,6 +294,10 @@ Bugs noticed but not fixed; rough edges to revisit.
 ## Recently shipped
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
+
+### 2026-09-18 — Resume in the last system after refresh / re-login (migration 070)
+
+Refreshing or coming back dropped the player into Sol because `currentSystem` lived only in memory. Now: **server** `users.last_system_id` (070, default 'sol') is stamped by `POST /galaxy/visit` on EVERY system entry — the store's `setCurrentSystemId` + `enterSystem` used to call it only on first discovery, now always (the endpoint was already idempotent for fog of war; the activity-ticker log still fires only on first insert). `GET /galaxy/visits` returns `last_system_id`; `hydrateDiscoveredSystems` (App.jsx on login) sets `currentSystem` / `viewMode='system'` / `arrivalType='warp'` from it, so SystemView's system-change effect spawns the fleet at that system's warp point. **Client** also persists `currentSystem` in the zustand `partialize` so a plain refresh resumes instantly with no Sol flash; the server value wins when it arrives (covers another device). `/reset-account` resets it to 'sol' (pitfall #17). Not restored: in-system position / docked state — you arrive at the warp point. Mid-transit refresh (galaxy view) resumes in the system you departed.
 
 ### 2026-09-18 — Engine speed bug + skill-queue progress loss (server only, no migration)
 

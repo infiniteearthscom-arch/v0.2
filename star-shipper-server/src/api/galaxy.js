@@ -24,8 +24,13 @@ router.get('/visits', async (req, res) => {
         ORDER BY first_visited_at ASC`,
       [req.user.id]
     );
+    // Where the player was on their last system entry (migration 070) --
+    // the client restores this on login so a refresh doesn't dump them
+    // back into Sol.
+    const me = await queryOne(`SELECT last_system_id FROM users WHERE id = $1`, [req.user.id]);
     res.json({
       visits: rows.map(r => r.system_procedural_id),
+      last_system_id: me?.last_system_id || 'sol',
       // Full detail kept in case future UI wants "first visited Tuesday"
       // style metadata. Omit if it ever causes payload bloat.
       detail: rows,
@@ -86,6 +91,9 @@ router.post('/visit', async (req, res) => {
        RETURNING user_id`,
       [req.user.id, system_procedural_id]
     );
+    // Every entry (not just first discovery) stamps the player's last
+    // known system so a refresh / re-login restores it (migration 070).
+    await query(`UPDATE users SET last_system_id = $1 WHERE id = $2`, [system_procedural_id, req.user.id]);
     if (inserted) {
       // Fire-and-forget. Activity log failures must not break the
       // primary flow -- the player has discovered the system; the

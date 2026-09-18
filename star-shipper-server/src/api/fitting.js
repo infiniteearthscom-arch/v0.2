@@ -1454,7 +1454,8 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
       await client.query(
         `UPDATE users
          SET active_ship_id = NULL, credits = 1000,
-             research_points = 0, research_points_updated_at = NOW()
+             research_points = 0, research_points_updated_at = NOW(),
+             last_system_id = 'sol'
          WHERE id = $1`,
         [userId]
       );

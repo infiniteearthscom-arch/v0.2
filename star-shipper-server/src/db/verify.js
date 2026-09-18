@@ -122,6 +122,9 @@ async function main() {
   );
   report('pirate hulls registered in hull_types (069)', pirateHulls.rows[0].n === 3, `${pirateHulls.rows[0].n}/3`);
 
+  // --- migration 070 (last system) ---
+  report('users.last_system_id exists (070)', await columnExists('users', 'last_system_id'));
+
   // --- the old wrecks 42P01 mystery (migrations 021/022) ---
   report('wrecks table exists (021 — known 42P01 mystery)', await tableExists('wrecks'));
 
