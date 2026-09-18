@@ -452,7 +452,7 @@ router.post('/unfit-module', authMiddleware, async (req, res) => {
 // HELPER: Recalculate ship stats from hull + modules
 // ============================================
 
-const recalcShipStats = async (client, shipId, userId) => {
+export const recalcShipStats = async (client, shipId, userId) => {
   const shipResult = await client.query(`
     SELECT s.*, ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors
     FROM ships s
@@ -483,7 +483,11 @@ const recalcShipStats = async (client, shipId, userId) => {
     // Engine modules contribute additive speed. The stat field varies
     // by hull/module convention -- accept either `thrust` or `speed`.
     // Quality scales linearly per the Phase 3 spec.
-    const engineThrust = modStats.thrust ?? modStats.speed;
+    // Every seeded engine row carries `speed_bonus` (engine_basic 0 →
+    // engine_void_5 110); `thrust` / `speed` are accepted for legacy
+    // instances. Fixed 2026-09-18 — engines added 0 speed before this.
+    // ⚠ Mirrored in src/game/enemyManifest.js (enemies use the same rule).
+    const engineThrust = modStats.thrust ?? modStats.speed ?? modStats.speed_bonus;
     if (engineThrust) {
       engineSpeedBonus += engineThrust * qMult;
     }

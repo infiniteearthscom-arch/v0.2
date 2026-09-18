@@ -203,13 +203,46 @@ function computeFinishesAt(prevFinishesAt, sp) {
 }
 
 // ============================================
+// BANKED PARTIAL PROGRESS (2026-09-18)
+// ============================================
+// player_skills.sp may now sit BETWEEN level snapshots: when the head
+// entry is removed, its live SP is banked there instead of discarded.
+// A later queue entry for that skill's next level starts from the
+// banked SP, not from the level floor.
+//
+// Implementation trick: the entry's started_at is shifted EARLIER by
+// the banked amount ("virtual start"), and finishes_at = started_at +
+// the FULL level duration. Every existing formula -- live SP =
+// levelStartSp + elapsed × rate, client progress bars = (now -
+// started_at) / (finishes_at - started_at), the finishes_at pop check
+// -- then shows the banked progress without any other change.
+function bankedOffsetMs(skillRow, def, targetLevel) {
+  if (!skillRow) return 0;
+  if ((skillRow.level || 0) !== targetLevel - 1) return 0;
+  const floorSp = spAtLevel(skillRow.level || 0, def?.rank_multiplier || 1, def?.sp_per_level_override || null);
+  const banked = Math.max(0, (skillRow.sp || 0) - floorSp);
+  return (banked / SP_PER_MIN) * 60000;
+}
+
+// Schedule one queue entry off the previous entry's finishes_at (or
+// NOW for the head). Returns { startsAt, finishesAt } with the banked
+// offset baked into startsAt.
+function scheduleEntry(prevFinishesAt, def, targetLevel, skillRow) {
+  const chainStartMs = prevFinishesAt ? prevFinishesAt.getTime() : Date.now();
+  const startsAt = new Date(chainStartMs - bankedOffsetMs(skillRow, def, targetLevel));
+  const sp = spForLevel(targetLevel, def?.rank_multiplier || 1, def?.sp_per_level_override || null);
+  const finishesAt = computeFinishesAt(startsAt, sp);
+  return { startsAt, finishesAt };
+}
+
+// ============================================
 // GET /api/skills  -- full snapshot
 // ============================================
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const out = await transaction(async (client) => {
-      const { defs, skillsById, queue, liveHeadSp } = await loadAndCommit(client, userId);
+      const { defs, skillsById, queue, liveHeadSp, liveHeadAtLevel } = await loadAndCommit(client, userId);
 
       // Research-gated skills: load the player's unlocked tech set so
       // the response can flag locked rows (`tech_unlocked: false`). The
@@ -235,7 +268,10 @@ router.get('/', authMiddleware, async (req, res) => {
           bonus_per_level: d.bonus_per_level,
           sort_order: d.sort_order,
           level: ps?.level || 0,
-          sp: ps?.sp || 0,
+          // The currently-training skill reports its LIVE SP so the
+          // per-skill progress bar advances; everyone else reports the
+          // stored value (a level snapshot, or banked partial progress).
+          sp: (d.id === liveHeadAtLevel && liveHeadSp != null) ? liveHeadSp : (ps?.sp || 0),
           last_leveled_at: ps?.last_leveled_at || null,
           sp_for_next_level: ps?.level >= maxLevelFor(d) ? null : spAtLevel((ps?.level || 0) + 1, d.rank_multiplier, d.sp_per_level_override),
           sp_at_current_level: spAtLevel(ps?.level || 0, d.rank_multiplier, d.sp_per_level_override),
@@ -358,13 +394,11 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
         );
       }
 
-      // Compute finishes_at chained off whatever's currently at the
-      // tail of the queue. New entry's SP cost = one level at the
-      // skill's rank.
-      const sp = spForLevel(target_level, def.rank_multiplier, def.sp_per_level_override);
+      // Chain off whatever's currently at the tail of the queue. Any
+      // banked partial SP for this skill (from a previously removed
+      // head) shortens the entry via a virtual earlier start.
       const tailFinishes = queue.length > 0 ? new Date(queue[queue.length - 1].finishes_at) : null;
-      const startsAt = tailFinishes || new Date();
-      const finishesAt = computeFinishesAt(tailFinishes, sp);
+      const { startsAt, finishesAt } = scheduleEntry(tailFinishes, def, target_level, skillsById.get(skill_id));
       const newPos = queue.length;
 
       await client.query(
@@ -388,11 +422,14 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
 // POST /api/skills/queue/remove
 // body: { position }
 // ============================================
-// Removing the head (position 0) is allowed -- it cancels the
-// in-progress training and discards the partial SP (EVE behavior).
-// Subsequent entries shift down + their started_at / finishes_at are
-// recomputed from the new chain start (NOW if head was removed, else
-// from the previous tail).
+// Removing the head (position 0) cancels the in-progress training and
+// BANKS its partial SP into player_skills.sp (2026-09-18 -- it used to
+// be discarded). Re-queueing that skill later resumes from the banked
+// SP. Removing a later entry leaves everything before it untouched
+// (the old code rescheduled the head from NOW, silently wiping its
+// progress). Entries after the removed slot shift down and re-chain.
+// Cascade: later entries for the SAME skill at higher levels are
+// removed too -- they'd otherwise train L3 with L2 never completed.
 router.post('/queue/remove', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -400,50 +437,62 @@ router.post('/queue/remove', authMiddleware, async (req, res) => {
     if (typeof position !== 'number') return res.status(400).json({ error: 'position required' });
 
     const out = await transaction(async (client) => {
-      const { defs, queue } = await loadAndCommit(client, userId);
+      const { defs, skillsById, queue, liveHeadSp } = await loadAndCommit(client, userId);
       if (position < 0 || position >= queue.length) {
         throw Object.assign(new Error('Position out of range'), { statusCode: 400 });
       }
       const defById = Object.fromEntries(defs.map(d => [d.id, d]));
+      const removed = queue[position];
 
-      await client.query(
-        `DELETE FROM player_skill_queue WHERE user_id = $1 AND position = $2`,
-        [userId, position]
-      );
-
-      // Build the new queue array (in-memory), then rewrite positions
-      // + reschedule the timing chain for any entries after the
-      // removed one.
-      const remaining = queue.filter((_, i) => i !== position);
-
-      // Shift positions down for any entry that was after the removed.
-      // SQL approach: decrement positions > removed.
-      await client.query(
-        `UPDATE player_skill_queue SET position = position - 1
-         WHERE user_id = $1 AND position > $2`,
-        [userId, position]
-      );
-
-      // Reschedule from the chain start onward. We have to recompute
-      // any entry that's now before its old self in the chain (when
-      // head was removed) OR after the removed slot.
-      let prevFinishes = null;
-      for (let i = 0; i < remaining.length; i++) {
-        const q = remaining[i];
-        const def = defById[q.skill_id];
-        const rankMult = def?.rank_multiplier || 1;
-        const sp = spForLevel(q.target_level, rankMult, def?.sp_per_level_override);
-        const newStart = prevFinishes || new Date();
-        const newFinish = computeFinishesAt(prevFinishes, sp);
-        await client.query(
-          `UPDATE player_skill_queue SET position = $1, started_at = $2, finishes_at = $3
-           WHERE user_id = $4 AND skill_id = $5 AND target_level = $6`,
-          [i, newStart, newFinish, userId, q.skill_id, q.target_level]
-        );
-        prevFinishes = newFinish;
+      // Bank the head's live SP before it disappears.
+      if (position === 0 && liveHeadSp != null) {
+        const existing = skillsById.get(removed.skill_id);
+        if (existing) {
+          await client.query(
+            `UPDATE player_skills SET sp = GREATEST(sp, $1) WHERE user_id = $2 AND skill_id = $3`,
+            [liveHeadSp, userId, removed.skill_id]
+          );
+          existing.sp = Math.max(existing.sp || 0, liveHeadSp);
+        } else {
+          await client.query(
+            `INSERT INTO player_skills (user_id, skill_id, sp, level) VALUES ($1, $2, $3, 0)`,
+            [userId, removed.skill_id, liveHeadSp]
+          );
+          skillsById.set(removed.skill_id, { skill_id: removed.skill_id, sp: liveHeadSp, level: 0 });
+        }
       }
 
-      return { removed_position: position };
+      // Removed set = the target + any later entry of the same skill
+      // at a higher level (dependents).
+      const dropIdx = new Set([position]);
+      queue.forEach((q, i) => {
+        if (i > position && q.skill_id === removed.skill_id && q.target_level > removed.target_level) dropIdx.add(i);
+      });
+      const remaining = queue.filter((_, i) => !dropIdx.has(i));
+
+      // Rewrite the whole queue in place: entries before `position`
+      // keep their exact rows; entries from `position` on re-chain off
+      // the previous survivor (or NOW if the head went).
+      await client.query(`DELETE FROM player_skill_queue WHERE user_id = $1`, [userId]);
+      let prevFinishes = position > 0 ? new Date(queue[position - 1].finishes_at) : null;
+      for (let i = 0; i < remaining.length; i++) {
+        const q = remaining[i];
+        let startsAt, finishesAt;
+        if (i < position) {
+          startsAt = new Date(q.started_at);
+          finishesAt = new Date(q.finishes_at);
+        } else {
+          ({ startsAt, finishesAt } = scheduleEntry(prevFinishes, defById[q.skill_id], q.target_level, skillsById.get(q.skill_id)));
+        }
+        await client.query(
+          `INSERT INTO player_skill_queue (user_id, position, skill_id, target_level, started_at, finishes_at)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [userId, i, q.skill_id, q.target_level, startsAt, finishesAt]
+        );
+        prevFinishes = finishesAt;
+      }
+
+      return { removed_position: position, removed_count: dropIdx.size, banked_sp: position === 0 ? liveHeadSp : null };
     });
 
     res.json({ success: true, ...out });

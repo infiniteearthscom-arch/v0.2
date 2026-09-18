@@ -21,7 +21,7 @@
 //   hull      = hull_types.base_hull
 //   shield    = Σ shield_hp × Q        (api/fitting.js recalcShipStats)
 //   armor     = Σ armor_hp  × Q        (client fleetStats, combat_tuned path)
-//   speed     = base_speed + Σ engine (thrust ?? speed) × Q   (api/fitting.js; speed_bonus is NOT read there today)
+//   speed     = base_speed + Σ engine (thrust ?? speed ?? speed_bonus) × Q   (api/fitting.js)
 //   weapon    = damage × Q, range × √Q, fire_rate flat   (client weapons.js)
 // Q = qualityMultiplier over a flat {purity,stability,potency,density} roll.
 
@@ -238,11 +238,11 @@ function instantiate(template, rng, catalog) {
       }
     } else if (tm.slot_type === 'engine') {
       // EXACTLY the player's rule (api/fitting.js recalcShipStats reads
-      // `thrust ?? speed`). Today's engine rows only carry `speed_bonus`,
-      // which that code ignores, so engines add 0 for players AND for
-      // enemies -- parity. If the player side is fixed to read
-      // speed_bonus, mirror it here in the same commit.
-      const thrust = stats.thrust ?? stats.speed ?? 0;
+      // `thrust ?? speed ?? speed_bonus`). Fixed together 2026-09-18 --
+      // before that both sides ignored speed_bonus and engines added 0.
+      // If the player rule changes again, mirror it here in the same
+      // commit.
+      const thrust = stats.thrust ?? stats.speed ?? stats.speed_bonus ?? 0;
       const v = Math.round(thrust * qMult);
       engineBonus += v; entry.speed_bonus = v;
     }

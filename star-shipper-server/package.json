@@ -11,6 +11,7 @@
     "db:verify": "node src/db/verify.js",
     "db:rename": "node src/db/rename-user.js",
     "db:users": "node src/db/list-users.js",
+    "db:recalc-ships": "node src/db/recalc-ships.js",
     "db:seed": "node src/db/seed.js",
     "db:reset": "node src/db/reset.js"
   },
