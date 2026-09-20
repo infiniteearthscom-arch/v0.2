@@ -195,6 +195,10 @@ const initialState = {
 
   // Fleet aggregated stats (computed by SystemView, consumed by Outliner)
   fleetStats: null,
+  // Top-bar cargo meter (2026-09-20): { used, capacity, ... } from
+  // GET /resources/cargo. Polled with credits; InventoryWindow pushes
+  // its fresher copy whenever it fetches.
+  cargoInfo: null,
   // Healing hulls (2026-09-19): pooled fleet damage as fractions.
   // Seeded from GET /fitting/fleet on load, mirrored from SystemView's
   // refs while playing (for the Repair panel), restored by repair.
@@ -853,6 +857,16 @@ export const useGameStore = create(
         state.fleetArmorPct = 1;
         state.fleetHealNonce += 1;
       }),
+
+      // Top-bar cargo meter.
+      setCargoInfo: (cargo) => set(state => { state.cargoInfo = cargo || null; }),
+      fetchCargoInfo: async () => {
+        try {
+          const { resourcesAPI } = await import('@/utils/api');
+          const data = await resourcesAPI.getCargo();
+          set(state => { state.cargoInfo = data?.cargo || null; });
+        } catch { /* keep the last known value */ }
+      },
 
       setFleetStats: (stats) => set(state => {
         state.fleetStats = stats || null;

@@ -168,6 +168,8 @@ export const InventoryWindow = () => {
       
       setInventory(allStacks);
       setCargo(data.cargo || null);
+      // Keep the top-bar cargo meter in step with the freshest fetch.
+      useGameStore.getState().setCargoInfo?.(data.cargo || null);
     } catch (err) {
       console.error('Error fetching inventory:', err);
       setError(err.message);

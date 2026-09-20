@@ -128,6 +128,8 @@ const OnlineRosterIndicator = () => {
 const TopBar = () => {
   const credits = useGameStore(state => state.resources?.credits ?? 0);
   const fetchCredits = useGameStore(state => state.fetchCredits);
+  const cargoInfo = useGameStore(state => state.cargoInfo);
+  const fetchCargoInfo = useGameStore(state => state.fetchCargoInfo);
   const activeShip = useActiveShip();
   const ships = useGameStore(state => state.ships);
   const { user, logout } = useAuthStore();
@@ -165,6 +167,15 @@ const TopBar = () => {
     const interval = setInterval(fetchCredits, 10000);
     return () => clearInterval(interval);
   }, [fetchCredits]);
+
+  // Cargo meter: same 10s safety-net poll, plus a refresh whenever
+  // credits move (buy / sell / loot all change cargo too). The
+  // Inventory window pushes a fresher copy whenever it fetches.
+  useEffect(() => {
+    fetchCargoInfo();
+    const interval = setInterval(fetchCargoInfo, 10000);
+    return () => clearInterval(interval);
+  }, [fetchCargoInfo, credits]);
 
   const handleReset = async () => {
     if (!window.confirm('DEV: Wipe all ships, cargo, credits, and scan data? This cannot be undone.')) return;
@@ -212,6 +223,25 @@ const TopBar = () => {
           <span className="font-bold" style={{ color: GOLD.light }}>{credits.toLocaleString()}</span>
           <span style={{ color: '#3a4a5a', fontSize: '0.5rem' }}>CR</span>
         </div>
+        {/* Cargo fill meter (2026-09-20): fleet cargo used / capacity
+            without opening the Cargo window. Green → amber → red. */}
+        {(() => {
+          const cap = Number(cargoInfo?.capacity) || 0;
+          const used = Number(cargoInfo?.used) || 0;
+          const pct = cap > 0 ? Math.max(0, Math.min(1, used / cap)) : 0;
+          const color = pct >= 0.95 ? '#ef4444' : pct >= 0.75 ? '#fbbf24' : '#22c55e';
+          const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString();
+          return (
+            <div className="flex items-center gap-1.5 px-2 h-5" style={{ borderRight: `1px solid ${EDGE}` }}
+              title={cap > 0 ? `Cargo: ${fmt(used)} / ${fmt(cap)} volume (${Math.round(pct * 100)}%)` : 'Cargo'}>
+              <span style={{ fontSize: '0.6875rem' }}>📦</span>
+              <div style={{ width: 56, height: 6, background: '#1a2230', borderRadius: 2, overflow: 'hidden', border: '1px solid #243040' }}>
+                <div style={{ width: `${pct * 100}%`, height: '100%', background: color, transition: 'width 0.3s' }} />
+              </div>
+              <span className="font-bold" style={{ color, minWidth: 30, textAlign: 'right' }}>{cap > 0 ? `${Math.round(pct * 100)}%` : '—'}</span>
+            </div>
+          );
+        })()}
         <div className="flex items-center gap-1 px-2 h-5" style={{ borderRight: `1px solid ${EDGE}` }} title="Fleet size">
           <span style={{ fontSize: '0.6875rem' }}>🚀</span>
           <span className="font-bold" style={{ color: BLUE.light }}>{fleetSize}</span>
