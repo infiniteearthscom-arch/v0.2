@@ -36,13 +36,18 @@ const TOOLBAR_BUTTONS = [
   { id: 'questLog', icon: '📋', label: 'Missions', color: '#22d3ee' },
   { id: 'galaxyMap', icon: '🌌', label: 'Galaxy', color: '#8844ff' },
   { id: 'research', icon: '🔬', label: 'Research', color: '#22c55e' },
-  { id: 'leaderboards', icon: '🏆', label: 'Leaders', color: '#fbbf24' },
-  { id: 'corp', icon: '🛡️', label: 'Corp', color: '#fbbf24' },
-  { id: 'bounties', icon: '🎯', label: 'Bounties', color: '#ef4444' },
   // badgeStoreKey: when set, the toolbar reads gameStore[badgeStoreKey]
-  // and renders a small red unread counter on the button. Used for
-  // the mail unread count -- extendable to any other future button.
+  // and renders a small red unread counter on the button (used by the
+  // mail entry in the player menu; still supported here).
+];
+
+// Social / meta windows live under the player-name menu in the top bar
+// (2026-09-20), keeping the left toolbar to the "play" surfaces.
+const PLAYER_MENU_ITEMS = [
   { id: 'mail', icon: '📬', label: 'Mail', color: '#60a5fa', badgeStoreKey: 'mailUnreadCount' },
+  { id: 'bounties', icon: '🎯', label: 'Bounties', color: '#ef4444' },
+  { id: 'corp', icon: '🛡️', label: 'Corporation', color: '#fbbf24' },
+  { id: 'leaderboards', icon: '🏆', label: 'Leaderboards', color: '#fbbf24' },
 ];
 
 // Planet button is appended dynamically when the player is docked.
@@ -130,6 +135,9 @@ const TopBar = () => {
   const fetchCredits = useGameStore(state => state.fetchCredits);
   const cargoInfo = useGameStore(state => state.cargoInfo);
   const fetchCargoInfo = useGameStore(state => state.fetchCargoInfo);
+  // Player menu (top-right): social/meta windows + sign out.
+  const [playerMenuOpen, setPlayerMenuOpen] = useState(false);
+  const mailUnread = useGameStore(state => state.mailUnreadCount || 0);
   const activeShip = useActiveShip();
   const ships = useGameStore(state => state.ships);
   const { user, logout } = useAuthStore();
@@ -303,14 +311,60 @@ const TopBar = () => {
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
-        {/* User */}
-        <span className="text-[0.8rem] mr-1" style={{ color: '#5a6a7a' }}>{user?.username}</span>
-        <button
-          onClick={() => { playSound('button_click'); logout(); }}
-          className="text-[0.8rem] px-1.5 py-0.5 rounded hover:text-red-400 transition-colors"
-          style={{ color: '#3a4a5a', border: `1px solid ${EDGE}` }}
-          title="Sign Out"
-        >✕</button>
+        {/* User -> player menu (Mail / Bounties / Corp / Leaderboards / Sign out) */}
+        <div className="relative">
+          <button
+            onClick={() => { playSound('button_click'); setPlayerMenuOpen(o => !o); }}
+            className="text-[0.8rem] px-2 py-0.5 rounded flex items-center gap-1 transition-colors"
+            style={{
+              color: playerMenuOpen ? '#e2e8f0' : '#8a9aaa',
+              border: `1px solid ${playerMenuOpen ? BLUE.dim : EDGE}`,
+              background: playerMenuOpen ? 'rgba(12,26,51,0.6)' : 'transparent',
+            }}
+            title="Player menu"
+          >
+            <span>👤</span>
+            <span>{user?.username}</span>
+            {mailUnread > 0 && (
+              <span className="rounded-full px-1 text-[0.6rem] font-bold" style={{ background: '#ef4444', color: '#fff', lineHeight: '14px' }}>{mailUnread}</span>
+            )}
+            <span style={{ color: '#3a4a5a' }}>{playerMenuOpen ? '▴' : '▾'}</span>
+          </button>
+          {playerMenuOpen && (
+            <>
+              {/* click-away catcher */}
+              <div className="fixed inset-0" style={{ zIndex: 60 }} onClick={() => setPlayerMenuOpen(false)} />
+              <div className="absolute right-0 mt-1 rounded shadow-lg" style={{
+                zIndex: 61, minWidth: 190,
+                background: 'rgba(8,14,28,0.97)', border: `1px solid ${BLUE.dim}`,
+                fontFamily: "'Share Tech Mono', monospace",
+              }}>
+                {PLAYER_MENU_ITEMS.map(item => {
+                  const n = item.badgeStoreKey === 'mailUnreadCount' ? mailUnread : 0;
+                  return (
+                    <button key={item.id}
+                      onClick={() => { playSound('button_click'); setPlayerMenuOpen(false); toggleWindow(item.id); }}
+                      className="w-full text-left px-3 py-1.5 text-[0.8rem] flex items-center gap-2 hover:bg-slate-800/60 transition-colors"
+                      style={{ color: '#c8d6e5' }}
+                    >
+                      <span style={{ color: item.color }}>{item.icon}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {n > 0 && <span className="rounded-full px-1.5 text-[0.6rem] font-bold" style={{ background: '#ef4444', color: '#fff' }}>{n}</span>}
+                    </button>
+                  );
+                })}
+                <div style={{ height: 1, background: EDGE, margin: '4px 0' }} />
+                <button
+                  onClick={() => { playSound('button_click'); setPlayerMenuOpen(false); logout(); }}
+                  className="w-full text-left px-3 py-1.5 text-[0.8rem] flex items-center gap-2 hover:bg-red-900/30 transition-colors"
+                  style={{ color: '#a04040' }}
+                >
+                  <span>✕</span><span>Sign Out</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 

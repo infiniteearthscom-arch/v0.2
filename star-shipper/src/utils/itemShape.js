@@ -192,6 +192,10 @@ export function normalizeItem(source, context = {}) {
       subtitle: slotMeta ? `${slotMeta.name} module` : (source.item_category || 'Consumable'),
       slotType,
       tier: data.tier ?? null,
+      // Raw identity for the tooltip's skill-requirement row (Phase 3
+      // capability gates -- utils/fitGates.js moduleGateForModule).
+      moduleTypeId: source.item_id || null,
+      baseStats: data.base_stats || null,
       quality: q || null,
       avgQ: avg,
       qColor: qualityColor(avg),
@@ -285,6 +289,8 @@ export function normalizeFittedModule(mod, slotId) {
     subtitle: slotMeta ? `${slotMeta.name} module · Fitted` : 'Fitted module',
     slotType,
     tier: mod.tier ?? null,
+    moduleTypeId: mod.module_type_id || mod.item_id || null,
+    baseStats: mod.base_stats || mod.stats || null,
     quality: mod.quality || null,
     avgQ: avg,
     qColor: qualityColor(avg),

@@ -31,6 +31,18 @@ export const moduleGateForItem = (item, gates) => {
   return skill ? { skill, level: tier - 1 } : null;
 };
 
+// Same lookup for a NORMALIZED item (utils/itemShape.js -- carries
+// slotType / tier / baseStats / moduleTypeId). Used by the shared
+// tooltip so the requirement shows on every module surface.
+export const moduleGateForModule = (norm, gates) => {
+  if (!norm || norm.kind !== 'module') return null;
+  const tier = Number(norm.tier) || 1;
+  if (tier <= 1 || !gates?.module_gates) return null;
+  const sub = moduleSubFamily(norm.slotType, norm.baseStats, norm.moduleTypeId);
+  const skill = sub && gates.module_gates[norm.slotType]?.[sub];
+  return skill ? { skill, level: tier - 1 } : null;
+};
+
 export const hullGateFor = (hullId, gates) => gates?.hull_gates?.[hullId] || null;
 
 // Resolve a gate against the player's skill list (gameStore.skills).

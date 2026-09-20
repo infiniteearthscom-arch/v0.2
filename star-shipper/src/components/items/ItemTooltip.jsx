@@ -25,6 +25,8 @@
 
 import React from 'react';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { useGameStore } from '@/stores/gameStore';
+import { moduleGateForModule, gateStatus } from '@/utils/fitGates';
 
 // ============================================
 // SHARED TOOLTIP SHELL
@@ -77,6 +79,11 @@ const QualityBar = ({ label, value, color }) => (
 // Rendered inside TooltipProvider's floating div. Expects an already-
 // normalized item (see utils/itemShape.js).
 export const ItemTooltipContent = ({ item }) => {
+  // Phase 3 capability gates: the skill a module needs to FIT, resolved
+  // against the player's trained levels. Hooks run unconditionally
+  // (before the early return) per the Rules of Hooks.
+  const fitGates = useGameStore(s => s.fitGates);
+  const skills = useGameStore(s => s.skills);
   if (!item) return null;
 
   const {
@@ -88,6 +95,9 @@ export const ItemTooltipContent = ({ item }) => {
     price,
     flags,
   } = item;
+
+  const gate = moduleGateForModule(item, fitGates);
+  const gs = gate ? gateStatus(gate, skills) : null;
 
   // Build quality header bar if quality data exists
   const hasQuality = quality && avgQ != null;
@@ -128,6 +138,20 @@ export const ItemTooltipContent = ({ item }) => {
           )}
         </div>
       </div>
+
+      {/* Skill requirement to fit (Phase 3 capability gates). Green when
+          trained, red lock when not. T1 modules have no row. */}
+      {gs && (
+        <div style={{
+          marginTop: 4, padding: '3px 6px', borderRadius: 3, fontSize: '0.8rem',
+          background: gs.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.10)',
+          border: `1px solid ${gs.ok ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.45)'}`,
+          color: gs.ok ? '#86efac' : '#fca5a5',
+        }}>
+          {gs.ok ? '✓' : '🔒'} Requires <b>{gs.text}</b>
+          {!gs.ok && <span style={{ color: '#94a3b8' }}> — you have {gs.have ? gs.have : 'none'}</span>}
+        </div>
+      )}
 
       {/* Quality breakdown (4 bars). Only shown for resources -- module
           tooltips deliberately consolidate to the avg Q chip in the

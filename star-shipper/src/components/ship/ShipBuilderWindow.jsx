@@ -726,8 +726,7 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
                 {items.map((item) => {
                   const gs = gateStatus(moduleGateForItem(item, fitGates), skills);
                   return (
-                    <div key={item.id} style={{ position: 'relative' }}
-                      title={gs.ok ? undefined : `Requires ${gs.text} (you have ${gs.have ? gs.have : 'none'})`}>
+                    <div key={item.id} style={{ position: 'relative' }}>
                       <ItemCell
                         item={normalizeItem(item)}
                         size={FITTABLE_ICON_SIZE}
