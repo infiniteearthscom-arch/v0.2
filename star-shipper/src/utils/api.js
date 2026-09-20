@@ -276,6 +276,13 @@ export const galaxyAPI = {
   // System id -> username of the first pilot ever to enter it (Sol
   // excluded server-side). Backs the "Discovered by" info-panel row.
   discoverers: () => request('/galaxy/discoverers'),
+  // One-time (per pre-070 account) unvalidated position sync -- see
+  // server /galaxy/sync-position. No-op once the account is synced.
+  syncPosition: (systemProceduralId) =>
+    request('/galaxy/sync-position', {
+      method: 'POST',
+      body: JSON.stringify({ system_procedural_id: systemProceduralId }),
+    }),
   // systemName is optional -- passed when the caller knows it so the
   // server can include it in the activity_events payload (used by the
   // ticker for "<pilot> discovered <name>"). When omitted, the server
@@ -546,6 +553,15 @@ export const fittingAPI = {
   }),
   getFleet: () => request('/fitting/fleet'),
   getCredits: () => request('/fitting/credits'),
+  // Healing hulls: persist pooled fleet damage / repair at a station.
+  fleetStatus: (hullPct, armorPct) => request('/fitting/fleet-status', {
+    method: 'POST',
+    body: JSON.stringify({ hull_pct: hullPct, armor_pct: armorPct }),
+  }),
+  repairFleet: (bodyId, hullPct, armorPct) => request('/fitting/repair', {
+    method: 'POST',
+    body: JSON.stringify({ body_id: bodyId, hull_pct: hullPct, armor_pct: armorPct }),
+  }),
   setActiveShip: async (shipId) => {
     const r = await request('/fitting/set-active-ship', {
       method: 'POST',

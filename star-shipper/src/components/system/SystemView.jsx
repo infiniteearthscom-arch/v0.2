@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 // DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
-import { hydrateEnemies } from '@/utils/enemyManifest';
+import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
+import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
@@ -40,6 +41,32 @@ const PIRATE_AGGRO_RANGE = 350; // Distance to start chasing player
 const PIRATE_ATTACK_RANGE = 150; // Distance to start firing
 const PIRATE_ORBIT_RANGE = 100; // Preferred combat distance
 const PIRATE_DEAGGRO_RANGE = 600; // Distance to give up chase
+
+// Phase 4 behavior tiers (2026-09-20). Per-behavior tuning; the tier→
+// behavior mapping lives in utils/enemyManifest.js (BEHAVIOR_BY_TIER).
+// Every number here is a playtest lever.
+const BEHAVIOR_TUNING = {
+  //             orbit range   attack speed  flee below  kite below shield  regroup below hull
+  simple:      { orbitMult: 1.0, speedMult: 0.6, fleeHull: 0.20, kiteShield: null, regroupHull: null },
+  evasive:     { orbitMult: 1.6, speedMult: 0.85, fleeHull: 0.20, kiteShield: 0.25, regroupHull: null },
+  coordinated: { orbitMult: 1.3, speedMult: 0.75, fleeHull: 0.15, kiteShield: 0.20, regroupHull: null },
+  tactical:    { orbitMult: 1.3, speedMult: 0.8, fleeHull: 0.10, kiteShield: 0.20, regroupHull: 0.40 },
+  elite:       { orbitMult: 1.3, speedMult: 0.85, fleeHull: 0.05, kiteShield: 0.20, regroupHull: 0.35 },
+};
+// Rally cap: max fleets engaging the player at once, by the SYSTEM's
+// region tier. Extra fleets hold their patrol until a slot frees --
+// deep space stays readable instead of a pile-on (plan Phase 4).
+const RALLY_CAP_BY_TIER = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3 };
+// Reinforcement call range for coordinated (T3) fleets; tactical+ call
+// any fleet in the system.
+const REINFORCE_RANGE_COORDINATED = 900;
+const KITE_SHIELD_RECOVER = 0.6;     // kiting ends once fleet shield is back above this
+const REGROUP_MAX_SECONDS = 12;      // tactical regroup gives up after this even if shield isn't full
+const REGROUP_SHIELD_REGEN_MULT = 4; // shield regen while regrouping (no hull repair)
+const EVASIVE_JINK_MIN = 2.5, EVASIVE_JINK_MAX = 5; // seconds between orbit-direction flips
+const ELITE_SPECIAL_COOLDOWN = 18;   // alpha strike (elite flagships) / shield surge (T5 flagships)
+const ALPHA_STRIKE_DAMAGE_MULT = 1.5;
+const SHIELD_SURGE_FRAC = 0.3;
 const PROJECTILE_SPEED = 400;
 const PROJECTILE_LIFETIME = 0.8; // seconds
 // (PLAYER_FIRE_RANGE / PLAYER_BASE_DAMAGE / PLAYER_BASE_FIRE_RATE removed —
@@ -1469,7 +1496,52 @@ export const SystemView = () => {
     playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current > 0 ? shieldPct * playerMaxShieldRef.current : playerMaxShieldRef.current);
     // Armor refills to its preserved ratio on refit (no in-combat regen).
     playerArmorRef.current  = Math.min(playerMaxArmorRef.current,  playerArmorRef.current  > 0 ? armorPct  * playerMaxArmorRef.current  : playerMaxArmorRef.current);
+
+    // Healing hulls: the FIRST time the server's persisted fractions are
+    // available (fleet loaded + damage read), seed the refs from them
+    // instead of the ratio -- a reload / re-login no longer heals.
+    const st = useGameStore.getState();
+    if (!damageSeededRef.current && st.fleetDamageLoaded && fleetStats.totalHull > 0) {
+      damageSeededRef.current = true;
+      playerHullRef.current  = Math.max(1, Math.round(playerMaxHullRef.current  * st.fleetHullPct));
+      playerArmorRef.current = Math.round(playerMaxArmorRef.current * st.fleetArmorPct);
+    }
   }, [fleetStats.totalHull, fleetStats.totalShield, fleetStats.totalArmor]);
+
+  // Healing hulls (2026-09-19): persist the pooled hull/armor fractions.
+  // Mirrors into the store (Repair panel + HUD consumers) every call and
+  // POSTs to the server when the value moved ≥1% since the last save
+  // (or `force`). Called on dock/undock, system change, every 10s, and
+  // after a repair. Fire-and-forget; the server is a save slot here.
+  const damageSeededRef = useRef(false);
+  const lastSavedDamageRef = useRef({ hull: 1, armor: 1 });
+  const syncFleetDamage = useCallback((force = false) => {
+    const maxH = playerMaxHullRef.current || 1;
+    const maxA = playerMaxArmorRef.current || 0;
+    const hull = Math.max(0, Math.min(1, playerHullRef.current / maxH));
+    const armor = maxA > 0 ? Math.max(0, Math.min(1, playerArmorRef.current / maxA)) : 1;
+    const st = useGameStore.getState();
+    if (st.setFleetDamage) st.setFleetDamage(hull, armor);
+    const last = lastSavedDamageRef.current;
+    if (!force && Math.abs(last.hull - hull) < 0.01 && Math.abs(last.armor - armor) < 0.01) return;
+    lastSavedDamageRef.current = { hull, armor };
+    fittingAPI.fleetStatus(hull, armor).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const t = setInterval(() => syncFleetDamage(false), 10000);
+    return () => clearInterval(t);
+  }, [syncFleetDamage]);
+
+  // Repair completed at a station (PlanetInteractionWindow → store
+  // applyFleetHeal bumps the nonce): refill the pools + save.
+  const fleetHealNonce = useGameStore(state => state.fleetHealNonce);
+  useEffect(() => {
+    if (!fleetHealNonce) return;
+    playerHullRef.current = playerMaxHullRef.current;
+    playerArmorRef.current = playerMaxArmorRef.current;
+    playerShieldRef.current = playerMaxShieldRef.current;
+    syncFleetDamage(true);
+  }, [fleetHealNonce, syncFleetDamage]);
 
   // Override the ship physics ref with fleet-derived speed/maneuver,
   // which already include the fleet-mass penalty.  fleet_speed = 50 is
@@ -1489,6 +1561,9 @@ export const SystemView = () => {
   const setDockedBodyStore = useGameStore(state => state.setDockedBody);
   useEffect(() => {
     if (setDockedBodyStore) setDockedBodyStore(dockedBody);
+    // Healing hulls: dock/undock is a natural save point (and the Repair
+    // panel needs fresh fractions the moment the station window opens).
+    syncFleetDamage(true);
     // Clear the cargo-full lockout on every dock-state change. The
     // ref gets set to true when the server returns cargo_full on a
     // mine cycle, but stays sticky until system change -- so selling
@@ -2179,11 +2254,12 @@ export const SystemView = () => {
       dockedBodyRef.current = null;
       setDockedBody(null);
       setAutopilotTarget(null);
-      
-      // Reset hull/shield/armor
-      playerHullRef.current = playerMaxHullRef.current;
+
+      // Shields recharge on the warp; hull + armor DON'T (healing hulls,
+      // 2026-09-19 -- the old full reset here was a free heal that made
+      // station repair meaningless). Persist what we're carrying.
       playerShieldRef.current = playerMaxShieldRef.current;
-      playerArmorRef.current = playerMaxArmorRef.current;
+      syncFleetDamage(true);
     }
 
     return () => {
@@ -2191,6 +2267,38 @@ export const SystemView = () => {
       if (manifestRetry) clearTimeout(manifestRetry);
     };
   }, [currentSystemId, currentSystem]);
+
+  // Galaxy map v2 route planner: fly the active route hop by hop. On
+  // every system entry (and when a route is first plotted) the next hop
+  // becomes pendingJump + an autopilot to the matching exit body: the
+  // jump gate for a gate hop (instant jump on dock), the warp point for
+  // a warp hop (galaxy flight, autopilot to the hop -- the existing
+  // pendingJump path). The store advances/clears the route on arrival.
+  const plannedRoute = useGameStore(state => state.plannedRoute);
+  useEffect(() => {
+    if (!plannedRoute) return;
+    const st = useGameStore.getState();
+    if (plannedRoute.arrived) {
+      if (pushToast) pushToast({ kind: 'success', text: `Route complete — arrived at ${plannedRoute.targetName}`, duration: 3500 });
+      st.clearPlannedRoute();
+      return;
+    }
+    const hop = plannedRoute.hops[plannedRoute.index];
+    if (!hop) return;
+    const exitType = hop.via === 'gate' ? 'jump_gate' : 'warp_point';
+    const exitBody = currentSystem.bodies.find(b => b.type === exitType)
+      || currentSystem.bodies.find(b => b.type === 'warp_point')
+      || currentSystem.bodies.find(b => b.type === 'jump_gate');
+    if (!exitBody) return;
+    st.setPendingJump(hop.id);
+    st.setAutopilotTarget({ id: exitBody.id, name: exitBody.name, type: exitBody.type });
+    const hopSys = getGalaxy().systemMap[hop.id];
+    if (pushToast) pushToast({
+      kind: 'info',
+      text: `Route: hop ${plannedRoute.index + 1}/${plannedRoute.hops.length} — ${hop.via === 'gate' ? 'jump gate' : 'warp'} to ${hopSys?.name || hop.id}`,
+      duration: 2500,
+    });
+  }, [plannedRoute, currentSystemId, currentSystem]);
   
   // Calculate body position at current time
   const getBodyPositionAtTime = useCallback((bodyId, time) => {
@@ -2386,18 +2494,37 @@ export const SystemView = () => {
                     const sysX = currentSys?.x || 0;
                     const sysY = currentSys?.y || 0;
                     
-                    // Check for pending jump — set galaxy autopilot target
-                    const pending = useGameStore.getState().pendingJump;
-                    const enterGalaxyFlight = useGameStore.getState().enterGalaxyFlight;
-                    const setGalaxyAutopilot = useGameStore.getState().setGalaxyAutopilotTarget;
-                    
-                    enterGalaxyFlight(sysX, sysY);
-                    
-                    if (pending?.targetSystemId) {
-                      const targetSys = galaxy.systemMap[pending.targetSystemId];
-                      if (targetSys) {
-                        setGalaxyAutopilot({ id: targetSys.id, name: targetSys.name });
+                    // Phase 3b: a jump gate with a pending target is an
+                    // INSTANT jump to that gate-connected system (no
+                    // galaxy flight) -- gates are the chokepoint lanes.
+                    // Gate tier rule still applies (drive class + 2).
+                    // No pending target, or a warp point: galaxy flight
+                    // as before, with the free-warp ring around this
+                    // system.
+                    const st = useGameStore.getState();
+                    const pending = st.pendingJump;
+                    const enterGalaxyFlight = st.enterGalaxyFlight;
+                    const setGalaxyAutopilot = st.setGalaxyAutopilotTarget;
+                    const targetSys = pending?.targetSystemId ? galaxy.systemMap[pending.targetSystemId] : null;
+
+                    if (targetBody.type === 'jump_gate' && targetSys) {
+                      const profile = fleetWarpProfile(st.ships, st.activeBonuses);
+                      const check = warpCheck(currentSys, targetSys, profile);
+                      if (check.ok && check.via === 'gate') {
+                        st.enterSystem(targetSys.id, 'jump_gate');
+                        return;
                       }
+                      if (!check.ok) {
+                        st.setPendingJump(null);
+                        if (pushToast) pushToast({ kind: 'error', text: `Jump refused: ${warpBlockText(check, targetSys, profile)}`, duration: 5000 });
+                        return; // stay docked at the gate
+                      }
+                    }
+
+                    enterGalaxyFlight(sysX, sysY);
+
+                    if (targetSys) {
+                      setGalaxyAutopilot({ id: targetSys.id, name: targetSys.name });
                     }
                   } else {
                     openContextPanel('planetInteraction');
@@ -2747,17 +2874,48 @@ export const SystemView = () => {
       // frame so all members see a consistent set.
       const engagedFleets = new Set();
       const leaderByFleet = new Map(); // fleetId -> live flagship (formation leader)
+      const ENGAGED = (s) => s === 'chase' || s === 'attack' || s === 'kite' || s === 'regroup';
       for (const e of enemies) {
-        if (e.hull > 0 && e.fleetId && (e.state === 'chase' || e.state === 'attack')) {
+        if (e.hull > 0 && e.fleetId && ENGAGED(e.state)) {
           engagedFleets.add(e.fleetId);
         }
         if (e.hull > 0 && e.isFlagship) leaderByFleet.set(e.fleetId, e);
       }
-      // Fleet-level shield regen (pool, not per-member).
+      // Phase 4 rally cap: how many fleets may engage at once in this
+      // system. A fleet already engaged always keeps its slot.
+      const systemTier = Math.max(1, Math.min(5, getGalaxy().systemMap[currentSystemId]?.regionTier ?? 1));
+      const rallyCap = RALLY_CAP_BY_TIER[systemTier] ?? 2;
+      const canEngage = (fleetId) => engagedFleets.has(fleetId) || engagedFleets.size < rallyCap;
+      // Phase 4 reinforcements: coordinated (T3) fleets call the nearest
+      // idle fleet within range; tactical/elite call the nearest idle
+      // fleet anywhere in the system. Marked here, applied in the loop
+      // (subject to the rally cap). One call per engaged fleet per frame
+      // is plenty -- the callee stays flagged until it engages.
+      const reinforceFleets = new Set();
+      if (!dockedBodyRef.current && !isPodRef.current) {
+        for (const [fid, leader] of leaderByFleet) {
+          if (!engagedFleets.has(fid) || !ENGAGED(leader.state)) continue;
+          const rank = BEHAVIOR_RANK[leader.behavior] || 1;
+          if (rank < 3) continue;
+          const callRange = rank === 3 ? REINFORCE_RANGE_COORDINATED : Infinity;
+          let best = null, bestD = callRange;
+          for (const [ofid, oleader] of leaderByFleet) {
+            if (ofid === fid || engagedFleets.has(ofid)) continue;
+            const d = Math.hypot(oleader.x - leader.x, oleader.y - leader.y);
+            if (d < bestD) { bestD = d; best = ofid; }
+          }
+          if (best) reinforceFleets.add(best);
+        }
+      }
+      // Fleet-level shield regen (pool, not per-member). Tactical+
+      // fleets recharge much faster while regrouping (that's the point
+      // of pulling back); hull never regens.
       for (const fleet of fleetsRef.current.values()) {
         fleet.shieldRegenTimer -= delta;
         if (fleet.shieldRegenTimer <= 0 && fleet.shield < fleet.maxShield) {
-          fleet.shield = Math.min(fleet.maxShield, fleet.shield + SHIELD_REGEN_RATE * delta);
+          const leader = leaderByFleet.get(fleet.id);
+          const mult = leader?.state === 'regroup' ? REGROUP_SHIELD_REGEN_MULT : 1;
+          fleet.shield = Math.min(fleet.maxShield, fleet.shield + SHIELD_REGEN_RATE * mult * delta);
         }
       }
       for (const enemy of enemies) {
@@ -2781,12 +2939,31 @@ export const SystemView = () => {
         const leader = enemy.isFlagship ? null : leaderByFleet.get(enemy.fleetId);
         if (leader && leader.hull > 0) {
           enemy.state = leader.state; // drives firing + flee uniformly
-          const theta = leader.rotation * Math.PI / 180;
-          const cosT = Math.cos(theta), sinT = Math.sin(theta);
-          const off = enemy.formationOffset || { x: 0, y: 0 };
-          // x = lateral (+right of heading), y = longitudinal (+behind).
-          const slotX = leader.x + (-sinT) * off.x + (-cosT) * off.y;
-          const slotY = leader.y + ( cosT) * off.x + (-sinT) * off.y;
+          let slotX, slotY;
+          const rank = BEHAVIOR_RANK[leader.behavior] || 1;
+          if (rank >= 3 && leader.state === 'attack') {
+            // Phase 4 coordinated+: in the fight, wingmen leave the V and
+            // take FLANK slots spread around the player at the leader's
+            // orbit range, so the fleet surrounds instead of stacking
+            // behind the flagship. Slot angle fans out from the
+            // leader's bearing by the wingman's formation index.
+            const fleetRef = fleetsRef.current.get(enemy.fleetId);
+            const n = Math.max(2, fleetRef ? fleetRef.members.filter(m => m.hull > 0).length : 2);
+            const idx = enemy.formationSlot || 1;
+            const tune = BEHAVIOR_TUNING[leader.behavior] || BEHAVIOR_TUNING.simple;
+            const orbitR = PIRATE_ORBIT_RANGE * tune.orbitMult;
+            const base = Math.atan2(leader.y - playerPos.y, leader.x - playerPos.x);
+            const ang = base + idx * (Math.PI * 2 / n);
+            slotX = playerPos.x + Math.cos(ang) * orbitR;
+            slotY = playerPos.y + Math.sin(ang) * orbitR;
+          } else {
+            const theta = leader.rotation * Math.PI / 180;
+            const cosT = Math.cos(theta), sinT = Math.sin(theta);
+            const off = enemy.formationOffset || { x: 0, y: 0 };
+            // x = lateral (+right of heading), y = longitudinal (+behind).
+            slotX = leader.x + (-sinT) * off.x + (-cosT) * off.y;
+            slotY = leader.y + ( cosT) * off.x + (-sinT) * off.y;
+          }
           const fLag = 1 - Math.exp(-WINGMAN_LAG_RATE * delta);
           const prevX = enemy.x, prevY = enemy.y;
           enemy.x = prevX + (slotX - prevX) * fLag;
@@ -2821,25 +2998,61 @@ export const SystemView = () => {
             && (enemy.state === 'patrol' || enemy.state === 'returning')) {
           enemy.state = 'chase';
         }
+        // Phase 4 reinforcements: a coordinated/tactical fleet called us.
+        if (!dockedBodyRef.current && !isPodRef.current
+            && enemy.fleetId && reinforceFleets.has(enemy.fleetId)
+            && (enemy.state === 'patrol' || enemy.state === 'returning')
+            && canEngage(enemy.fleetId)) {
+          enemy.state = 'chase';
+          engagedFleets.add(enemy.fleetId);
+        }
 
-        // State transitions
+        // State transitions (Phase 4: per-behavior thresholds; the
+        // 'kite' and 'regroup' states are new -- kite = back off to
+        // recharge shields while staying in the fight, regroup = fly
+        // home for a fast recharge, then come back).
+        const tune = BEHAVIOR_TUNING[enemy.behavior] || BEHAVIOR_TUNING.simple;
+        const efleet = fleetsRef.current.get(enemy.fleetId);
+        const fleetHullFrac = efleet ? efleet.hull / Math.max(1, efleet.maxHull) : 1;
+        const fleetShieldFrac = efleet && efleet.maxShield > 0 ? efleet.shield / efleet.maxShield : 1;
+        const attackRange = Math.max(PIRATE_ATTACK_RANGE, (enemy.range || PIRATE_ATTACK_RANGE) * 0.9);
         if (enemy.state === 'patrol') {
           // Pods are invisible to pirate aggro -- core podding rule.
-          if (!dockedBodyRef.current && !isPodRef.current && dist < PIRATE_AGGRO_RANGE) enemy.state = 'chase';
+          // Rally cap: hold patrol if the system already has its quota
+          // of engaged fleets.
+          if (!dockedBodyRef.current && !isPodRef.current && dist < PIRATE_AGGRO_RANGE && canEngage(enemy.fleetId)) {
+            enemy.state = 'chase';
+            engagedFleets.add(enemy.fleetId);
+          }
         } else if (enemy.state === 'chase') {
-          if (dist < PIRATE_ATTACK_RANGE) enemy.state = 'attack';
+          if (dist < attackRange) enemy.state = 'attack';
           if (dist > PIRATE_DEAGGRO_RANGE) enemy.state = 'patrol';
         } else if (enemy.state === 'attack') {
-          if (dist > PIRATE_ATTACK_RANGE * 1.5) enemy.state = 'chase';
+          if (dist > attackRange * 1.5) enemy.state = 'chase';
           if (dist > PIRATE_DEAGGRO_RANGE) enemy.state = 'patrol';
-          // Flee when the FLEET (pooled) is below 20% hull.
-          const efleet = fleetsRef.current.get(enemy.fleetId);
-          if (efleet && efleet.hull < efleet.maxHull * 0.2) enemy.state = 'flee';
+          if (fleetHullFrac < tune.fleeHull) enemy.state = 'flee';
+          else if (tune.regroupHull != null && fleetHullFrac < tune.regroupHull && !enemy._regrouped) {
+            // Tactical/elite: one regroup per fight -- pull back home,
+            // recharge shields fast, re-engage.
+            enemy.state = 'regroup'; enemy.regroupTimer = 0; enemy._regrouped = true;
+          } else if (tune.kiteShield != null && efleet && efleet.maxShield > 0 && fleetShieldFrac < tune.kiteShield) {
+            enemy.state = 'kite';
+          }
+        } else if (enemy.state === 'kite') {
+          if (fleetHullFrac < tune.fleeHull) enemy.state = 'flee';
+          else if (fleetShieldFrac >= KITE_SHIELD_RECOVER || dist > PIRATE_DEAGGRO_RANGE) enemy.state = 'chase';
+          if (dist > PIRATE_DEAGGRO_RANGE * 1.5) enemy.state = 'patrol';
+        } else if (enemy.state === 'regroup') {
+          enemy.regroupTimer += delta;
+          const home = homeDist < enemy.patrolRadius * 1.2;
+          if (fleetShieldFrac >= 0.9 || enemy.regroupTimer > REGROUP_MAX_SECONDS || (home && fleetShieldFrac >= 0.6)) {
+            enemy.state = 'chase';
+          }
         } else if (enemy.state === 'flee') {
           if (dist > PIRATE_DEAGGRO_RANGE * 1.5) enemy.state = 'patrol';
         } else if (enemy.state === 'returning') {
           // Switch back to patrol once close enough to home
-          if (homeDist < enemy.patrolRadius * 1.2) enemy.state = 'patrol';
+          if (homeDist < enemy.patrolRadius * 1.2) { enemy.state = 'patrol'; enemy._regrouped = false; }
         }
 
         // Movement based on state
@@ -2859,17 +3072,66 @@ export const SystemView = () => {
           targetAngle = angleToPlayer;
           desiredSpeed = enemy.speed;
         } else if (enemy.state === 'attack') {
-          // Orbit player at combat distance
+          // Orbit player at the behavior's combat distance. Evasive+
+          // fleets flip orbit direction on a timer (jink) so the player
+          // can't just lead them.
+          const orbitR = PIRATE_ORBIT_RANGE * tune.orbitMult;
+          if (tune.kiteShield != null) {
+            enemy.jinkTimer -= delta;
+            if (enemy.jinkTimer <= 0) {
+              enemy.orbitDir = -(enemy.orbitDir || 1);
+              enemy.jinkTimer = EVASIVE_JINK_MIN + Math.random() * (EVASIVE_JINK_MAX - EVASIVE_JINK_MIN);
+            }
+          }
           const orbitAngle = Math.atan2(enemy.y - playerPos.y, enemy.x - playerPos.x);
-          const tangent = orbitAngle + Math.PI / 2;
-          if (dist < PIRATE_ORBIT_RANGE * 0.8) {
+          const tangent = orbitAngle + (Math.PI / 2) * (enemy.orbitDir || 1);
+          if (dist < orbitR * 0.8) {
             targetAngle = (orbitAngle * 180 / Math.PI); // move away
-          } else if (dist > PIRATE_ORBIT_RANGE * 1.2) {
+          } else if (dist > orbitR * 1.2) {
             targetAngle = angleToPlayer; // move closer
           } else {
             targetAngle = tangent * 180 / Math.PI; // orbit
           }
-          desiredSpeed = enemy.speed * 0.6;
+          desiredSpeed = enemy.speed * tune.speedMult;
+
+          // Phase 4 elite signature moves (flagships only, T5):
+          //   named elites -> ALPHA STRIKE: every weapon fires an extra
+          //   1.5× volley;  other T5 flagships -> SHIELD SURGE: restore
+          //   30% of the fleet's max shield. Both on one cooldown.
+          if (enemy.isFlagship && enemy.behavior === 'elite' && !dockedBodyRef.current) {
+            enemy.specialTimer -= delta;
+            if (enemy.specialTimer <= 0 && dist < (enemy.range || PIRATE_ATTACK_RANGE)) {
+              enemy.specialTimer = ELITE_SPECIAL_COOLDOWN;
+              if (enemy.isElite) {
+                const pAngle = Math.atan2(dy, dx);
+                for (const w of (enemy.weapons || [])) {
+                  for (let k = -1; k <= 1; k++) {
+                    const a = pAngle + k * 0.06;
+                    projectiles.push({
+                      x: enemy.x, y: enemy.y,
+                      vx: Math.cos(a) * PROJECTILE_SPEED * 0.8, vy: Math.sin(a) * PROJECTILE_SPEED * 0.8,
+                      age: 0, fromPlayer: false, damage: Math.round(w.damage * ALPHA_STRIKE_DAMAGE_MULT),
+                      color: '#ffd166', weapon_type: w.damageType || 'kinetic',
+                    });
+                  }
+                }
+                if (pushToast) pushToast({ kind: 'error', text: `★ ${enemy.name}: ALPHA STRIKE`, duration: 2200 });
+              } else if (efleet && efleet.maxShield > 0) {
+                efleet.shield = Math.min(efleet.maxShield, efleet.shield + efleet.maxShield * SHIELD_SURGE_FRAC);
+                if (pushToast) pushToast({ kind: 'info', text: `${enemy.name}: shield surge`, duration: 1800 });
+              }
+            }
+          }
+        } else if (enemy.state === 'kite') {
+          // Back off to just outside attack range and hold there while
+          // the fleet shield recharges; still faces the player.
+          const kiteR = attackRange * 1.4;
+          targetAngle = dist < kiteR ? angleToPlayer + 180 : angleToPlayer + 90 * (enemy.orbitDir || 1);
+          desiredSpeed = enemy.speed * 0.8;
+        } else if (enemy.state === 'regroup') {
+          // Fly home; shields recharge fast there (regen pre-pass).
+          targetAngle = Math.atan2(hdy, hdx) * 180 / Math.PI;
+          desiredSpeed = homeDist < enemy.patrolRadius ? enemy.speed * 0.3 : enemy.speed;
         } else { // flee
           targetAngle = angleToPlayer + 180;
           desiredSpeed = enemy.speed;
@@ -4970,7 +5232,7 @@ export const SystemView = () => {
               >
                 <div style={{ color: enemy.isElite ? '#ffd166' : '#ff6b6b' }}>{enemy.name}</div>
                 <div style={{ color: '#7a8a9a' }}>
-                  {enemy.hullName || enemy.hullId} · {enemy.maxHull} hull
+                  {enemy.hullName || enemy.hullId} · <span style={{ color: '#c084fc' }}>{enemy.behavior}</span> · {enemy.maxHull} hull
                   {enemy.maxArmor > 0 ? ` · ${enemy.maxArmor} armr` : ''}
                   {enemy.maxShield > 0 ? ` · ${enemy.maxShield} shld` : ''}
                   {` · ${enemy.speed} spd`}

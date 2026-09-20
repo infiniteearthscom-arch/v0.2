@@ -360,6 +360,10 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
         quality: itemData.quality || null,
         name: mod.name,
         stats: mod.stats || null,
+        // Module tier on the instance (2026-09-19): the client's warp
+        // profile reads engine tier straight off the fit (utils/warp.js)
+        // instead of guessing from the id.
+        tier: mod.tier || 1,
       };
 
       await client.query(
@@ -839,7 +843,15 @@ router.get('/fleet', authMiddleware, async (req, res) => {
     const activeShipId = ships.find(s => s.is_active)?.id || null;
     const activeFleetCount = ships.filter(s => s.storage_body_id == null).length;
     const fleetCap = await getFleetCap({ query }, userId);
-    res.json({ ships, activeShipId, activeFleetCount, fleetCap, fleetCapMax: MAX_FLEET_CAP });
+    // Persisted pooled damage (074) + repair pricing so the client's
+    // Repair panel shows the same cost the server will charge.
+    const dmg = await queryOne(`SELECT fleet_hull_pct, fleet_armor_pct FROM users WHERE id = $1`, [userId]);
+    res.json({
+      ships, activeShipId, activeFleetCount, fleetCap, fleetCapMax: MAX_FLEET_CAP,
+      fleetHullPct: dmg ? Number(dmg.fleet_hull_pct) : 1,
+      fleetArmorPct: dmg ? Number(dmg.fleet_armor_pct) : 1,
+      repairRates: REPAIR_RATES,
+    });
   } catch (error) {
     console.error('Error fetching fleet:', error);
     res.status(500).json({ error: 'Failed to fetch fleet' });
@@ -1245,20 +1257,112 @@ router.post('/sell-item', authMiddleware, async (req, res) => {
 // /api/combat/claim-loot, validated against the server's pirate manifest.)
 
 // ============================================
-// COMBAT: Deduct repair cost on death
+// FLEET DAMAGE PERSISTENCE + STATION REPAIR ("healing hulls", 2026-09-19)
 // ============================================
-// Legacy endpoint -- retained for backward compatibility but no longer
-// called by the death handler (replaced by /enter-pod). Safe to remove
-// once we confirm no client still references it.
+// The combat sim is client-local and pools the whole fleet's hull/armor
+// into one entity, so what persists is the pooled FRACTION per user
+// (migration 074). The client reports it (fleet-status) on dock/undock,
+// system change and a slow timer; the server hands it back on
+// /fleet so a reload / re-login doesn't heal. Repair at any station or
+// city restores both pools for credits priced per missing HP against
+// the fleet's max pools, which the server computes itself from hulls +
+// fitted armor modules (same rule as enemyManifest / fleetStats).
+// (The old dead /repair-cost endpoint lived here — removed.)
 
-router.post('/repair-cost', authMiddleware, async (req, res) => {
+const HULL_REPAIR_PER_HP = 2;   // credits per missing hull point
+const ARMOR_REPAIR_PER_HP = 3;  // credits per missing armor point
+export const REPAIR_RATES = { hull: HULL_REPAIR_PER_HP, armor: ARMOR_REPAIR_PER_HP };
+
+// Σ base_hull + Σ armor_hp × Q over every active non-pod ship.
+async function getFleetMaxPools(client, userId) {
+  const ships = await client.query(
+    `SELECT s.fitted_modules, ht.base_hull FROM ships s
+       JOIN hull_types ht ON ht.id = s.hull_type_id
+      WHERE s.user_id = $1 AND s.storage_body_id IS NULL AND s.hull_type_id <> 'pod'`,
+    [userId]
+  );
+  const ids = new Set();
+  for (const s of ships.rows) for (const fv of Object.values(s.fitted_modules || {})) if (fv?.module_type_id) ids.add(fv.module_type_id);
+  const mods = ids.size
+    ? await client.query(`SELECT id, slot_type, stats FROM module_types WHERE id = ANY($1::text[])`, [[...ids]])
+    : { rows: [] };
+  const byId = new Map(mods.rows.map(m => [m.id, m]));
+  let maxHull = 0, maxArmor = 0;
+  for (const s of ships.rows) {
+    maxHull += s.base_hull || 0;
+    for (const fv of Object.values(s.fitted_modules || {})) {
+      const m = byId.get(fv?.module_type_id);
+      if (!m || m.slot_type !== 'shield' || m.stats?.armor_hp == null) continue;
+      const tuned = m.stats.combat_tuned === true;
+      maxArmor += Math.round((tuned ? m.stats.armor_hp : 25) * qualityMultiplier(fv));
+    }
+  }
+  return { maxHull, maxArmor };
+}
+
+const clampPct = (v) => Math.max(0, Math.min(1, Number(v)));
+
+// POST /fitting/fleet-status { hull_pct, armor_pct } -- client-reported
+// pooled damage. Fire-and-forget from the client.
+router.post('/fleet-status', authMiddleware, async (req, res) => {
   try {
-    const { cost } = req.body;
-    if (!cost || cost <= 0) return res.status(400).json({ error: 'Invalid cost' });
-    await query(`UPDATE users SET credits = GREATEST(0, credits - $1) WHERE id = $2`, [cost, req.user.id]);
-    res.json({ success: true, deducted: cost });
+    const { hull_pct, armor_pct } = req.body;
+    if (!Number.isFinite(Number(hull_pct)) || !Number.isFinite(Number(armor_pct))) {
+      return res.status(400).json({ error: 'hull_pct and armor_pct required' });
+    }
+    await query(
+      `UPDATE users SET fleet_hull_pct = $1, fleet_armor_pct = $2 WHERE id = $3`,
+      [clampPct(hull_pct), clampPct(armor_pct), req.user.id]
+    );
+    res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to deduct repair cost' });
+    console.error('Error saving fleet status:', error);
+    res.status(500).json({ error: 'Failed to save fleet status' });
+  }
+});
+
+// POST /fitting/repair { body_id, hull_pct, armor_pct } -- full repair
+// at a station or city. The client sends its live fractions (the sim
+// is client-local); cost = missing HP × rate against server-computed
+// max pools. Returns the new credit balance.
+router.post('/repair', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { body_id, hull_pct, armor_pct } = req.body;
+    if (!body_id) return res.status(400).json({ error: 'body_id required' });
+
+    const result = await transaction(async (client) => {
+      const bodyId = await resolveCelestialBodyId(client, body_id);
+      if (!bodyId) throw Object.assign(new Error('Body not found'), { statusCode: 404 });
+      const body = await client.query(`SELECT body_type, has_city, name FROM celestial_bodies WHERE id = $1`, [bodyId]);
+      const b = body.rows[0];
+      if (!b || !(b.body_type === 'station' || b.has_city)) {
+        throw Object.assign(new Error('Repairs are only available at stations and cities'), { statusCode: 400 });
+      }
+
+      const { maxHull, maxArmor } = await getFleetMaxPools(client, userId);
+      const hp = clampPct(hull_pct ?? 1), ap = clampPct(armor_pct ?? 1);
+      const missingHull = Math.round(maxHull * (1 - hp));
+      const missingArmor = Math.round(maxArmor * (1 - ap));
+      const cost = missingHull * HULL_REPAIR_PER_HP + missingArmor * ARMOR_REPAIR_PER_HP;
+
+      const user = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+      const credits = parseInt(user.rows[0]?.credits || 0);
+      if (cost > credits) {
+        throw Object.assign(new Error(`Repair costs ${cost.toLocaleString()} cr — you have ${credits.toLocaleString()}`), { statusCode: 400 });
+      }
+      await client.query(
+        `UPDATE users SET credits = credits - $1, fleet_hull_pct = 1.0, fleet_armor_pct = 1.0 WHERE id = $2`,
+        [cost, userId]
+      );
+      return { cost, repaired_hull: missingHull, repaired_armor: missingArmor, credits: credits - cost, station: b.name };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error repairing fleet:', error);
+    res.status(500).json({ error: 'Failed to repair fleet' });
   }
 });
 
@@ -1468,7 +1572,8 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
         `UPDATE users
          SET active_ship_id = NULL, credits = 1000,
              research_points = 0, research_points_updated_at = NOW(),
-             last_system_id = 'sol'
+             last_system_id = 'sol',
+             fleet_hull_pct = 1.0, fleet_armor_pct = 1.0
          WHERE id = $1`,
         [userId]
       );

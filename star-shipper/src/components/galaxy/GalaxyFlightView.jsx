@@ -9,6 +9,7 @@ import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
 import { generateGalaxy, FACTIONS as GALAXY_FACTIONS, STAR_DISPLAY } from '@/utils/galaxyGenerator';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { fleetWarpProfile, freeWarpCheck, warpBlockText } from '@/utils/warp';
 
 // ============================================
 // CONSTANTS
@@ -84,8 +85,12 @@ export const GalaxyFlightView = () => {
   const updateGalaxyShipPosition = useGameStore(state => state.updateGalaxyShipPosition);
   const enterSystem = useGameStore(state => state.enterSystem);
   const discoveredSystems = useGameStore(state => state.discoveredSystems);
-  
+  const pushToast = useGameStore(state => state.pushToast);
+  const activeBonuses = useGameStore(state => state.activeBonuses);
+
   const activeShip = useActiveShip();
+
+  const allShips = useGameStore(state => state.ships);
 
   // NOTE: no early return here. App.jsx already mount-gates this
   // component on viewMode === 'galaxy'; an in-component guard BEFORE
@@ -96,6 +101,21 @@ export const GalaxyFlightView = () => {
   // Galaxy data
   const galaxy = useMemo(() => getGalaxy(), []);
   const systems = galaxy.systems;
+
+  // Phase 3b warp-range gating. The free-warp ring is centred on the
+  // system we LEFT (currentSystem stays that system while in galaxy
+  // view). Profile = fleet's weakest drive (+ Jump Drive Calibration).
+  // Kept in a ref for the game loop (pitfall #7 closure staleness).
+  const warpProfile = useMemo(() => fleetWarpProfile(allShips, activeBonuses), [allShips, activeBonuses]);
+  const warpRef = useRef({ profile: warpProfile, originId: currentSystemId });
+  warpRef.current = { profile: warpProfile, originId: currentSystemId };
+  const originSys = galaxy.systemMap[currentSystemId];
+  const checkTarget = useCallback(
+    (sys) => freeWarpCheck(galaxy.systemMap[warpRef.current.originId], sys, warpRef.current.profile),
+    [galaxy.systemMap]
+  );
+  const [rangeBlockMsg, setRangeBlockMsg] = useState(null);
+  const rangeBlockRef = useRef(0);
   
   // Jump connections for rendering
   const connections = useMemo(() => {
@@ -235,8 +255,17 @@ export const GalaxyFlightView = () => {
           const currentSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
           
           if (distance < SYSTEM_DOCK_RANGE && currentSpeed < 30) {
-            // Arrived! Enter the system
+            // Arrived! Enter the system -- if the drive allows it.
+            // (Targets are gated at selection too; this catches a
+            // fleet change mid-flight.)
             shipVelRef.current = { x: 0, y: 0 };
+            const check = freeWarpCheck(galaxy.systemMap[warpRef.current.originId], targetSys, warpRef.current.profile);
+            if (!check.ok) {
+              setGalaxyAutopilotTarget(null);
+              setRangeBlockMsg(`Cannot enter ${targetSys.name}: ${warpBlockText(check, targetSys, warpRef.current.profile)}`);
+              animationId = requestAnimationFrame(gameLoop);
+              return;
+            }
             const arrival = getArrivalType(targetSys.id);
             setTimeout(() => {
               enterSystem(targetSys.id, arrival);
@@ -318,6 +347,36 @@ export const GalaxyFlightView = () => {
       // Move ship
       shipPosRef.current.x += shipVelRef.current.x * delta;
       shipPosRef.current.y += shipVelRef.current.y * delta;
+
+      // Phase 3b: free-warp ring. The fleet can't fly further from the
+      // system it left than its drive's range -- clamp to the ring edge
+      // and kill outward velocity (soft wall). Gate travel never comes
+      // through here (gates are instant jumps from SystemView).
+      {
+        const origin = galaxy.systemMap[warpRef.current.originId];
+        const range = warpRef.current.profile.range;
+        if (origin && range > 0) {
+          const ox = shipPosRef.current.x - origin.x;
+          const oy = shipPosRef.current.y - origin.y;
+          const od = Math.sqrt(ox * ox + oy * oy);
+          if (od > range) {
+            const nx = ox / od, ny = oy / od;
+            shipPosRef.current.x = origin.x + nx * range;
+            shipPosRef.current.y = origin.y + ny * range;
+            const outward = shipVelRef.current.x * nx + shipVelRef.current.y * ny;
+            if (outward > 0) {
+              shipVelRef.current.x -= nx * outward;
+              shipVelRef.current.y -= ny * outward;
+            }
+            const nowMs = performance.now();
+            if (nowMs - rangeBlockRef.current > 1500) {
+              rangeBlockRef.current = nowMs;
+              setRangeBlockMsg(`WARP RANGE LIMIT — ${range} from ${origin.name}. Fit a better drive or use a jump gate.`);
+            }
+            if (autopilotRef.current) setGalaxyAutopilotTarget(null);
+          }
+        }
+      }
       
       // Camera follow
       if (followMode) {
@@ -382,7 +441,12 @@ export const GalaxyFlightView = () => {
           if (d < closestDist) { closestDist = d; closest = sys; }
         }
         if (closest && closestDist < SYSTEM_DOCK_RANGE * 2) {
-          enterSystem(closest.id, getArrivalType(closest.id));
+          const check = freeWarpCheck(galaxy.systemMap[warpRef.current.originId], closest, warpRef.current.profile);
+          if (!check.ok) {
+            setRangeBlockMsg(`Cannot enter ${closest.name}: ${warpBlockText(check, closest, warpRef.current.profile)}`);
+          } else {
+            enterSystem(closest.id, getArrivalType(closest.id));
+          }
         }
       }
       
@@ -411,9 +475,17 @@ export const GalaxyFlightView = () => {
   
   // Click on a system to autopilot
   const handleClickSystem = useCallback((sys) => {
+    // Phase 3b: refuse unreachable targets up front with the reason.
+    const check = checkTarget(sys);
+    if (!check.ok) {
+      const msg = warpBlockText(check, sys, warpRef.current.profile);
+      setRangeBlockMsg(`${sys.name}: ${msg}`);
+      if (pushToast) pushToast({ kind: 'error', text: `${sys.name} — ${msg}`, duration: 4500 });
+      return;
+    }
     setGalaxyAutopilotTarget({ id: sys.id, name: sys.name });
     setFollowMode(true);
-  }, [setGalaxyAutopilotTarget]);
+  }, [setGalaxyAutopilotTarget, checkTarget, pushToast]);
   
   // Right-click to enter system if close enough
   const handleContextMenu = useCallback((e) => {
@@ -633,6 +705,20 @@ export const GalaxyFlightView = () => {
               );
             })}
             
+            {/* Phase 3b: free-warp ring around the system we left.
+                Everything outside is reachable only by jump gate. */}
+            {originSys && (
+              <g>
+                <circle cx={originSys.x} cy={originSys.y} r={warpProfile.range}
+                  fill="rgba(136,68,255,0.03)" stroke="#8844ff" strokeWidth={1.5 * uiScale}
+                  strokeDasharray={`${8 * uiScale},${6 * uiScale}`} opacity={0.55} />
+                <text x={originSys.x} y={originSys.y - warpProfile.range - 6 * uiScale}
+                  textAnchor="middle" fill="#a78bfa" fontSize={9 * uiScale} fontFamily="monospace" opacity={0.8}>
+                  WARP RANGE · CLASS {warpProfile.driveClass} · T{warpProfile.maxTier} MAX
+                </text>
+              </g>
+            )}
+
             {/* Autopilot line */}
             {galaxyAutopilotTarget && (() => {
               const target = galaxy.systemMap[galaxyAutopilotTarget.id];
@@ -703,6 +789,16 @@ export const GalaxyFlightView = () => {
             })}
           </svg>
           
+          {/* Phase 3b: warp-range block message (ring hit / refused entry). */}
+          {rangeBlockMsg && (
+            <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ top: 140, zIndex: 5 }}>
+              <div className="px-3 py-1.5 rounded bg-slate-900/90 border border-purple-500/50 text-[0.8rem] text-purple-200 font-mono flex items-center gap-2">
+                <span>{rangeBlockMsg}</span>
+                <button className="pointer-events-auto text-slate-500 hover:text-slate-300" onClick={() => setRangeBlockMsg(null)}>✕</button>
+              </div>
+            </div>
+          )}
+
           {/* Hovered system info */}
           {hoveredSystem && (
             <div className="absolute top-3 right-3 pointer-events-none">
@@ -722,6 +818,13 @@ export const GalaxyFlightView = () => {
                 {hoveredSystem.hasJumpGate && (
                   <div className="text-[0.8rem] text-green-500 mt-0.5">Has Jump Gate</div>
                 )}
+                {(() => {
+                  const check = checkTarget(hoveredSystem);
+                  if (check.via === 'here') return null;
+                  return check.ok
+                    ? <div className="text-[0.8rem] text-cyan-400 mt-0.5">{check.via === 'gate' ? 'Reachable by jump gate' : 'In warp range'}</div>
+                    : <div className="text-[0.8rem] text-red-400 mt-0.5">🔒 {warpBlockText(check, hoveredSystem, warpProfile)}</div>;
+                })()}
                 <div className="text-[0.8rem] text-slate-600 mt-0.5">
                   {Math.round(Math.sqrt(
                     (hoveredSystem.x - shipPosRef.current.x) ** 2 +

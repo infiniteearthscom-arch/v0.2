@@ -135,6 +135,13 @@ async function main() {
   );
   report('every planet row has harvester slots (072)', zeroPlanets.rows[0].n === 0, `${zeroPlanets.rows[0].n} planets with 0 slots`);
 
+  // --- migration 074 (persisted fleet damage) ---
+  report('users.fleet_hull_pct exists (074)', await columnExists('users', 'fleet_hull_pct'));
+  report('users.fleet_armor_pct exists (074)', await columnExists('users', 'fleet_armor_pct'));
+
+  // --- migration 073 (one-time position sync grace) ---
+  report('users.last_system_synced exists (073)', await columnExists('users', 'last_system_synced'));
+
   // --- migration 071 (Fleet Command grandfather) ---
   const overCap = await pool.query(
     `SELECT COUNT(*)::int AS n FROM (

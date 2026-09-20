@@ -8,6 +8,8 @@ import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, FACTIONS } from '@/utils/galaxyGenerator';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { fleetWarpProfile, warpCheck, freeWarpCheck, warpBlockText } from '@/utils/warp';
+import { findRoute, routeSummary } from '@/utils/routePlanner';
 import presence from '@/utils/presence';
 import { galaxyAPI } from '@/utils/api';
 
@@ -65,6 +67,17 @@ export const GalaxyMapWindow = () => {
 
   const galaxy = useMemo(() => getGalaxy(), []);
   const systems = galaxy.systems;
+
+  // Phase 3b warp-range gating: fleet profile (weakest drive + Jump
+  // Drive Calibration) → free-warp ring + tier ceilings. Same rules as
+  // GalaxyFlightView and the server (utils/warp.js).
+  const allShips = useGameStore(state => state.ships);
+  const activeBonuses = useGameStore(state => state.activeBonuses);
+  const warpProfile = useMemo(() => fleetWarpProfile(allShips, activeBonuses), [allShips, activeBonuses]);
+  const checkTarget = useCallback(
+    (sys) => warpCheck(galaxy.systemMap[currentSystemId], sys, warpProfile),
+    [galaxy.systemMap, currentSystemId, warpProfile]
+  );
 
   // Jump connections (Tier C fog of war: only render if at least one
   // endpoint is discovered, so the player can see "I can jump there
@@ -297,6 +310,13 @@ export const GalaxyMapWindow = () => {
                   dur="6s" repeatCount="indefinite" />
               </circle>
             )}
+            {/* Phase 3b: free-warp ring (drive range from the current system). */}
+            {isCurrent && (
+              <circle cx={sys.x} cy={sys.y} r={warpProfile.range}
+                fill="rgba(136,68,255,0.04)" stroke="#8844ff" strokeWidth={1 * uiScale}
+                strokeDasharray={`${6 * uiScale},${5 * uiScale}`} opacity={0.5}
+                style={{ pointerEvents: 'none' }} />
+            )}
 
             {/* Selected ring */}
             {isSelected && !isCurrent && (
@@ -411,7 +431,7 @@ export const GalaxyMapWindow = () => {
         );
       })}
     </g>
-  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem]);
+  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile]);
 
   if (!isOpen) return null;
 
@@ -479,8 +499,42 @@ export const GalaxyMapWindow = () => {
   const handleMouseUp = () => setDragging(false);
 
   const currentSys = galaxy.systemMap[currentSystemId];
-  const canJump = viewMode === 'system' && selectedSys && selectedSys.id !== currentSystemId &&
+  const isConnected = viewMode === 'system' && selectedSys && selectedSys.id !== currentSystemId &&
     currentSys?.hasJumpGate && currentSys?.jumpConnections?.includes(selectedSys.id);
+  // Phase 3b: the gate exists, but the drive class also has to allow
+  // the destination tier (class + 2). selectedCheck is reused by the
+  // Fly To / Jump buttons and the info-panel reachability row.
+  const selectedCheck = selectedSys && selectedSys.id !== currentSystemId ? checkTarget(selectedSys) : null;
+  // Physical flight ignores gates: Fly To needs the target inside the ring.
+  const selectedFree = selectedSys && selectedSys.id !== currentSystemId
+    ? freeWarpCheck(galaxy.systemMap[currentSystemId], selectedSys, warpProfile) : null;
+  const canJump = isConnected && selectedCheck?.ok;
+
+  // Galaxy map v2: multi-hop route to the selected system (BFS over gate
+  // + free-warp edges under the current drive). Active route lives in
+  // the store so SystemView can fly it hop by hop.
+  const plannedRoute = useGameStore(state => state.plannedRoute);
+  const setPlannedRoute = useGameStore(state => state.setPlannedRoute);
+  const clearPlannedRoute = useGameStore(state => state.clearPlannedRoute);
+  const selectedRoute = useMemo(
+    () => (selectedSys && selectedSys.id !== currentSystemId ? findRoute(galaxy, currentSystemId, selectedSys.id, warpProfile) : null),
+    [galaxy, currentSystemId, selectedSys, warpProfile]
+  );
+  // Points for the polyline: the active route if any, else the preview.
+  const routePoints = useMemo(() => {
+    const hops = plannedRoute?.hops || selectedRoute?.hops;
+    if (!hops?.length) return null;
+    const originId = plannedRoute ? (plannedRoute.index > 0 ? plannedRoute.hops[plannedRoute.index - 1].id : currentSystemId) : currentSystemId;
+    const start = galaxy.systemMap[plannedRoute ? currentSystemId : originId];
+    if (!start) return null;
+    const pts = [{ x: start.x, y: start.y, via: null }];
+    const fromIdx = plannedRoute ? plannedRoute.index : 0;
+    for (let i = fromIdx; i < hops.length; i++) {
+      const s = galaxy.systemMap[hops[i].id];
+      if (s) pts.push({ x: s.x, y: s.y, via: hops[i].via });
+    }
+    return { pts, active: !!plannedRoute };
+  }, [plannedRoute, selectedRoute, galaxy, currentSystemId]);
 
   return (
     <ModalOverlay windowId="galaxyMap" title="Galaxy Map" icon="🌌" accent="#8844ff">
@@ -527,6 +581,25 @@ export const GalaxyMapWindow = () => {
             {bgStarsLayer}
             {regionLayer}
             {connectionsLayer}
+
+            {/* Route planner: active route (solid green) or preview for
+                the selected system (dashed). Gate hops are drawn as
+                straight lines; warp hops dotted. */}
+            {routePoints && routePoints.pts.map((p, i) => {
+              if (i === 0) return null;
+              const a = routePoints.pts[i - 1];
+              const color = routePoints.active ? '#22c55e' : '#67e8f9';
+              return (
+                <line key={`route-${i}`} x1={a.x} y1={a.y} x2={p.x} y2={p.y}
+                  stroke={color} strokeWidth={(routePoints.active ? 2.2 : 1.6) * uiScale}
+                  strokeDasharray={p.via === 'warp' ? `${3 * uiScale},${3 * uiScale}` : (routePoints.active ? undefined : `${8 * uiScale},${5 * uiScale}`)}
+                  opacity={routePoints.active ? 0.85 : 0.6} style={{ pointerEvents: 'none' }} />
+              );
+            })}
+            {routePoints && routePoints.pts.slice(1).map((p, i) => (
+              <circle key={`route-dot-${i}`} cx={p.x} cy={p.y} r={3 * uiScale}
+                fill={routePoints.active ? '#22c55e' : '#67e8f9'} opacity={0.9} style={{ pointerEvents: 'none' }} />
+            ))}
 
             {systemsLayer}
 
@@ -688,14 +761,74 @@ export const GalaxyMapWindow = () => {
                 </div>
               )}
 
+              {/* Phase 3b: reachability from the current system. */}
+              {selectedCheck && (
+                <div className="text-[0.8rem] pt-1" style={{ color: selectedCheck.ok ? '#67e8f9' : '#f87171' }}>
+                  {selectedCheck.ok
+                    ? (selectedCheck.via === 'gate' ? '⚡ Reachable by jump gate' : `🚀 In warp range (${Math.round(selectedCheck.distance)} / ${warpProfile.range})`)
+                    : `🔒 ${warpBlockText(selectedCheck, selectedSys, warpProfile)}`}
+                </div>
+              )}
+
+              {/* Route planner: hop count + plot / cancel. */}
+              {selectedRoute && (
+                <div className="pt-1">
+                  <div className="text-[0.8rem]" style={{ color: selectedRoute.reachable ? '#86efac' : '#f87171' }}>
+                    🧭 {routeSummary(selectedRoute)}
+                  </div>
+                  {selectedRoute.reachable && selectedRoute.hops.length > 0 && (
+                    <div className="text-[0.8rem] text-slate-500 leading-snug">
+                      {selectedRoute.hops.map((h, i) => {
+                        const s = galaxy.systemMap[h.id];
+                        const known = discoveredSet.has(h.id);
+                        return (
+                          <span key={h.id}>
+                            {i > 0 ? ' → ' : ''}
+                            <span style={{ color: h.via === 'gate' ? '#86efac' : '#67e8f9' }}>{h.via === 'gate' ? '⚡' : '🚀'}</span>
+                            {known ? (s?.name || h.id) : 'Unknown'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectedRoute.reachable && selectedRoute.hops.length > 1 && !(plannedRoute && plannedRoute.targetId === selectedSys.id) && (
+                    <button
+                      onClick={() => {
+                        setPlannedRoute(selectedSys.id, selectedSys.name, selectedRoute.hops);
+                        closeWindow('galaxyMap');
+                      }}
+                      className="mt-1 w-full px-3 py-1.5 rounded text-xs font-medium bg-emerald-700/30 text-emerald-300 border border-emerald-600/40 hover:bg-emerald-700/50 transition-colors"
+                      title={viewMode === 'galaxy' ? 'Autopilot starts once you enter a system' : 'Autopilot flies every hop; press Escape in a system to cancel'}
+                    >
+                      🧭 Plot course ({selectedRoute.hops.length} hops)
+                    </button>
+                  )}
+                </div>
+              )}
+              {plannedRoute && (
+                <div className="flex items-center justify-between pt-1 text-[0.8rem]">
+                  <span className="text-emerald-300">
+                    Route to {plannedRoute.targetName}: hop {Math.min(plannedRoute.index + 1, plannedRoute.hops.length)} / {plannedRoute.hops.length}
+                  </span>
+                  <button onClick={clearPlannedRoute} className="text-slate-500 hover:text-red-300">✕ cancel</button>
+                </div>
+              )}
+
               {/* Action buttons */}
               <div className="space-y-1 pt-2">
                 {viewMode === 'galaxy' && selectedSys.id !== currentSystemId && (
                   <button
+                    disabled={!selectedFree?.ok}
+                    title={!selectedFree?.ok
+                      ? (selectedCheck?.ok ? 'Outside free-warp range — go back and take the jump gate' : warpBlockText(selectedFree, selectedSys, warpProfile))
+                      : undefined}
                     onClick={() => {
+                      if (!selectedFree?.ok) return;
                       setGalaxyAutopilotTarget({ id: selectedSys.id, name: selectedSys.name });
                     }}
-                    className="w-full px-3 py-2 rounded text-xs font-medium bg-cyan-700/30 text-cyan-300 border border-cyan-600/40 hover:bg-cyan-700/50 transition-colors"
+                    className={`w-full px-3 py-2 rounded text-xs font-medium border transition-colors ${selectedFree?.ok
+                      ? 'bg-cyan-700/30 text-cyan-300 border-cyan-600/40 hover:bg-cyan-700/50'
+                      : 'bg-slate-800/40 text-slate-500 border-slate-700/40 cursor-not-allowed'}`}
                   >
                     🚀 Fly to {selectedSys.name}
                   </button>
@@ -713,11 +846,15 @@ export const GalaxyMapWindow = () => {
                 )}
                 {viewMode === 'system' && selectedSys.id !== currentSystemId && !canJump && (
                   <div className="text-[0.8rem] text-slate-600 text-center py-1">
-                    {!currentSys?.hasJumpGate
-                      ? 'No jump gate in current system'
-                      : !selectedSys.hasJumpGate
-                        ? 'No jump gate in target system'
-                        : 'Not directly connected'}
+                    {isConnected && selectedCheck && !selectedCheck.ok
+                      ? `Gate locked — ${warpBlockText(selectedCheck, selectedSys, warpProfile)}`
+                      : !currentSys?.hasJumpGate
+                        ? 'No jump gate in current system'
+                        : !selectedSys.hasJumpGate
+                          ? 'No jump gate in target system'
+                          : selectedFree?.ok
+                            ? 'Not gate-connected — leave via the warp point and fly there'
+                            : 'Not directly connected'}
                   </div>
                 )}
               </div>

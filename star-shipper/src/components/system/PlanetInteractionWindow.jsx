@@ -3107,6 +3107,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
   const [section, setSection] = useState('vendor');
   const sections = [
     { id: 'vendor',    label: 'Vendor',    icon: '🏪' },
+    { id: 'repair',    label: 'Repair',    icon: '🔧' },
     { id: 'market',    label: 'Market',    icon: '📈' },
     { id: 'ships',     label: 'Ships',     icon: '🚀' },
     { id: 'pilots',    label: 'Pilots',    icon: '👤' },
@@ -3156,6 +3157,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
       </div>
       {/* Sub-tab content */}
       {section === 'vendor'    && <VendorTab body={body} />}
+      {section === 'repair'    && <RepairTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'market'    && <MarketPanel stationBodyId={effectiveBodyId} />}
       {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'pilots'    && <PilotsTab effectiveBodyId={effectiveBodyId} />}
@@ -3172,6 +3174,92 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
 // is wired up). Reads from the presence singleton's bodyOccupants
 // cache, which is kept fresh by `presence:body` broadcasts.
 // ============================================
+// ============================================
+// REPAIR (healing hulls, 2026-09-19)
+// ============================================
+// Fleet hull/armor are one pooled entity in combat, so repair is fleet-
+// wide: pay per missing HP (rates from the server) and both pools refill.
+// Fractions come from SystemView via the store (synced on dock); the
+// server recomputes max pools + cost itself when charging.
+const RepairTab = ({ body, effectiveBodyId }) => {
+  const fleetHullPct = useGameStore(s => s.fleetHullPct);
+  const fleetArmorPct = useGameStore(s => s.fleetArmorPct);
+  const fleetStats = useGameStore(s => s.fleetStats);
+  const repairRates = useGameStore(s => s.repairRates);
+  const credits = useGameStore(s => s.resources?.credits ?? 0);
+  const applyFleetHeal = useGameStore(s => s.applyFleetHeal);
+  const fetchShips = useGameStore(s => s.fetchShips);
+  const pushToast = useGameStore(s => s.pushToast);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const maxHull = Math.round(fleetStats?.totalHull || 0);
+  const maxArmor = Math.round(fleetStats?.totalArmor || 0);
+  const curHull = Math.round(maxHull * fleetHullPct);
+  const curArmor = Math.round(maxArmor * fleetArmorPct);
+  const missingHull = Math.max(0, maxHull - curHull);
+  const missingArmor = Math.max(0, maxArmor - curArmor);
+  const cost = missingHull * (repairRates?.hull ?? 2) + missingArmor * (repairRates?.armor ?? 3);
+  const nothingToRepair = missingHull === 0 && missingArmor === 0;
+  const canAfford = credits >= cost;
+
+  const handleRepair = async () => {
+    if (busy || nothingToRepair) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fittingAPI.repairFleet(effectiveBodyId || body?.id, fleetHullPct, fleetArmorPct);
+      applyFleetHeal();
+      if (fetchShips) fetchShips(); // refreshes credits
+      if (pushToast) pushToast({ kind: 'success', text: `Fleet repaired at ${r.station || body?.name} for ${r.cost.toLocaleString()} cr`, duration: 3500 });
+    } catch (e) {
+      setErr(e.message || 'Repair failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const Bar = ({ label, cur, max, color, track }) => {
+    const pct = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
+    return (
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#94a3b8', fontFamily: F }}>
+          <span>{label}</span><span style={{ color }}>{max > 0 ? `${cur} / ${max}` : '—'}</span>
+        </div>
+        <div style={{ height: 8, background: track, borderRadius: 3, overflow: 'hidden', marginTop: 3 }}>
+          <div style={{ width: `${pct * 100}%`, height: '100%', background: color, transition: 'width 0.3s' }} />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ padding: '10px 12px', fontFamily: F }}>
+      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 10, lineHeight: 1.4 }}>
+        Station crews patch the whole fleet's hull and armor. Priced per point:
+        hull {repairRates?.hull ?? 2} cr · armor {repairRates?.armor ?? 3} cr. Shields recharge on their own.
+      </div>
+      <Bar label="HULL" cur={curHull} max={maxHull} color={fleetHullPct > 0.6 ? '#22c55e' : fleetHullPct > 0.3 ? '#fbbf24' : '#ef4444'} track="#332222" />
+      <Bar label="ARMOR" cur={curArmor} max={maxArmor} color="#d8a24a" track="#332b1a" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <div style={{ fontSize: '0.8rem', color: nothingToRepair ? '#64748b' : canAfford ? '#e2e8f0' : '#f87171' }}>
+          {nothingToRepair ? 'Fleet is at full integrity.' : `Repair cost: ${cost.toLocaleString()} cr`}
+          {!nothingToRepair && !canAfford && <span style={{ color: '#94a3b8' }}> · you have {credits.toLocaleString()}</span>}
+        </div>
+        <button
+          onClick={handleRepair}
+          disabled={busy || nothingToRepair || !canAfford}
+          className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${(!busy && !nothingToRepair && canAfford)
+            ? 'bg-green-700/30 text-green-300 border-green-600/40 hover:bg-green-700/50'
+            : 'bg-slate-800/40 text-slate-500 border-slate-700/40 cursor-not-allowed'}`}
+        >
+          {busy ? 'Repairing…' : '🔧 Repair Fleet'}
+        </button>
+      </div>
+      {err && <div style={{ marginTop: 8, fontSize: '0.8rem', color: '#f87171' }}>{err}</div>}
+    </div>
+  );
+};
+
 const PilotsTab = ({ effectiveBodyId }) => {
   const openProfile = useGameStore(s => s.openProfile);
   const myUserId = useAuthStore(s => s.user?.id) || null;

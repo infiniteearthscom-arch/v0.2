@@ -19,6 +19,21 @@ const FALLBACK_HULL_ID = 'pirate_marauder';
 
 const lookupHull = (hullId) => PIRATE_HULLS[hullId] || HULL_SHAPES[hullId] || null;
 
+// Phase 4 behavior ladder (docs/combat-redesign-plan.md §C Phase 4):
+//   simple      -- T1: chase, orbit close, fire everything
+//   evasive     -- T2: longer orbit, jinks, kites to regen shields
+//   coordinated -- T3: wingmen flank instead of holding the V, calls a nearby fleet
+//   tactical    -- T4: coordinated + regroups at home to recharge, calls any fleet
+//   elite       -- T5: tactical + flagship signature move (alpha strike / shield surge)
+// A template's behavior_mode overrides the tier default when it isn't
+// the seed value 'aggressive'.
+export const BEHAVIOR_BY_TIER = { 1: 'simple', 2: 'evasive', 3: 'coordinated', 4: 'tactical', 5: 'elite' };
+export const BEHAVIOR_RANK = { simple: 1, evasive: 2, coordinated: 3, tactical: 4, elite: 5 };
+export const behaviorFor = (behaviorMode, tier) => {
+  if (behaviorMode && behaviorMode !== 'aggressive' && BEHAVIOR_RANK[behaviorMode]) return behaviorMode;
+  return BEHAVIOR_BY_TIER[Math.max(1, Math.min(5, tier || 1))];
+};
+
 // manifest: the `manifest` object from POST /combat/enter-system.
 // systemId: stamped on every enemy (wreck claims read it off the wreck
 // because the game loop's closure copy of currentSystemId can be stale
@@ -81,6 +96,14 @@ export const hydrateEnemies = (manifest, systemId) => {
       engineColor,
       displaySize,
       state: 'patrol',
+      // Phase 4 behavior tiers. A template can pin a behavior via
+      // behavior_mode; the default 'aggressive' means "by tier".
+      behavior: behaviorFor(e.behavior_mode, e.tier || 1),
+      // Runtime scratch for the behaviors (SystemView mutates these).
+      orbitDir: 1,        // evasive: current orbit direction
+      jinkTimer: 0,       // evasive: seconds until the next direction flip
+      specialTimer: 0,    // elite / T5: cooldown for the signature move
+      regroupTimer: 0,    // tactical: time spent regrouping
       patrolCenter: { x: e.patrol_center?.x ?? e.x, y: e.patrol_center?.y ?? e.y },
       patrolAngle: e.patrol_angle || 0,
       patrolRadius: e.patrol_radius || 100,

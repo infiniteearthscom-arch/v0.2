@@ -6,6 +6,7 @@ import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryAll, queryOne } from '../db/index.js';
 import { logActivity } from '../lib/activity.js';
+import { getGalaxy, getFleetWarpProfile, warpCheck } from '../game/warp.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -27,10 +28,13 @@ router.get('/visits', async (req, res) => {
     // Where the player was on their last system entry (migration 070) --
     // the client restores this on login so a refresh doesn't dump them
     // back into Sol.
-    const me = await queryOne(`SELECT last_system_id FROM users WHERE id = $1`, [req.user.id]);
+    const me = await queryOne(`SELECT last_system_id, last_system_synced FROM users WHERE id = $1`, [req.user.id]);
     res.json({
       visits: rows.map(r => r.system_procedural_id),
       last_system_id: me?.last_system_id || 'sol',
+      // FALSE only for accounts that predate 070 (migration 073): the
+      // client may sync its locally-persisted system once, unvalidated.
+      last_system_synced: me?.last_system_synced !== false,
       // Full detail kept in case future UI wants "first visited Tuesday"
       // style metadata. Omit if it ever causes payload bloat.
       detail: rows,
@@ -80,6 +84,31 @@ router.post('/visit', async (req, res) => {
     if (!system_procedural_id) {
       return res.status(400).json({ error: 'system_procedural_id required' });
     }
+
+    // Phase 3b warp-range gating: the entry must be reachable from the
+    // player's last system -- gate-connected, or inside the fleet's
+    // free-warp ring AND no more than one tier above its drive class
+    // (src/game/warp.js mirrors the client rules). A legit client never
+    // trips this; it exists so a modified client can't skip tiers. An
+    // unknown origin (fresh account / legacy row) is allowed through.
+    const me = await queryOne(`SELECT last_system_id FROM users WHERE id = $1`, [req.user.id]);
+    const galaxy = getGalaxy();
+    const origin = me?.last_system_id ? galaxy.systemMap[me.last_system_id] : null;
+    const target = galaxy.systemMap[system_procedural_id];
+    if (origin && target && origin.id !== target.id) {
+      const profile = await getFleetWarpProfile({ query }, req.user.id);
+      const check = warpCheck(origin, target, profile);
+      if (!check.ok) {
+        return res.status(403).json({
+          error: 'Out of warp range',
+          reason: check.reason,
+          origin: origin.id,
+          drive_class: profile.driveClass,
+          range: profile.range,
+          distance: Math.round(check.distance),
+        });
+      }
+    }
     // RETURNING ... only fires when a row is actually inserted -- the
     // ON CONFLICT DO NOTHING silently no-ops on re-visits. We use that
     // to gate the activity log: only emit on first-ever visit per
@@ -110,6 +139,36 @@ router.post('/visit', async (req, res) => {
   } catch (e) {
     console.error('Error recording visit:', e);
     res.status(500).json({ error: 'Failed to record visit' });
+  }
+});
+
+// ============================================
+// POST /galaxy/sync-position -- ONE-TIME unvalidated position sync for
+// accounts that predate the last_system_id column (migration 073 sets
+// last_system_synced = FALSE for them). The client sends the system it
+// has persisted locally; we adopt it and flip the flag. Every later
+// call is a no-op that returns the server's value, so this can't be
+// used as a teleport.
+// ============================================
+router.post('/sync-position', async (req, res) => {
+  try {
+    const { system_procedural_id } = req.body;
+    const galaxy = getGalaxy();
+    if (!system_procedural_id || !galaxy.systemMap[system_procedural_id]) {
+      return res.status(400).json({ error: 'valid system_procedural_id required' });
+    }
+    const row = await queryOne(
+      `UPDATE users SET last_system_id = $1, last_system_synced = TRUE
+        WHERE id = $2 AND last_system_synced = FALSE
+        RETURNING last_system_id`,
+      [system_procedural_id, req.user.id]
+    );
+    if (row) return res.json({ success: true, synced: true, last_system_id: row.last_system_id });
+    const me = await queryOne(`SELECT last_system_id FROM users WHERE id = $1`, [req.user.id]);
+    res.json({ success: true, synced: false, last_system_id: me?.last_system_id || 'sol' });
+  } catch (e) {
+    console.error('Error syncing position:', e);
+    res.status(500).json({ error: 'Failed to sync position' });
   }
 });
 

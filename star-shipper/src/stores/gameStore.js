@@ -47,6 +47,11 @@ const initialState = {
   currentSystem: 'sol',
   currentLocation: null,
   pendingJump: null, // { targetSystemId } — set when player clicks Jump, autopilots to gate first
+  // Galaxy map v2 route planner: { targetId, targetName, hops: [{id, via}], index }.
+  // index = the hop we are currently travelling toward. SystemView's
+  // route-follow effect turns each hop into pendingJump + an autopilot
+  // to the right exit body; enterSystem advances the index.
+  plannedRoute: null,
 
   // Exploration
   discoveredSystems: ['sol'],
@@ -190,6 +195,14 @@ const initialState = {
 
   // Fleet aggregated stats (computed by SystemView, consumed by Outliner)
   fleetStats: null,
+  // Healing hulls (2026-09-19): pooled fleet damage as fractions.
+  // Seeded from GET /fitting/fleet on load, mirrored from SystemView's
+  // refs while playing (for the Repair panel), restored by repair.
+  fleetHullPct: 1,
+  fleetArmorPct: 1,
+  fleetDamageLoaded: false,   // true once the server value has been read this session
+  repairRates: { hull: 2, armor: 3 },
+  fleetHealNonce: 0,          // bump → SystemView refills its hull/armor refs
 
   // Docked body (set by SystemView when player docks, cleared on undock)
   // Shape: { id, name, type, ... } — or null when undocked
@@ -291,7 +304,23 @@ export const useGameStore = create(
       // the player resumes where they left off instead of in Sol.
       hydrateDiscoveredSystems: async () => {
         try {
-          const { visits, last_system_id } = await galaxyAPI.visits();
+          const res = await galaxyAPI.visits();
+          const { visits } = res;
+          let last_system_id = res.last_system_id;
+          // Migration 073 grace: an account from before last_system_id
+          // existed still says 'sol' server-side while this client may
+          // be persisted in a far system. Sync the local system ONCE so
+          // the warp-range check doesn't bounce the next jump. The
+          // server ignores the call for any already-synced account.
+          if (res.last_system_synced === false) {
+            const local = get().currentSystem;
+            if (local && local !== last_system_id) {
+              try {
+                const r = await galaxyAPI.syncPosition(local);
+                if (r?.last_system_id) last_system_id = r.last_system_id;
+              } catch { /* keep the server value */ }
+            }
+          }
           set(state => {
             const merged = new Set(state.discoveredSystems || ['sol']);
             for (const v of visits) merged.add(v);
@@ -389,6 +418,15 @@ export const useGameStore = create(
             state.ships = fleetData.ships || [];
             state.shipsLoaded = true;
             state.activeShipId = fleetData.activeShipId || (fleetData.ships?.[0]?.id) || null;
+            // Persisted pooled damage: only the FIRST read seeds the
+            // live refs (SystemView applies it once); later refetches
+            // must not overwrite the in-session value with a stale one.
+            if (!state.fleetDamageLoaded && fleetData.fleetHullPct != null) {
+              state.fleetHullPct = Math.max(0, Math.min(1, Number(fleetData.fleetHullPct)));
+              state.fleetArmorPct = Math.max(0, Math.min(1, Number(fleetData.fleetArmorPct ?? 1)));
+              state.fleetDamageLoaded = true;
+            }
+            if (fleetData.repairRates) state.repairRates = fleetData.repairRates;
             if (creditsData?.credits != null) {
               state.resources.credits = creditsData.credits;
             }
@@ -650,6 +688,17 @@ export const useGameStore = create(
         state.pendingJump = targetSystemId ? { targetSystemId } : null;
       }),
 
+      // Route planner. hops exclude the origin. Setting a route does NOT
+      // move the ship by itself -- SystemView's route-follow effect
+      // reacts to plannedRoute/currentSystem and drives each hop.
+      setPlannedRoute: (targetId, targetName, hops) => set(state => {
+        state.plannedRoute = hops && hops.length ? { targetId, targetName, hops, index: 0 } : null;
+      }),
+      clearPlannedRoute: () => set(state => {
+        state.plannedRoute = null;
+        state.pendingJump = null;
+      }),
+
       // Galaxy flight actions
       setViewMode: (mode) => set(state => {
         state.viewMode = mode;
@@ -680,19 +729,48 @@ export const useGameStore = create(
         }
       }),
       
-      enterSystem: (systemId, arrivalType = 'warp') => set(state => {
-        state.viewMode = 'system';
-        state.currentSystem = systemId;
-        state.arrivalType = arrivalType; // 'warp' or 'jump_gate'
-        state.galaxyAutopilotTarget = null;
-        state.autopilotTarget = null;
-        state.pendingJump = null;
-        if (!state.discoveredSystems.includes(systemId)) {
-          state.discoveredSystems.push(systemId);
-        }
-        // Every entry: fog-of-war record (idempotent) + last_system_id stamp.
-        galaxyAPI.recordVisit(systemId).catch(() => {});
-      }),
+      enterSystem: (systemId, arrivalType = 'warp') => {
+        const prevSystem = get().currentSystem;
+        const wasDiscovered = (get().discoveredSystems || []).includes(systemId);
+        set(state => {
+          state.viewMode = 'system';
+          state.currentSystem = systemId;
+          state.arrivalType = arrivalType; // 'warp' or 'jump_gate'
+          state.galaxyAutopilotTarget = null;
+          state.autopilotTarget = null;
+          state.pendingJump = null;
+          if (!state.discoveredSystems.includes(systemId)) {
+            state.discoveredSystems.push(systemId);
+          }
+          // Route planner: arriving at the hop we were heading for
+          // advances the route; arriving anywhere else (manual detour)
+          // drops it. The last hop clears it (SystemView toasts).
+          const r = state.plannedRoute;
+          if (r) {
+            if (r.hops[r.index]?.id === systemId) {
+              r.index += 1;
+              if (r.index >= r.hops.length) state.plannedRoute = { ...r, index: r.hops.length, arrived: true };
+            } else if (systemId !== prevSystem) {
+              state.plannedRoute = null;
+            }
+          }
+        });
+        // Every entry: fog-of-war record (idempotent) + last_system_id
+        // stamp. Phase 3b: the server also validates warp range /
+        // tier from the last system. The galaxy views gate travel
+        // BEFORE we get here, so a 403 means a desync (or a modified
+        // client) -- bounce back to the system we came from.
+        galaxyAPI.recordVisit(systemId).catch((err) => {
+          if (err?.message !== 'Out of warp range' || !prevSystem || prevSystem === systemId) return;
+          set(state => {
+            state.currentSystem = prevSystem;
+            state.viewMode = 'system';
+            state.arrivalType = 'warp';
+            if (!wasDiscovered) state.discoveredSystems = state.discoveredSystems.filter(id => id !== systemId);
+          });
+          get().pushToast?.({ kind: 'error', text: 'Warp refused: that system is beyond your drive\'s reach', duration: 4000 });
+        });
+      },
 
       clearAutopilot: () => set(state => {
         state.autopilotTarget = null;
@@ -748,6 +826,19 @@ export const useGameStore = create(
       }),
 
       // Fleet stats: SystemView pushes aggregated stats when fleet changes
+      // Healing hulls: SystemView mirrors its live pooled fractions here
+      // (Repair panel reads them); repair bumps the nonce so SystemView
+      // refills its refs and re-syncs the server.
+      setFleetDamage: (hullPct, armorPct) => set(state => {
+        state.fleetHullPct = Math.max(0, Math.min(1, hullPct));
+        state.fleetArmorPct = Math.max(0, Math.min(1, armorPct));
+      }),
+      applyFleetHeal: () => set(state => {
+        state.fleetHullPct = 1;
+        state.fleetArmorPct = 1;
+        state.fleetHealNonce += 1;
+      }),
+
       setFleetStats: (stats) => set(state => {
         state.fleetStats = stats || null;
       }),

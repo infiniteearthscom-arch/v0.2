@@ -4,6 +4,7 @@
 // (system seeds / danger / region tiers) for pirate-loot manifest validation
 // (src/game/enemyManifest.js reads seeds/danger/tier/bodies from it). ANY edit to the client generator MUST be
 // mirrored here or loot validation silently rejects legitimate claims.
+// Galaxy Generator
 // Deterministic seed-based galaxy generation.
 // Same seed always produces the same galaxy.
 // Each system has its own seed for generating internal content (planets, stations, etc.)
@@ -479,73 +480,102 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
   // Connect nearby systems, targeting ~60% coverage
   const targetGateSystems = Math.floor(systems.length * JUMP_GATE_COVERAGE);
   
-  // Find all potential connections (edges) sorted by distance
+  // Find all potential connections (edges) sorted by distance.
+  // Phase 3b travel gating (2026-09-19): gates only link systems whose
+  // region tiers differ by at most 1, so the gate network steps through
+  // tiers in sequence -- you can't gate-skip core→rim, and frontier
+  // systems become the chokepoints deep space is reached through.
+  // Regions/tiers are assigned in step 1.5 above, before this runs.
   const edges = [];
   for (let i = 0; i < systems.length; i++) {
     for (let j = i + 1; j < systems.length; j++) {
       const d = Math.sqrt((systems[i].x - systems[j].x) ** 2 + (systems[i].y - systems[j].y) ** 2);
-      if (d < JUMP_GATE_MAX_DISTANCE) {
-        edges.push({ i, j, dist: d });
-      }
+      if (d >= JUMP_GATE_MAX_DISTANCE) continue;
+      const ti = systems[i].regionTier ?? 1;
+      const tj = systems[j].regionTier ?? 1;
+      if (Math.abs(ti - tj) > 1) continue;
+      edges.push({ i, j, dist: d });
     }
   }
   edges.sort((a, b) => a.dist - b.dist);
-  
-  // Build a spanning tree first (ensures connectivity for gated systems)
-  // Then add extra connections for redundancy
-  const gateSystemIndices = new Set([0]); // Sol always has a gate
-  const connected = new Set([0]);
+
+  // Phase 3b (2026-09-19) rebuild. The old "Kruskal-ish" loop stopped at
+  // 60% coverage and seeded separate components, so the network was a
+  // pile of islands (from Sol only 4 systems were gate-reachable, and
+  // T4→T5 had zero gates). Gates are now a real backbone:
+  //   1. Kruskal minimum spanning forest over the tier-adjacent candidate
+  //      edges (union-find) -- every system that has ANY neighbour within
+  //      JUMP_GATE_MAX_DISTANCE joins the network.
+  //   2. Frontier guarantee: every adjacent tier pair (t, t+1) gets at
+  //      least MIN_FRONTIER_GATES links, pulling the shortest cross-tier
+  //      candidates (up to 1.5× the normal distance) if the forest
+  //      didn't provide them. These are the chokepoints.
+  //   3. Redundancy: a few extra short links so the map isn't a pure tree.
+  // Systems left with no link have no gate (free warp only).
+  const parent = systems.map((_, i) => i);
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra === rb) return false; parent[ra] = rb; return true; };
   const connectionSet = new Set();
-  
-  // Kruskal-ish: add shortest edges that connect new systems
-  for (const edge of edges) {
-    if (gateSystemIndices.size >= targetGateSystems) break;
-    
-    const aIn = connected.has(edge.i);
-    const bIn = connected.has(edge.j);
-    
-    if (aIn && bIn) {
-      // Both connected — add redundant link with some probability
-      if (rng.chance(0.15)) {
-        const key = `${edge.i}-${edge.j}`;
-        if (!connectionSet.has(key)) {
-          connectionSet.add(key);
-          systems[edge.i].jumpConnections.push(systems[edge.j].id);
-          systems[edge.j].jumpConnections.push(systems[edge.i].id);
-        }
-      }
-      continue;
-    }
-    
-    if (!aIn && !bIn) {
-      // Neither connected — skip unless we're still building
-      if (gateSystemIndices.size < targetGateSystems * 0.5) {
-        connected.add(edge.i);
-        connected.add(edge.j);
-        gateSystemIndices.add(edge.i);
-        gateSystemIndices.add(edge.j);
-        const key = `${edge.i}-${edge.j}`;
-        connectionSet.add(key);
-        systems[edge.i].jumpConnections.push(systems[edge.j].id);
-        systems[edge.j].jumpConnections.push(systems[edge.i].id);
-      }
-      continue;
-    }
-    
-    // One connected, one not — extend the network
-    const newIdx = aIn ? edge.j : edge.i;
-    connected.add(newIdx);
-    gateSystemIndices.add(newIdx);
-    const key = `${edge.i}-${edge.j}`;
+  const link = (i, j) => {
+    const key = i < j ? `${i}-${j}` : `${j}-${i}`;
+    if (connectionSet.has(key)) return false;
     connectionSet.add(key);
-    systems[edge.i].jumpConnections.push(systems[edge.j].id);
-    systems[edge.j].jumpConnections.push(systems[edge.i].id);
+    systems[i].jumpConnections.push(systems[j].id);
+    systems[j].jumpConnections.push(systems[i].id);
+    return true;
+  };
+
+  // 1. Spanning TREE over every tier-adjacent pair (any distance --
+  //    gates are instant jumps, so a long link costs nothing; what
+  //    matters is that the whole galaxy is one gate network stepping
+  //    through tiers). Shortest-first Kruskal keeps most links local.
+  const allEdges = [];
+  for (let i = 0; i < systems.length; i++) {
+    for (let j = i + 1; j < systems.length; j++) {
+      const ti = systems[i].regionTier ?? 1, tj = systems[j].regionTier ?? 1;
+      if (Math.abs(ti - tj) > 1) continue;
+      allEdges.push({ i, j, dist: Math.sqrt((systems[i].x - systems[j].x) ** 2 + (systems[i].y - systems[j].y) ** 2) });
+    }
   }
-  
-  // Mark systems with gates
-  for (const idx of gateSystemIndices) {
-    systems[idx].hasJumpGate = true;
+  allEdges.sort((a, b) => a.dist - b.dist);
+  for (const edge of allEdges) {
+    if (union(edge.i, edge.j)) link(edge.i, edge.j);
   }
+
+  // 2. Frontier guarantee between adjacent tiers.
+  const MIN_FRONTIER_GATES = 3;
+  const crossCount = {};
+  for (const key of connectionSet) {
+    const [i, j] = key.split('-').map(Number);
+    const ti = systems[i].regionTier ?? 1, tj = systems[j].regionTier ?? 1;
+    if (ti !== tj) { const k = Math.min(ti, tj); crossCount[k] = (crossCount[k] || 0) + 1; }
+  }
+  const frontierCandidates = [];
+  for (let i = 0; i < systems.length; i++) {
+    for (let j = i + 1; j < systems.length; j++) {
+      const ti = systems[i].regionTier ?? 1, tj = systems[j].regionTier ?? 1;
+      if (Math.abs(ti - tj) !== 1) continue;
+      const d = Math.sqrt((systems[i].x - systems[j].x) ** 2 + (systems[i].y - systems[j].y) ** 2);
+      if (d < JUMP_GATE_MAX_DISTANCE * 1.5) frontierCandidates.push({ i, j, dist: d, lo: Math.min(ti, tj) });
+    }
+  }
+  frontierCandidates.sort((a, b) => a.dist - b.dist);
+  for (const c of frontierCandidates) {
+    if ((crossCount[c.lo] || 0) >= MIN_FRONTIER_GATES) continue;
+    if (link(c.i, c.j)) { union(c.i, c.j); crossCount[c.lo] = (crossCount[c.lo] || 0) + 1; }
+  }
+
+  // 3. Redundancy links (same-or-adjacent tier, short, deterministic).
+  for (const edge of edges) {
+    if (rng.chance(0.15)) link(edge.i, edge.j);
+  }
+
+  // Mark systems with gates. Sol always has one (index 0).
+  systems[0].hasJumpGate = true;
+  for (const sys of systems) {
+    if (sys.jumpConnections.length > 0) sys.hasJumpGate = true;
+  }
+  void targetGateSystems; // coverage target retired with the rebuild; kept for the constant's readers
   
   // ---- Step 3: Build lookup + decorate with hasStation ----
   // hasStation is precomputed once so the galaxy map can show a
@@ -566,8 +596,8 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     regions,
     stats: {
       totalSystems: systems.length,
-      gatedSystems: gateSystemIndices.size,
-      gatePercent: Math.round((gateSystemIndices.size / systems.length) * 100),
+      gatedSystems: systems.filter(s => s.hasJumpGate).length,
+      gatePercent: Math.round((systems.filter(s => s.hasJumpGate).length / systems.length) * 100),
       connections: connectionSet.size,
       regionCount: regions.length,
     },
