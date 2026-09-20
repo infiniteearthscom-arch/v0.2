@@ -58,6 +58,8 @@ const WIRED_BONUS_TYPES = new Set([
   // Cargo (applied server-side in getPlayerCargoInfo)
   'cargo_capacity_pct',         // Industry / Cargo Handling
   'cargo_volume_pct',           // Logistics / Cargo Compression
+  'remote_rep_pct',             // Logistics / Fleet Support -> Repair Nanite Hive rate (2026-09-20)
+  'max_planets_flat',           // Planetary / Command Center Upgrades -> +1 harvester slot per planet (2026-09-20)
   // Sensors + scanning
   'sensor_range_pct',           // SystemView fleetSensorRange()
   'scan_time_pct',              // shipStats.js getFleetScanTimeMs()
@@ -104,6 +106,7 @@ const SkillsTab = () => {
   const maxQueue = useGameStore(s => s.skillMaxQueue);
   const addSkill = useGameStore(s => s.addSkillToQueue);
   const removeSkill = useGameStore(s => s.removeSkillFromQueue);
+  const reorderQueue = useGameStore(s => s.reorderSkillQueue);
 
   const categories = useMemo(() => {
     const seen = new Map();
@@ -457,12 +460,26 @@ const SkillsTab = () => {
       </div>
 
       {/* Queue strip */}
-      <SkillQueueStrip queue={queue} skills={skills} spPerMin={spPerMin} onRemove={removeSkill} />
+      <SkillQueueStrip queue={queue} skills={skills} spPerMin={spPerMin} onRemove={removeSkill} onReorder={reorderQueue} />
     </div>
   );
 };
 
-const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove }) => {
+const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove, onReorder }) => {
+  // Drag-and-drop reorder (2026-09-20). Native HTML5 DnD: drag a row,
+  // drop it on another row to take that row's place. Position 0 always
+  // trains, so dropping something above the head makes it the new head
+  // (the server banks the displaced head's progress).
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
+  const commitDrop = (fromIdx, toIdx) => {
+    setDragIdx(null); setOverIdx(null);
+    if (fromIdx == null || toIdx == null || fromIdx === toIdx || !onReorder) return;
+    const order = queue.map(q => q.position);
+    const [moved] = order.splice(fromIdx, 1);
+    order.splice(toIdx, 0, moved);
+    onReorder(order);
+  };
   useSecondTick();
   const skillById = Object.fromEntries(skills.map(s => [s.id, s]));
   const now = Date.now();
@@ -498,18 +515,30 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove }) => {
             const skill = skillById[q.skill_id];
             const remaining = new Date(q.finishes_at).getTime() - now;
             const isHead = i === 0;
+            const isDragging = dragIdx === i;
+            const isOver = overIdx === i && dragIdx !== null && dragIdx !== i;
             return (
               <div
                 key={`${q.position}-${q.skill_id}`}
+                draggable={!!onReorder}
+                onDragStart={(e) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(i)); } catch {} }}
+                onDragOver={(e) => { e.preventDefault(); if (overIdx !== i) setOverIdx(i); }}
+                onDragLeave={() => { if (overIdx === i) setOverIdx(null); }}
+                onDrop={(e) => { e.preventDefault(); commitDrop(dragIdx, i); }}
+                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                title={onReorder ? 'Drag to reorder — the top entry is the one training' : undefined}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '4px 8px',
-                  background: isHead ? `${GREEN.pri}10` : 'rgba(10,16,28,0.4)',
-                  border: `1px solid ${isHead ? `${GREEN.pri}40` : EDGE}`,
+                  background: isOver ? `${BLUE.pri}22` : isHead ? `${GREEN.pri}10` : 'rgba(10,16,28,0.4)',
+                  border: `1px solid ${isOver ? BLUE.pri : isHead ? `${GREEN.pri}40` : EDGE}`,
                   borderLeft: `3px solid ${isHead ? GREEN.pri : EDGE}`,
                   borderRadius: 2,
+                  opacity: isDragging ? 0.4 : 1,
+                  cursor: onReorder ? 'grab' : 'default',
                 }}
               >
+                {onReorder && <span style={{ color: '#3a4a5a', fontSize: '0.8rem', userSelect: 'none' }}>⋮⋮</span>}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '0.8rem', fontFamily: F, color: '#e2e8f0', fontWeight: 600 }}>
                     {skill?.name || q.skill_id} <span style={{ color: BLUE.light, marginLeft: 4 }}>{ROMAN[q.target_level]}</span>

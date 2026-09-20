@@ -9,6 +9,24 @@ import { ensureDepositsExist } from '../game/deposits.js';
 
 const router = express.Router();
 
+// Per-player harvester cap per planet (2026-09-20). Slots are shared
+// planet-wide (first come), so cap what one pilot can hold on a single
+// world: base + Command Center Upgrades level (pln_cc_upgrades -- the
+// catalog's "+1 planet per level" contract, applied here as +1 slot per
+// planet per level until colonies exist), never above the planet's slots.
+const HARVESTER_CAP_BASE = 2;
+async function getPlayerSlotCap(db, userId, bodyId, planetSlots) {
+  const skill = await db.query(
+    `SELECT level FROM player_skills WHERE user_id = $1 AND skill_id = 'pln_cc_upgrades'`, [userId]
+  );
+  const cnt = await db.query(
+    `SELECT COUNT(*)::int AS n FROM deployed_harvesters WHERE celestial_body_id = $1 AND user_id = $2`,
+    [bodyId, userId]
+  );
+  const cap = Math.max(1, Math.min(planetSlots || 0, HARVESTER_CAP_BASE + (skill.rows[0]?.level || 0)));
+  return { cap, count: cnt.rows[0]?.n || 0 };
+}
+
 // ============================================
 // HELPER: Resolve body ID (string name or UUID)
 // ============================================
@@ -231,9 +249,12 @@ router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
        ORDER BY dh.slot_index ASC
     `, [bodyId, userId]);
 
+    const { cap: mySlotCap, count: mySlotCount } = await getPlayerSlotCap({ query }, userId, bodyId, body.harvester_slots || 0);
     res.json({
       planet_name: body.name,
       harvester_slots: body.harvester_slots || 0,
+      my_slot_cap: mySlotCap,
+      my_slot_count: mySlotCount,
       harvesters: updatedHarvesters,
       other_harvesters: others,
       available_deposits: deposits,
@@ -280,6 +301,18 @@ router.post('/deploy', authMiddleware, async (req, res) => {
       );
       if (existingResult.rows[0]) {
         throw Object.assign(new Error('Slot already occupied'), { statusCode: 400 });
+      }
+
+      // Per-player cap per planet (2026-09-20): slots are shared
+      // planet-wide, so one pilot could fill every slot on a good
+      // world. Cap = HARVESTER_CAP_BASE + Command Center Upgrades level,
+      // never more than the planet has.
+      const { cap: myCap, count: myCount } = await getPlayerSlotCap(client, userId, body_id, body.harvester_slots || 0);
+      if (myCount >= myCap) {
+        throw Object.assign(
+          new Error(`You already run ${myCount} harvester${myCount === 1 ? '' : 's'} here (your cap on this planet is ${myCap}). Train Command Center Upgrades for more.`),
+          { statusCode: 400 }
+        );
       }
       
       // Get the harvester from cargo

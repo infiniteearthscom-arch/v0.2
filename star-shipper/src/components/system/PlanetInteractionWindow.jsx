@@ -1717,8 +1717,14 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
   // Null when all slots are occupied -- panel still renders tiles but
   // disables click + glow.
   let firstEmptySlot = null;
-  for (let i = 0; i < totalSlots; i++) {
-    if (!harvesterMap[i] && !otherMap[i]) { firstEmptySlot = i; break; }
+  // Per-player cap on this planet (server-computed): at cap, no slot
+  // counts as "empty" for this pilot even if the planet has free ones.
+  const mySlotCap = data.my_slot_cap ?? totalSlots;
+  const atMyCap = harvesters.length >= mySlotCap;
+  if (!atMyCap) {
+    for (let i = 0; i < totalSlots; i++) {
+      if (!harvesterMap[i] && !otherMap[i]) { firstEmptySlot = i; break; }
+    }
   }
 
   return (
@@ -1753,7 +1759,7 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
               fontFamily: FM,
               letterSpacing: 0.5,
               textTransform: 'uppercase',
-            }}>{totalSlots} harvester slots available</div>
+            }}>{totalSlots} harvester slots · your cap here {mySlotCap}{atMyCap ? ' (reached)' : ''}</div>
           </div>
           <div style={{
             fontSize: '0.8rem',

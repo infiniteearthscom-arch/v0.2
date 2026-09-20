@@ -135,6 +135,10 @@ async function main() {
   );
   report('every planet row has harvester slots (072)', zeroPlanets.rows[0].n === 0, `${zeroPlanets.rows[0].n} planets with 0 slots`);
 
+  // --- migration 075 (Repair Nanite Hive) ---
+  const nanites = await pool.query(`SELECT buy_price, stats->>'hull_repair_per_sec' AS r FROM module_types WHERE id = 'utility_repair_nanites'`);
+  report('utility_repair_nanites module exists (075)', !!nanites.rows[0] && nanites.rows[0].r != null, nanites.rows[0] ? `buy_price=${nanites.rows[0].buy_price}` : 'missing');
+
   // --- migration 074 (persisted fleet damage) ---
   report('users.fleet_hull_pct exists (074)', await columnExists('users', 'fleet_hull_pct'));
   report('users.fleet_armor_pct exists (074)', await columnExists('users', 'fleet_armor_pct'));

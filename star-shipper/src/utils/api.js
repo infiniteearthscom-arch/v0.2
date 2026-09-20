@@ -478,6 +478,11 @@ export const skillsAPI = {
     method: 'POST',
     body: JSON.stringify({ position }),
   }),
+  // order: every current position exactly once, in the new order.
+  queueReorder: (order) => request('/skills/queue/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ order }),
+  }),
 };
 
 // Research API -- Civ-style tech tree. RP trickles passively

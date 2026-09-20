@@ -4,6 +4,7 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
+import { qualityMultiplier } from '@/utils/quality';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
@@ -1772,6 +1773,31 @@ export const SystemView = () => {
   // tractor beam, ...) should all go through fleetHas() out of the gate.
   // Reads the live fleetShipsRef so it doesn't get stale across renders.
   const fleetHas = (predicate) => (fleetShipsRef.current || []).some(predicate);
+
+  // Field repair (Repair Nanite Hive, migration 075): out-of-combat
+  // hull/armor regen. Rates sum across every fitted hive fleet-wide
+  // (pitfall #15) × quality × Fleet Support skill; active only after
+  // `repair_delay` seconds without taking a hit. gameTimeRef-based so
+  // it pauses with the sim. `repairingRef` feeds the HUD readout label.
+  const lastPlayerHitTimeRef = useRef(-1e9);
+  const repairingRef = useRef(false);
+  const getFleetRepairRates = () => {
+    let hull = 0, armor = 0, delay = 8;
+    for (const ship of (fleetShipsRef.current || [])) {
+      const fitted = ship?.fitted_modules || {};
+      for (const fv of Object.values(fitted)) {
+        const st = fv?.stats;
+        if (!st || st.hull_repair_per_sec == null) continue;
+        const q = qualityMultiplier(fv);
+        hull += (st.hull_repair_per_sec || 0) * q;
+        armor += (st.armor_repair_per_sec || 0) * q;
+        if (st.repair_delay) delay = Math.max(delay, st.repair_delay);
+      }
+    }
+    const pct = Number(useGameStore.getState().activeBonuses?.remote_rep_pct) || 0;
+    const mult = 1 + pct / 100;
+    return { hull: hull * mult, armor: armor * mult, delay };
+  };
   const formatContents = (contents) => {
     if (!contents) return 'unknown';
     const parts = Object.values(contents)
@@ -3487,6 +3513,7 @@ export const SystemView = () => {
             playerArmorRef.current  = playerPool.armor;
             playerHullRef.current   = playerPool.hull;
             if (hitRes.shieldDamaged) playerShieldRegenTimerRef.current = SHIELD_REGEN_DELAY;
+            lastPlayerHitTimeRef.current = gameTimeRef.current; // field repair waits out the delay from here
             effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: playerShieldRef.current > 0 ? '#4488ff' : '#ff4444' });
             projectiles.splice(i, 1);
 
@@ -3541,6 +3568,29 @@ export const SystemView = () => {
       playerShieldRegenTimerRef.current -= delta;
       if (playerShieldRegenTimerRef.current <= 0 && playerShieldRef.current < playerMaxShieldRef.current) {
         playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current + SHIELD_REGEN_RATE * delta);
+      }
+
+      // --- Field repair (Repair Nanite Hive) ---
+      // Out of combat only: no hit for the hive's delay. Not while
+      // podded (no hull to knit). Hull first, then armor.
+      {
+        const needsHull = playerHullRef.current < playerMaxHullRef.current;
+        const needsArmor = playerArmorRef.current < playerMaxArmorRef.current;
+        let repairing = false;
+        if ((needsHull || needsArmor) && !isPodRef.current) {
+          const rates = getFleetRepairRates();
+          if ((rates.hull > 0 || rates.armor > 0) && gameTimeRef.current - lastPlayerHitTimeRef.current >= rates.delay) {
+            if (needsHull && rates.hull > 0) {
+              playerHullRef.current = Math.min(playerMaxHullRef.current, playerHullRef.current + rates.hull * delta);
+              repairing = true;
+            }
+            if (needsArmor && rates.armor > 0) {
+              playerArmorRef.current = Math.min(playerMaxArmorRef.current, playerArmorRef.current + rates.armor * delta);
+              repairing = true;
+            }
+          }
+        }
+        repairingRef.current = repairing;
       }
       
       // --- Update effects ---
@@ -5146,7 +5196,7 @@ export const SystemView = () => {
             const rows = [
               { label: 'SHLD', icon: '◆', cur: shield, max: maxShield, color: '#818cf8', track: '#222244' },
               { label: 'ARMR', icon: '▰', cur: armor, max: maxArmor, color: '#d8a24a', track: '#332b1a' },
-              { label: 'HULL', icon: '■', cur: hull, max: maxHull, color: hullColor, track: '#332222' },
+              { label: repairingRef.current ? 'HULL⚕' : 'HULL', icon: '■', cur: hull, max: maxHull, color: hullColor, track: '#332222' },
             ];
             return (
               <div

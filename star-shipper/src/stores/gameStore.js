@@ -511,6 +511,21 @@ export const useGameStore = create(
         }
       },
 
+      // Drag-and-drop reorder: `order` = current positions in the new
+      // order. Server banks a displaced head's SP and re-chains.
+      reorderSkillQueue: async (order) => {
+        try {
+          const { skillsAPI } = await import('@/utils/api');
+          const r = await skillsAPI.queueReorder(order);
+          await get().fetchSkillsAndResearch();
+          if (r?.head_changed) get().pushToast({ kind: 'info', text: 'Queue reordered — previous training progress banked', duration: 3000 });
+        } catch (error) {
+          const msg = error?.message || 'Failed to reorder queue';
+          get().pushToast({ kind: 'error', text: msg, duration: 4000 });
+          await get().fetchSkillsAndResearch(); // snap the strip back to the server's order
+        }
+      },
+
       unlockTech: async (techId) => {
         try {
           const { researchAPI } = await import('@/utils/api');

@@ -508,4 +508,95 @@ router.post('/queue/remove', authMiddleware, async (req, res) => {
   }
 });
 
+// ============================================
+// POST /api/skills/queue/reorder
+// body: { order: [position, position, ...] }  -- every current position
+//        exactly once, in the desired new order
+// ============================================
+// Drag-and-drop reorder (2026-09-20). Rules:
+//   * position 0 of the new order is what trains; if the old head moves
+//     down, its live SP is BANKED (same as removing it) and the new head
+//     starts now (from its own banked SP, if any).
+//   * per-skill level order must stay ascending (L2 before L3).
+//   * everything re-chains from the new head; entries keep their banked
+//     offsets via scheduleEntry.
+router.post('/queue/reorder', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { order } = req.body;
+    if (!Array.isArray(order)) return res.status(400).json({ error: 'order (array of positions) required' });
+
+    const out = await transaction(async (client) => {
+      const { defs, skillsById, queue, liveHeadSp } = await loadAndCommit(client, userId);
+      const n = queue.length;
+      const want = order.map(Number);
+      const valid = want.length === n && new Set(want).size === n && want.every(p => Number.isInteger(p) && p >= 0 && p < n);
+      if (!valid) throw Object.assign(new Error('order must list every queue position exactly once'), { statusCode: 400 });
+      const defById = Object.fromEntries(defs.map(d => [d.id, d]));
+      const byPos = new Map(queue.map(q => [q.position, q]));
+      const reordered = want.map(p => byPos.get(p));
+
+      // Per-skill level order must stay ascending.
+      const seenLevel = new Map();
+      for (const q of reordered) {
+        const prev = seenLevel.get(q.skill_id);
+        if (prev != null && q.target_level < prev) {
+          throw Object.assign(new Error(`${defById[q.skill_id]?.name || q.skill_id} level ${q.target_level} can't train before level ${prev}`), { statusCode: 400 });
+        }
+        seenLevel.set(q.skill_id, q.target_level);
+      }
+
+      const oldHead = queue[0];
+      const newHead = reordered[0];
+      const headChanged = !!oldHead && (oldHead.skill_id !== newHead.skill_id || oldHead.target_level !== newHead.target_level);
+
+      // Bank the displaced head's live SP.
+      if (headChanged && liveHeadSp != null) {
+        const existing = skillsById.get(oldHead.skill_id);
+        if (existing) {
+          await client.query(
+            `UPDATE player_skills SET sp = GREATEST(sp, $1) WHERE user_id = $2 AND skill_id = $3`,
+            [liveHeadSp, userId, oldHead.skill_id]
+          );
+          existing.sp = Math.max(existing.sp || 0, liveHeadSp);
+        } else {
+          await client.query(
+            `INSERT INTO player_skills (user_id, skill_id, sp, level) VALUES ($1, $2, $3, 0)`,
+            [userId, oldHead.skill_id, liveHeadSp]
+          );
+          skillsById.set(oldHead.skill_id, { skill_id: oldHead.skill_id, sp: liveHeadSp, level: 0 });
+        }
+      }
+
+      // Rewrite the queue. The head keeps its exact row if it didn't
+      // change; everything else re-chains.
+      await client.query(`DELETE FROM player_skill_queue WHERE user_id = $1`, [userId]);
+      let prevFinishes = null;
+      for (let i = 0; i < reordered.length; i++) {
+        const q = reordered[i];
+        let startsAt, finishesAt;
+        if (i === 0 && !headChanged) {
+          startsAt = new Date(q.started_at);
+          finishesAt = new Date(q.finishes_at);
+        } else {
+          ({ startsAt, finishesAt } = scheduleEntry(prevFinishes, defById[q.skill_id], q.target_level, skillsById.get(q.skill_id)));
+        }
+        await client.query(
+          `INSERT INTO player_skill_queue (user_id, position, skill_id, target_level, started_at, finishes_at)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [userId, i, q.skill_id, q.target_level, startsAt, finishesAt]
+        );
+        prevFinishes = finishesAt;
+      }
+      return { head_changed: headChanged, banked_sp: headChanged ? liveHeadSp : null };
+    });
+
+    res.json({ success: true, ...out });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error reordering skill queue:', error);
+    res.status(500).json({ error: 'Failed to reorder queue' });
+  }
+});
+
 export default router;
