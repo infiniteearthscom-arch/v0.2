@@ -1898,8 +1898,8 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
       body = await queryOne(`
         INSERT INTO celestial_bodies (
           system_id, name, body_type, planet_type, size,
-          orbit_radius, orbit_speed, star_type, deposit_slots, has_city
-        ) VALUES ($1, $2, $3, $4, $5, $6, 1.0, $7, $8, $9)
+          orbit_radius, orbit_speed, star_type, deposit_slots, harvester_slots, has_city
+        ) VALUES ($1, $2, $3, $4, $5, $6, 1.0, $7, $8, $8, $9)
         RETURNING id, has_city
       `, [
         system.id,
@@ -1909,6 +1909,10 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
         size || 20,
         orbit_radius || 1000,
         star_type || null,
+        // deposit_slots AND harvester_slots (one harvester per deposit).
+        // harvester_slots was never set here before 2026-09-19, so every
+        // procedural planet had NULL → 0 slots → "can't deploy anywhere
+        // outside Sol" (player report). Migration 072 backfills old rows.
         body_type === 'station' || body_type === 'jump_gate' ? 0 : (size > 50 ? 6 : size > 25 ? 4 : 3),
         hasCity,
       ]);

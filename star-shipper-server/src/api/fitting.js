@@ -7,6 +7,7 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
+import { moduleGateFor, hullGateFor, assertGate, getFleetCap, MAX_FLEET_CAP } from '../game/fitGates.js';
 
 const router = express.Router();
 
@@ -214,10 +215,15 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
         [userId]
       );
       const activeCount = activeCountRow.rows[0]?.c || 0;
-      const willStore = activeCount >= FLEET_CAP;
+      // Phase 3: hull class gate (Spaceship Command skills) + skill-driven
+      // fleet cap (2 + Fleet Command level, max 5). Hulls already owned
+      // are grandfathered -- only purchase is checked.
+      await assertGate(client, userId, hullGateFor(hull_type_id), hullType.name);
+      const fleetCap = await getFleetCap(client, userId);
+      const willStore = activeCount >= fleetCap;
       if (willStore && !dock_body_id) {
         throw Object.assign(
-          new Error(`Fleet full (${activeCount}/${FLEET_CAP}). Dock at a station to receive new ships.`),
+          new Error(`Fleet full (${activeCount}/${fleetCap}). Dock at a station to receive new ships${fleetCap < MAX_FLEET_CAP ? ', or train Fleet Command for a bigger fleet' : ''}.`),
           { statusCode: 400 }
         );
       }
@@ -326,6 +332,11 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
       if (mod.slot_type !== slot.type) {
         throw Object.assign(new Error(`Module type "${mod.slot_type}" doesn't fit "${slot.type}" slot`), { statusCode: 400 });
       }
+
+      // Phase 3 capability gate: T2+ weapons / defenses need the family's
+      // operation skill at (tier - 1). Only checked here, so already-
+      // fitted modules stay grandfathered.
+      await assertGate(client, userId, moduleGateFor(mod), mod.name);
 
       // Remove from cargo
       if (cargoItem.quantity <= 1) {
@@ -827,7 +838,8 @@ router.get('/fleet', authMiddleware, async (req, res) => {
 
     const activeShipId = ships.find(s => s.is_active)?.id || null;
     const activeFleetCount = ships.filter(s => s.storage_body_id == null).length;
-    res.json({ ships, activeShipId, activeFleetCount, fleetCap: FLEET_CAP });
+    const fleetCap = await getFleetCap({ query }, userId);
+    res.json({ ships, activeShipId, activeFleetCount, fleetCap, fleetCapMax: MAX_FLEET_CAP });
   } catch (error) {
     console.error('Error fetching fleet:', error);
     res.status(500).json({ error: 'Failed to fetch fleet' });
@@ -836,7 +848,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
 
 // Server-side fleet cap (matches client MAX_FLEET_SIZE). Beyond this,
 // purchased ships must be stored at a station and activation is gated.
-const FLEET_CAP = 5;
+// (FLEET_CAP removed 2026-09-18 -- cap is now 2 + Fleet Command level, see src/game/fitGates.js)
 
 // Resolve a celestial body identifier to its DB UUID. Mirrors the
 // resolveBodyId helper in api/resources.js -- accepts a UUID, an
@@ -974,9 +986,10 @@ router.post('/activate-ship', authMiddleware, async (req, res) => {
         [userId]
       );
       const activeCount = countRow.rows[0]?.c || 0;
-      if (activeCount >= FLEET_CAP) {
+      const fleetCap = await getFleetCap(client, userId);
+      if (activeCount >= fleetCap) {
         throw Object.assign(
-          new Error(`Fleet full (${activeCount}/${FLEET_CAP}). Store another ship first.`),
+          new Error(`Fleet full (${activeCount}/${fleetCap}). Store another ship first${fleetCap < MAX_FLEET_CAP ? ', or train Fleet Command for a bigger fleet' : ''}.`),
           { statusCode: 400 }
         );
       }

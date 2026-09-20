@@ -28,6 +28,7 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryAll, transaction } from '../db/index.js';
+import { GATE_CONFIG } from '../game/fitGates.js';
 
 const router = express.Router();
 
@@ -313,6 +314,10 @@ router.get('/', authMiddleware, async (req, res) => {
         // `skills` here is the response ARRAY (defs decorated above).
         // The per-player Map lives in `skillsById` from loadAndCommit.
         max_queue: BASE_QUEUE + (skillsById.get(TRAINING_DISCIPLINE_ID)?.level || 0),
+        // Phase 3 capability gates (module tiers / hull classes / fleet
+        // size) so the Ship Builder shows the same locks the server
+        // enforces. Single source: src/game/fitGates.js.
+        fit_gates: GATE_CONFIG,
         now: new Date().toISOString(),
       };
     });

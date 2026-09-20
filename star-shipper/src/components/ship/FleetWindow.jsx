@@ -389,6 +389,18 @@ export const FleetWindow = () => {
           </div>
         )}
 
+        {fleetCap < MAX_FLEET_SIZE && (
+          <div style={{
+            fontSize: '0.8rem',
+            color: COLORS.GOLD.light,
+            fontFamily: FONT.ui,
+            lineHeight: 1.4,
+            padding: '2px 10px',
+          }}>
+            Fleet cap {fleetCap}/{MAX_FLEET_SIZE} — train <b>Fleet Command</b> (Spaceship Command) for +1 ship per level.
+          </div>
+        )}
+
         {/* Fleet combat stats — pooled defense layers (same colors as
             the bottom-center combat readout) + DPS by damage type +
             mass-adjusted mobility. */}

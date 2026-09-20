@@ -125,6 +125,28 @@ async function main() {
   // --- migration 070 (last system) ---
   report('users.last_system_id exists (070)', await columnExists('users', 'last_system_id'));
 
+  // --- migration 072 (harvester slots on procedural planets) ---
+  const nullSlots = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM celestial_bodies WHERE harvester_slots IS NULL`
+  );
+  report('no celestial_bodies with NULL harvester_slots (072)', nullSlots.rows[0].n === 0, `${nullSlots.rows[0].n} NULL`);
+  const zeroPlanets = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM celestial_bodies WHERE body_type = 'planet' AND COALESCE(harvester_slots, 0) = 0`
+  );
+  report('every planet row has harvester slots (072)', zeroPlanets.rows[0].n === 0, `${zeroPlanets.rows[0].n} planets with 0 slots`);
+
+  // --- migration 071 (Fleet Command grandfather) ---
+  const overCap = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM (
+       SELECT s.user_id, COUNT(*) AS active, COALESCE(MAX(ps.level), 0) AS lvl
+         FROM ships s
+         LEFT JOIN player_skills ps ON ps.user_id = s.user_id AND ps.skill_id = 'cmd_fleet_command'
+        WHERE s.storage_body_id IS NULL AND s.hull_type_id <> 'pod'
+        GROUP BY s.user_id
+     ) t WHERE t.active > LEAST(5, 2 + t.lvl)`
+  );
+  report('no player over their Fleet Command cap (071)', overCap.rows[0].n === 0, `${overCap.rows[0].n} over cap`);
+
   // --- the old wrecks 42P01 mystery (migrations 021/022) ---
   report('wrecks table exists (021 — known 42P01 mystery)', await tableExists('wrecks'));
 

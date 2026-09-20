@@ -8,6 +8,7 @@ import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 import { normalizeItem, normalizeFittedModule, SLOT_TYPE_META } from '@/utils/itemShape';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { detectWeaponType } from '@/utils/weapons';
+import { moduleGateForItem, hullGateFor, gateStatus } from '@/utils/fitGates';
 import { describeWeaponEffectiveness } from '@/utils/combat';
 // Single source of truth for hull shape data (pitfall #11 in CLAUDE.md).
 // ShipBuilderWindow used to inline its own HULL_SHAPES const which
@@ -380,6 +381,8 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
 // ============================================
 const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
   const [showBuy, setShowBuy] = useState(false);
+  const fitGates = useGameStore(state => state.fitGates);
+  const skills = useGameStore(state => state.skills);
 
   return (
     <div className="space-y-2">
@@ -408,17 +411,30 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
 
       {showBuy && (
         <div className="space-y-1 mt-1">
-          {hulls.map(h => (
-            <button key={h.id} onClick={() => { onBuyHull(h.id); setShowBuy(false); }}
-              className="w-full text-left p-2 rounded bg-slate-800/40 border border-slate-700/30 hover:border-green-600/40 text-xs"
-            >
-              <div className="flex justify-between items-center">
-                <span className="text-slate-200">{h.name}</span>
-                <span className="text-yellow-400">{h.price > 0 ? `${h.price.toLocaleString()} cr` : 'Free'}</span>
-              </div>
-              <div className="text-[0.8rem] text-slate-500">{h.class} • {(h.slots || []).length} slots</div>
-            </button>
-          ))}
+          {hulls.map(h => {
+            // Phase 3: hull class gate (Spaceship Command skills). Locked
+            // rows stay visible so the requirement is discoverable.
+            const gs = gateStatus(hullGateFor(h.id, fitGates), skills);
+            return (
+              <button key={h.id}
+                onClick={() => { if (!gs.ok) return; onBuyHull(h.id); setShowBuy(false); }}
+                disabled={!gs.ok}
+                title={gs.ok ? undefined : `Requires ${gs.text} (you have ${gs.have ? gs.have : 'none'})`}
+                className={`w-full text-left p-2 rounded bg-slate-800/40 border text-xs ${gs.ok
+                  ? 'border-slate-700/30 hover:border-green-600/40'
+                  : 'border-yellow-700/40 opacity-70 cursor-not-allowed'}`}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-200">{h.name}</span>
+                  <span className="text-yellow-400">{h.price > 0 ? `${h.price.toLocaleString()} cr` : 'Free'}</span>
+                </div>
+                <div className="text-[0.8rem] text-slate-500">{h.class} • {(h.slots || []).length} slots</div>
+                {!gs.ok && (
+                  <div className="text-[0.8rem] text-yellow-400">🔒 Requires {gs.text}</div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -642,6 +658,11 @@ const ModuleShop = ({ moduleTypes, onBuy }) => {
 const FITTABLE_ICON_SIZE = 40;
 
 const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
+  // Phase 3 capability gates: locked tiles get a 🔒 badge + tooltip
+  // with the skill requirement. They stay draggable (the drop handler
+  // + server both reject with the same message).
+  const fitGates = useGameStore(state => state.fitGates);
+  const skills = useGameStore(state => state.skills);
   // Pull module-type items out of the mixed inventory payload.
   //   { inventory: [...], items: [ { id, item_id, item_name, item_data, quantity, ... } ] }
   // Modules live under `items` where item_data.slot_type is set.
@@ -702,14 +723,27 @@ const FittableModulesPanel = ({ inventory, loading, onRefresh }) => {
 
               {/* Grid of 40x40 module icons — each a shared ItemCell */}
               <div className="flex flex-wrap gap-1 px-1">
-                {items.map((item) => (
-                  <ItemCell
-                    key={item.id}
-                    item={normalizeItem(item)}
-                    size={FITTABLE_ICON_SIZE}
-                    draggable
-                  />
-                ))}
+                {items.map((item) => {
+                  const gs = gateStatus(moduleGateForItem(item, fitGates), skills);
+                  return (
+                    <div key={item.id} style={{ position: 'relative' }}
+                      title={gs.ok ? undefined : `Requires ${gs.text} (you have ${gs.have ? gs.have : 'none'})`}>
+                      <ItemCell
+                        item={normalizeItem(item)}
+                        size={FITTABLE_ICON_SIZE}
+                        draggable
+                      />
+                      {!gs.ok && (
+                        <div style={{
+                          position: 'absolute', top: -3, right: -3,
+                          fontSize: '0.7rem', lineHeight: 1,
+                          background: 'rgba(8,10,16,0.9)', border: '1px solid rgba(251,191,36,0.6)',
+                          borderRadius: 3, padding: '1px 2px', pointerEvents: 'none',
+                        }}>🔒</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -741,6 +775,8 @@ export const ShipBuilderWindow = () => {
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
   const pushToast = useGameStore(state => state.pushToast);
+  const fitGates = useGameStore(state => state.fitGates);
+  const skills = useGameStore(state => state.skills);
   const [tab, setTab] = useState('fit'); // fitting only now
 
   // Fittable modules panel state — cargo inventory filtered to module-type items.
@@ -853,6 +889,17 @@ export const ShipBuilderWindow = () => {
 
   const handleSlotDrop = async (slot, dragData) => {
     if (!selectedShipId || !dragData?.stack_id) return;
+
+    // Phase 3 capability gate -- pre-check so the player gets the
+    // requirement instead of a server 403. Server still enforces.
+    const cargoRow = (inventory?.items || []).find(it => it.id === dragData.stack_id);
+    if (cargoRow) {
+      const gs = gateStatus(moduleGateForItem(cargoRow, fitGates), skills);
+      if (!gs.ok) {
+        flash('error', `${cargoRow.item_name || 'This module'} requires ${gs.text} (you have ${gs.have ? gs.have : 'none'}) — train it in Skills & Research`);
+        return;
+      }
+    }
 
     // Check if module type matches slot
     const cargoItemId = dragData.stack_id;

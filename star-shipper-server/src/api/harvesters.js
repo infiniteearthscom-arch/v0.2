@@ -5,6 +5,7 @@ import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { getPlayerCargoInfo } from './resources.js';
+import { ensureDepositsExist } from '../game/deposits.js';
 
 const router = express.Router();
 
@@ -136,7 +137,14 @@ router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
     if (!body) {
       return res.status(404).json({ error: 'Planet not found' });
     }
-    
+
+    // Procedural planets get their deposits on first scan/mine. A player
+    // who opens the Harvesters tab first would otherwise see slots but
+    // nothing to assign -- provision them here too (idempotent).
+    if ((body.harvester_slots || 0) > 0) {
+      try { await ensureDepositsExist(bodyId); } catch (e) { console.warn('ensureDepositsExist (harvesters tab):', e.message); }
+    }
+
     // Get deployed harvesters on this planet for this user
     const harvesters = await queryAll(`
       SELECT dh.*, 

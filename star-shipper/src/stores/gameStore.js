@@ -90,6 +90,7 @@ const initialState = {
   // the 📬 Mail toolbar button.
   mailUnreadCount: 0,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
+  fitGates: null,              // { module_gates, hull_gates, fleet } from GET /skills (Phase 3 capability gating)
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
   skillSpPerMin: 30,
   skillMaxLevel: 5,
@@ -425,6 +426,10 @@ export const useGameStore = create(
               state.skillSpPerMin = skillsData.sp_per_min || 30;
               state.skillMaxLevel = skillsData.max_level || 5;
               state.skillMaxQueue = skillsData.max_queue || 10;
+              // Phase 3 capability gates (module tier / hull class /
+              // fleet size) -- server table, read by the Ship Builder
+              // via utils/fitGates.js.
+              if (skillsData.fit_gates) state.fitGates = skillsData.fit_gates;
               state.skillsLoaded = true;
               // Aggregate active bonuses from skill levels.
               const bonuses = {};
