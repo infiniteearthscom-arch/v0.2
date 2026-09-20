@@ -517,6 +517,19 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove, onReorder }) => {
             const isHead = i === 0;
             const isDragging = dragIdx === i;
             const isOver = overIdx === i && dragIdx !== null && dragIdx !== i;
+            // Progress fill (2026-09-20): fraction of THIS level's total
+            // SP already earned. started_at is the "virtual start" (it
+            // sits earlier by any banked progress), so for the head the
+            // fraction is (now - start) / (finish - start); for a queued
+            // entry the clock hasn't begun -- its chain start is the
+            // previous entry's finish, so anything before that is banked.
+            const startMs = new Date(q.started_at).getTime();
+            const finishMs = new Date(q.finishes_at).getTime();
+            const chainStartMs = isHead ? now : new Date(queue[i - 1].finishes_at).getTime();
+            const total = Math.max(1, finishMs - startMs);
+            const progress = Math.max(0, Math.min(1, (chainStartMs - startMs) / total));
+            const fillColor = isHead ? `${GREEN.pri}33` : `${BLUE.pri}22`;
+            const baseColor = isOver ? `${BLUE.pri}22` : isHead ? `${GREEN.pri}10` : 'rgba(10,16,28,0.4)';
             return (
               <div
                 key={`${q.position}-${q.skill_id}`}
@@ -530,7 +543,7 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove, onReorder }) => {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '4px 8px',
-                  background: isOver ? `${BLUE.pri}22` : isHead ? `${GREEN.pri}10` : 'rgba(10,16,28,0.4)',
+                  background: `linear-gradient(90deg, ${fillColor} 0%, ${fillColor} ${progress * 100}%, ${baseColor} ${progress * 100}%, ${baseColor} 100%)`,
                   border: `1px solid ${isOver ? BLUE.pri : isHead ? `${GREEN.pri}40` : EDGE}`,
                   borderLeft: `3px solid ${isHead ? GREEN.pri : EDGE}`,
                   borderRadius: 2,
@@ -545,7 +558,8 @@ const SkillQueueStrip = ({ queue, skills, spPerMin, onRemove, onReorder }) => {
                     {isHead && <span style={{ color: GREEN.light, marginLeft: 8, fontSize: '0.8rem', fontFamily: FM, letterSpacing: 0.5 }}>TRAINING</span>}
                   </div>
                 </div>
-                <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#7a8a9a' }}>
+                <div style={{ fontSize: '0.8rem', fontFamily: FM, color: '#7a8a9a' }} title={`${Math.round(progress * 100)}% of this level trained`}>
+                  {progress > 0 && <span style={{ color: isHead ? GREEN.light : BLUE.light, marginRight: 8 }}>{Math.round(progress * 100)}%</span>}
                   {formatDuration(remaining)}
                 </div>
                 <button
