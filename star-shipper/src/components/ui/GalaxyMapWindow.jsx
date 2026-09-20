@@ -825,6 +825,8 @@ export const GalaxyMapWindow = () => {
                     onClick={() => {
                       if (!selectedFree?.ok) return;
                       setGalaxyAutopilotTarget({ id: selectedSys.id, name: selectedSys.name });
+                      // Close the map so the player sees the fleet turn and go.
+                      closeWindow('galaxyMap');
                     }}
                     className={`w-full px-3 py-2 rounded text-xs font-medium border transition-colors ${selectedFree?.ok
                       ? 'bg-cyan-700/30 text-cyan-300 border-cyan-600/40 hover:bg-cyan-700/50'
@@ -838,6 +840,8 @@ export const GalaxyMapWindow = () => {
                     onClick={() => {
                       setPendingJump(selectedSys.id);
                       setAutopilotTarget({ id: 'jump_gate', name: 'Jump Gate', type: 'jump_gate' });
+                      // Close the map so the autopilot run to the gate is visible.
+                      closeWindow('galaxyMap');
                     }}
                     className="w-full px-3 py-2 rounded text-xs font-medium bg-green-700/30 text-green-300 border border-green-600/40 hover:bg-green-700/50 transition-colors"
                   >
