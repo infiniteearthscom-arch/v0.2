@@ -305,6 +305,10 @@ Bugs noticed but not fixed; rough edges to revisit.
 
 Most recent first. Group by session/theme. Trim entries older than ~2 weeks once they stop being load-bearing context.
 
+### 2026-09-20 — Other pilots' harvesters visible on shared planets (no migration)
+
+Owner report: players couldn't see each other's harvesters. Harvester slots + deposits were already shared planet-wide (the deploy slot check and the available-deposit filter aren't user-scoped) but `GET /harvesters/planet/:id` only listed the caller's rows, so another pilot's machine rendered as an EMPTY slot until deploy bounced with "Slot already occupied". Fix: the response adds `other_harvesters` (slot, owner username, harvester type, resource + deposit slot — display only, no state update, no hopper/fuel); the Harvesters tab renders those slots as locked gold cards ("🔒 Name's harvester · mining Iron (deposit 2)"), skips them for click-to-deploy, and the counter shows "· N other pilots". Design note: slots are first-come planet-wide — contention is intentional (the plan's "influence radius / claims" for player stations is the eventual answer).
+
 ### 2026-09-19 — Harvesters deployable on procedural planets (migration 072)
 
 Player report: no planet outside Sol accepted harvesters. Cause: `/ensure-body` (the on-first-dock row registration for procedural bodies) never set `celestial_bodies.harvester_slots`, so every non-Sol body was NULL → `harvester_slots || 0` → zero slots. Sol only worked because migration 011 backfilled the rows that existed then. Fix: ensure-body sets `harvester_slots = deposit_slots` (one harvester per deposit, size-based 3/4/6) for planets, 0 for stations/gates; **072 backfills** every existing body; `db:verify` asserts no NULLs and no planet with 0 slots. Also: `GET /harvesters/planet/:id` now calls `ensureDepositsExist` so opening the Harvesters tab before ever scanning/mining still lists deposits to assign.

@@ -214,10 +214,28 @@ router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
       ORDER BY rd.slot_number ASC
     `, [bodyId]);
     
+    // Other pilots' harvesters on this planet (2026-09-20). Slots and
+    // deposits are shared planet-wide -- the slot check and the deposit
+    // filter above are not user-scoped -- but the list was, so another
+    // pilot's harvester looked like an empty slot until the deploy
+    // bounced with "Slot already occupied". Display-only projection: no
+    // state update (their own reads do that), no hopper/fuel details.
+    const others = await queryAll(`
+      SELECT dh.slot_index, dh.harvester_type, dh.deposit_id, u.username AS owner_name,
+             rt.name AS resource_name, rd.slot_number AS deposit_slot
+        FROM deployed_harvesters dh
+        JOIN users u ON u.id = dh.user_id
+        LEFT JOIN resource_types rt ON dh.resource_type_id = rt.id
+        LEFT JOIN resource_deposits rd ON dh.deposit_id = rd.id
+       WHERE dh.celestial_body_id = $1 AND dh.user_id <> $2
+       ORDER BY dh.slot_index ASC
+    `, [bodyId, userId]);
+
     res.json({
       planet_name: body.name,
       harvester_slots: body.harvester_slots || 0,
       harvesters: updatedHarvesters,
+      other_harvesters: others,
       available_deposits: deposits,
     });
   } catch (error) {

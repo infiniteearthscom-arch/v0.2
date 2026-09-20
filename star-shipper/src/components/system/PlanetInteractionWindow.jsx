@@ -1707,13 +1707,18 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
   const harvesters = data.harvesters || [];
   const harvesterMap = {};
   harvesters.forEach(h => { harvesterMap[h.slot_index] = h; });
+  // Other pilots' harvesters (slots + deposits are shared planet-wide;
+  // 2026-09-20 fix -- these used to render as empty slots).
+  const otherHarvesters = data.other_harvesters || [];
+  const otherMap = {};
+  otherHarvesters.forEach(h => { otherMap[h.slot_index] = h; });
 
   // First empty slot index (for click-to-deploy from the cargo pane).
   // Null when all slots are occupied -- panel still renders tiles but
   // disables click + glow.
   let firstEmptySlot = null;
   for (let i = 0; i < totalSlots; i++) {
-    if (!harvesterMap[i]) { firstEmptySlot = i; break; }
+    if (!harvesterMap[i] && !otherMap[i]) { firstEmptySlot = i; break; }
   }
 
   return (
@@ -1761,6 +1766,9 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
             padding: '3px 7px',
           }}>
             {harvesters.length}/{totalSlots}
+            {otherHarvesters.length > 0 && (
+              <span style={{ color: '#6a7a8a', fontWeight: 400 }}> · {otherHarvesters.length} other pilot{otherHarvesters.length === 1 ? '' : 's'}</span>
+            )}
           </div>
         </div>
       </div>
@@ -1777,19 +1785,42 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
         </div>
       ) : (
         <div>
-          {Array.from({ length: totalSlots }).map((_, i) => (
-            <HarvesterSlotCard
-              key={i}
-              slot={i}
-              harvester={harvesterMap[i] || null}
-              onDeploy={handleDeploy}
-              onRefuel={handleRefuel}
-              onCollect={handleCollect}
-              onAssignDeposit={handleAssignDeposit}
-              onRemove={handleRemove}
-              availableDeposits={data.available_deposits || []}
-            />
-          ))}
+          {Array.from({ length: totalSlots }).map((_, i) => {
+            const other = !harvesterMap[i] ? otherMap[i] : null;
+            if (other) {
+              // Another pilot's harvester: read-only, not a drop target.
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  margin: '0 0 6px', padding: '8px 10px',
+                  background: 'rgba(30,20,8,0.35)', border: '1px solid rgba(214,160,60,0.35)',
+                  borderLeft: '2px solid rgba(214,160,60,0.6)', borderRadius: 2,
+                  fontFamily: FM, fontSize: '0.8rem', color: '#a0b0c0', opacity: 0.85,
+                }}>
+                  <div>
+                    <span style={{ color: '#6a7a8a' }}>SLOT {i + 1}</span>
+                    <span style={{ marginLeft: 8, color: '#e2c07a' }}>🔒 {other.owner_name}'s harvester</span>
+                  </div>
+                  <div style={{ color: '#6a7a8a' }}>
+                    {other.resource_name ? `mining ${other.resource_name}${other.deposit_slot != null ? ` (deposit ${other.deposit_slot})` : ''}` : 'idle'}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <HarvesterSlotCard
+                key={i}
+                slot={i}
+                harvester={harvesterMap[i] || null}
+                onDeploy={handleDeploy}
+                onRefuel={handleRefuel}
+                onCollect={handleCollect}
+                onAssignDeposit={handleAssignDeposit}
+                onRemove={handleRemove}
+                availableDeposits={data.available_deposits || []}
+              />
+            );
+          })}
         </div>
       )}
       </div>
