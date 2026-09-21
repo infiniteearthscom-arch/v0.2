@@ -656,7 +656,7 @@ export const SystemMapWindow = () => {
               }}>
                 Bodies · {bodyData.length}
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0 6px' }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 0 6px' }}>
                 {bodyData.map(({ body, distance }) => {
                   const isTarget = autopilotTarget?.id === body.id;
                   const dotColor = body.color
@@ -714,10 +714,11 @@ export const SystemMapWindow = () => {
                     </div>
                   );
                 })}
+              </div>
         {/* Asteroid telemetry list (076): only renders when a telemetry
             array is fitted somewhere in the fleet. */}
         {telemetryTier > 0 && (
-          <div style={{ borderTop: `1px solid ${EDGE}`, marginTop: 6 }}>
+          <div style={{ borderTop: `1px solid ${EDGE}`, flex: '0 0 45%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{
               padding: '6px 12px 4px', display: 'flex', alignItems: 'center', gap: 8,
               fontSize: '0.8rem', fontFamily: FM, color: '#a0c860', letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700,
@@ -741,7 +742,7 @@ export const SystemMapWindow = () => {
                 />
               )}
             </div>
-            <div style={{ padding: '2px 0 6px' }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 0 6px' }}>
               {asteroidRows.length === 0 && (
                 <div style={{ padding: '4px 12px', fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
                   {telemetryTier === 1 ? 'No scanned asteroids in this system yet.' : 'No asteroids match.'}
@@ -785,7 +786,6 @@ export const SystemMapWindow = () => {
             </div>
           </div>
         )}
-              </div>
             </div>
           </div>
         )}

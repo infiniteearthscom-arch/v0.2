@@ -4050,7 +4050,13 @@ export const SystemView = () => {
         let telemetryTier = 0;
         for (const ship of (fleetShipsRef.current || [])) {
           for (const fv of Object.values(ship?.fitted_modules || {})) {
-            const t = Number(fv?.stats?.telemetry_tier) || 0;
+            // Stats snapshot first; fall back to the module id so a fit
+            // whose snapshot is missing/stale still counts.
+            let t = Number(fv?.stats?.telemetry_tier) || 0;
+            if (!t) {
+              const id = String(fv?.module_type_id || fv?.item_id || '');
+              if (id.startsWith('utility_ast_telemetry')) t = id.endsWith('_grid') ? 3 : id.endsWith('_deep') ? 2 : 1;
+            }
             if (t > telemetryTier) telemetryTier = t;
           }
         }
