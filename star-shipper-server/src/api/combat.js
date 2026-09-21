@@ -16,7 +16,8 @@
 import express from 'express';
 import { authMiddleware, isDevAccount } from '../auth/index.js';
 import { query, queryOne } from '../db/index.js';
-import { getSystemManifest, invalidateManifests } from '../game/enemyManifest.js';
+import { getSystemManifest, invalidateManifests, getCatalog } from '../game/enemyManifest.js';
+import { insertModuleItem } from '../lib/wrecks.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -146,8 +147,27 @@ router.post('/claim-loot', async (req, res) => {
     // the client's retry isn't locked out of real loot.
     claimed.add(enemy_id);
     let user;
+    const items = [];
     try {
       await query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [entry.credits, req.user.id]);
+      // Phase 4b elite drops: the template's loot_table
+      //   [{ module_type_id, chance (0-1), quality: [min, max] }, ...]
+      // rolls straight into cargo on claim (the client's pirate wreck is
+      // the pickup; no server row needed). Server-side roll, so the
+      // client can't fish for a better drop.
+      if (entry.templateId) {
+        const tmpl = (await getCatalog()).byId.get(entry.templateId);
+        const table = Array.isArray(tmpl?.loot_table) ? tmpl.loot_table : [];
+        for (const drop of table) {
+          if (!drop?.module_type_id) continue;
+          if (Math.random() > (drop.chance ?? 1)) continue;
+          const [qmin, qmax] = Array.isArray(drop.quality) ? drop.quality : [60, 85];
+          const q = Math.floor(qmin + Math.random() * Math.max(0, qmax - qmin + 1));
+          const quality = { purity: q, stability: q, potency: q, density: q };
+          const name = await insertModuleItem({ query }, req.user.id, drop.module_type_id, quality);
+          if (name) items.push({ name, quality: q });
+        }
+      }
       user = await queryOne(`SELECT credits FROM users WHERE id = $1`, [req.user.id]);
     } catch (e) {
       claimed.delete(enemy_id);
@@ -158,6 +178,7 @@ router.post('/claim-loot', async (req, res) => {
       success: true,
       awarded: entry.credits,
       is_flagship: entry.isFlagship,
+      items,
       credits: parseInt(user.credits),
     });
   } catch (e) {

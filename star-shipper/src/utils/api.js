@@ -452,10 +452,7 @@ export const combatAPI = {
 // Wrecks — lootable spatial entities. Replaces the old direct-credit
 // awardLoot flow: enemy kills now spawn a wreck the player flies to.
 export const wrecksAPI = {
-  spawn: (data) => request('/resources/wrecks/spawn', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
+  // (spawn removed 2026-09-21 -- wrecks are server-created on ship loss.)
   list: (systemProceduralId) =>
     request(`/resources/wrecks?system_procedural_id=${encodeURIComponent(systemProceduralId)}`),
   claim: (wreckId) => request('/resources/wrecks/claim', {
@@ -603,7 +600,12 @@ export const fittingAPI = {
   }),
   // Podding (replaces /repair-cost respawn). Destroys active ship +
   // mints an Escape Pod the player flies back to a station to disembark.
-  enterPod: () => request('/fitting/enter-pod', { method: 'POST' }),
+  // Phase 4b: death position + system so the server can drop a wreck
+  // (fitted modules + half the hold) where the flagship died.
+  enterPod: (pos) => request('/fitting/enter-pod', {
+    method: 'POST',
+    body: JSON.stringify(pos ? { x: pos.x, y: pos.y, system_procedural_id: pos.systemId } : {}),
+  }),
   // Exit pod by switching active ship to a non-pod fleet ship; deletes the pod.
   exitPod: (shipId) => request('/fitting/exit-pod', {
     method: 'POST',
@@ -612,9 +614,9 @@ export const fittingAPI = {
   // Combat F3 player attrition: destroy a non-active fleet ship when the
   // pooled fleet hull crosses its death threshold. Active-ship (flagship)
   // death is enterPod above.
-  loseShip: (shipId) => request('/fitting/lose-ship', {
+  loseShip: (shipId, pos) => request('/fitting/lose-ship', {
     method: 'POST',
-    body: JSON.stringify({ ship_id: shipId }),
+    body: JSON.stringify({ ship_id: shipId, ...(pos ? { x: pos.x, y: pos.y, system_procedural_id: pos.systemId } : {}) }),
   }),
   resetAccount: () => request('/fitting/reset-account', { method: 'POST' }),
   // Tops up every missile launcher on EVERY active fleet ship from

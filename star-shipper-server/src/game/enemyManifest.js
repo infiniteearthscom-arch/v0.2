@@ -453,7 +453,9 @@ function buildClaimIndex(enemies) {
       const escortLoot = (lootByFleet.get(e.fleet_id) || 0) - e.loot_credits;
       credits += Math.round(FLAGSHIP_FLEET_BONUS_FRAC * escortLoot);
     }
-    index.set(e.id, { credits, isFlagship, fleetId: e.fleet_id });
+    // templateId lets /combat/claim-loot roll the template's loot_table
+    // (Phase 4b elite drops) without a second lookup.
+    index.set(e.id, { credits, isFlagship, fleetId: e.fleet_id, templateId: e.template_id, isElite: !!e.is_elite });
   }
   return index;
 }

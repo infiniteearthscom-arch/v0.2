@@ -2133,19 +2133,41 @@ export const SystemView = () => {
   // erroring server-side. With this disabled, wrecksRef stays empty,
   // the SVG render block below renders nothing, and the proximity-claim
   // check in the game loop never triggers.
-  // useEffect(() => {
-  //   if (!currentSystemId) return undefined;
-  //   let cancelled = false;
-  //   const fetchWrecks = async () => {
-  //     try {
-  //       const { wrecks } = await wrecksAPI.list(currentSystemId);
-  //       if (!cancelled) wrecksRef.current = wrecks || [];
-  //     } catch (err) { /* network blip; next poll retries */ }
-  //   };
-  //   fetchWrecks();
-  //   const interval = setInterval(fetchWrecks, 3000);
-  //   return () => { cancelled = true; clearInterval(interval); };
-  // }, [currentSystemId]);
+  // Phase 4b (2026-09-21): wreck polling is BACK, for SERVER wrecks only
+  // (player ships lost in this system -- modules + ejected cargo, made by
+  // the server in /enter-pod + /lose-ship). Pirate wrecks stay local
+  // (they carry an enemyId and are validated by /combat/claim-loot).
+  // Poll every 5s; merge by id so a wreck we just pushed from our own
+  // death response isn't duplicated, and drop server wrecks that
+  // vanished (someone else salvaged them / expired).
+  const normalizeServerWreck = (w) => ({
+    id: w.id,
+    x: Number(w.x), y: Number(w.y),
+    serverWreck: true,
+    source: w.source || 'player_flagship',
+    contents: w.contents || {},
+    expires_at_ms: w.expires_at ? new Date(w.expires_at).getTime() : Infinity,
+  });
+  useEffect(() => {
+    if (!currentSystemId) return undefined;
+    let cancelled = false;
+    const fetchWrecks = async () => {
+      try {
+        const { wrecks } = await wrecksAPI.list(currentSystemId);
+        if (cancelled) return;
+        const fresh = (wrecks || []).map(normalizeServerWreck);
+        const freshIds = new Set(fresh.map(w => w.id));
+        const local = wrecksRef.current.filter(w => !w.serverWreck);
+        const kept = wrecksRef.current.filter(w => w.serverWreck && freshIds.has(w.id));
+        const keptIds = new Set(kept.map(w => w.id));
+        wrecksRef.current = [...local, ...kept, ...fresh.filter(w => !keptIds.has(w.id))];
+      } catch (err) { /* network blip; next poll retries */ }
+    };
+    fetchWrecks();
+    const interval = setInterval(fetchWrecks, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [currentSystemId]);
+  const contestedToastAtRef = useRef(0);
 
   // Mirror isPod into a ref so the combat AI loop can branch on pod
   // state without crossing the React/closure boundary.
@@ -2899,14 +2921,21 @@ export const SystemView = () => {
           // changes (i.e. when fetchShips reconciles).
           const idx = fleetShipsRef.current.indexOf(fs);
           if (idx >= 0) fleetShipsRef.current.splice(idx, 1);
+          // Capture where it died BEFORE the slot is cleared (wreck position).
+          const deathPos = wingmenPosRef.current[fs.id]
+            ? { x: wingmenPosRef.current[fs.id].x, y: wingmenPosRef.current[fs.id].y }
+            : { x: shipPosRef.current.x, y: shipPosRef.current.y };
           delete wingmenPosRef.current[fs.id];
           delete trailsRef.current[fs.id];
 
           playerMaxHullRef.current = Math.max(1, playerMaxHullRef.current - hp);
           playerHullRef.current = Math.min(playerHullRef.current, playerMaxHullRef.current);
 
-          fittingAPI.loseShip(fs.id)
-            .then(() => { if (fetchShips) fetchShips(); })
+          fittingAPI.loseShip(fs.id, { x: deathPos.x, y: deathPos.y, systemId: currentSystemId })
+            .then((res) => {
+              if (fetchShips) fetchShips();
+              if (res?.wreck) wrecksRef.current.push(normalizeServerWreck(res.wreck));
+            })
             .catch(err => {
               console.warn('lose-ship failed:', err);
               loseShipInFlightRef.current.delete(fs.id);
@@ -3576,9 +3605,17 @@ export const SystemView = () => {
 
               if (pushToast) pushToast({ kind: 'error', text: 'Capsule ejected — fly to a station to disembark.', duration: 6000 });
 
-              fittingAPI.enterPod()
-                .then(() => {
+              fittingAPI.enterPod({ x: shipPosRef.current.x, y: shipPosRef.current.y, systemId: currentSystemId })
+                .then((res) => {
                   if (fetchShips) fetchShips();
+                  // Phase 4b: the server dropped our wreck (modules + half
+                  // the hold) where we died -- show it immediately.
+                  if (res?.wreck) {
+                    wrecksRef.current.push(normalizeServerWreck(res.wreck));
+                    const n = (res.wreck.contents?.modules || []).length;
+                    const r = (res.wreck.contents?.resources || []).length;
+                    if (pushToast) pushToast({ kind: 'info', text: `Your wreck holds ${n} module${n === 1 ? '' : 's'}${r ? ` and ${r} cargo stack${r === 1 ? '' : 's'}` : ''} — salvage it before it expires (30 min) or someone else does.`, duration: 8000 });
+                  }
                 })
                 .catch(err => {
                   console.warn('enter-pod failed:', err);
@@ -3914,13 +3951,58 @@ export const SystemView = () => {
         wrecksRef.current = wrecksRef.current.filter(w => (w.expires_at_ms ?? Infinity) > now);
 
         const px = playerPos.x, py = playerPos.y;
+        // Phase 4b "pirates contest wrecks": no salvage while a hostile is
+        // actively on us within CONTEST_RANGE. Clear the area first.
+        const CONTEST_RANGE = 220;
+        let contested = false;
+        for (const e of enemies) {
+          if (e.hull <= 0 || (e.state !== 'attack' && e.state !== 'chase')) continue;
+          const ex = e.x - px, ey = e.y - py;
+          if (ex * ex + ey * ey < CONTEST_RANGE * CONTEST_RANGE) { contested = true; break; }
+        }
         for (let i = wrecksRef.current.length - 1; i >= 0; i--) {
           const w = wrecksRef.current[i];
           if (claimingWrecksRef.current.has(w.id)) continue;
           const dx = w.x - px, dy = w.y - py;
           if (dx * dx + dy * dy < PICKUP_RANGE * PICKUP_RANGE) {
+            if (contested) {
+              const nowMs = performance.now();
+              if (nowMs - contestedToastAtRef.current > 4000) {
+                contestedToastAtRef.current = nowMs;
+                if (pushToast) pushToast({ kind: 'error', text: 'Wreck contested — clear the hostiles before salvaging', duration: 3000 });
+              }
+              continue;
+            }
             claimingWrecksRef.current.add(w.id);
             const wreckId = w.id;
+
+            // Server (player) wreck: /resources/wrecks/claim hands over the
+            // ejected modules + cargo stacks (first-touch).
+            if (w.serverWreck) {
+              wrecksAPI.claim(wreckId)
+                .then((res) => {
+                  wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
+                  const st = useGameStore.getState();
+                  if (st.fetchCargoInfo) st.fetchCargoInfo();
+                  if (st.fetchCredits) st.fetchCredits();
+                  const mods = res?.modules_awarded || [];
+                  const ress = res?.resources_awarded || [];
+                  const parts = [];
+                  if (mods.length) parts.push(`${mods.length} module${mods.length === 1 ? '' : 's'} (${mods.slice(0, 3).join(', ')}${mods.length > 3 ? '…' : ''})`);
+                  if (ress.length) parts.push(ress.slice(0, 3).map(r => `${r.quantity} ${r.name}`).join(', ') + (ress.length > 3 ? '…' : ''));
+                  if (st.pushToast) st.pushToast({ kind: 'success', text: `Salvaged ${res?.ship_name ? `wreck of ${res.ship_name}` : 'wreck'}: ${parts.join(' · ') || 'nothing left'}`, duration: 5000 });
+                  claimingWrecksRef.current.delete(wreckId);
+                })
+                .catch(err => {
+                  const msg = String(err?.message || '');
+                  if (msg.includes('already claimed') || msg.includes('expired')) {
+                    wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
+                  }
+                  claimingWrecksRef.current.delete(wreckId);
+                });
+              continue;
+            }
+
             combatAPI.claimLoot(w.systemId, w.enemyId)
               .then((res) => {
                 wrecksRef.current = wrecksRef.current.filter(x => x.id !== wreckId);
@@ -3930,6 +4012,13 @@ export const SystemView = () => {
                 const awarded = res?.awarded || 0;
                 if (pt && awarded > 0) {
                   pt({ kind: 'success', text: `+${awarded} cr salvaged`, duration: 2500 });
+                }
+                // Phase 4b elite drops: modules rolled server-side into cargo.
+                const items = res?.items || [];
+                if (pt && items.length) {
+                  pt({ kind: 'success', text: `★ Salvaged: ${items.map(i => `${i.name} Q${i.quality}`).join(', ')}`, duration: 6000 });
+                  const st = useGameStore.getState();
+                  if (st.fetchCargoInfo) st.fetchCargoInfo();
                 }
                 claimingWrecksRef.current.delete(wreckId);
               })
@@ -5118,6 +5207,27 @@ export const SystemView = () => {
               // around the gold chip + a "+ MOD" suffix on the label so
               // the player can spot module wrecks at a distance.
               const hasModule = Array.isArray(w.contents?.modules) && w.contents.modules.length > 0;
+              // Phase 4b: player wrecks (server rows) read differently --
+              // red-tinted halo, label = ship name + what's in it.
+              if (w.serverWreck) {
+                const nMod = (w.contents?.modules || []).length;
+                const nRes = (w.contents?.resources || []).length;
+                const mins = Number.isFinite(w.expires_at_ms) ? Math.max(0, Math.round((w.expires_at_ms - Date.now()) / 60000)) : null;
+                return (
+                  <g key={`wreck-${w.id}`}>
+                    <circle cx={w.x} cy={w.y} r={22} fill="#ef4444" opacity={0.10} />
+                    <circle cx={w.x} cy={w.y} r={13} fill="#ef4444" opacity={0.18} />
+                    <circle cx={w.x} cy={w.y} r={9} fill="none" stroke="#22d3ee" strokeWidth={0.8} opacity={0.75} strokeDasharray="2,1.5" />
+                    <circle cx={w.x} cy={w.y} r={4.5} fill="#f87171" stroke="#fff" strokeWidth={0.5} opacity={0.95} />
+                    <text x={w.x} y={w.y - 15} textAnchor="middle" fill="#fca5a5" fontSize="6" fontFamily="monospace" opacity={0.95} style={{ pointerEvents: 'none' }}>
+                      WRECK · {w.contents?.ship_name || 'ship'}
+                    </text>
+                    <text x={w.x} y={w.y - 8.5} textAnchor="middle" fill="#fbbf24" fontSize="5" fontFamily="monospace" opacity={0.85} style={{ pointerEvents: 'none' }}>
+                      {nMod} mod{nMod === 1 ? '' : 's'}{nRes ? ` · ${nRes} cargo` : ''}{mins != null ? ` · ${mins}m` : ''}
+                    </text>
+                  </g>
+                );
+              }
               return (
                 <g key={`wreck-${w.id}`}>
                   {/* Outer halo */}

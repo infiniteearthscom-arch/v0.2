@@ -8,6 +8,7 @@ import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
 import { moduleGateFor, hullGateFor, assertGate, getFleetCap, MAX_FLEET_CAP } from '../game/fitGates.js';
+import { modulesFromFitted, ejectResources, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 
 const router = express.Router();
 
@@ -1431,7 +1432,7 @@ router.post('/enter-pod', authMiddleware, async (req, res) => {
 
       // Now read the ship's hull type + name to validate + log.
       const shipRow = await client.query(
-        `SELECT hull_type_id, name FROM ships WHERE id = $1 AND user_id = $2`,
+        `SELECT hull_type_id, name, fitted_modules FROM ships WHERE id = $1 AND user_id = $2`,
         [activeShipId, userId]
       );
       const ship = shipRow.rows[0];
@@ -1442,6 +1443,25 @@ router.post('/enter-pod', authMiddleware, async (req, res) => {
         throw Object.assign(new Error('Already in a pod'), { statusCode: 400 });
       }
       const destroyedShipName = ship.name;
+
+      // Phase 4b stakes: the flagship's fitted modules + half of every
+      // cargo stack eject into a server-owned wreck at the death
+      // position (client sends x/y + system; an old client without them
+      // just loses the ship as before). Anyone in the system can
+      // salvage it; it expires after WRECK_TTL_MIN.
+      let wreck = null;
+      const { x, y, system_procedural_id } = req.body || {};
+      if (system_procedural_id && x != null && y != null) {
+        const modules = modulesFromFitted(ship.fitted_modules);
+        const resources = await ejectResources(client, userId, EJECT_CARGO_FRACTION);
+        if (modules.length || resources.length) {
+          wreck = await insertWreck(client, {
+            systemProceduralId: system_procedural_id, x, y,
+            source: 'player_flagship',
+            contents: { modules, resources, ship_name: destroyedShipName, owner_id: userId },
+          });
+        }
+      }
 
       // Destroy the active ship. The ON DELETE SET NULL on
       // users.active_ship_id (migration 014) clears the FK for us.
@@ -1468,7 +1488,7 @@ router.post('/enter-pod', authMiddleware, async (req, res) => {
 
       await client.query(`UPDATE users SET active_ship_id = $1 WHERE id = $2`, [pod.id, userId]);
 
-      return { pod, destroyed_ship_name: destroyedShipName };
+      return { pod, destroyed_ship_name: destroyedShipName, wreck };
     });
 
     res.json({ success: true, ...result });
@@ -1510,7 +1530,7 @@ router.post('/lose-ship', authMiddleware, async (req, res) => {
       }
 
       const shipRow = await client.query(
-        `SELECT hull_type_id, name, storage_body_id FROM ships WHERE id = $1 AND user_id = $2`,
+        `SELECT hull_type_id, name, storage_body_id, fitted_modules FROM ships WHERE id = $1 AND user_id = $2`,
         [ship_id, userId]
       );
       const ship = shipRow.rows[0];
@@ -1525,8 +1545,24 @@ router.post('/lose-ship', authMiddleware, async (req, res) => {
         throw Object.assign(new Error('Pods cannot be lost this way'), { statusCode: 400 });
       }
 
+      // Phase 4b stakes: a lost wingman drops its fitted modules into a
+      // wreck at its death position (no cargo -- the hold is fleet-pooled
+      // and only breaches when the flagship goes).
+      let wreck = null;
+      const { x, y, system_procedural_id } = req.body || {};
+      if (system_procedural_id && x != null && y != null) {
+        const modules = modulesFromFitted(ship.fitted_modules);
+        if (modules.length) {
+          wreck = await insertWreck(client, {
+            systemProceduralId: system_procedural_id, x, y,
+            source: 'player_wingman',
+            contents: { modules, resources: [], ship_name: ship.name, owner_id: userId },
+          });
+        }
+      }
+
       await client.query(`DELETE FROM ships WHERE id = $1 AND user_id = $2`, [ship_id, userId]);
-      return { destroyed_ship_name: ship.name };
+      return { destroyed_ship_name: ship.name, wreck };
     });
 
     res.json({ success: true, ...result });

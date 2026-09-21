@@ -147,6 +147,10 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 077 (elite loot tables) ---
+  const lootT = await pool.query(`SELECT COUNT(*)::int AS n FROM enemy_templates WHERE jsonb_array_length(loot_table) > 0`);
+  report('elite loot tables seeded (077)', lootT.rows[0].n >= 3, `${lootT.rows[0].n} templates with drops`);
+
   // --- migration 076 (asteroid telemetry) ---
   const tele = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE stats ? 'telemetry_tier'`);
   report('asteroid telemetry modules seeded (076)', tele.rows[0].n === 3, `${tele.rows[0].n}/3`);

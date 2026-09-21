@@ -11,6 +11,7 @@ import {
   depleteDeposit
 } from '../game/deposits.js';
 import { isCityPlanet, SRng } from '../util/seed.js';
+import { addResourceStack } from '../lib/wrecks.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { logActivity } from '../lib/activity.js';
 
@@ -1943,15 +1944,11 @@ router.post('/ensure-body', authMiddleware, async (req, res) => {
 // we'll tighten this. The 1000-cr/spawn cap is the only safeguard for now.
 
 const SOL_SYSTEM_ID = '00000000-0000-0000-0000-000000000001';
-const WRECK_TTL_MINUTES = 5;
-const WRECK_MAX_CREDITS = 1000;
 // Probability a pirate kill drops a module alongside credits. Tune
 // here. Phase 1.5: tier 1-2 only, low-mid quality (30-60 per stat) so
 // dropped loot is "decent but encourages crafting/buying for better".
 // TEMPORARILY 1.0 for verification -- dial back to 0.25 once confirmed working.
-const MODULE_DROP_CHANCE = 1.0;
 // Random integer in [lo, hi] inclusive.
-const randInt = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
 
 // Resolve a client's currentSystemId to the DB system UUID. Sol is hand-
 // seeded (migration 005) without a procedural_id, so we hard-map it.
@@ -1972,80 +1969,10 @@ async function resolveSystemId(client, system_procedural_id, system_name, star_t
 }
 
 // Spawn a wreck. Called by client on pirate kill.
-router.post('/wrecks/spawn', authMiddleware, async (req, res) => {
-  try {
-    const { system_procedural_id, system_name, star_type, danger_level, x, y, credits } = req.body;
-    if (!system_procedural_id || x == null || y == null) {
-      return res.status(400).json({ error: 'system_procedural_id, x, y required' });
-    }
-    const lootCredits = Math.max(0, Math.min(parseInt(credits) || 0, WRECK_MAX_CREDITS));
+// (POST /wrecks/spawn REMOVED 2026-09-21 -- wreck rows are created only by the
+// server in /fitting/enter-pod + /fitting/lose-ship via src/lib/wrecks.js.
+// A client-driven spawn was a credit mint.)
 
-    const wreck = await transaction(async (client) => {
-      const systemId = await resolveSystemId(client, system_procedural_id, system_name, star_type, danger_level);
-
-      // Module drop roll. tier <= 2 keeps elites out of pirate drops;
-      // ORDER BY RANDOM() is fine at this scale (a few dozen module rows).
-      const modules = [];
-      if (Math.random() < MODULE_DROP_CHANCE) {
-        const modResult = await client.query(`
-          SELECT id, slot_type FROM module_types
-          WHERE buy_price IS NOT NULL AND tier <= 2
-          ORDER BY RANDOM() LIMIT 1
-        `);
-        const mod = modResult.rows[0];
-        if (mod) {
-          modules.push({
-            module_type_id: mod.id,
-            slot_type: mod.slot_type,
-            quality: {
-              purity:    randInt(30, 60),
-              stability: randInt(30, 60),
-              potency:   randInt(30, 60),
-              density:   randInt(30, 60),
-            },
-          });
-        }
-      }
-      const contents = modules.length > 0
-        ? { credits: lootCredits, modules }
-        : { credits: lootCredits };
-
-      const result = await client.query(`
-        INSERT INTO wrecks (system_id, x, y, contents, source, expires_at)
-        VALUES ($1, $2, $3, $4, 'pirate', NOW() + ($5 || ' minutes')::INTERVAL)
-        RETURNING id, x, y, contents, expires_at
-      `, [systemId, x, y, JSON.stringify(contents), WRECK_TTL_MINUTES]);
-      return result.rows[0];
-    });
-
-    res.json({ success: true, wreck });
-  } catch (error) {
-    // Verbose logging for the Phase 1.5 debug -- the previous one-liner
-    // hid the actual cause. PG errors expose code/detail/constraint/table
-    // which usually point straight at the bug. Strip back to a one-liner
-    // once we know what's broken.
-    console.error('[wreck spawn] FAIL:', {
-      message:    error?.message,
-      code:       error?.code,
-      detail:     error?.detail,
-      hint:       error?.hint,
-      constraint: error?.constraint,
-      table:      error?.table,
-      column:     error?.column,
-      position:   error?.position,
-      stack:      error?.stack,
-      input: {
-        system_procedural_id: req.body?.system_procedural_id,
-        x:                    req.body?.x,
-        y:                    req.body?.y,
-        credits:              req.body?.credits,
-      },
-    });
-    res.status(500).json({ error: 'Failed to spawn wreck', detail: error?.message });
-  }
-});
-
-// List active (unclaimed, unexpired) wrecks in a system. Polled by client.
 router.get('/wrecks', authMiddleware, async (req, res) => {
   try {
     const { system_procedural_id } = req.query;
@@ -2065,7 +1992,7 @@ router.get('/wrecks', authMiddleware, async (req, res) => {
     }
 
     const wrecks = await queryAll(`
-      SELECT id, x, y, contents, expires_at
+      SELECT id, x, y, contents, source, spawned_at, expires_at
       FROM wrecks
       WHERE system_id = $1 AND claimed_by IS NULL AND expires_at > NOW()
       ORDER BY spawned_at DESC
@@ -2150,7 +2077,19 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
         modulesAwarded.push(mt.name);
       }
 
-      return { credits_awarded: creditsAwarded, modules_awarded: modulesAwarded };
+      // Phase 4b: player wrecks also carry ejected cargo stacks.
+      const resourcesAwarded = [];
+      for (const r of (Array.isArray(contents.resources) ? contents.resources : [])) {
+        if (!r?.resource_type_id || !(r.quantity > 0)) continue;
+        await addResourceStack(client, userId, r.resource_type_id, r.quantity, r.stats);
+        resourcesAwarded.push({ name: r.resource_name || r.resource_type_id, quantity: r.quantity });
+      }
+      return {
+        credits_awarded: creditsAwarded,
+        modules_awarded: modulesAwarded,
+        resources_awarded: resourcesAwarded,
+        ship_name: contents.ship_name || null,
+      };
     });
 
     res.json({ success: true, ...result });
