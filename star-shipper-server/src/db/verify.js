@@ -135,6 +135,12 @@ async function main() {
   );
   report('every planet row has harvester slots (072)', zeroPlanets.rows[0].n === 0, `${zeroPlanets.rows[0].n} planets with 0 slots`);
 
+  // --- no account may have a STORED flagship (fleet self-heal in /fitting/fleet fixes it on next load) ---
+  const storedFlag = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM users u JOIN ships s ON s.id = u.active_ship_id WHERE s.storage_body_id IS NOT NULL`
+  );
+  report('no user has a stored ship as active_ship_id', storedFlag.rows[0].n === 0, `${storedFlag.rows[0].n} affected (self-heals on their next fleet load)`);
+
   // --- every module_types row must have an item_definitions twin (CLAUDE.md pitfall #19) ---
   const orphanMods = await pool.query(
     `SELECT COUNT(*)::int AS n FROM module_types mt LEFT JOIN item_definitions idef ON idef.id = mt.id WHERE idef.id IS NULL`

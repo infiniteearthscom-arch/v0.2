@@ -1035,7 +1035,13 @@ export const useShips = () => useGameStore(state => state.ships);
 export const useActiveShipId = () => useGameStore(state => state.activeShipId);
 export const useActiveShip = () => useGameStore(state => {
   const id = state.activeShipId;
-  return id ? state.ships.find(s => s.id === id) || state.ships[0] || null : state.ships[0] || null;
+  const byId = id ? state.ships.find(s => s.id === id) : null;
+  // Defensive (2026-09-21): a stored ship can't be the flagship. The
+  // server self-heals this on the next fleet load; until then fall back
+  // to the first ship that's actually flying so HUD/physics/fit checks
+  // agree about which hull is in space.
+  if (byId && byId.storage_body_id == null) return byId;
+  return state.ships.find(s => s.storage_body_id == null) || byId || state.ships[0] || null;
 });
 export const useWindows = () => useGameStore(state => state.windows);
 export const useWindowZIndex = () => useGameStore(state => state.windowZIndex);

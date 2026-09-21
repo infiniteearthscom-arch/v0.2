@@ -840,9 +840,34 @@ router.get('/fleet', authMiddleware, async (req, res) => {
                s.created_at ASC
     `, [userId]);
 
-    const activeShipId = ships.find(s => s.is_active)?.id || null;
-    const activeFleetCount = ships.filter(s => s.storage_body_id == null).length;
+    let activeShipId = ships.find(s => s.is_active)?.id || null;
+    let activeFleetCount = ships.filter(s => s.storage_body_id == null).length;
     const fleetCap = await getFleetCap({ query }, userId);
+
+    // Self-heal (2026-09-21): the flagship must be in space. Accounts
+    // from before /set-active-ship refused stored ships could have
+    // active_ship_id pointing at a parked hull (found in the wild: a
+    // stored Starter Scout carrying a telemetry array that never
+    // counted). If the fleet has room, pull the flagship out of storage;
+    // otherwise hand the flag to the first ship that IS flying.
+    const flagship = ships.find(s => s.id === activeShipId);
+    if (flagship && flagship.storage_body_id != null) {
+      if (activeFleetCount < fleetCap) {
+        await query(`UPDATE ships SET storage_body_id = NULL WHERE id = $1`, [flagship.id]);
+        flagship.storage_body_id = null;
+        flagship.storage_body_name = null;
+        activeFleetCount += 1;
+        console.warn(`fleet self-heal: un-stored active ship ${flagship.id} for user ${userId}`);
+      } else {
+        const fallback = ships.find(s => s.storage_body_id == null && s.hull_type_id !== 'pod') || ships.find(s => s.storage_body_id == null);
+        if (fallback) {
+          await query(`UPDATE users SET active_ship_id = $1 WHERE id = $2`, [fallback.id, userId]);
+          for (const s of ships) s.is_active = s.id === fallback.id;
+          activeShipId = fallback.id;
+          console.warn(`fleet self-heal: active ship ${flagship.id} was stored + fleet full; flag moved to ${fallback.id} for user ${userId}`);
+        }
+      }
+    }
     // Persisted pooled damage (074) + repair pricing so the client's
     // Repair panel shows the same cost the server will charge.
     const dmg = await queryOne(`SELECT fleet_hull_pct, fleet_armor_pct FROM users WHERE id = $1`, [userId]);
@@ -1030,9 +1055,21 @@ router.post('/set-active-ship', authMiddleware, async (req, res) => {
 
     // Verify ownership
     const ship = await queryOne(
-      `SELECT id, name FROM ships WHERE id = $1 AND user_id = $2`, [ship_id, userId]
+      `SELECT s.id, s.name, s.storage_body_id, cb.name AS storage_body_name
+         FROM ships s LEFT JOIN celestial_bodies cb ON cb.id = s.storage_body_id
+        WHERE s.id = $1 AND s.user_id = $2`, [ship_id, userId]
     );
     if (!ship) return res.status(404).json({ error: 'Ship not found' });
+    // A STORED ship can't be the flagship (2026-09-21): it isn't in space,
+    // so nothing fitted to it counts (pitfall #15) while the HUD/physics
+    // would still read its stats -- the "active ship is parked at a
+    // station" state that hid a telemetry array. Activate it from the
+    // station's Ships tab first (that path checks the fleet cap).
+    if (ship.storage_body_id) {
+      return res.status(400).json({
+        error: `${ship.name} is stored at ${ship.storage_body_name || 'a station'} — activate it from the station's Ships tab before making it the flagship`,
+      });
+    }
 
     await query(`UPDATE users SET active_ship_id = $1 WHERE id = $2`, [ship_id, userId]);
 
