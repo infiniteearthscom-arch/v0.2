@@ -714,15 +714,10 @@ export const SystemMapWindow = () => {
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Asteroid telemetry list (076): only renders when a telemetry
             array is fitted somewhere in the fleet. */}
-        {inSystem && telemetryTier > 0 && (
-          <div style={{ borderTop: `1px solid ${EDGE}`, maxHeight: 220, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+        {telemetryTier > 0 && (
+          <div style={{ borderTop: `1px solid ${EDGE}`, marginTop: 6 }}>
             <div style={{
               padding: '6px 12px 4px', display: 'flex', alignItems: 'center', gap: 8,
               fontSize: '0.8rem', fontFamily: FM, color: '#a0c860', letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700,
@@ -746,7 +741,7 @@ export const SystemMapWindow = () => {
                 />
               )}
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0 6px' }}>
+            <div style={{ padding: '2px 0 6px' }}>
               {asteroidRows.length === 0 && (
                 <div style={{ padding: '4px 12px', fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
                   {telemetryTier === 1 ? 'No scanned asteroids in this system yet.' : 'No asteroids match.'}
@@ -790,6 +785,11 @@ export const SystemMapWindow = () => {
             </div>
           </div>
         )}
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Autopilot status footer (mirrors NavigationWindow's row) */}
         <div style={{
