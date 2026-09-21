@@ -13,6 +13,19 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, generateSystemContent } from '@/utils/galaxyGenerator';
+import { QUALITY_TIERS } from '@/data/resources';
+
+// Same tier bands + colors as the asteroid tooltip (data/resources.js
+// getQualityTier): Impure ≤20 · Standard ≤40 · Refined ≤60 · Superior ≤80
+// · Pristine. Keyed by the rounded average the catalogue carries.
+const qualityTierForAvg = (avg) => {
+  if (avg == null) return null;
+  if (avg <= 20) return QUALITY_TIERS.IMPURE;
+  if (avg <= 40) return QUALITY_TIERS.STANDARD;
+  if (avg <= 60) return QUALITY_TIERS.REFINED;
+  if (avg <= 80) return QUALITY_TIERS.SUPERIOR;
+  return QUALITY_TIERS.PRISTINE;
+};
 
 const EDGE = '#1a3050';
 const BLUE = { pri: '#3b82f6', light: '#60a5fa', dim: '#1e3a5f' };
@@ -751,7 +764,8 @@ export const SystemMapWindow = () => {
               {asteroidRows.map((a, i) => {
                 const isTarget = autopilotTarget?.id === a.id;
                 const name = `Asteroid ${a.id.slice(0, 4).toUpperCase()}`;
-                const qColor = a.quality == null ? '#5a7080' : a.quality >= 80 ? '#aa44ff' : a.quality >= 60 ? '#4488ff' : a.quality >= 40 ? '#44cc44' : '#888';
+                const qTier = qualityTierForAvg(a.quality);
+                const qColor = qTier ? qTier.color : '#5a7080';
                 return (
                   <div
                     key={a.id}
@@ -770,7 +784,7 @@ export const SystemMapWindow = () => {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '0.6875rem', color: '#cbd5e1', fontWeight: 600, display: 'flex', gap: 8 }}>
                         <span>{name}</span>
-                        <span style={{ color: qColor, fontFamily: FM }}>{a.quality != null ? `Q${a.quality}` : 'unscanned'}</span>
+                        <span style={{ color: qColor, fontFamily: FM }}>{a.quality != null ? `${qTier.name} Q${a.quality}` : 'unscanned'}</span>
                       </div>
                       <div style={{ fontSize: '0.8rem', color: '#5a7080', fontFamily: FM, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {formatDistance(a.distance)}
