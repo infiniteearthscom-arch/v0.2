@@ -598,6 +598,23 @@ const ResearchTab = ({ initialTree }) => {
   useSecondTick();
   const techs = useGameStore(s => s.techs);
   const rpStored = useGameStore(s => s.researchPoints);
+  // Cargo resource totals by name, so T3+ node cards can show their
+  // material toll as "10× Crystite (have 4)". Fetched when the tab
+  // mounts and again whenever a node is unlocked (materials get spent).
+  const [resourceCounts, setResourceCounts] = useState({});
+  const refreshResourceCounts = React.useCallback(async () => {
+    try {
+      const { resourcesAPI } = await import('@/utils/api');
+      const data = await resourcesAPI.getInventory();
+      const counts = {};
+      for (const s of (data?.inventory || [])) {
+        if (!s?.resource_name) continue;
+        counts[s.resource_name] = (counts[s.resource_name] || 0) + (Number(s.quantity) || 0);
+      }
+      setResourceCounts(counts);
+    } catch { /* leave counts as-is */ }
+  }, []);
+  useEffect(() => { refreshResourceCounts(); }, [refreshResourceCounts, techs]);
   // Effective RP/min from the server (base 1 × rp_rate_pct skill bonus).
   const rpPerMin = useGameStore(s => s.rpPerMin) || 1;
   const unlockTech = useGameStore(s => s.unlockTech);
@@ -666,6 +683,7 @@ const ResearchTab = ({ initialTree }) => {
           accent={treeAccent}
           techs={techs.filter(t => t.tree === activeTree)}
           rp={liveRp}
+          resourceCounts={resourceCounts}
           onClickTech={(t) => setConfirmTechId(t.id)}
         />
       </div>
@@ -692,15 +710,15 @@ const ResearchTab = ({ initialTree }) => {
 };
 
 const NODE_W = 230;
-const NODE_H = 158;
-const TIER_GAP_Y = 210;
+const NODE_H = 174; // +16 for the materials line (2026-09-20)
+const TIER_GAP_Y = 226;
 const NODE_GAP_X = 36;
 
 // Lays out a single tree top-down: tier 1 row, tier 2 row, tier 3
 // row. Nodes within a tier are spaced horizontally by sort_order.
 // Draws SVG <line>s for prereq edges before the node cards (which are
 // HTML overlaid on the SVG via absolute positioning).
-const TreeVisualizer = ({ tree, accent, techs, rp, onClickTech }) => {
+const TreeVisualizer = ({ tree, accent, techs, rp, resourceCounts, onClickTech }) => {
   const byTier = useMemo(() => {
     const m = new Map();
     for (const t of techs) {
@@ -789,6 +807,7 @@ const TreeVisualizer = ({ tree, accent, techs, rp, onClickTech }) => {
             y={p.y}
             accent={accent}
             canAfford={rp >= t.rp_cost}
+            resourceCounts={resourceCounts}
             onClick={() => {
               if (t.status === 'available') onClickTech(t);
             }}
@@ -799,8 +818,11 @@ const TreeVisualizer = ({ tree, accent, techs, rp, onClickTech }) => {
   );
 };
 
-const TechNode = ({ tech, x, y, accent, canAfford, onClick }) => {
+const TechNode = ({ tech, x, y, accent, canAfford, resourceCounts, onClick }) => {
   const { status } = tech;
+  // Material toll (T3+ nodes, migration 068): listed on the card with
+  // have/need so the player knows before clicking.
+  const materials = Array.isArray(tech.material_cost) ? tech.material_cost.filter(m => m?.resource_name && m.quantity > 0) : [];
   let bg, border, color, badge;
   if (status === 'unlocked') {
     bg = `${accent}22`;
@@ -867,8 +889,26 @@ const TechNode = ({ tech, x, y, accent, canAfford, onClick }) => {
           {tech.description}
         </div>
       </div>
-      <div style={{ fontSize: '0.8rem', fontFamily: FM, color, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 6 }}>
-        {badge}
+      <div style={{ marginTop: 6 }}>
+        {materials.length > 0 && (
+          <div style={{ fontSize: '0.8rem', fontFamily: FM, lineHeight: 1.3, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ color: '#5a7080' }}>Materials: </span>
+            {materials.map((m, i) => {
+              const have = resourceCounts?.[m.resource_name] ?? 0;
+              const ok = have >= m.quantity;
+              const c = status === 'unlocked' ? '#5a7080' : status === 'locked' ? '#4a5a6a' : ok ? '#86efac' : '#fca5a5';
+              return (
+                <span key={m.resource_name} style={{ color: c }}>
+                  {i > 0 ? ' · ' : ''}{m.quantity}× {m.resource_name}
+                  {status === 'available' && <span style={{ color: ok ? '#4ade80' : '#f87171' }}> ({have})</span>}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ fontSize: '0.8rem', fontFamily: FM, color, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          {badge}
+        </div>
       </div>
     </div>
   );
