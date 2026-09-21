@@ -50,6 +50,18 @@ ON CONFLICT (id) DO UPDATE SET
 UPDATE tech_definitions SET material_cost = '[{"resource_name":"Crystite","quantity":10}]' WHERE id = 'tech_ast_telemetry_deep';
 UPDATE tech_definitions SET material_cost = '[{"resource_name":"Quantum Dust","quantity":4},{"resource_name":"Crystite","quantity":20}]' WHERE id = 'tech_ast_telemetry_grid';
 
+-- Cargo item definitions. Every module needs a row here too: the
+-- inventory JOINs item_definitions (slot_type from item_data_defaults
+-- drives the Fittable Modules pane) and crafting_recipes.output_item_id
+-- FKs it. First run of this file failed on that FK. Also backfills the
+-- Repair Nanite Hive from 075, which had the same gap.
+INSERT INTO item_definitions (id, name, description, category, icon, max_stack, item_data_defaults) VALUES
+  ('utility_repair_nanites',    'Repair Nanite Hive',        'Out-of-combat fleet hull/armor repair. Fits a utility slot.', 'module', '⚕️', 5, '{"slot_type":"utility"}'),
+  ('utility_ast_telemetry',     'Asteroid Telemetry Array',  'Lists scanned asteroids in the System Map. Fits a utility slot.', 'module', '📡', 5, '{"slot_type":"utility"}'),
+  ('utility_ast_telemetry_deep','Deep Telemetry Array',      'Lists every asteroid in sensor range. Fits a utility slot.', 'module', '📡', 5, '{"slot_type":"utility"}'),
+  ('utility_ast_telemetry_grid','Systemwide Telemetry Grid', 'Lists every asteroid in the system. Fits a utility slot.', 'module', '📡', 5, '{"slot_type":"utility"}')
+ON CONFLICT (id) DO NOTHING;
+
 -- Recipes: T2 is also craftable; T3/T4 craft-only.
 INSERT INTO crafting_recipes (id, name, description, output_item_id, output_quantity, ingredients, category, requires_tech) VALUES
   ('craft_ast_telemetry', 'Asteroid Telemetry Array', 'Assemble a telemetry array from sensor components.', 'utility_ast_telemetry', 1,

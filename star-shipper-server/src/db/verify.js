@@ -135,6 +135,12 @@ async function main() {
   );
   report('every planet row has harvester slots (072)', zeroPlanets.rows[0].n === 0, `${zeroPlanets.rows[0].n} planets with 0 slots`);
 
+  // --- every module_types row must have an item_definitions twin (CLAUDE.md pitfall #19) ---
+  const orphanMods = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM module_types mt LEFT JOIN item_definitions idef ON idef.id = mt.id WHERE idef.id IS NULL`
+  );
+  report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
+
   // --- migration 076 (asteroid telemetry) ---
   const tele = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE stats ? 'telemetry_tier'`);
   report('asteroid telemetry modules seeded (076)', tele.rows[0].n === 3, `${tele.rows[0].n}/3`);

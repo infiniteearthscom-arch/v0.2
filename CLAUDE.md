@@ -79,6 +79,8 @@ These have all caused real bugs. Don't relearn them:
 
 18. **Warp-range rules are mirrored: `star-shipper/src/utils/warp.js` ↔ `star-shipper-server/src/game/warp.js`.** Same tables (`WARP_RANGE_BY_CLASS`, the +1 free-warp / +2 gate tier ceilings) and the same `warpCheck`. The client gates travel in the galaxy views; the server validates every entry in `POST /galaxy/visit` against `users.last_system_id` and 403s. Change one side only and legitimate jumps get bounced. The gate network itself comes from `galaxyGenerator` step 2 (tier-adjacent spanning tree + frontier links) — see pitfall #16 for the verbatim server copy.
 
+19. **Every new module needs THREE rows: `module_types` (stats/price/tier), `item_definitions` (category 'module', `item_data_defaults {"slot_type":…}`), and — if craftable — `crafting_recipes`.** `crafting_recipes.output_item_id` FKs `item_definitions`, and the inventory JOINs it to derive `slot_type` for the Fittable Modules pane, so a module missing its item_definitions row can't be crafted and, once bought, won't show as fittable. Migration 076 failed on this on first run (and 075's Repair Nanite Hive had the same gap, backfilled in 076). `npm run db:verify` now flags any module_types row with no item_definitions twin.
+
 ---
 
 ## Code patterns
