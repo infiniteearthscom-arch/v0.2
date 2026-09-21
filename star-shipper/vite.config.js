@@ -4,6 +4,11 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  // Build stamp baked into the bundle (shown next to the logo) so a
+  // stale cached client is obvious: compare it to the deploy time.
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z'),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

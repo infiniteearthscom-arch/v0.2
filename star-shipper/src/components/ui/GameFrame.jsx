@@ -221,7 +221,11 @@ const TopBar = () => {
         <div className="w-5 h-5 flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${BLUE.pri}, ${BLUE.dark})`, clipPath: 'polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px)' }}>
           <span className="text-white text-[0.8rem] font-black">★</span>
         </div>
-        <span className="text-xs font-extrabold tracking-widest" style={{ color: BLUE.light }}>STAR SHIPPER</span>
+        <span className="text-xs font-extrabold tracking-widest" style={{ color: BLUE.light }}
+          title={`Build ${typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev'} — if this is older than the last deploy, hard-refresh (Ctrl+F5)`}>STAR SHIPPER</span>
+        <span style={{ color: '#2a3a4a', fontSize: '0.55rem', marginLeft: 4, fontFamily: "'Share Tech Mono', monospace" }}>
+          {typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__.slice(5, 16) : 'dev'}
+        </span>
       </div>
 
       {/* Credits + Fleet count */}
