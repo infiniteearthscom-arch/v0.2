@@ -135,6 +135,12 @@ async function main() {
   );
   report('every planet row has harvester slots (072)', zeroPlanets.rows[0].n === 0, `${zeroPlanets.rows[0].n} planets with 0 slots`);
 
+  // --- migration 076 (asteroid telemetry) ---
+  const tele = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE stats ? 'telemetry_tier'`);
+  report('asteroid telemetry modules seeded (076)', tele.rows[0].n === 3, `${tele.rows[0].n}/3`);
+  const teleTech = await pool.query(`SELECT COUNT(*)::int AS n FROM tech_definitions WHERE id LIKE 'tech_ast_telemetry%'`);
+  report('asteroid telemetry research nodes (076)', teleTech.rows[0].n === 3, `${teleTech.rows[0].n}/3`);
+
   // --- migration 075 (Repair Nanite Hive) ---
   const nanites = await pool.query(`SELECT buy_price, stats->>'hull_repair_per_sec' AS r FROM module_types WHERE id = 'utility_repair_nanites'`);
   report('utility_repair_nanites module exists (075)', !!nanites.rows[0] && nanites.rows[0].r != null, nanites.rows[0] ? `buy_price=${nanites.rows[0].buy_price}` : 'missing');

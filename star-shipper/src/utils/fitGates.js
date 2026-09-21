@@ -17,6 +17,7 @@ const guessDamageType = (id) => {
 const moduleSubFamily = (slotType, stats, moduleId) => {
   if (slotType === 'weapon') return stats?.damage_type || guessDamageType(moduleId);
   if (slotType === 'shield') return stats?.armor_hp != null ? 'armor' : 'shield';
+  if (slotType === 'utility') return stats?.telemetry_tier != null ? 'telemetry' : null;
   return null;
 };
 

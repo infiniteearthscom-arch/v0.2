@@ -2408,7 +2408,22 @@ export const SystemView = () => {
       if (isAutopiloting) {
         // AUTOPILOT MODE
         // Get target position (planets move, so recalculate each frame)
-        const targetBody = currentSystem.bodies.find(b => b.id === target.id);
+        // Asteroid targets (telemetry list, 076) get a virtual static
+        // body so the same intercept/approach math applies: an "orbit"
+        // of radius |pos| at speed 0 with the rock's bearing as offset.
+        let targetBody = currentSystem.bodies.find(b => b.id === target.id);
+        if (!targetBody && target.type === 'asteroid') {
+          const rock = (asteroidsRef.current || []).find(a => a.id === target.id);
+          if (rock) {
+            targetBody = {
+              id: rock.id, name: target.name || 'Asteroid', type: 'asteroid',
+              orbitRadius: Math.hypot(rock.x, rock.y), orbitSpeed: 0, orbitOffset: Math.atan2(rock.y, rock.x),
+              size: rock.size || 4,
+            };
+          } else {
+            setAutopilotTarget(null); // rock mined out / gone
+          }
+        }
         if (targetBody) {
           // First, get current target position for distance check
           let currentTargetPos;
@@ -2482,7 +2497,18 @@ export const SystemView = () => {
           
           // Docking range - ship touches the planet/station
           const dockingRange = targetBody.type === 'station' ? 15 : (targetBody.size || 20) + 5;
-          
+
+          // Asteroid arrival: hold station next to the rock (no dock,
+          // no window) so the player can scan / mine it.
+          if (targetBody.type === 'asteroid' && currentDistance < dockingRange + 40) {
+            isBraking = true;
+            thrustInput = 0;
+            if (currentSpeed < 15) {
+              shipVelRef.current = { x: 0, y: 0 };
+              setTimeout(() => setAutopilotTarget(null), 0);
+              if (pushToast) pushToast({ kind: 'info', text: `Arrived at ${targetBody.name}`, duration: 1800 });
+            }
+          } else
           if (currentDistance < dockingRange + 50 && currentSpeed < 40) {
             // Close and slow - final approach, snap to docked position
             isBraking = true;
@@ -4016,11 +4042,42 @@ export const SystemView = () => {
           .filter(a => a.scanned)
           .map(a => ({ id: a.id, x: a.x, y: a.y, size: a.size || 4 }));
 
+        // Asteroid telemetry (076): the fleet's best fitted telemetry
+        // tier (fleet-wide, pitfall #15) + a catalogue projection of
+        // every asteroid the client already holds. What the map SHOWS
+        // is gated by tier in SystemMapWindow; what the rows CONTAIN
+        // (quality / minerals) is already scan-gated by the server.
+        let telemetryTier = 0;
+        for (const ship of (fleetShipsRef.current || [])) {
+          for (const fv of Object.values(ship?.fitted_modules || {})) {
+            const t = Number(fv?.stats?.telemetry_tier) || 0;
+            if (t > telemetryTier) telemetryTier = t;
+          }
+        }
+        const px0 = shipPosRef.current.x, py0 = shipPosRef.current.y;
+        const asteroidCatalogue = telemetryTier > 0
+          ? (asteroidsRef.current || []).map(a => {
+              const q = a.stat_purity != null
+                ? Math.round((Number(a.stat_purity) + Number(a.stat_stability) + Number(a.stat_potency) + Number(a.stat_density)) / 4)
+                : null;
+              const minerals = a.contents
+                ? Object.values(a.contents).filter(v => (v?.remaining || 0) > 0).map(v => ({ name: v.name, remaining: v.remaining }))
+                : null;
+              return {
+                id: a.id, x: a.x, y: a.y, size: a.size || 4, beltId: a.belt_body_id || null,
+                scanned: !!a.scanned, quality: q, minerals,
+                distance: Math.hypot(a.x - px0, a.y - py0),
+              };
+            })
+          : null;
+
         setScannerData({
           scannedAsteroids: scannedAst,
           liveEnemies: liveEnemiesArr,
           enemyGhosts: [...ghosts.values()],
           sensorRange: sensorR,
+          telemetryTier,
+          asteroidCatalogue,
         });
       }
       

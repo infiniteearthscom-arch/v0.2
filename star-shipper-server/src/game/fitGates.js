@@ -32,6 +32,9 @@ export const MODULE_GATES = {
     shield: 'eng_shield_upgrades',     // Shield Upgrades
     armor:  'eng_armor_layering',      // Armor Layering
   },
+  utility: {
+    telemetry: 'ast_survey',           // Survey (Astrometrics) -- asteroid telemetry arrays (076)
+  },
 };
 
 // Hull id → { skill, level }. Anything not listed is free to buy.
@@ -62,6 +65,7 @@ const guessDamageType = (id) => {
 export function moduleSubFamily(slotType, stats, moduleId) {
   if (slotType === 'weapon') return stats?.damage_type || guessDamageType(moduleId);
   if (slotType === 'shield') return stats?.armor_hp != null ? 'armor' : 'shield';
+  if (slotType === 'utility') return stats?.telemetry_tier != null ? 'telemetry' : null;
   return null;
 }
 

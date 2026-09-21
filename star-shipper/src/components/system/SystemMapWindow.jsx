@@ -474,8 +474,11 @@ export const SystemMapWindow = () => {
 
   const handleClickBody = useCallback((body) => {
     if (body.type === 'asteroid_belt') return;
+    // Asteroid rows (telemetry list) pass { id, name, type: 'asteroid' };
+    // SystemView's autopilot resolves the rock's position itself.
     setAutopilotTarget({ id: body.id, name: body.name, type: body.type });
   }, [setAutopilotTarget]);
+  const [mineralFilter, setMineralFilter] = useState('');
 
   const handleCancelAutopilot = useCallback(() => {
     setAutopilotTarget(null);
@@ -500,8 +503,29 @@ export const SystemMapWindow = () => {
     : [];
 
   const targetData = autopilotTarget
-    ? bodyData.find(d => d.body.id === autopilotTarget.id)
+    ? (bodyData.find(d => d.body.id === autopilotTarget.id)
+      || (() => {
+        // Asteroid target: distance from the telemetry catalogue.
+        const rock = scannerData?.asteroidCatalogue?.find(a => a.id === autopilotTarget.id);
+        return rock ? { body: { id: rock.id, name: autopilotTarget.name, type: 'asteroid' }, distance: rock.distance } : null;
+      })())
     : null;
+
+  // Asteroid telemetry list (076). Tier gates VISIBILITY only:
+  //   1 = rocks you've scanned · 2 = + everything in sensor range · 3 = whole system.
+  // Quality/minerals show only for scanned rocks (server scan-gate).
+  const telemetryTier = scannerData?.telemetryTier || 0;
+  const asteroidRows = useMemo(() => {
+    const cat = scannerData?.asteroidCatalogue;
+    if (!telemetryTier || !cat) return [];
+    const sensorR = scannerData?.sensorRange || 0;
+    let rows = cat.filter(a => telemetryTier >= 3 || a.scanned || (telemetryTier >= 2 && a.distance <= sensorR));
+    if (mineralFilter) {
+      const f = mineralFilter.toLowerCase();
+      rows = rows.filter(a => (a.minerals || []).some(m => (m.name || '').toLowerCase().includes(f)));
+    }
+    return rows.sort((a, b) => a.distance - b.distance);
+  }, [scannerData, telemetryTier, mineralFilter]);
 
   return (
     <div
@@ -691,6 +715,78 @@ export const SystemMapWindow = () => {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Asteroid telemetry list (076): only renders when a telemetry
+            array is fitted somewhere in the fleet. */}
+        {inSystem && telemetryTier > 0 && (
+          <div style={{ borderTop: `1px solid ${EDGE}`, maxHeight: 220, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+            <div style={{
+              padding: '6px 12px 4px', display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: '0.8rem', fontFamily: FM, color: '#a0c860', letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700,
+            }}>
+              <span style={{ flex: 1 }}>
+                Asteroids · {asteroidRows.length}
+                <span style={{ color: '#5a7080', fontWeight: 400, marginLeft: 6 }}>
+                  {telemetryTier >= 3 ? 'system-wide' : telemetryTier === 2 ? 'sensor range' : 'scanned only'}
+                </span>
+              </span>
+              {telemetryTier >= 3 && (
+                <input
+                  value={mineralFilter}
+                  onChange={(e) => setMineralFilter(e.target.value)}
+                  placeholder="filter mineral…"
+                  style={{
+                    width: 110, fontSize: '0.8rem', fontFamily: FM, padding: '1px 6px',
+                    background: 'rgba(4,8,16,0.7)', border: `1px solid ${EDGE}`, borderRadius: 2, color: '#cbd5e1',
+                    textTransform: 'none', letterSpacing: 0,
+                  }}
+                />
+              )}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0 6px' }}>
+              {asteroidRows.length === 0 && (
+                <div style={{ padding: '4px 12px', fontSize: '0.8rem', color: '#3a5a6a', fontFamily: FM, fontStyle: 'italic' }}>
+                  {telemetryTier === 1 ? 'No scanned asteroids in this system yet.' : 'No asteroids match.'}
+                </div>
+              )}
+              {asteroidRows.map((a, i) => {
+                const isTarget = autopilotTarget?.id === a.id;
+                const name = `Asteroid ${a.id.slice(0, 4).toUpperCase()}`;
+                const qColor = a.quality == null ? '#5a7080' : a.quality >= 80 ? '#aa44ff' : a.quality >= 60 ? '#4488ff' : a.quality >= 40 ? '#44cc44' : '#888';
+                return (
+                  <div
+                    key={a.id}
+                    onClick={() => handleClickBody({ id: a.id, name, type: 'asteroid' })}
+                    title={`Set autopilot → ${name}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '4px 12px', marginLeft: 4, cursor: 'pointer',
+                      background: isTarget ? `${BLUE.pri}10` : 'transparent',
+                      borderLeft: isTarget ? `2px solid ${BLUE.pri}66` : '2px solid transparent',
+                    }}
+                    onMouseEnter={(e) => { if (!isTarget) e.currentTarget.style.background = 'rgba(160,200,96,0.05)'; }}
+                    onMouseLeave={(e) => { if (!isTarget) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: a.scanned ? '#a0c860' : '#4a5a4a', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.6875rem', color: '#cbd5e1', fontWeight: 600, display: 'flex', gap: 8 }}>
+                        <span>{name}</span>
+                        <span style={{ color: qColor, fontFamily: FM }}>{a.quality != null ? `Q${a.quality}` : 'unscanned'}</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#5a7080', fontFamily: FM, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {formatDistance(a.distance)}
+                        {telemetryTier >= 2 && a.minerals && a.minerals.length > 0 && (
+                          <span> · {a.minerals.map(m => `${m.name} ${m.remaining}u`).join(', ')}</span>
+                        )}
+                        {telemetryTier >= 2 && !a.scanned && <span> · scan to reveal minerals</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
