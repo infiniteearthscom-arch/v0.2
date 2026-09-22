@@ -2133,8 +2133,9 @@ const VendorTab = ({ body }) => {
           rarity: r.rarity,
           base_price: r.base_price,
           icon: r.icon,
-          // Sell price: base_price × quality × 0.5
-          sell_price: Math.max(1, Math.round(
+          // Sell price: server-computed (lib/pricing.js); old formula only
+          // as a fallback for a stale server.
+          sell_price: s.sell_price ?? Math.max(1, Math.round(
             r.base_price * (((s.stats?.purity || 50) + (s.stats?.stability || 50) +
               (s.stats?.potency || 50) + (s.stats?.density || 50)) / 4 / 50) * 0.5
           )),
@@ -2142,9 +2143,9 @@ const VendorTab = ({ body }) => {
       );
       const items = (data.items || []).map(item => ({
         ...item,
-        sell_price: item.item_data?.module_type_id
+        sell_price: item.sell_price ?? (item.item_data?.module_type_id
           ? Math.max(1, Math.round((item.item_data?.buy_price || 10) * 0.4))
-          : { fuel_cell: 40, scanner_probe: 20, advanced_scanner_probe: 60 }[item.item_id] || 5,
+          : { fuel_cell: 40, scanner_probe: 20, advanced_scanner_probe: 60 }[item.item_id] || 5),
       }));
       setSellInventory({ resources, items });
     } catch (e) {

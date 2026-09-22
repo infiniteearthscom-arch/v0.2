@@ -30,6 +30,7 @@ const getCargoBonuses = async (userId) => {
   };
 };
 import { qualityMultiplier } from '../lib/quality.js';
+import { loadPricingCatalog, itemSellPrice, resourceSellPrice, avgResourceQuality } from '../lib/pricing.js';
 
 const router = express.Router();
 
@@ -354,6 +355,9 @@ router.get('/inventory', authMiddleware, async (req, res) => {
     // Group resources by type, keep items as flat list
     const grouped = {};
     const items = [];
+    // Vendor sell prices ride along (lib/pricing.js) so the Sell tab shows
+    // the exact number /fitting/sell-* will pay.
+    const catalog = await loadPricingCatalog(queryAll);
     
     for (const row of inventory) {
       if (row.item_type === 'item') {
@@ -376,6 +380,7 @@ router.get('/inventory', authMiddleware, async (req, res) => {
           item_icon: row.item_icon,
           item_data: itemData,
           item_max_stack: row.item_max_stack || 1,
+          sell_price: itemSellPrice(row, catalog).price,
           quantity: row.quantity,
           slot_index: row.slot_index,
         });
@@ -398,6 +403,7 @@ router.get('/inventory', authMiddleware, async (req, res) => {
         grouped[key].stacks.push({
           id: row.id,
           quantity: row.quantity,
+          sell_price: resourceSellPrice(Number(row.base_price), avgResourceQuality(row)),
           slot_index: row.slot_index,
           stats: {
             purity: row.stat_purity,
@@ -800,6 +806,7 @@ router.post('/craft', authMiddleware, async (req, res) => {
       
       // Store the input quality on the item
       itemData.quality = { purity: avgPurity, stability: avgStability, potency: avgPotency, density: avgDensity };
+      itemData.source = 'crafted'; // vendor values crafts from materials, not buy_price (lib/pricing.js)
       
       // Try to stack with existing identical item (same item_id and same item_data)
       const existingItem = await client.query(
@@ -935,7 +942,7 @@ router.post('/craft/cheat', authMiddleware, async (req, res) => {
     `, [recipe_id]);
     if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
 
-    const itemData = { ...(recipe.item_data_defaults || {}), quality: { purity: 50, stability: 50, potency: 50, density: 50 } };
+    const itemData = { ...(recipe.item_data_defaults || {}), quality: { purity: 50, stability: 50, potency: 50, density: 50 }, source: 'crafted' };
 
     const nextSlot = await getNextSlotIndex(userId);
     const result = await queryOne(`

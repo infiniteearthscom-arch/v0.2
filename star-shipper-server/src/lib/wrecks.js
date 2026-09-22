@@ -122,6 +122,7 @@ export async function insertModuleItem(client, userId, moduleTypeId, quality) {
   const itemData = {
     slot_type: mt.rows[0].slot_type,
     quality: quality || { purity: 50, stability: 50, potency: 50, density: 50 },
+    source: 'loot', // valued from materials x tier (lib/pricing.js)
   };
   await client.query(
     `INSERT INTO player_resource_inventory (user_id, item_type, item_id, quantity, slot_index, item_data)

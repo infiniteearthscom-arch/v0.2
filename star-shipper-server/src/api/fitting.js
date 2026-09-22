@@ -9,6 +9,7 @@ import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
 import { moduleGateFor, hullGateFor, assertGate, getFleetCap, MAX_FLEET_CAP } from '../game/fitGates.js';
 import { modulesFromFitted, ejectResources, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
+import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
 
 const router = express.Router();
 
@@ -359,6 +360,7 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
       fitted[slot_id] = {
         module_type_id: mod.id,
         quality: itemData.quality || null,
+        source: itemData.source || null, // provenance for vendor sell-back (lib/pricing.js)
         name: mod.name,
         stats: mod.stats || null,
         // Module tier on the instance (2026-09-19): the client's warp
@@ -437,6 +439,7 @@ router.post('/unfit-module', authMiddleware, async (req, res) => {
       const itemData = {};
       if (modTypeRow.rows[0]?.slot_type) itemData.slot_type = modTypeRow.rows[0].slot_type;
       if (modInfo.quality) itemData.quality = modInfo.quality;
+      if (modInfo.source) itemData.source = modInfo.source;
 
       await client.query(`
         INSERT INTO player_resource_inventory (user_id, item_type, item_id, quantity, slot_index, item_data)
@@ -645,6 +648,7 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
           const itemData = {
             slot_type: item.slot_type,
             quality: { purity: 50, stability: 50, potency: 50, density: 50 },
+            source: 'vendor',
           };
           await client.query(`
             INSERT INTO player_resource_inventory (user_id, item_type, item_id, quantity, slot_index, item_data)
@@ -681,12 +685,7 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
     // here so prices stay server-authoritative (don't trust the
     // client-side supplies list in PlanetInteractionWindow). To add a
     // new supply, list it here AND in the client's supplies array.
-    const SUPPLIES_CATALOG = {
-      scanner_probe:          { price: 50,  display_name: 'Scanner Probe' },
-      advanced_scanner_probe: { price: 150, display_name: 'Advanced Scanner Probe' },
-      fuel_cell:              { price: 100, display_name: 'Fuel Cell' },
-      missile_warhead:        { price: 30,  display_name: 'Missile Warhead' },
-    };
+    // SUPPLIES_CATALOG lives in lib/pricing.js so sell-back uses the same prices.
     if (SUPPLIES_CATALOG[module_type_id]) {
       const supply = SUPPLIES_CATALOG[module_type_id];
       const supplyResult = await transaction(async (client) => {
@@ -786,6 +785,7 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       const itemData = {
         slot_type: mod.slot_type,
         quality: { purity: 50, stability: 50, potency: 50, density: 50 },
+        source: 'vendor', // sells back at 90% (lib/pricing.js)
       };
 
       await client.query(`
@@ -1107,7 +1107,9 @@ router.post('/rename-ship', authMiddleware, async (req, res) => {
 });
 
 // (sell endpoints follow below)
-// Sell price = base_price × quality_mult × 0.5
+// SELL PRICES: lib/pricing.js is the single source of truth (2026-09-22).
+// GET /resources/inventory returns the same numbers as sell_price so the
+// Sell tab shows exactly what the vendor will pay.
 // ============================================
 
 router.post('/sell-resource', authMiddleware, async (req, res) => {
@@ -1138,15 +1140,8 @@ router.post('/sell-resource', authMiddleware, async (req, res) => {
       const sellQty = Math.min(quantity, row.quantity);
       if (sellQty <= 0) throw new Error('Nothing to sell');
 
-      // Quality multiplier: average quality / 50 (so Q100 = 2x, Q50 = 1x)
-      const avgQuality = (
-        (row.stat_purity || 50) + (row.stat_stability || 50) +
-        (row.stat_potency || 50) + (row.stat_density || 50)
-      ) / 4;
-      const qualityMult = avgQuality / 50;
-
-      // Sell price = base_price × quality × 0.5 (50% vendor spread)
-      const pricePerUnit = Math.max(1, Math.round(row.base_price * qualityMult * 0.5));
+      // base_price x 0.5 at Q50, steep quality curve (lib/pricing.js)
+      const pricePerUnit = resourceSellPrice(Number(row.base_price), avgResourceQuality(row));
       const totalPrice = pricePerUnit * sellQty;
 
       // Remove from inventory
@@ -1184,8 +1179,9 @@ router.post('/sell-resource', authMiddleware, async (req, res) => {
 });
 
 // ============================================
-// SELL ITEM (modules, probes, fuel from cargo)
-// Modules: buy_price × 0.4, others: flat price
+// SELL ITEM (modules, probes, fuel, harvesters from cargo)
+// Vendor-bought modules + supplies: 90% of vendor price. Crafted / looted
+// / craft-only modules: recipe materials x tier markup x quality.
 // ============================================
 
 router.post('/sell-item', authMiddleware, async (req, res) => {
@@ -1216,43 +1212,10 @@ router.post('/sell-item', authMiddleware, async (req, res) => {
       const qty = Math.min(sellQty, row.quantity);
       if (qty <= 0) throw new Error('Nothing to sell');
 
-      let pricePerUnit = 5; // minimum fallback
-      let itemName = row.item_id || 'Unknown';
-
-      // Module resale. Modules land in inventory as item_type='item'
-      // with item_id = the module_types id (buy-module, craft, unfit
-      // all insert that shape) — the old branch required a nonexistent
-      // item_type='module' row, so every module sold at the flat 5 cr
-      // fallback (a 6,000 cr Bulk Cargo Bay paid ~5). Phase 0 fix
-      // 2026-09-04: look the module up by item_id. Craft-only modules
-      // (buy_price NULL, T3+) still fall back — vendors lowball what
-      // they can't stock; the player market is the real outlet.
-      const mod = await client.query(
-        `SELECT buy_price, name FROM module_types WHERE id = $1`,
-        [row.item_id]
-      );
-      if (mod.rows[0]) {
-        itemName = mod.rows[0].name;
-        if (mod.rows[0].buy_price != null) {
-          pricePerUnit = Math.max(1, Math.round(mod.rows[0].buy_price * 0.4));
-        }
-      } else {
-        // Items like fuel cells, probes — sell at flat rate
-        const itemPrices = {
-          fuel_cell: 40,
-          scanner_probe: 20,
-          advanced_scanner_probe: 60,
-        };
-        pricePerUnit = itemPrices[row.item_id] || 5;
-        itemName = row.item_id?.replace(/_/g, ' ') || 'Item';
-      }
-
-      // Quality multiplier for modules
-      if (row.item_data?.quality) {
-        const q = row.item_data.quality;
-        const avg = ((q.purity || 50) + (q.stability || 50) + (q.potency || 50) + (q.density || 50)) / 4;
-        pricePerUnit = Math.max(1, Math.round(pricePerUnit * (avg / 50)));
-      }
+      const catalog = await loadPricingCatalog(queryAll);
+      const priced = itemSellPrice(row, catalog);
+      const pricePerUnit = priced.price;
+      const itemName = priced.name;
 
       const totalPrice = pricePerUnit * qty;
 
