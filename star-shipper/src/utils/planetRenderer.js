@@ -1,25 +1,30 @@
 // planetRenderer.js -- procedural PIXEL-ART planet sprites (2026-09-21).
 //
-// Every planet gets a sprite SHEET generated once from its seed: FRAMES
-// columns, each a pixel disc whose pixels are sphere-mapped to a
-// longitude/latitude and sampled from a per-type texture (bands, noise
-// continents, craters, cracks, fissures, swirl). Frame k scrolls the
-// texture by k/FRAMES of a revolution, so the scene animates rotation by
-// picking a frame -- zero per-frame drawing.
+// Every planet gets a sprite SHEET generated from its seed: one column
+// per rotation frame, each a pixel disc whose pixels are sphere-mapped to
+// a longitude/latitude and sampled from a per-type texture (bands, noise
+// continents, craters, cracks, fissures, swirl). The scene animates
+// rotation by picking the frame for the current spin fraction -- zero
+// per-frame drawing.
 //
-// LIGHTING IS SEPARATE (v2, same day): the texture sheet is baked UNLIT
-// (every material at its bright step) and a small SHADE MASK -- one disc
-// per (pixel size, light direction), shared by every planet of that size
-// -- is composited over it with mix-blend-mode: multiply. That way a
-// planet's 48-frame texture is built once, the mask costs ~N² pixels,
-// and the terminator swings around the disc as the planet orbits with
-// no re-baking hitches. The 4-step ramp + checker dithering lives in the
-// mask, so the pixel-art shading look is unchanged.
+// v3 (30 fps): the frame COUNT is per planet -- enough frames that its
+// spin plays at TARGET_FPS (48..MAX_FRAMES). Sheets bake progressively
+// (utils/spriteBake.js): a QUICK_FRAMES sheet is built synchronously on
+// first sight and the full sheet bakes a few frames per timer tick, then
+// swaps in. Frame picks are by spin FRACTION, so the swap is seamless.
 //
-// Same canvas -> dataUrl -> <image image-rendering:pixelated> pipeline as
-// the ships. "Fine" resolution: 24-64 px across, scaled by body.size.
+// LIGHTING IS SEPARATE: the texture is baked UNLIT (materials at their
+// bright step) and a small SHADE MASK -- one disc per (pixel size, light
+// direction), shared by every planet of that size -- is composited over
+// it with mix-blend-mode: multiply. Emissive pixels (lava fissures,
+// exotic bands) go to a second sheet drawn ABOVE the mask.
 
-export const FRAMES = 48;
+import { bakeSheet, progressiveSheet } from './spriteBake.js';
+
+export const TARGET_FPS = 30;
+export const QUICK_FRAMES = 16;
+export const MAX_FRAMES = 200;
+export const FRAMES = QUICK_FRAMES; // legacy export
 export const LIGHT_DIRS = 16;
 const MIN_PX = 24, MAX_PX = 64;
 
@@ -32,8 +37,6 @@ const hash2 = (seed, x, y) => {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 };
-// Value noise on a torus in lon (period P) so the texture wraps around
-// the planet with no seam; lat is clamped (poles).
 const noise = (seed, u, v, P, Q) => {
   const x = ((u % 1) + 1) % 1 * P, y = Math.max(0, Math.min(0.9999, v)) * Q;
   const x0 = Math.floor(x), y0 = Math.floor(y);
@@ -45,7 +48,6 @@ const noise = (seed, u, v, P, Q) => {
 };
 const fbm = (seed, u, v, P, Q) =>
   0.55 * noise(seed, u, v, P, Q) + 0.3 * noise(seed + 17, u * 2, v * 2, P * 2, Q * 2) + 0.15 * noise(seed + 43, u * 4, v * 4, P * 4, Q * 4);
-
 const seedFromString = (s) => {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -60,8 +62,6 @@ const hexToRgb = (hex) => {
 };
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const rgbArr = (r, g, b) => [Math.round(r), Math.round(g), Math.round(b)];
-// Bright ("lit") version of a material -- the unlit texture is baked at
-// this step; the shade mask darkens everything else.
 const litColor = (hex) => rgbArr(...mix(hexToRgb(hex), [255, 250, 235], 0.22));
 function mixHex(a, b, t) {
   const c = mix(hexToRgb(a), hexToRgb(b), t);
@@ -69,8 +69,6 @@ function mixHex(a, b, t) {
 }
 
 // ---- per-type textures ----
-// Each returns { color: hex of the material at (lon, lat), emissive?:bool }
-// lon in [0,1) (wraps), lat in [-1,1] (south..north).
 const TEXTURES = {
   gas_giant: (seed, base, lon, lat) => {
     const wobble = (noise(seed, lon, (lat + 1) / 2, 6, 4) - 0.5) * 0.35;
@@ -131,117 +129,82 @@ const TEXTURES = {
   },
 };
 const CLOUD_TYPES = new Set(['terran', 'ocean']);
+const EMISSIVE_TYPES = new Set(['lava', 'exotic']);
 
 // ---- geometry shared by texture + mask ----
 export const spritePixels = (size) => Math.max(MIN_PX, Math.min(MAX_PX, Math.round(size * 0.9)));
 const padFor = (N, rings) => (rings ? Math.ceil(N * 0.5) : 2);
 
+// Revolutions per second by size: small rocks spin visibly, giants slowly.
+export const spinRate = (size) => Math.max(0.05, Math.min(0.2, 4.8 / Math.max(10, size)));
+// Frames needed so this planet's spin plays at TARGET_FPS.
+export const framesFor = (size) => Math.max(48, Math.min(MAX_FRAMES, Math.ceil(TARGET_FPS / spinRate(size))));
+
 // ============================================
-// TEXTURE SHEET (unlit) -- once per planet
+// TEXTURE SHEET (unlit) -- progressive, per planet
 // ============================================
-// body: { id, planetType, size, color, hasRings, hasAtmosphere }
 export function getPlanetSheet(body, baseColor) {
   const key = `${body.id}|${body.planetType}|${body.size}|${baseColor}|${body.hasRings ? 'r' : ''}`;
-  const hit = sheetCache.get(key);
-  if (hit) return hit;
-
   const N = spritePixels(body.size);
   const seed = seedFromString(String(body.id) + '|' + (body.planetType || ''));
   const tex = TEXTURES[body.planetType] || TEXTURES.rocky;
   const rings = !!body.hasRings;
   const pad = padFor(N, rings);
   const fw = N + pad * 2, fh = N + pad * 2;
-  const canvas = document.createElement('canvas');
-  canvas.width = fw * FRAMES; canvas.height = fh;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(fw * FRAMES, fh);
-  const data = img.data;
-  // Emissive layer (glow pass): only self-lit pixels (lava fissures,
-  // exotic bright bands). Drawn ABOVE the shade mask so they burn
-  // through the night side. Built only for types that emit.
-  const emits = body.planetType === 'lava' || body.planetType === 'exotic';
-  let ecanvas = null, edata = null;
-  if (emits) {
-    ecanvas = document.createElement('canvas');
-    ecanvas.width = fw * FRAMES; ecanvas.height = fh;
-  }
-  const eimg = emits ? ecanvas.getContext('2d').createImageData(fw * FRAMES, fh) : null;
-  if (eimg) edata = eimg.data;
-  let emissiveCount = 0;
+  const emits = EMISSIVE_TYPES.has(body.planetType);
 
   const colorCache = new Map();
   const lit = (hex) => { let c = colorCache.get(hex); if (!c) { c = litColor(hex); colorCache.set(hex, c); } return c; };
-  const putRgba = (x, y, rgb, a = 255) => {
-    const i = (y * fw * FRAMES + x) * 4;
-    data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = a;
-  };
   const atmo = hexToRgb(body.planetType === 'ocean' ? '#7fc3ff' : body.planetType === 'terran' ? '#9fd0ff' : baseColor);
   const ringLit = litColor('#c8b48a'), ringDark = rgbArr(...mix(hexToRgb('#c8b48a'), [8, 6, 20], 0.35));
   const cloud = litColor('#f4f8ff');
-  // (Emissive materials still darken on the night side under the multiply
-  //  mask -- acceptable for now; a glow pass could exempt them later.)
-  for (let f = 0; f < FRAMES; f++) {
-    const ox = f * fw;
-    const spin = f / FRAMES;
-    for (let py = 0; py < fh; py++) {
-      for (let px = 0; px < fw; px++) {
-        const nx = (px + 0.5 - fw / 2) / (N / 2);
-        const ny = (py + 0.5 - fh / 2) / (N / 2);
-        const r2 = nx * nx + ny * ny;
 
-        let ringStep = -1;
-        if (rings) {
-          const ex = nx / 1.75, ey = ny / 0.42;
-          const ed = Math.sqrt(ex * ex + ey * ey);
-          if (ed > 0.78 && ed < 1.0 && !(ed > 0.88 && ed < 0.905)) ringStep = (ed > 0.94 || ed < 0.83) ? 0 : 1;
-        }
-        const ringInFront = ringStep >= 0 && ny > 0;
-
-        if (r2 <= 1) {
-          const nz = Math.sqrt(1 - r2);
-          const lat = -ny;
-          const lon = ((Math.atan2(nx, nz) / (Math.PI * 2)) + spin + 1) % 1;
-          const t = tex(seed, baseColor, lon, lat);
-          let rgb = lit(t.color);
-          let alpha = t.emissive ? 254 : 255;
-          if (CLOUD_TYPES.has(body.planetType)) {
-            const clon = ((Math.atan2(nx, nz) / (Math.PI * 2)) + spin * 2 + 1) % 1;
-            const c = fbm(seed + 99, clon, (lat + 1) / 2, 7, 5);
-            if (c > 0.63) { rgb = cloud; alpha = 255; }
+  const spec = (frames) => ({
+    fw, fh, frames, emissive: emits, extra: { px: N },
+    paintFrame: (f, put, putE) => {
+      const spin = f / frames;
+      for (let py = 0; py < fh; py++) {
+        for (let px = 0; px < fw; px++) {
+          const nx = (px + 0.5 - fw / 2) / (N / 2);
+          const ny = (py + 0.5 - fh / 2) / (N / 2);
+          const r2 = nx * nx + ny * ny;
+          let ringStep = -1;
+          if (rings) {
+            const ex = nx / 1.75, ey = ny / 0.42;
+            const ed = Math.sqrt(ex * ex + ey * ey);
+            if (ed > 0.78 && ed < 1.0 && !(ed > 0.88 && ed < 0.905)) ringStep = (ed > 0.94 || ed < 0.83) ? 0 : 1;
           }
-          if (ringInFront) { rgb = ringStep === 1 ? ringLit : ringDark; alpha = 254; }
-          putRgba(ox + px, py, rgb, alpha);
-          if (edata && alpha === 254 && !ringInFront) {
-            const i = (py * fw * FRAMES + ox + px) * 4;
-            edata[i] = rgb[0]; edata[i + 1] = rgb[1]; edata[i + 2] = rgb[2]; edata[i + 3] = 255;
-            emissiveCount++;
+          const ringInFront = ringStep >= 0 && ny > 0;
+          if (r2 <= 1) {
+            const nz = Math.sqrt(1 - r2);
+            const lat = -ny;
+            const lon = ((Math.atan2(nx, nz) / (Math.PI * 2)) + spin + 1) % 1;
+            const t = tex(seed, baseColor, lon, lat);
+            let rgb = lit(t.color);
+            let emissive = !!t.emissive;
+            if (CLOUD_TYPES.has(body.planetType)) {
+              const clon = ((Math.atan2(nx, nz) / (Math.PI * 2)) + spin * 2 + 1) % 1;
+              const c = fbm(seed + 99, clon, (lat + 1) / 2, 7, 5);
+              if (c > 0.63) { rgb = cloud; emissive = false; }
+            }
+            if (ringInFront) { rgb = ringStep === 1 ? ringLit : ringDark; emissive = false; }
+            put(f, px, py, rgb);
+            if (emissive && putE) putE(f, px, py, rgb);
+          } else if (ringStep >= 0) {
+            put(f, px, py, ringStep === 1 ? ringLit : ringDark);
+          } else if (body.hasAtmosphere && r2 <= (1 + 2.2 / N) * (1 + 2.2 / N)) {
+            put(f, px, py, atmo, 120);
           }
-        } else if (ringStep >= 0) {
-          putRgba(ox + px, py, ringStep === 1 ? ringLit : ringDark);
-        } else if (body.hasAtmosphere && r2 <= (1 + 2.2 / N) * (1 + 2.2 / N)) {
-          putRgba(ox + px, py, atmo, 120);
         }
       }
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  let emissiveDataUrl = null;
-  if (ecanvas && emissiveCount > 0) {
-    ecanvas.getContext('2d').putImageData(eimg, 0, 0);
-    emissiveDataUrl = ecanvas.toDataURL();
-  }
-  const sheet = { dataUrl: canvas.toDataURL(), emissiveDataUrl, fw, fh, frames: FRAMES, px: N };
-  sheetCache.set(key, sheet);
-  return sheet;
+    },
+  });
+  return progressiveSheet(sheetCache, key, QUICK_FRAMES, framesFor(body.size), spec);
 }
 
 // ============================================
 // SHADE MASK -- per (pixel size, rings?, light direction), shared
 // ============================================
-// A single-frame disc: multiply factors for the 4 ramp steps with
-// checker dithering at the boundaries. Transparent outside the disc so
-// rings / atmosphere rim aren't darkened. Composite with
-// mix-blend-mode: multiply over the texture frame.
 const SHADE = [0.36, 0.58, 0.8, 1.0]; // darkest, dark, base, lit
 export function getShadeMask(size, hasRings, lightIdx) {
   const N = spritePixels(size);
@@ -250,39 +213,31 @@ export function getShadeMask(size, hasRings, lightIdx) {
   if (hit) return hit;
   const pad = padFor(N, !!hasRings);
   const fw = N + pad * 2, fh = N + pad * 2;
-  const canvas = document.createElement('canvas');
-  canvas.width = fw; canvas.height = fh;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(fw, fh);
-  const data = img.data;
   const la = (lightIdx / LIGHT_DIRS) * Math.PI * 2;
   const L = [Math.cos(la) * 0.85, Math.sin(la) * 0.85, 0.5];
   const Ll = Math.hypot(L[0], L[1], L[2]);
   L[0] /= Ll; L[1] /= Ll; L[2] /= Ll;
-  for (let py = 0; py < fh; py++) {
-    for (let px = 0; px < fw; px++) {
-      const nx = (px + 0.5 - fw / 2) / (N / 2);
-      const ny = (py + 0.5 - fh / 2) / (N / 2);
-      const r2 = nx * nx + ny * ny;
-      if (r2 > 1) continue;
-      const nz = Math.sqrt(1 - r2);
-      const s = nx * L[0] + ny * L[1] + nz * L[2] + (((px + py) & 1) ? 0.05 : -0.05);
-      const step = s > 0.55 ? 3 : s > 0.1 ? 2 : s > -0.3 ? 1 : 0;
-      const v = Math.round(255 * SHADE[step]);
-      const i = (py * fw + px) * 4;
-      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const mask = { dataUrl: canvas.toDataURL(), fw, fh, frames: 1, px: N };
+  const mask = bakeSheet({
+    fw, fh, frames: 1, extra: { px: N },
+    paintFrame: (f, put) => {
+      for (let py = 0; py < fh; py++) {
+        for (let px = 0; px < fw; px++) {
+          const nx = (px + 0.5 - fw / 2) / (N / 2);
+          const ny = (py + 0.5 - fh / 2) / (N / 2);
+          const r2 = nx * nx + ny * ny;
+          if (r2 > 1) continue;
+          const nz = Math.sqrt(1 - r2);
+          const s = nx * L[0] + ny * L[1] + nz * L[2] + (((px + py) & 1) ? 0.05 : -0.05);
+          const step = s > 0.55 ? 3 : s > 0.1 ? 2 : s > -0.3 ? 1 : 0;
+          const v = Math.round(255 * SHADE[step]);
+          put(f, px, py, [v, v, v]);
+        }
+      }
+    },
+  });
   maskCache.set(key, mask);
   return mask;
 }
-
-// Revolutions per second by size: small rocks spin visibly, giants slowly.
-// With 48 frames: size 30 → ~0.16 rev/s → ~7.7 fps; size 100 → ~2.3 fps
-// (a giant turning 7.5° per step, which reads as slow rather than steppy).
-export const spinRate = (size) => Math.max(0.05, Math.min(0.2, 4.8 / Math.max(10, size)));
 
 // Screen-space light index for a planet at (x, y) with the star at the origin.
 export const lightIndexFor = (x, y) => {

@@ -13,11 +13,17 @@
 // Same canvas -> dataUrl -> <image image-rendering:pixelated> pipeline as
 // ships and planets. Everything is generated once and cached.
 
-// Frame counts (v2: doubled after playtest read as steppy at 6-10 fps).
-export const STAR_FRAMES = 32;
-export const GATE_FRAMES = 12;
-export const WARP_FRAMES = 12;
-export const STATION_FRAMES = 2;
+import { bakeSheet, progressiveSheet } from './spriteBake.js';
+
+// Frame counts (v3, 30 fps): every loop plays at ~30 fps -- see the
+// loop lengths in SystemView. Stars and the pulsar beam bake
+// progressively (QUICK_FRAMES first, full sheet in the background);
+// gate / warp / stations are small enough to bake synchronously.
+export const STAR_FRAMES = 80;   // 2.7s loop
+export const GATE_FRAMES = 30;   // 1.0s loop
+export const WARP_FRAMES = 26;   // 0.9s loop
+export const STATION_FRAMES = 2; // light blink, 1.5 Hz
+export const QUICK_FRAMES = 16;
 
 const cache = new Map();
 
@@ -34,21 +40,7 @@ const hash = (seed, x, y) => {
 };
 const strSeed = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 
-function makeSheet(fw, fh, frames, paint) {
-  const canvas = document.createElement('canvas');
-  canvas.width = fw * frames; canvas.height = fh;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(fw * frames, fh);
-  const data = img.data;
-  const put = (f, x, y, rgb, a = 255) => {
-    if (x < 0 || y < 0 || x >= fw || y >= fh) return;
-    const i = (y * fw * frames + f * fw + x) * 4;
-    data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = a;
-  };
-  for (let f = 0; f < frames; f++) paint(f, put);
-  ctx.putImageData(img, 0, 0);
-  return { dataUrl: canvas.toDataURL(), fw, fh, frames };
-}
+const makeSheet = (fw, fh, frames, paint) => bakeSheet({ fw, fh, frames, paintFrame: paint });
 
 // ============================================
 // STARS
@@ -56,7 +48,6 @@ function makeSheet(fw, fh, frames, paint) {
 // colors: { core, mid, outer }; returns a sheet whose disc spans `px`.
 export function getStarSheet(starType, colors, hasAccretionDisk) {
   const key = `star|${starType}`;
-  if (cache.has(key)) return cache.get(key);
   const px = 64;
   const pad = hasAccretionDisk ? 52 : 12;
   const fw = px + pad * 2, fh = px + pad * 2;
@@ -84,9 +75,11 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
     spots.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad, r: 0.07 + hash(seed, 50 + i, 3) * 0.08, ph: hash(seed, 50 + i, 4) * TWO_PI, tilt: hash(seed, 50 + i, 5) * Math.PI });
   }
 
-  const sheet = makeSheet(fw, fh, STAR_FRAMES, (f, put) => {
+  const paint = (frames) => (f, put) => {
     const cx = fw / 2, cy = fh / 2, R = px / 2;
-    const phase = (f / STAR_FRAMES) * TWO_PI;
+    const phase = (f / frames) * TWO_PI;
+    // faculae flicker state: 16 changes per loop (~6 Hz), not per frame
+    const flick = Math.floor((f * 16) / frames);
 
     if (hasAccretionDisk) {
       const acc = hexToRgb(colors.accretion || '#ff6600');
@@ -132,7 +125,7 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
         const limb = 1 - d * d * 0.8;
         let v = limb * (0.8 + 0.3 * Math.min(1, edge * 6)) + dither;
         // faculae: bright specks that show near the limb (real stars do this)
-        if (d > 0.72 && hash(seed + f, x, y) > 0.965) v += 0.35;
+        if (d > 0.72 && hash(seed + flick, x, y) > 0.965) v += 0.35;
         // spots / plages
         for (const sp of spos) {
           const rx = (nx - sp.x) * Math.cos(sp.tilt) + (ny - sp.y) * Math.sin(sp.tilt);
@@ -151,16 +144,15 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
         const slot = Math.round(ang * 48);
         const r = hash(seed, slot, 9);
         if (hash(seed, slot, 11) > 0.5) {
-          const life = ((r + f / STAR_FRAMES) % 1);
+          const life = ((r + f / frames) % 1);
           const ej = 1.04 + life * 0.4;
           if (Math.abs(d - ej) < 0.028) put(f, x, y, life < 0.35 ? ramp[4] : ramp[3], Math.round(220 * (1 - life)));
         }
       }
     }
-  });
-  const out = { ...sheet, px };
-  cache.set(key, out);
-  return out;
+  };
+  return progressiveSheet(cache, key, QUICK_FRAMES, STAR_FRAMES,
+    (frames) => ({ fw, fh, frames, paintFrame: paint(frames), extra: { px } }));
 }
 
 // ============================================
@@ -168,14 +160,13 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
 // ============================================
 // Symmetric beam, so half a turn per loop is seamless. Length in disc
 // radii is reach; the caller scales it to world units.
-export const BEAM_FRAMES = 32;
+export const BEAM_FRAMES = 64; // 2.3s half-turn loop
 export function getPulsarBeamSheet(colors) {
   const key = 'pulsar-beam';
-  if (cache.has(key)) return cache.get(key);
   const fw = 112, fh = 112, cx = fw / 2, cy = fh / 2, reach = 52;
   const white = [255, 255, 255], tint = hexToRgb(colors.mid || '#dd88ff');
-  const sheet = makeSheet(fw, fh, BEAM_FRAMES, (f, put) => {
-    const rot = (f / BEAM_FRAMES) * Math.PI; // half turn per loop
+  const paint = (frames) => (f, put) => {
+    const rot = (f / frames) * Math.PI; // half turn per loop
     const ux = Math.cos(rot), uy = Math.sin(rot);
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
       const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
@@ -192,10 +183,9 @@ export function getPulsarBeamSheet(colors) {
       if (a <= 0.05) continue;
       put(f, x, y, core ? white : tint, Math.round(255 * Math.min(1, a)));
     }
-  });
-  const out = { ...sheet, px: fw, reach };
-  cache.set(key, out);
-  return out;
+  };
+  return progressiveSheet(cache, key, QUICK_FRAMES, BEAM_FRAMES,
+    (frames) => ({ fw, fh, frames, paintFrame: paint(frames), extra: { px: fw, reach } }));
 }
 
 // ============================================
@@ -482,7 +472,7 @@ export function getGateSheet() {
         const arc = ((rot * 3) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
         if (d > 5 && d < 8.5 && arc < 1.1) { put(f, x, y, d > 7.5 ? greenD : green, 200); continue; }
         if (d < 2.5) { put(f, x, y, [200, 255, 220], 230); continue; }
-        if (d < 4 && (x + y + f) % 2 === 0) { put(f, x, y, green, 150); continue; }
+        if (d < 4 && (x + y + (f >> 2)) % 2 === 0) { put(f, x, y, green, 150); continue; }
       }
     }
   });
@@ -511,7 +501,7 @@ export function getWarpSheet() {
       if (d < 4) { put(f, x, y, p3, 230); continue; }
       if (arm < 0.9) put(f, x, y, d > 9 ? p2 : p1, d > 11 ? 120 : 220);
       else if (arm < 1.3) put(f, x, y, p2, 110);
-      else if (hash(77, x + f, y) > 0.93) put(f, x, y, p3, 160);
+      else if (hash(77, x + (f >> 2), y) > 0.93) put(f, x, y, p3, 160);
     }
   });
   const out = { ...sheet, px: fw };

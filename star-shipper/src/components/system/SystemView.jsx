@@ -5,8 +5,8 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/u
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
-import { getPlanetSheet, getShadeMask, lightIndexFor, spinRate, FRAMES as PLANET_FRAMES } from '@/utils/planetRenderer';
-import { getStarSheet, getPulsarBeamSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STAR_FRAMES, BEAM_FRAMES, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
+import { getPlanetSheet, getShadeMask, lightIndexFor, spinRate } from '@/utils/planetRenderer';
+import { getStarSheet, getPulsarBeamSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
 
 // Pixel sprite frame picker shared by star / station / gate / warp
 // (planets inline the same nested-svg trick). `world` = the frame's
@@ -347,12 +347,12 @@ const Star = ({ starType, x, y, time }) => {
   if (!config) return null;
   const { colors, size, pulsar, hasAccretionDisk } = config;
   const pulsarPhase = pulsar ? Math.sin(time * 5) * 0.2 + 0.8 : 1;
-  // Pixel-art star (structureRenderer.js): 8-frame sheet -- rim
-  // granulation + corona spikes breathe; black holes rotate a pixel
-  // accretion ring. The soft SVG blur glow stays behind the sprite so
+  // Pixel-art star (structureRenderer.js): 80-frame sheet at 30 fps --
+  // convection cells churn, spots drift, ejecta ride out; black holes
+  // rotate a pixel accretion ring. Baked progressively (16 frames first). The soft SVG blur glow stays behind the sprite so
   // the system still reads as lit from the centre.
   const sheet = getStarSheet(starType, colors, !!hasAccretionDisk);
-  const frame = Math.floor(time * 12) % STAR_FRAMES; // 32 frames @ 12 fps (one full loop ≈ 2.7s)
+  const frame = Math.floor(((time / 2.7) % 1) * sheet.frames); // 2.7s loop; frame count grows when the full 30 fps sheet lands
   const world = (size * 2) * (sheet.fw / sheet.px); // disc = size*2, sheet has padding
   return (
     <g transform={`translate(${x}, ${y})`}>
@@ -373,7 +373,7 @@ const Star = ({ starType, x, y, time }) => {
         const beam = getPulsarBeamSheet(colors);
         // reach px == size*5 world units (the old rect's half-length)
         const worldW = (size * 5) * (beam.fw / beam.reach);
-        return <SpriteFrame sheet={beam} frame={Math.floor(time * 14) % BEAM_FRAMES} world={worldW} opacity={0.85} />;
+        return <SpriteFrame sheet={beam} frame={Math.floor(((time / 2.3) % 1) * beam.frames)} world={worldW} opacity={0.85} />;
       })()}
     </g>
   );
@@ -447,12 +447,13 @@ const Planet = ({ body, time, onClick, isTarget }) => {
             atmosphere rim are baked into the sheet, so the old flat
             circle / highlight / ring ellipse are gone. */}
         {(() => {
-          // v2: unlit texture sheet (baked once, 48 frames) + a shared
+          // v3: unlit texture sheet (48-200 frames, enough for 30 fps; baked
+          // progressively, 16 frames first) + a shared
           // shade mask for the current star-facing light direction,
           // composited with multiply. No re-bake when the light moves.
           const sheet = getPlanetSheet(body, planetColor);
           const mask = getShadeMask(body.size, body.hasRings, lightIndexFor(x, y));
-          const frame = Math.floor(time * spinRate(body.size) * PLANET_FRAMES) % PLANET_FRAMES;
+          const frame = Math.floor(((time * spinRate(body.size)) % 1) * sheet.frames); // spin fraction -> frame, so the quick->full sheet swap is seamless
           // World size: the disc spans body.size*2; the sheet frame is
           // wider when rings/atmosphere padding exist -- scale uniformly.
           const scale = (body.size * 2) / sheet.px;
@@ -588,7 +589,7 @@ const JumpGate = ({ body, time, onClick, isTarget }) => {
       )}
       
       {/* Pixel-art gate (one design everywhere): ring + pylons + rotating arcs. */}
-      <SpriteFrame sheet={getGateSheet()} frame={Math.floor(time * 12) % GATE_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
+      <SpriteFrame sheet={getGateSheet()} frame={Math.floor((time % 1) * GATE_FRAMES)} world={30} opacity={0.75 + 0.25 * pulse} />
       {/* Label */}
       <text y={20} textAnchor="middle" fill={isTarget ? '#44ff88' : '#44ff8899'}
         fontSize="9" fontFamily="sans-serif" fontWeight={isTarget ? 'bold' : 'normal'}>
@@ -622,7 +623,7 @@ const WarpPoint = ({ body, time, onClick, isTarget }) => {
       )}
       
       {/* Pixel-art warp vortex (one design everywhere): 3 spiral arms rotate. */}
-      <SpriteFrame sheet={getWarpSheet()} frame={Math.floor(time * 14) % WARP_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
+      <SpriteFrame sheet={getWarpSheet()} frame={Math.floor(((time / 0.9) % 1) * WARP_FRAMES)} world={30} opacity={0.75 + 0.25 * pulse} />
       {/* Label */}
       <text y={20} textAnchor="middle" fill={isTarget ? '#aa66ff' : '#8855ff88'}
         fontSize="9" fontFamily="sans-serif" fontWeight={isTarget ? 'bold' : 'normal'}>
