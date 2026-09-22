@@ -156,6 +156,18 @@ export function getPlanetSheet(body, baseColor) {
   const ctx = canvas.getContext('2d');
   const img = ctx.createImageData(fw * FRAMES, fh);
   const data = img.data;
+  // Emissive layer (glow pass): only self-lit pixels (lava fissures,
+  // exotic bright bands). Drawn ABOVE the shade mask so they burn
+  // through the night side. Built only for types that emit.
+  const emits = body.planetType === 'lava' || body.planetType === 'exotic';
+  let ecanvas = null, edata = null;
+  if (emits) {
+    ecanvas = document.createElement('canvas');
+    ecanvas.width = fw * FRAMES; ecanvas.height = fh;
+  }
+  const eimg = emits ? ecanvas.getContext('2d').createImageData(fw * FRAMES, fh) : null;
+  if (eimg) edata = eimg.data;
+  let emissiveCount = 0;
 
   const colorCache = new Map();
   const lit = (hex) => { let c = colorCache.get(hex); if (!c) { c = litColor(hex); colorCache.set(hex, c); } return c; };
@@ -199,6 +211,11 @@ export function getPlanetSheet(body, baseColor) {
           }
           if (ringInFront) { rgb = ringStep === 1 ? ringLit : ringDark; alpha = 254; }
           putRgba(ox + px, py, rgb, alpha);
+          if (edata && alpha === 254 && !ringInFront) {
+            const i = (py * fw * FRAMES + ox + px) * 4;
+            edata[i] = rgb[0]; edata[i + 1] = rgb[1]; edata[i + 2] = rgb[2]; edata[i + 3] = 255;
+            emissiveCount++;
+          }
         } else if (ringStep >= 0) {
           putRgba(ox + px, py, ringStep === 1 ? ringLit : ringDark);
         } else if (body.hasAtmosphere && r2 <= (1 + 2.2 / N) * (1 + 2.2 / N)) {
@@ -208,7 +225,12 @@ export function getPlanetSheet(body, baseColor) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  const sheet = { dataUrl: canvas.toDataURL(), fw, fh, frames: FRAMES, px: N };
+  let emissiveDataUrl = null;
+  if (ecanvas && emissiveCount > 0) {
+    ecanvas.getContext('2d').putImageData(eimg, 0, 0);
+    emissiveDataUrl = ecanvas.toDataURL();
+  }
+  const sheet = { dataUrl: canvas.toDataURL(), emissiveDataUrl, fw, fh, frames: FRAMES, px: N };
   sheetCache.set(key, sheet);
   return sheet;
 }

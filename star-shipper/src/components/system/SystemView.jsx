@@ -352,7 +352,7 @@ const Star = ({ starType, x, y, time }) => {
   // accretion ring. The soft SVG blur glow stays behind the sprite so
   // the system still reads as lit from the centre.
   const sheet = getStarSheet(starType, colors, !!hasAccretionDisk);
-  const frame = Math.floor(time * 10) % STAR_FRAMES; // 16 frames @ 10 fps
+  const frame = Math.floor(time * 12) % STAR_FRAMES; // 32 frames @ 12 fps (one full loop ≈ 2.7s)
   const world = (size * 2) * (sheet.fw / sheet.px); // disc = size*2, sheet has padding
   return (
     <g transform={`translate(${x}, ${y})`}>
@@ -467,6 +467,17 @@ const Planet = ({ body, time, onClick, isTarget }) => {
               </svg>
               <image href={mask.dataUrl} x={-w / 2} y={-h / 2} width={w} height={h}
                 style={{ imageRendering: 'pixelated', mixBlendMode: 'multiply' }} />
+              {/* Glow pass: emissive pixels (lava fissures, exotic bands)
+                  drawn above the shade mask so they burn through the night side. */}
+              {sheet.emissiveDataUrl && (
+                <svg x={-w / 2} y={-h / 2} width={w} height={h}
+                  viewBox={`${frame * sheet.fw} 0 ${sheet.fw} ${sheet.fh}`}
+                  preserveAspectRatio="none" style={{ overflow: 'hidden' }}>
+                  <image href={sheet.emissiveDataUrl} x={0} y={0}
+                    width={sheet.fw * sheet.frames} height={sheet.fh}
+                    style={{ imageRendering: 'pixelated' }} />
+                </svg>
+              )}
             </>
           );
         })()}

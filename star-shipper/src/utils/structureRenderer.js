@@ -14,7 +14,7 @@
 // ships and planets. Everything is generated once and cached.
 
 // Frame counts (v2: doubled after playtest read as steppy at 6-10 fps).
-export const STAR_FRAMES = 16;
+export const STAR_FRAMES = 32;
 export const GATE_FRAMES = 12;
 export const WARP_FRAMES = 12;
 export const STATION_FRAMES = 2;
@@ -58,32 +58,46 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
   const key = `star|${starType}`;
   if (cache.has(key)) return cache.get(key);
   const px = 48;
-  const pad = hasAccretionDisk ? 40 : 12;
+  const pad = hasAccretionDisk ? 40 : 14;
   const fw = px + pad * 2, fh = px + pad * 2;
   const seed = strSeed(starType);
   const core = hexToRgb(colors.core), mid = hexToRgb(colors.mid), outer = hexToRgb(colors.outer);
-  const ramp = [mix(outer, [0, 0, 0], 0.35), outer, mid, core];
+  // 5-step ramp: rim-dark, outer, mid, hot, core-white
+  const ramp = [mix(outer, [10, 4, 0], 0.4), outer, mid, mix(mid, core, 0.55), core];
+  const TWO_PI = Math.PI * 2;
+
+  // Convection cells: K seeded centres that drift on small closed loops
+  // (phase = frame), so granulation MOVES between frames instead of
+  // re-rolling -- that flicker was the "hokey" part.
+  const K = 26;
+  const cells = [];
+  for (let i = 0; i < K; i++) {
+    const ang = hash(seed, i, 1) * TWO_PI, rad = Math.sqrt(hash(seed, i, 2)) * 0.92;
+    cells.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad, ph: hash(seed, i, 3) * TWO_PI, amp: 0.05 + hash(seed, i, 4) * 0.05, dir: hash(seed, i, 5) > 0.5 ? 1 : -1 });
+  }
+
   const sheet = makeSheet(fw, fh, STAR_FRAMES, (f, put) => {
     const cx = fw / 2, cy = fh / 2, R = px / 2;
+    const phase = (f / STAR_FRAMES) * TWO_PI;
+
     if (hasAccretionDisk) {
-      // Rotating accretion ring: hot inner edge -> orange -> dark. Tilted ellipse.
       const acc = hexToRgb(colors.accretion || '#ff6600');
       for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
         const dx = (x + 0.5 - cx), dy = (y + 0.5 - cy);
         const ex = dx / (R * 2.6), ey = dy / (R * 0.75);
         const ed = Math.sqrt(ex * ex + ey * ey);
         if (ed > 0.45 && ed < 1) {
-          const ang = Math.atan2(ey, ex) + f * (Math.PI * 2 / STAR_FRAMES);
-          const streak = (Math.sin(ang * 5) + hash(seed, x + f * 7, y)) * 0.5;
+          const ang = Math.atan2(ey, ex) + phase;
+          // streaks advected around the ring (periodic in phase)
+          const streak = 0.5 + 0.5 * Math.sin(ang * 5 + ed * 9) * Math.sin(ang * 2.3 - ed * 4);
           const t = (ed - 0.45) / 0.55;
           let rgb = t < 0.25 ? mix([255, 240, 200], acc, t * 4) : mix(acc, [60, 20, 0], (t - 0.25) / 0.75);
-          if (streak > 0.7) rgb = mix(rgb, [255, 255, 255], 0.25);
-          if (streak < 0.15 && t > 0.3) continue; // gaps for a dusty look
-          if (dx * dx + dy * dy < R * R * 0.9 && dy < 0) continue; // behind the hole (top half)
+          if (streak > 0.8) rgb = mix(rgb, [255, 255, 255], 0.3);
+          if (streak < 0.18 && t > 0.3) continue;
+          if (dx * dx + dy * dy < R * R * 0.9 && dy < 0) continue;
           put(f, x, y, rgb);
         }
       }
-      // Event horizon + lensing ring.
       for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
         const dx = (x + 0.5 - cx), dy = (y + 0.5 - cy);
         const d = Math.sqrt(dx * dx + dy * dy);
@@ -92,23 +106,46 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
       }
       return;
     }
+
+    // cell positions this frame
+    const cpos = cells.map(c => ({ x: c.x + Math.cos(c.ph + phase * c.dir) * c.amp, y: c.y + Math.sin(c.ph + phase * c.dir) * c.amp }));
+
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
       const dx = (x + 0.5 - cx), dy = (y + 0.5 - cy);
-      const d = Math.sqrt(dx * dx + dy * dy) / R;
+      const nx = dx / R, ny = dy / R;
+      const d = Math.sqrt(nx * nx + ny * ny);
+      const dither = ((x + y) & 1) ? 0.035 : -0.035;
       if (d <= 1) {
-        // radial ramp with granulation near the rim (flickers per frame)
-        const g = hash(seed + f * 31, x, y);
-        let step = d < 0.35 ? 3 : d < 0.7 ? 2 : d < 0.9 ? 1 : 0;
-        if (d > 0.55 && g > 0.82) step = Math.min(3, step + 1);
-        if (d > 0.8 && g < 0.15) step = Math.max(0, step - 1);
+        // limb darkening (smooth) + granulation from nearest cell
+        let best = 9, second = 9;
+        for (const c of cpos) {
+          const ddx = nx - c.x, ddy = ny - c.y; const dd = ddx * ddx + ddy * ddy;
+          if (dd < best) { second = best; best = dd; } else if (dd < second) second = dd;
+        }
+        const edge = Math.sqrt(second) - Math.sqrt(best); // small near cell boundaries
+        const limb = 1 - d * d * 0.85;                    // 1 centre -> 0.15 rim
+        let v = limb * (0.78 + 0.32 * Math.min(1, edge * 6)); // bright cell centres, darker lanes
+        v += dither;
+        const step = v > 0.92 ? 4 : v > 0.72 ? 3 : v > 0.5 ? 2 : v > 0.3 ? 1 : 0;
         put(f, x, y, ramp[step]);
-      } else if (d <= 1.55) {
-        // corona: 12 spikes whose length breathes per frame + sparse sparks
+      } else if (d <= 1.6) {
+        // corona: tendrils rippling around the limb, two travelling waves
         const ang = Math.atan2(dy, dx);
-        const spike = Math.pow(Math.abs(Math.cos(ang * 6)), 24);
-        const len = 1 + 0.18 + 0.3 * spike * (0.6 + 0.4 * Math.sin(f / STAR_FRAMES * Math.PI * 2 + ang * 3));
-        if (d < len) put(f, x, y, ramp[1], d < 1.12 ? 220 : 150);
-        else if (hash(seed + f * 13, x, y) > 0.985) put(f, x, y, ramp[2], 180);
+        const w1 = 0.5 + 0.5 * Math.sin(ang * 7 + phase);
+        const w2 = 0.5 + 0.5 * Math.sin(ang * 3 - phase * 2 + 1.3);
+        const tendril = Math.pow(w1, 3) * (0.55 + 0.45 * w2);
+        const len = 1.05 + 0.42 * tendril + dither * 0.6;
+        if (d < len) {
+          const t = (d - 1) / Math.max(0.05, len - 1);
+          const step = t < 0.35 ? 2 : t < 0.7 ? 1 : 0;
+          put(f, x, y, ramp[step], t < 0.7 ? 230 : 140);
+        } else if (d < 1.6) {
+          // sparse ejecta that ride outward on the loop
+          const r = hash(seed, Math.round(ang * 40), 9);
+          const life = ((r + f / STAR_FRAMES) % 1);
+          const ej = 1.15 + life * 0.45;
+          if (Math.abs(d - ej) < 0.03 && hash(seed, Math.round(ang * 40), 11) > 0.55) put(f, x, y, ramp[2], Math.round(200 * (1 - life)));
+        }
       }
     }
   });
