@@ -6,6 +6,23 @@ import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
 import { getPlanetSheet, lightIndexFor, spinRate, FRAMES as PLANET_FRAMES } from '@/utils/planetRenderer';
+import { getStarSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STAR_FRAMES, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
+
+// Pixel sprite frame picker shared by star / station / gate / warp
+// (planets inline the same nested-svg trick). `world` = the frame's
+// width in world units; the sheet's frame is fw x fh pixels.
+const SpriteFrame = ({ sheet, frame, world, opacity = 1 }) => {
+  const scale = world / sheet.fw;
+  const w = sheet.fw * scale, h = sheet.fh * scale;
+  return (
+    <svg x={-w / 2} y={-h / 2} width={w} height={h}
+      viewBox={`${frame * sheet.fw} 0 ${sheet.fw} ${sheet.fh}`}
+      preserveAspectRatio="none" style={{ overflow: 'hidden', opacity }}>
+      <image href={sheet.dataUrl} x={0} y={0} width={sheet.fw * sheet.frames} height={sheet.fh}
+        style={{ imageRendering: 'pixelated' }} />
+    </svg>
+  );
+};
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
@@ -328,58 +345,29 @@ const PARALLAX = {
 const Star = ({ starType, x, y, time }) => {
   const config = STAR_TYPES[starType];
   if (!config) return null;
-
   const { colors, size, pulsar, hasAccretionDisk } = config;
   const pulsarPhase = pulsar ? Math.sin(time * 5) * 0.2 + 0.8 : 1;
-
-  if (hasAccretionDisk) {
-    // Black hole with accretion disk
-    return (
-      <g transform={`translate(${x}, ${y})`}>
-        <defs>
-          <radialGradient id={`accretion-${starType}`} cx="50%" cy="50%" r="50%">
-            <stop offset="20%" stopColor="#000000" />
-            <stop offset="40%" stopColor={colors.accretion} stopOpacity="0.8" />
-            <stop offset="70%" stopColor="#ff4400" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        {/* Accretion disk */}
-        <ellipse rx={size * 3} ry={size * 0.8} fill="url(#accretion-black_hole)" opacity={0.7} />
-        {/* Event horizon */}
-        <circle r={size} fill="#000000" />
-        {/* Gravitational lensing effect */}
-        <circle r={size * 1.2} fill="none" stroke="#ffffff" strokeWidth="1" opacity="0.3" />
-      </g>
-    );
-  }
-
+  // Pixel-art star (structureRenderer.js): 8-frame sheet -- rim
+  // granulation + corona spikes breathe; black holes rotate a pixel
+  // accretion ring. The soft SVG blur glow stays behind the sprite so
+  // the system still reads as lit from the centre.
+  const sheet = getStarSheet(starType, colors, !!hasAccretionDisk);
+  const frame = Math.floor(time * 6) % STAR_FRAMES;
+  const world = (size * 2) * (sheet.fw / sheet.px); // disc = size*2, sheet has padding
   return (
     <g transform={`translate(${x}, ${y})`}>
-      <defs>
-        <radialGradient id={`starGlow-${starType}`} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor={colors.core} stopOpacity="1" />
-          <stop offset="40%" stopColor={colors.mid} stopOpacity="0.8" />
-          <stop offset="70%" stopColor={colors.outer} stopOpacity="0.4" />
-          <stop offset="100%" stopColor={colors.outer} stopOpacity="0" />
-        </radialGradient>
-        <filter id={`starBlur-${starType}`} x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation={size * 0.3} />
-        </filter>
-      </defs>
-      
-      {/* Outer glow */}
-      <circle r={size * 3} fill={colors.glow} filter={`url(#starBlur-${starType})`} opacity={0.5 * pulsarPhase} />
-      
-      {/* Corona */}
-      <circle r={size * 1.8} fill={`url(#starGlow-${starType})`} opacity={0.8 * pulsarPhase} />
-      
-      {/* Core */}
-      <circle r={size} fill={colors.mid} opacity={pulsarPhase} />
-      
-      {/* Bright center */}
-      <circle r={size * 0.4} fill={colors.core} opacity={0.95 * pulsarPhase} />
-
+      {!hasAccretionDisk && (
+        <>
+          <defs>
+            <filter id={`starBlur-${starType}`} x="-100%" y="-100%" width="300%" height="300%">
+              <feGaussianBlur stdDeviation={size * 0.3} />
+            </filter>
+          </defs>
+          <circle r={size * 3} fill={colors.glow} filter={`url(#starBlur-${starType})`} opacity={0.5 * pulsarPhase} />
+        </>
+      )}
+      {hasAccretionDisk && <circle r={size * 3.2} fill={colors.glow} opacity={0.35} />}
+      <SpriteFrame sheet={sheet} frame={frame} world={world} opacity={pulsarPhase} />
       {/* Pulsar beams */}
       {pulsar && (
         <g style={{ transform: `rotate(${time * 100}deg)` }}>
@@ -534,16 +522,14 @@ const Station = ({ body, parentPosition, time, onClick, isTarget }) => {
         </>
       )}
       
-      {/* Station shape - hexagonal */}
-      <polygon
-        points="-8,-4 -4,-8 4,-8 8,-4 8,4 4,8 -4,8 -8,4"
-        fill="#334455"
-        stroke={isTarget ? "#00ffff" : "#66aacc"}
-        strokeWidth={isTarget ? "2" : "1"}
+      {/* Pixel-art station (structureRenderer.js): one of 10 designs
+          picked by hashing the station id; lights blink on a 2-frame
+          cycle. Drawn ~3x the old hexagon so the design reads. */}
+      <SpriteFrame
+        sheet={getStationSheet(pickStationVariety(body.id))}
+        frame={Math.floor(time * 1.5) % STATION_FRAMES}
+        world={Math.max(24, (body.size || 8) * 3.2)}
       />
-      {/* Docking lights */}
-      <circle cx="-6" cy="0" r="2" fill="#00ff88" opacity={Math.sin(time * 3) * 0.5 + 0.5} />
-      <circle cx="6" cy="0" r="2" fill="#00ff88" opacity={Math.sin(time * 3 + Math.PI) * 0.5 + 0.5} />
       
       {/* Label */}
       <text
@@ -581,23 +567,8 @@ const JumpGate = ({ body, time, onClick, isTarget }) => {
         </>
       )}
       
-      {/* Gate ring */}
-      <circle r="10" fill="none" stroke="#44ff88" strokeWidth="2" opacity={pulse} />
-      <circle r="6" fill="none" stroke="#44ff88" strokeWidth="1" opacity={pulse * 0.6} />
-      
-      {/* Energy core */}
-      <circle r="3" fill="#44ff88" opacity={pulse * 0.8} />
-      <circle r="5" fill="#44ff8844" />
-      
-      {/* Corner accents */}
-      {[0, 90, 180, 270].map(deg => (
-        <line key={deg}
-          x1={Math.cos(deg * Math.PI / 180) * 8} y1={Math.sin(deg * Math.PI / 180) * 8}
-          x2={Math.cos(deg * Math.PI / 180) * 12} y2={Math.sin(deg * Math.PI / 180) * 12}
-          stroke="#44ff88" strokeWidth="1.5" opacity={pulse * 0.7}
-        />
-      ))}
-      
+      {/* Pixel-art gate (one design everywhere): ring + pylons + rotating arcs. */}
+      <SpriteFrame sheet={getGateSheet()} frame={Math.floor(time * 8) % GATE_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
       {/* Label */}
       <text y={20} textAnchor="middle" fill={isTarget ? '#44ff88' : '#44ff8899'}
         fontSize="9" fontFamily="sans-serif" fontWeight={isTarget ? 'bold' : 'normal'}>
@@ -630,19 +601,8 @@ const WarpPoint = ({ body, time, onClick, isTarget }) => {
         </>
       )}
       
-      {/* Outer distortion ring */}
-      <circle r="11" fill="none" stroke="#6644cc" strokeWidth="1.5" opacity={pulse * 0.5}
-        strokeDasharray="4 3" style={{ transform: `rotate(${swirl}deg)`, transformOrigin: '0 0' }} />
-      
-      {/* Inner vortex ring */}
-      <circle r="7" fill="none" stroke="#aa66ff" strokeWidth="1.5" opacity={pulse * 0.7}
-        strokeDasharray="3 2" style={{ transform: `rotate(${-swirl * 1.5}deg)`, transformOrigin: '0 0' }} />
-      
-      {/* Core — purple/blue energy */}
-      <circle r="4" fill="#7744dd" opacity={pulse * 0.9} />
-      <circle r="6" fill="#8855ff33" />
-      <circle r="2" fill="#ccaaff" opacity={pulse} />
-      
+      {/* Pixel-art warp vortex (one design everywhere): 3 spiral arms rotate. */}
+      <SpriteFrame sheet={getWarpSheet()} frame={Math.floor(time * 10) % WARP_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
       {/* Label */}
       <text y={20} textAnchor="middle" fill={isTarget ? '#aa66ff' : '#8855ff88'}
         fontSize="9" fontFamily="sans-serif" fontWeight={isTarget ? 'bold' : 'normal'}>
