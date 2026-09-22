@@ -11,7 +11,7 @@ import { tierColor, tierLabel } from '@/utils/tiers';
 import { fleetWarpProfile, warpCheck, freeWarpCheck, warpBlockText } from '@/utils/warp';
 import { findRoute, routeSummary } from '@/utils/routePlanner';
 import presence from '@/utils/presence';
-import { galaxyAPI } from '@/utils/api';
+import { galaxyAPI, harvesterAPI } from '@/utils/api';
 
 // ============================================
 // CONSTANTS
@@ -133,6 +133,16 @@ export const GalaxyMapWindow = () => {
       .then(r => setDiscoverers(r.discoverers || {}))
       .catch(() => {});
   }, [isOpen, discoveredSet.size]);
+  // My deployed harvesters by system id (2026-09-22): the info panel
+  // lists them per planet and the map marks systems that have any.
+  // Fetched on every open -- hopper/fuel numbers are live projections.
+  const [myHarvesters, setMyHarvesters] = useState({});
+  useEffect(() => {
+    if (!isOpen) return;
+    harvesterAPI.mine()
+      .then(r => setMyHarvesters(r.by_system || {}))
+      .catch(() => {});
+  }, [isOpen]);
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const cameraStart = useRef({ x: 0, y: 0 });
@@ -414,6 +424,22 @@ export const GalaxyMapWindow = () => {
               </text>
             )}
 
+            {/* Harvester marker -- amber gear at the upper-right of the
+                dot when I have harvesters on any planet here. */}
+            {myHarvesters[sys.id]?.count > 0 && (
+              <text
+                x={sys.x + size + 3 * uiScale}
+                y={sys.y - size + 2 * uiScale}
+                textAnchor="start"
+                fill="#fbbf24"
+                fontSize={8 * uiScale}
+                fontFamily="monospace"
+                opacity={0.9}
+              >
+                ⚙{myHarvesters[sys.id].count}
+              </text>
+            )}
+
             {/* Danger indicator -- drops down when the population
                 badge is taking the row above. */}
             {showLabel && sys.dangerLevel >= 3 && (
@@ -431,7 +457,7 @@ export const GalaxyMapWindow = () => {
         );
       })}
     </g>
-  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile]);
+  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile, myHarvesters]);
 
   if (!isOpen) return null;
 
@@ -723,7 +749,40 @@ export const GalaxyMapWindow = () => {
                     {bySystem[selectedSys.id] || 0}
                   </span>
                 </div>
+                {/* My harvesters in this system (2026-09-22). */}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Your Harvesters</span>
+                  <span className={myHarvesters[selectedSys.id]?.count > 0 ? 'text-amber-300 font-bold' : 'text-slate-600'}>
+                    {myHarvesters[selectedSys.id]?.count || 0}
+                  </span>
+                </div>
               </div>
+
+              {myHarvesters[selectedSys.id]?.count > 0 && (
+                <div className="space-y-1 pt-1 border-t border-slate-700/30">
+                  <div className="text-[0.8rem] text-slate-600 uppercase tracking-wider">⚙ Harvesters</div>
+                  {myHarvesters[selectedSys.id].planets.map(p => (
+                    <div key={p.body_id} className="text-[0.8rem]">
+                      <div className="text-amber-300">{p.body_name} · {p.harvesters.length}</div>
+                      {p.harvesters.map(h => {
+                        const pct = h.storage_capacity > 0 ? Math.round(100 * (h.hopper_quantity || 0) / h.storage_capacity) : 0;
+                        const fuel = Math.max(0, Number(h.fuel_remaining_hours) || 0);
+                        const statusColor = h.status === 'active' ? 'text-green-400'
+                          : h.status === 'full' ? 'text-cyan-300' : 'text-red-400';
+                        return (
+                          <div key={h.id} className="flex justify-between text-slate-400 pl-2">
+                            <span>{h.resource_name || 'unassigned'}</span>
+                            <span>
+                              hopper {pct}% · fuel {fuel < 1 ? '<1' : Math.floor(fuel)}h ·{' '}
+                              <span className={statusColor}>{h.status || '—'}</span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Resource profile -- discovered only. */}
               {isDiscovered && selectedSys.resourceProfile && (

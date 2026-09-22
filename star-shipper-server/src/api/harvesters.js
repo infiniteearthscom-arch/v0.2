@@ -138,6 +138,53 @@ const persistHarvesterState = async (harvester, computed, client = null) => {
 // GET PLANET HARVESTERS
 // ============================================
 
+// ============================================
+// MY HARVESTERS, GALAXY-WIDE (2026-09-22)
+// ============================================
+// Read-only projection for the galaxy map: every harvester this pilot
+// has deployed, grouped by system procedural id -> planet. Hopper /
+// fuel / status are computed live (same math as the planet tab) but
+// NOT persisted here -- the planet tab and collect/refuel do that.
+router.get('/mine', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const rows = await queryAll(`
+      SELECT dh.*, cb.id AS body_id, cb.name AS body_name,
+             ss.procedural_id AS system_procedural_id, ss.name AS system_name,
+             rt.name AS resource_name, rd.quantity_remaining AS deposit_remaining
+        FROM deployed_harvesters dh
+        JOIN celestial_bodies cb ON cb.id = dh.celestial_body_id
+        JOIN star_systems ss ON ss.id = cb.system_id
+        LEFT JOIN resource_types rt ON rt.id = dh.resource_type_id
+        LEFT JOIN resource_deposits rd ON rd.id = dh.deposit_id
+       WHERE dh.user_id = $1
+       ORDER BY ss.name, cb.name, dh.slot_index
+    `, [userId]);
+    const bySystem = {};
+    for (const h of rows) {
+      const sysId = h.system_procedural_id || 'sol';
+      const sys = bySystem[sysId] || (bySystem[sysId] = { system_name: h.system_name, count: 0, planets: [] });
+      let planet = sys.planets.find(p => p.body_id === h.body_id);
+      if (!planet) { planet = { body_id: h.body_id, body_name: h.body_name, harvesters: [] }; sys.planets.push(planet); }
+      const computed = updateHarvesterState(h, h.deposit_remaining);
+      planet.harvesters.push({
+        id: h.id,
+        harvester_type: h.harvester_type,
+        resource_name: h.resource_name,
+        hopper_quantity: computed.computed_hopper,
+        storage_capacity: h.storage_capacity,
+        fuel_remaining_hours: computed.computed_fuel,
+        status: computed.computed_status,
+      });
+      sys.count++;
+    }
+    res.json({ total: rows.length, by_system: bySystem });
+  } catch (error) {
+    console.error('Error fetching my harvesters:', error);
+    res.status(500).json({ error: 'Failed to fetch harvesters' });
+  }
+});
+
 router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;

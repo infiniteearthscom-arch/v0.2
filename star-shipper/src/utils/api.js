@@ -495,6 +495,8 @@ export const researchAPI = {
 // Harvester API
 export const harvesterAPI = {
   getPlanetHarvesters: (bodyId) => request(`/harvesters/planet/${bodyId}`),
+  // Every harvester I own, grouped by system procedural id (galaxy map).
+  mine: () => request('/harvesters/mine'),
   deploy: (bodyId, slotIndex, cargoItemId, depositId) => request('/harvesters/deploy', {
     method: 'POST',
     body: JSON.stringify({ body_id: bodyId, slot_index: slotIndex, cargo_item_id: cargoItemId, deposit_id: depositId }),
