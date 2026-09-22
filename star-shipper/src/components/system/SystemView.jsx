@@ -2999,7 +2999,15 @@ export const SystemView = () => {
           enemy.state = leader.state; // drives firing + flee uniformly
           let slotX, slotY;
           const rank = BEHAVIOR_RANK[leader.behavior] || 1;
-          if (rank >= 3 && leader.state === 'attack') {
+          // Flank only once the FLAGSHIP is actually at the fight (inside
+          // ~1.5x its orbit range) -- otherwise the slots would sit at the
+          // player while the leader is still closing, and the wingmen would
+          // race ahead and leave it behind. Until then: hold the V.
+          const leaderTune = BEHAVIOR_TUNING[leader.behavior] || BEHAVIOR_TUNING.simple;
+          const leaderDist = Math.hypot(leader.x - playerPos.x, leader.y - playerPos.y);
+          const flankNow = rank >= 3 && leader.state === 'attack' &&
+            leaderDist <= PIRATE_ORBIT_RANGE * leaderTune.orbitMult * 1.5;
+          if (flankNow) {
             // Phase 4 coordinated+: in the fight, wingmen leave the V and
             // take FLANK slots spread around the player at the leader's
             // orbit range, so the fleet surrounds instead of stacking
@@ -3008,8 +3016,7 @@ export const SystemView = () => {
             const fleetRef = fleetsRef.current.get(enemy.fleetId);
             const n = Math.max(2, fleetRef ? fleetRef.members.filter(m => m.hull > 0).length : 2);
             const idx = enemy.formationSlot || 1;
-            const tune = BEHAVIOR_TUNING[leader.behavior] || BEHAVIOR_TUNING.simple;
-            const orbitR = PIRATE_ORBIT_RANGE * tune.orbitMult;
+            const orbitR = PIRATE_ORBIT_RANGE * leaderTune.orbitMult;
             const base = Math.atan2(leader.y - playerPos.y, leader.x - playerPos.x);
             const ang = base + idx * (Math.PI * 2 / n);
             slotX = playerPos.x + Math.cos(ang) * orbitR;
@@ -3022,11 +3029,19 @@ export const SystemView = () => {
             slotX = leader.x + (-sinT) * off.x + (-cosT) * off.y;
             slotY = leader.y + ( cosT) * off.x + (-sinT) * off.y;
           }
+          // Lag-follow toward the slot, but never faster than the hull can
+          // fly (a little over the leader's speed so they still catch up).
+          // The uncapped lerp closed ANY distance in ~600ms -- with flank
+          // slots far from the V that read as a teleport onto the player.
           const fLag = 1 - Math.exp(-WINGMAN_LAG_RATE * delta);
           const prevX = enemy.x, prevY = enemy.y;
-          enemy.x = prevX + (slotX - prevX) * fLag;
-          enemy.y = prevY + (slotY - prevY) * fLag;
-          const mvx = enemy.x - prevX, mvy = enemy.y - prevY;
+          let stepX = (slotX - prevX) * fLag, stepY = (slotY - prevY) * fLag;
+          const stepLen = Math.hypot(stepX, stepY);
+          const maxStep = (enemy.speed || 100) * 1.2 * delta;
+          if (stepLen > maxStep) { stepX *= maxStep / stepLen; stepY *= maxStep / stepLen; }
+          enemy.x = prevX + stepX;
+          enemy.y = prevY + stepY;
+          const mvx = stepX, mvy = stepY;
           if (mvx * mvx + mvy * mvy > 0.04) enemy.rotation = Math.atan2(mvy, mvx) * 180 / Math.PI;
           else enemy.rotation = leader.rotation;
           enemy.vx = 0; enemy.vy = 0;
