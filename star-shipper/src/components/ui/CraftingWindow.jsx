@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
-import { RESOURCE_TYPES, getQualityTier } from '@/data/resources';
+import { RESOURCE_TYPES, getQualityTier, QUALITY_TIER_COLORS } from '@/data/resources';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
@@ -576,13 +576,7 @@ Object.values(RESOURCE_TYPES).forEach(r => {
   CARGO_RESOURCE_ICONS[r.id] = { abbr, color: r.color, name: r.name };
 });
 
-const CARGO_TIER_BORDER = {
-  Impure:   '#555555',
-  Standard: '#888888',
-  Refined:  '#44ff44',
-  Superior: '#4488ff',
-  Pristine: '#aa44ff',
-};
+const CARGO_TIER_BORDER = QUALITY_TIER_COLORS; // shared palette (data/resources.js)
 
 // Single cargo tile -- visual code lifted from InventoryWindow's
 // stack render so the two views are pixel-identical. `matchesRecipe`

@@ -387,6 +387,18 @@ const GroundScanResults = ({ deposits, probeQuality }) => {
               }}>
                 {deposit.resource_name}
               </span>
+              {/* Rarity tag: the name is colored by RARITY (white common /
+                  blue rare / purple exotic) while the pill on the right is
+                  QUALITY -- two scales on one row read as a contradiction
+                  ("blue but only Fine?") without this label. */}
+              {deposit.rarity && deposit.rarity !== 'common' && (
+                <span style={{
+                  fontSize: '0.7rem', fontFamily: F, letterSpacing: 0.5, textTransform: 'uppercase',
+                  color: RARITY_INFO[deposit.rarity]?.color || '#e2e8f0', opacity: 0.8,
+                }}>
+                  {RARITY_INFO[deposit.rarity]?.name || deposit.rarity}
+                </span>
+              )}
             </div>
             <span style={{
               fontSize: '0.8rem',

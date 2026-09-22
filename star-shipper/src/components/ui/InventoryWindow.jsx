@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
-import { getQualityTier, CATEGORY_INFO, RARITY_INFO, RESOURCE_TYPES } from '@/data/resources';
+import { getQualityTier, CATEGORY_INFO, RARITY_INFO, RESOURCE_TYPES, QUALITY_TIER_COLORS } from '@/data/resources';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar } from '@/components/ui/panelStyles';
 import { normalizeItem } from '@/utils/itemShape';
@@ -30,13 +30,10 @@ Object.values(RESOURCE_TYPES).forEach(r => {
   RESOURCE_ICONS[r.id] = { abbr, color: r.color, name: r.name };
 });
 
-const TIER_BORDER = {
-  Impure: '#555555',
-  Standard: '#888888',
-  Refined: '#44ff44',
-  Superior: '#4488ff',
-  Pristine: '#aa44ff',
-};
+// One palette everywhere (data/resources.js QUALITY_TIERS) -- this used
+// to be a hand copy with different greys, so cargo tiles and scan cards
+// disagreed on Standard / Impure.
+const TIER_BORDER = QUALITY_TIER_COLORS;
 
 // Check if two stacks can merge
 const canMerge = (a, b) => {

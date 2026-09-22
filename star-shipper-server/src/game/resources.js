@@ -1366,9 +1366,10 @@ router.post('/harvest/stop', authMiddleware, async (req, res) => {
 function getQualityTier(purity, stability, potency, density) {
   const avg = (purity + stability + potency + density) / 4;
   
-  if (avg <= 20) return { name: 'Impure', color: '#888888' };
-  if (avg <= 40) return { name: 'Standard', color: '#ffffff' };
-  if (avg <= 60) return { name: 'Refined', color: '#44ff44' };
+  // Mirrors client data/resources.js QUALITY_TIERS (renamed Refined -> Fine 2026-09-22)
+  if (avg <= 20) return { name: 'Impure', color: '#666e78' };
+  if (avg <= 40) return { name: 'Standard', color: '#b0bcc8' };
+  if (avg <= 60) return { name: 'Fine', color: '#44ff44' };
   if (avg <= 80) return { name: 'Superior', color: '#4488ff' };
   return { name: 'Pristine', color: '#aa44ff' };
 }

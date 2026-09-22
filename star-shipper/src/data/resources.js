@@ -15,13 +15,21 @@ export const RESOURCE_RARITY = {
   EXOTIC: 'exotic',
 };
 
+// Quality tiers by average of the four stats. "Fine" was "Refined" until
+// 2026-09-22 -- renamed so it can't be confused with the refining
+// mechanic (turning ore into a higher-tier product). Mirrored on the
+// server in api/resources.js getQualityTier -- keep both in sync.
+// Impure / Standard are greys so they never read as the WHITE
+// "common" rarity color used for resource names.
 export const QUALITY_TIERS = {
-  IMPURE: { name: 'Impure', minAvg: 0, maxAvg: 20, color: '#888888' },
-  STANDARD: { name: 'Standard', minAvg: 21, maxAvg: 40, color: '#ffffff' },
-  REFINED: { name: 'Refined', minAvg: 41, maxAvg: 60, color: '#44ff44' },
+  IMPURE: { name: 'Impure', minAvg: 0, maxAvg: 20, color: '#666e78' },
+  STANDARD: { name: 'Standard', minAvg: 21, maxAvg: 40, color: '#b0bcc8' },
+  FINE: { name: 'Fine', minAvg: 41, maxAvg: 60, color: '#44ff44' },
   SUPERIOR: { name: 'Superior', minAvg: 61, maxAvg: 80, color: '#4488ff' },
   PRISTINE: { name: 'Pristine', minAvg: 81, maxAvg: 100, color: '#aa44ff' },
 };
+// name -> color, for the tile/border maps in the cargo views.
+export const QUALITY_TIER_COLORS = Object.fromEntries(Object.values(QUALITY_TIERS).map(t => [t.name, t.color]));
 
 // Resource type definitions
 export const RESOURCE_TYPES = {
@@ -242,7 +250,7 @@ export const getQualityTier = (purity, stability, potency, density) => {
   
   if (avg <= 20) return QUALITY_TIERS.IMPURE;
   if (avg <= 40) return QUALITY_TIERS.STANDARD;
-  if (avg <= 60) return QUALITY_TIERS.REFINED;
+  if (avg <= 60) return QUALITY_TIERS.FINE;
   if (avg <= 80) return QUALITY_TIERS.SUPERIOR;
   return QUALITY_TIERS.PRISTINE;
 };
