@@ -57,23 +57,31 @@ function makeSheet(fw, fh, frames, paint) {
 export function getStarSheet(starType, colors, hasAccretionDisk) {
   const key = `star|${starType}`;
   if (cache.has(key)) return cache.get(key);
-  const px = 48;
-  const pad = hasAccretionDisk ? 40 : 14;
+  const px = 64;
+  const pad = hasAccretionDisk ? 52 : 12;
   const fw = px + pad * 2, fh = px + pad * 2;
   const seed = strSeed(starType);
   const core = hexToRgb(colors.core), mid = hexToRgb(colors.mid), outer = hexToRgb(colors.outer);
-  // 5-step ramp: rim-dark, outer, mid, hot, core-white
-  const ramp = [mix(outer, [10, 4, 0], 0.4), outer, mid, mix(mid, core, 0.55), core];
+  // 6-step ramp: spot-dark, rim-dark, outer, mid, hot, core-white
+  const ramp = [mix(outer, [6, 2, 0], 0.62), mix(outer, [10, 4, 0], 0.38), outer, mid, mix(mid, core, 0.5), core];
   const TWO_PI = Math.PI * 2;
+  const isCool = starType === 'red_dwarf' || starType === 'orange_star' || starType === 'yellow_star';
 
-  // Convection cells: K seeded centres that drift on small closed loops
-  // (phase = frame), so granulation MOVES between frames instead of
-  // re-rolling -- that flicker was the "hokey" part.
-  const K = 26;
+  // Convection cells drifting on closed loops (phase = frame) so the
+  // surface churns smoothly and the loop is seamless.
+  const K = 34;
   const cells = [];
   for (let i = 0; i < K; i++) {
-    const ang = hash(seed, i, 1) * TWO_PI, rad = Math.sqrt(hash(seed, i, 2)) * 0.92;
-    cells.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad, ph: hash(seed, i, 3) * TWO_PI, amp: 0.05 + hash(seed, i, 4) * 0.05, dir: hash(seed, i, 5) > 0.5 ? 1 : -1 });
+    const ang = hash(seed, i, 1) * TWO_PI, rad = Math.sqrt(hash(seed, i, 2)) * 0.94;
+    cells.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad, ph: hash(seed, i, 3) * TWO_PI, amp: 0.04 + hash(seed, i, 4) * 0.05, dir: hash(seed, i, 5) > 0.5 ? 1 : -1 });
+  }
+  // Sunspots (cool stars): dark elliptical groups that drift slowly and
+  // pulse in size over the loop. Hot stars get bright plages instead.
+  const spots = [];
+  const spotCount = isCool ? 3 : 2;
+  for (let i = 0; i < spotCount; i++) {
+    const ang = hash(seed, 50 + i, 1) * TWO_PI, rad = 0.25 + hash(seed, 50 + i, 2) * 0.5;
+    spots.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad, r: 0.07 + hash(seed, 50 + i, 3) * 0.08, ph: hash(seed, 50 + i, 4) * TWO_PI, tilt: hash(seed, 50 + i, 5) * Math.PI });
   }
 
   const sheet = makeSheet(fw, fh, STAR_FRAMES, (f, put) => {
@@ -88,7 +96,6 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
         const ed = Math.sqrt(ex * ex + ey * ey);
         if (ed > 0.45 && ed < 1) {
           const ang = Math.atan2(ey, ex) + phase;
-          // streaks advected around the ring (periodic in phase)
           const streak = 0.5 + 0.5 * Math.sin(ang * 5 + ed * 9) * Math.sin(ang * 2.3 - ed * 4);
           const t = (ed - 0.45) / 0.55;
           let rgb = t < 0.25 ? mix([255, 240, 200], acc, t * 4) : mix(acc, [60, 20, 0], (t - 0.25) / 0.75);
@@ -107,49 +114,86 @@ export function getStarSheet(starType, colors, hasAccretionDisk) {
       return;
     }
 
-    // cell positions this frame
     const cpos = cells.map(c => ({ x: c.x + Math.cos(c.ph + phase * c.dir) * c.amp, y: c.y + Math.sin(c.ph + phase * c.dir) * c.amp }));
+    const spos = spots.map(sp => ({ x: sp.x + Math.cos(sp.ph + phase) * 0.03, y: sp.y + Math.sin(sp.ph + phase) * 0.03, r: sp.r * (0.85 + 0.15 * Math.sin(phase + sp.ph)), tilt: sp.tilt }));
 
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
       const dx = (x + 0.5 - cx), dy = (y + 0.5 - cy);
       const nx = dx / R, ny = dy / R;
       const d = Math.sqrt(nx * nx + ny * ny);
-      const dither = ((x + y) & 1) ? 0.035 : -0.035;
+      const dither = ((x + y) & 1) ? 0.03 : -0.03;
       if (d <= 1) {
-        // limb darkening (smooth) + granulation from nearest cell
         let best = 9, second = 9;
         for (const c of cpos) {
           const ddx = nx - c.x, ddy = ny - c.y; const dd = ddx * ddx + ddy * ddy;
           if (dd < best) { second = best; best = dd; } else if (dd < second) second = dd;
         }
-        const edge = Math.sqrt(second) - Math.sqrt(best); // small near cell boundaries
-        const limb = 1 - d * d * 0.85;                    // 1 centre -> 0.15 rim
-        let v = limb * (0.78 + 0.32 * Math.min(1, edge * 6)); // bright cell centres, darker lanes
-        v += dither;
-        const step = v > 0.92 ? 4 : v > 0.72 ? 3 : v > 0.5 ? 2 : v > 0.3 ? 1 : 0;
+        const edge = Math.sqrt(second) - Math.sqrt(best);
+        const limb = 1 - d * d * 0.8;
+        let v = limb * (0.8 + 0.3 * Math.min(1, edge * 6)) + dither;
+        // faculae: bright specks that show near the limb (real stars do this)
+        if (d > 0.72 && hash(seed + f, x, y) > 0.965) v += 0.35;
+        // spots / plages
+        for (const sp of spos) {
+          const rx = (nx - sp.x) * Math.cos(sp.tilt) + (ny - sp.y) * Math.sin(sp.tilt);
+          const ry = -(nx - sp.x) * Math.sin(sp.tilt) + (ny - sp.y) * Math.cos(sp.tilt);
+          const sd = Math.sqrt((rx / sp.r) * (rx / sp.r) + (ry / (sp.r * 0.6)) * (ry / (sp.r * 0.6)));
+          if (sd < 1) {
+            if (isCool) v = sd < 0.55 ? -1 : Math.min(v, 0.22 + dither); // umbra / penumbra
+            else v += 0.3;                                              // plage
+          }
+        }
+        const step = v < 0 ? 0 : v > 1.02 ? 5 : v > 0.86 ? 4 : v > 0.66 ? 3 : v > 0.45 ? 2 : 1;
         put(f, x, y, ramp[step]);
-      } else if (d <= 1.6) {
-        // corona: tendrils rippling around the limb, two travelling waves
+      } else if (d <= 1.45) {
+        // ejecta only (tendrils removed): sparse particles ride outward and fade
         const ang = Math.atan2(dy, dx);
-        const w1 = 0.5 + 0.5 * Math.sin(ang * 7 + phase);
-        const w2 = 0.5 + 0.5 * Math.sin(ang * 3 - phase * 2 + 1.3);
-        const tendril = Math.pow(w1, 3) * (0.55 + 0.45 * w2);
-        const len = 1.05 + 0.42 * tendril + dither * 0.6;
-        if (d < len) {
-          const t = (d - 1) / Math.max(0.05, len - 1);
-          const step = t < 0.35 ? 2 : t < 0.7 ? 1 : 0;
-          put(f, x, y, ramp[step], t < 0.7 ? 230 : 140);
-        } else if (d < 1.6) {
-          // sparse ejecta that ride outward on the loop
-          const r = hash(seed, Math.round(ang * 40), 9);
+        const slot = Math.round(ang * 48);
+        const r = hash(seed, slot, 9);
+        if (hash(seed, slot, 11) > 0.5) {
           const life = ((r + f / STAR_FRAMES) % 1);
-          const ej = 1.15 + life * 0.45;
-          if (Math.abs(d - ej) < 0.03 && hash(seed, Math.round(ang * 40), 11) > 0.55) put(f, x, y, ramp[2], Math.round(200 * (1 - life)));
+          const ej = 1.04 + life * 0.4;
+          if (Math.abs(d - ej) < 0.028) put(f, x, y, life < 0.35 ? ramp[4] : ramp[3], Math.round(220 * (1 - life)));
         }
       }
     }
   });
   const out = { ...sheet, px };
+  cache.set(key, out);
+  return out;
+}
+
+// ============================================
+// PULSAR BEAM -- pixel sprite of the two-lobed jet, rotating
+// ============================================
+// Symmetric beam, so half a turn per loop is seamless. Length in disc
+// radii is reach; the caller scales it to world units.
+export const BEAM_FRAMES = 32;
+export function getPulsarBeamSheet(colors) {
+  const key = 'pulsar-beam';
+  if (cache.has(key)) return cache.get(key);
+  const fw = 112, fh = 112, cx = fw / 2, cy = fh / 2, reach = 52;
+  const white = [255, 255, 255], tint = hexToRgb(colors.mid || '#dd88ff');
+  const sheet = makeSheet(fw, fh, BEAM_FRAMES, (f, put) => {
+    const rot = (f / BEAM_FRAMES) * Math.PI; // half turn per loop
+    const ux = Math.cos(rot), uy = Math.sin(rot);
+    for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+      const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+      const along = dx * ux + dy * uy;           // signed distance along the beam axis
+      const across = Math.abs(-dx * uy + dy * ux);
+      const dist = Math.abs(along);
+      if (dist < 6 || dist > reach) continue;
+      const t = (dist - 6) / (reach - 6);        // 0 near star -> 1 at tip
+      const halfW = 1.2 + t * 2.6;               // beam widens toward the tip
+      if (across > halfW) continue;
+      const dither = ((x + y) & 1) ? 0.06 : -0.06;
+      const core = across < halfW * 0.4;
+      const a = Math.max(0, 1 - t * 1.05 + dither) * (core ? 1 : 0.7);
+      if (a <= 0.05) continue;
+      put(f, x, y, core ? white : tint, Math.round(255 * Math.min(1, a)));
+    }
+  });
+  const out = { ...sheet, px: fw, reach };
   cache.set(key, out);
   return out;
 }

@@ -6,7 +6,7 @@ import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
 import { getPlanetSheet, getShadeMask, lightIndexFor, spinRate, FRAMES as PLANET_FRAMES } from '@/utils/planetRenderer';
-import { getStarSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STAR_FRAMES, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
+import { getStarSheet, getPulsarBeamSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STAR_FRAMES, BEAM_FRAMES, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
 
 // Pixel sprite frame picker shared by star / station / gate / warp
 // (planets inline the same nested-svg trick). `world` = the frame's
@@ -368,12 +368,13 @@ const Star = ({ starType, x, y, time }) => {
       )}
       {hasAccretionDisk && <circle r={size * 3.2} fill={colors.glow} opacity={0.35} />}
       <SpriteFrame sheet={sheet} frame={frame} world={world} opacity={pulsarPhase} />
-      {/* Pulsar beams */}
-      {pulsar && (
-        <g style={{ transform: `rotate(${time * 100}deg)` }}>
-          <rect x={-2} y={-size * 5} width={4} height={size * 10} fill="#ffffff" opacity={0.6} />
-        </g>
-      )}
+      {/* Pulsar beams -- pixel sprite (two-lobed jet, half-turn loop) */}
+      {pulsar && (() => {
+        const beam = getPulsarBeamSheet(colors);
+        // reach px == size*5 world units (the old rect's half-length)
+        const worldW = (size * 5) * (beam.fw / beam.reach);
+        return <SpriteFrame sheet={beam} frame={Math.floor(time * 14) % BEAM_FRAMES} world={worldW} opacity={0.85} />;
+      })()}
     </g>
   );
 };
