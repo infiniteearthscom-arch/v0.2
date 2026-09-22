@@ -13,9 +13,10 @@
 // Same canvas -> dataUrl -> <image image-rendering:pixelated> pipeline as
 // ships and planets. Everything is generated once and cached.
 
-export const STAR_FRAMES = 8;
-export const GATE_FRAMES = 6;
-export const WARP_FRAMES = 8;
+// Frame counts (v2: doubled after playtest read as steppy at 6-10 fps).
+export const STAR_FRAMES = 16;
+export const GATE_FRAMES = 12;
+export const WARP_FRAMES = 12;
 export const STATION_FRAMES = 2;
 
 const cache = new Map();
@@ -339,15 +340,35 @@ export function getStationSheet(variety) {
   if (cache.has(key)) return cache.get(key);
   const grid = STATION_DESIGNS[variety % STATION_VARIETIES];
   const fh = grid.length, fw = Math.max(...grid.map(r => r.length));
+  // Shading (v2, "they look flat"): light from the upper-left. Hull
+  // pixels whose upper/left neighbour is empty get the light step,
+  // lower/right-edge pixels the dark step, interior pixels alternate
+  // rows for a panel-seam texture; a 1-px outline darkens the silhouette.
+  // Windows / lights / accents stay unshaded so they read as emissive.
+  const at = (x, y) => (y < 0 || y >= fh || x < 0 || x >= (grid[y] || '').length) ? '.' : grid[y][x];
+  const solid = (x, y) => { const c = at(x, y); return c !== '.' && c !== ' '; };
+  const shade = (rgb, k) => rgb.map(v => Math.max(0, Math.min(255, Math.round(v * k))));
   const sheet = makeSheet(fw, fh, STATION_FRAMES, (f, put) => {
     for (let y = 0; y < fh; y++) {
-      const row = grid[y];
-      for (let x = 0; x < row.length; x++) {
-        const ch = row[x];
-        if (ch === '.' || ch === ' ') continue;
+      for (let x = 0; x < fw; x++) {
+        const ch = at(x, y);
+        if (!solid(x, y)) {
+          // outline: empty pixel touching a solid one
+          if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) put(f, x, y, [22, 28, 38], 200);
+          continue;
+        }
         const p = STATION_PAL[ch];
         if (!p) continue;
-        put(f, x, y, Array.isArray(p[0]) ? p[f % p.length] : p);
+        if (Array.isArray(p[0])) { put(f, x, y, p[f % p.length]); continue; } // blinking lights
+        if (ch === 'a' || ch === 'g') { put(f, x, y, p); continue; }           // emissive accents
+        const topLeftOpen = !solid(x, y - 1) || !solid(x - 1, y);
+        const bottomRightOpen = !solid(x, y + 1) || !solid(x + 1, y);
+        let k = 1.0;
+        if (topLeftOpen && !bottomRightOpen) k = 1.28;
+        else if (bottomRightOpen && !topLeftOpen) k = 0.66;
+        else if (topLeftOpen && bottomRightOpen) k = 0.95;
+        else k = (y % 2 === 0) ? 1.0 : 0.88; // interior panel seams
+        put(f, x, y, shade(p, k));
       }
     }
   });

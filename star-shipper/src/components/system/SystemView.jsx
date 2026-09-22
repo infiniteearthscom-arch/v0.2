@@ -5,7 +5,7 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/u
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
-import { getPlanetSheet, lightIndexFor, spinRate, FRAMES as PLANET_FRAMES } from '@/utils/planetRenderer';
+import { getPlanetSheet, getShadeMask, lightIndexFor, spinRate, FRAMES as PLANET_FRAMES } from '@/utils/planetRenderer';
 import { getStarSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STAR_FRAMES, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
 
 // Pixel sprite frame picker shared by star / station / gate / warp
@@ -352,7 +352,7 @@ const Star = ({ starType, x, y, time }) => {
   // accretion ring. The soft SVG blur glow stays behind the sprite so
   // the system still reads as lit from the centre.
   const sheet = getStarSheet(starType, colors, !!hasAccretionDisk);
-  const frame = Math.floor(time * 6) % STAR_FRAMES;
+  const frame = Math.floor(time * 10) % STAR_FRAMES; // 16 frames @ 10 fps
   const world = (size * 2) * (sheet.fw / sheet.px); // disc = size*2, sheet has padding
   return (
     <g transform={`translate(${x}, ${y})`}>
@@ -446,20 +446,28 @@ const Planet = ({ body, time, onClick, isTarget }) => {
             atmosphere rim are baked into the sheet, so the old flat
             circle / highlight / ring ellipse are gone. */}
         {(() => {
-          const sheet = getPlanetSheet(body, planetColor, lightIndexFor(x, y));
+          // v2: unlit texture sheet (baked once, 48 frames) + a shared
+          // shade mask for the current star-facing light direction,
+          // composited with multiply. No re-bake when the light moves.
+          const sheet = getPlanetSheet(body, planetColor);
+          const mask = getShadeMask(body.size, body.hasRings, lightIndexFor(x, y));
           const frame = Math.floor(time * spinRate(body.size) * PLANET_FRAMES) % PLANET_FRAMES;
           // World size: the disc spans body.size*2; the sheet frame is
           // wider when rings/atmosphere padding exist -- scale uniformly.
           const scale = (body.size * 2) / sheet.px;
           const w = sheet.fw * scale, h = sheet.fh * scale;
           return (
-            <svg x={-w / 2} y={-h / 2} width={w} height={h}
-              viewBox={`${frame * sheet.fw} 0 ${sheet.fw} ${sheet.fh}`}
-              preserveAspectRatio="none" style={{ overflow: 'hidden' }}>
-              <image href={sheet.dataUrl} x={0} y={0}
-                width={sheet.fw * sheet.frames} height={sheet.fh}
-                style={{ imageRendering: 'pixelated' }} />
-            </svg>
+            <>
+              <svg x={-w / 2} y={-h / 2} width={w} height={h}
+                viewBox={`${frame * sheet.fw} 0 ${sheet.fw} ${sheet.fh}`}
+                preserveAspectRatio="none" style={{ overflow: 'hidden' }}>
+                <image href={sheet.dataUrl} x={0} y={0}
+                  width={sheet.fw * sheet.frames} height={sheet.fh}
+                  style={{ imageRendering: 'pixelated' }} />
+              </svg>
+              <image href={mask.dataUrl} x={-w / 2} y={-h / 2} width={w} height={h}
+                style={{ imageRendering: 'pixelated', mixBlendMode: 'multiply' }} />
+            </>
           );
         })()}
 
@@ -568,7 +576,7 @@ const JumpGate = ({ body, time, onClick, isTarget }) => {
       )}
       
       {/* Pixel-art gate (one design everywhere): ring + pylons + rotating arcs. */}
-      <SpriteFrame sheet={getGateSheet()} frame={Math.floor(time * 8) % GATE_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
+      <SpriteFrame sheet={getGateSheet()} frame={Math.floor(time * 12) % GATE_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
       {/* Label */}
       <text y={20} textAnchor="middle" fill={isTarget ? '#44ff88' : '#44ff8899'}
         fontSize="9" fontFamily="sans-serif" fontWeight={isTarget ? 'bold' : 'normal'}>
@@ -602,7 +610,7 @@ const WarpPoint = ({ body, time, onClick, isTarget }) => {
       )}
       
       {/* Pixel-art warp vortex (one design everywhere): 3 spiral arms rotate. */}
-      <SpriteFrame sheet={getWarpSheet()} frame={Math.floor(time * 10) % WARP_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
+      <SpriteFrame sheet={getWarpSheet()} frame={Math.floor(time * 14) % WARP_FRAMES} world={30} opacity={0.75 + 0.25 * pulse} />
       {/* Label */}
       <text y={20} textAnchor="middle" fill={isTarget ? '#aa66ff' : '#8855ff88'}
         fontSize="9" fontFamily="sans-serif" fontWeight={isTarget ? 'bold' : 'normal'}>
