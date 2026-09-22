@@ -5,6 +5,7 @@ import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/u
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
+import { getPlanetSheet, lightIndexFor, spinRate, FRAMES as PLANET_FRAMES } from '@/utils/planetRenderer';
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
@@ -445,39 +446,34 @@ const Planet = ({ body, time, onClick, isTarget }) => {
           </>
         )}
         
-        {/* Atmosphere glow */}
-        {body.hasAtmosphere && (
-          <circle r={body.size * 1.15} fill={planetColor} opacity="0.2" />
-        )}
-        
-        {/* Lava/exotic glow */}
+        {/* Lava/exotic glow (kept behind the sprite) */}
         {planetConfig.hasGlow && (
           <circle r={body.size * 1.3} fill={planetColor} opacity="0.3" filter="url(#planetGlow)" />
         )}
 
-        {/* Rings */}
-        {body.hasRings && (
-          <ellipse
-            rx={body.size * 1.8}
-            ry={body.size * 0.4}
-            fill="none"
-            stroke="#ccbb99"
-            strokeWidth={body.size * 0.15}
-            opacity="0.6"
-          />
-        )}
-
-        {/* Planet body */}
-        <circle r={body.size} fill={planetColor} />
-        
-        {/* Highlight */}
-        <circle
-          cx={-body.size * 0.3}
-          cy={-body.size * 0.3}
-          r={body.size * 0.7}
-          fill="url(#planetHighlight)"
-          opacity="0.4"
-        />
+        {/* Pixel-art planet sprite (utils/planetRenderer.js, 2026-09-21).
+            One sheet per (planet, light direction) generated on first
+            use; rotation = pick the frame for the current time; the lit
+            side faces the star via the quantized light index. Rings and
+            atmosphere rim are baked into the sheet, so the old flat
+            circle / highlight / ring ellipse are gone. */}
+        {(() => {
+          const sheet = getPlanetSheet(body, planetColor, lightIndexFor(x, y));
+          const frame = Math.floor(time * spinRate(body.size) * PLANET_FRAMES) % PLANET_FRAMES;
+          // World size: the disc spans body.size*2; the sheet frame is
+          // wider when rings/atmosphere padding exist -- scale uniformly.
+          const scale = (body.size * 2) / sheet.px;
+          const w = sheet.fw * scale, h = sheet.fh * scale;
+          return (
+            <svg x={-w / 2} y={-h / 2} width={w} height={h}
+              viewBox={`${frame * sheet.fw} 0 ${sheet.fw} ${sheet.fh}`}
+              preserveAspectRatio="none" style={{ overflow: 'hidden' }}>
+              <image href={sheet.dataUrl} x={0} y={0}
+                width={sheet.fw * sheet.frames} height={sheet.fh}
+                style={{ imageRendering: 'pixelated' }} />
+            </svg>
+          );
+        })()}
 
         {/* Label */}
         <text
