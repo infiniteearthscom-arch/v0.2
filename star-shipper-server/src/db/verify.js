@@ -147,6 +147,11 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 082 (player bases) ---
+  report('player_bases table (082)', await tableExists('player_bases'));
+  const baseMods = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types mt JOIN item_definitions i ON i.id = mt.id WHERE mt.slot_type = 'base'`);
+  report('base modules + item twins (082)', baseMods.rows[0].n === 3, `${baseMods.rows[0].n}/3`);
+
   // --- migration 081 (refining) ---
   const refTech = await pool.query(`SELECT COUNT(*)::int AS n FROM tech_definitions WHERE id IN ('tech_refining','tech_deep_refining')`);
   report('refining research nodes (081)', refTech.rows[0].n === 2, `${refTech.rows[0].n}/2`);

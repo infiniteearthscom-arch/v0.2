@@ -17,6 +17,7 @@ import { generateGalaxy } from '@/utils/galaxyGenerator';
 import { MarketPanel } from '@/components/market/MarketPanel';
 import { ContractsPanel } from '@/components/contracts/ContractsPanel';
 import { RefineryPanel } from '@/components/refinery/RefineryPanel';
+import { BaseTab } from '@/components/base/BaseTab';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -3756,6 +3757,8 @@ export const PlanetInteractionWindow = ({ body }) => {
       label: isStation ? 'Station' : 'City',
       color: GOLD.light,
     }] : []),
+    // Player bases (082): planets only -- bases anchor to planets.
+    ...(!isStation ? [{ id: 'base', icon: '🏠', label: 'Base', color: '#4ade80' }] : []),
   ];
 
   return (
@@ -4017,6 +4020,7 @@ export const PlanetInteractionWindow = ({ body }) => {
             {activeTab === 'mine' && <MineTab body={body} surveyStatus={surveyStatus} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'harvesters' && <HarvestersTab body={body} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'populated' && isPopulated && <PopulatedBodyTab body={body} kind={populatedKind} effectiveBodyId={effectiveBodyId} />}
+            {activeTab === 'base' && !isStation && <BaseTab body={body} />}
           </div>
         </div>
       </div>

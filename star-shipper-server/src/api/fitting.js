@@ -1657,6 +1657,8 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
 
       // 12. Contract board history (078). Sealed cargo went with the inventory wipe above.
       await client.query(`DELETE FROM player_contracts WHERE user_id = $1`, [userId]);
+      // 13. Player bases (082) -- depot rows cascade from the base.
+      await client.query(`DELETE FROM player_bases WHERE user_id = $1`, [userId]);
     });
 
     // 9. Re-grant the Starter Scout so RESET produces the same

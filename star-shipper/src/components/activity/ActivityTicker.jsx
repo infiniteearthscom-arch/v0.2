@@ -87,6 +87,9 @@ function formatEvent(evt) {
         text: `${name} traded with ${p.partner_name || 'another pilot'}`,
       };
     }
+    case 'base_founded': {
+      return { icon: '🏠', color: '#4ade80', text: `${name} founded ${p.name || 'a base'} on ${p.body_name || 'a planet'}` };
+    }
     case 'contract_delivered': {
       const pay = (typeof p.payout === 'number') ? ` for ${p.payout.toLocaleString()}cr` : '';
       return {

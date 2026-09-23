@@ -493,6 +493,18 @@ export const researchAPI = {
 };
 
 // Harvester API
+// Player bases (2026-09-22) -- docs/bases-spec.md
+export const basesAPI = {
+  mine: () => request('/bases/mine'),
+  here: () => request('/bases/here'),
+  build: (kind, name) => request('/bases/build', { method: 'POST', body: JSON.stringify({ kind, name }) }),
+  upgrade: (id) => request(`/bases/${encodeURIComponent(id)}/upgrade`, { method: 'POST' }),
+  fit: (id, slot, inventoryId) => request(`/bases/${encodeURIComponent(id)}/fit`, { method: 'POST', body: JSON.stringify({ slot, inventory_id: inventoryId }) }),
+  unfit: (id, slot) => request(`/bases/${encodeURIComponent(id)}/unfit`, { method: 'POST', body: JSON.stringify({ slot }) }),
+  deposit: (id, inventoryId, quantity) => request(`/bases/${encodeURIComponent(id)}/depot/deposit`, { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity }) }),
+  withdraw: (id, stackId, quantity) => request(`/bases/${encodeURIComponent(id)}/depot/withdraw`, { method: 'POST', body: JSON.stringify({ stack_id: stackId, quantity }) }),
+};
+
 // Refinery (2026-09-22) -- docs/refining-spec.md
 export const refiningAPI = {
   quote: (inventoryId, quantity) => request(`/refining/quote?inventory_id=${encodeURIComponent(inventoryId)}&quantity=${encodeURIComponent(quantity)}`),

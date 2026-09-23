@@ -21,6 +21,7 @@ import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryAll, queryOne, transaction } from '../db/index.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
+import { baseRpPerMin } from './bases.js';
 
 const router = express.Router();
 
@@ -30,9 +31,10 @@ const RP_PER_MIN = 1;
 // bonus (Research Methodology, +5%/level — migration 064). Distinct
 // from research_time_pct, which is reserved for future blueprint
 // research.
-function effectiveRpPerMin(bonuses) {
+// `extra` = flat RP/min from base Research Labs (player bases, 082).
+function effectiveRpPerMin(bonuses, extra = 0) {
   const pct = bonuses?.rp_rate_pct || 0;
-  return RP_PER_MIN * (1 + pct / 100);
+  return RP_PER_MIN * (1 + pct / 100) + (Number(extra) || 0);
 }
 
 // live_rp = stored_rp + minutes_since(updated_at) * rpPerMin.
@@ -79,7 +81,7 @@ router.get('/', authMiddleware, async (req, res) => {
     ]);
 
     const unlockedSet = new Set(unlocked.map(u => u.tech_id));
-    const rpPerMin = effectiveRpPerMin(bonuses);
+    const rpPerMin = effectiveRpPerMin(bonuses, await baseRpPerMin(userId));
     const liveRp = liveRpFromRow(userRow, now, rpPerMin);
 
     // Decorate each tech with its locked / available / unlocked status.
@@ -175,7 +177,7 @@ router.post('/unlock', authMiddleware, async (req, res) => {
       // Commit accrued RP first so we're spending against the *current*
       // live RP, then validate cost. Rate bonus applies to the accrual.
       const bonuses = await getPlayerBonuses(userId);
-      const liveRp = await commitRp(client, userId, now, effectiveRpPerMin(bonuses));
+      const liveRp = await commitRp(client, userId, now, effectiveRpPerMin(bonuses, await baseRpPerMin(userId)));
       if (liveRp < tech.rp_cost) {
         throw Object.assign(
           new Error(`Insufficient RP (have ${liveRp}, need ${tech.rp_cost})`),

@@ -19,6 +19,7 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { resolveBodyId } from './resources.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { addResourceStack } from '../lib/wrecks.js';
+import { baseAtBody } from './bases.js';
 
 export const REFINE_GAIN = 8;          // quality per pass
 export const DEEP_GAIN_BONUS = 4;      // with tech_deep_refining
@@ -40,6 +41,9 @@ async function dockedRefineryBody(req, userId) {
   if (!bodyId) return null;
   const row = await queryOne(`SELECT id, name, body_type, has_city FROM celestial_bodies WHERE id = $1`, [bodyId]);
   if (!row) return null;
+  // A base with a Base Refinery makes any planet a refinery -- fee-free.
+  const base = await baseAtBody(userId, row.id);
+  if (base?.refinery) return { ...row, base_refinery: base.refinery };
   if (row.body_type !== 'station' && !row.has_city) return null;
   return row;
 }
@@ -51,7 +55,7 @@ async function techState(userId) {
 }
 
 // Pure quote from the stack row + bonuses + tech.
-export function computeQuote(stack, quantity, bonuses, tech) {
+export function computeQuote(stack, quantity, bonuses, tech, baseRefinery = null) {
   const n = Math.max(0, Math.min(Number(stack.quantity), Math.floor(Number(quantity) || 0)));
   const isOre = stack.category === 'ore';
   const isCommon = stack.rarity === 'common';
@@ -59,14 +63,14 @@ export function computeQuote(stack, quantity, bonuses, tech) {
   const yieldPct = (bonuses.reprocessing_yield_pct || 0)
     + (isOre ? (bonuses.metal_refining_pct || 0) : 0)
     + (isCommon ? (bonuses.common_ore_refining_pct || 0) : 0);
-  const yieldFrac = Math.min(MAX_YIELD, BASE_YIELD + yieldPct / 100);
+  const yieldFrac = Math.min(MAX_YIELD, BASE_YIELD + (yieldPct + (baseRefinery?.yield_pct || 0)) / 100);
   const cap = Math.min(100, (tech.deep ? DEEP_CAP : BASE_CAP) + metalLevel);
   const gain = REFINE_GAIN + (tech.deep ? DEEP_GAIN_BONUS : 0);
   const qIn = AVG(stack);
   const qOut = Math.min(cap, qIn + gain);
   const delta = Math.round((qOut - qIn) * 10) / 10;
   const outQty = Math.floor(n * yieldFrac);
-  const fee = Math.ceil(n * Number(stack.base_price) * FEE_RATE);
+  const fee = baseRefinery ? 0 : Math.ceil(n * Number(stack.base_price) * FEE_RATE);
   const stats = {
     stat_purity: Math.max(0, Math.min(100, Math.round(Number(stack.stat_purity ?? 50) + delta))),
     stat_stability: Math.max(0, Math.min(100, Math.round(Number(stack.stat_stability ?? 50) + delta))),
@@ -77,7 +81,7 @@ export function computeQuote(stack, quantity, bonuses, tech) {
   if (n < MIN_INPUT) reason = `Minimum ${MIN_INPUT} units`;
   else if (qIn >= cap) reason = `Already at this refinery's cap (Q${cap})`;
   else if (outQty < 1) reason = 'Yield would be 0 units';
-  return { units_in: n, units_out: outQty, yield_pct: Math.round(yieldFrac * 100), fee, quality_in: Math.round(qIn), quality_out: Math.round(Math.min(cap, qIn + delta)), cap, gain, out_stats: stats, reason };
+  return { units_in: n, units_out: outQty, yield_pct: Math.round(yieldFrac * 100), fee, quality_in: Math.round(qIn), quality_out: Math.round(Math.min(cap, qIn + delta)), cap, gain, out_stats: stats, reason, base_refinery: !!baseRefinery };
 }
 
 async function loadStack(userId, inventoryId, client = null) {
@@ -102,7 +106,7 @@ router.get('/quote', async (req, res) => {
     const stack = await loadStack(userId, String(req.query.inventory_id || ''));
     if (!stack) return res.status(404).json({ error: 'Resource stack not found' });
     const bonuses = await getPlayerBonuses(userId);
-    const quote = computeQuote(stack, req.query.quantity ?? stack.quantity, bonuses, tech);
+    const quote = computeQuote(stack, req.query.quantity ?? stack.quantity, bonuses, tech, body.base_refinery || null);
     res.json({ unlocked: true, deep: tech.deep, stack: { id: stack.id, resource_name: stack.resource_name, quantity: Number(stack.quantity), category: stack.category, rarity: stack.rarity }, quote });
   } catch (e) {
     console.error('refining/quote:', e);
@@ -126,7 +130,7 @@ router.post('/run', async (req, res) => {
     const result = await transaction(async (client) => {
       const stack = await loadStack(userId, String(inventory_id), client);
       if (!stack) throw Object.assign(new Error('Resource stack not found'), { statusCode: 404 });
-      const quote = computeQuote(stack, quantity, bonuses, tech);
+      const quote = computeQuote(stack, quantity, bonuses, tech, body.base_refinery || null);
       if (quote.reason) throw Object.assign(new Error(quote.reason), { statusCode: 400 });
       const u = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
       const credits = parseInt(u.rows[0]?.credits || 0);
