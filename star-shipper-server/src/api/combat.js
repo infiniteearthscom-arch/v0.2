@@ -16,8 +16,41 @@
 import express from 'express';
 import { authMiddleware, isDevAccount } from '../auth/index.js';
 import { query, queryOne } from '../db/index.js';
-import { getSystemManifest, invalidateManifests, getCatalog } from '../game/enemyManifest.js';
+import { getSystemManifest, invalidateManifests, getCatalog, buildAmbushFleet } from '../game/enemyManifest.js';
 import { insertModuleItem } from '../lib/wrecks.js';
+import { queryAll } from '../db/index.js';
+import { offerByKey, pathBetween } from '../game/contracts.js';
+
+// ---- contested-haul ambushes (2026-09-22) ----
+// userId -> Set(contractId) that already got their one ambush;
+// userId -> systemId -> Map(enemyId -> claim entry) for loot validation.
+const ambushDoneByUser = new Map();
+const ambushIndexByUser = new Map();
+const strHash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+async function maybeAmbush(userId, systemId) {
+  const rows = await queryAll(
+    `SELECT id, contract_key, tier, origin_system_id, dest_system_id, cargo_label
+       FROM player_contracts WHERE user_id = $1 AND status = 'active' AND contract_type = 'haul'`, [userId]);
+  if (!rows.length) return null;
+  let done = ambushDoneByUser.get(userId);
+  if (!done) { done = new Set(); ambushDoneByUser.set(userId, done); }
+  for (const c of rows) {
+    if (done.has(c.id)) continue;
+    const offer = offerByKey(c.contract_key, { anyBucket: true });
+    if (!offer?.contested) continue;
+    if (systemId === c.origin_system_id) continue;
+    const path = pathBetween(c.origin_system_id, c.dest_system_id) || [];
+    if (!path.includes(systemId)) continue;
+    done.add(c.id);
+    const fleetId = `ambush_${String(c.id).slice(0, 8)}`;
+    const built = await buildAmbushFleet({ systemId, tier: c.tier, seed: strHash(`${c.id}|${systemId}`), fleetId, label: c.cargo_label });
+    let bySystem = ambushIndexByUser.get(userId);
+    if (!bySystem) { bySystem = new Map(); ambushIndexByUser.set(userId, bySystem); }
+    bySystem.set(systemId, built.claimIndex);
+    return { ...built, contract: c };
+  }
+  return null;
+}
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -81,11 +114,25 @@ router.post('/enter-system', async (req, res) => {
       if (bySystem) bySystem.delete(system_id);
       reArmed = true;
     }
+    // Contested haul on board and this system is on the route -> add a
+    // per-user raider fleet to the manifest (once per contract).
+    let manifest = entry.manifest;
+    try {
+      const ambush = await maybeAmbush(req.user.id, system_id);
+      if (ambush) {
+        manifest = {
+          ...entry.manifest,
+          fleets: [...entry.manifest.fleets, ambush.fleet],
+          enemies: [...entry.manifest.enemies, ...ambush.enemies],
+          ambush: { contract_id: ambush.contract.id, cargo_label: ambush.contract.cargo_label, fleet_id: ambush.fleet.id },
+        };
+      }
+    } catch (e) { console.warn('ambush check failed:', e.message); }
     res.json({
       success: true,
       re_armed: reArmed,
       ...(retryIn ? { retry_in_seconds: retryIn } : {}),
-      manifest: entry.manifest,
+      manifest,
     });
   } catch (e) {
     console.error('Error entering system:', e);
@@ -133,7 +180,7 @@ router.post('/claim-loot', async (req, res) => {
     }
 
     const system = await getSystemManifest(system_id);
-    const entry = system?.claimIndex.get(enemy_id);
+    const entry = system?.claimIndex.get(enemy_id) || ambushIndexByUser.get(req.user.id)?.get(system_id)?.get(enemy_id);
     if (!entry) {
       return res.status(404).json({ error: 'No such enemy in this system' });
     }

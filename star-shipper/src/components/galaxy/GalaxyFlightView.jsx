@@ -80,6 +80,8 @@ export const GalaxyFlightView = () => {
   const viewMode = useGameStore(state => state.viewMode);
   const currentSystemId = useGameStore(state => state.currentSystem) || 'sol';
   const galaxyShipPosition = useGameStore(state => state.galaxyShipPosition);
+  const activeContracts = useGameStore(state => state.activeContracts) || [];
+  const deliverySystems = useMemo(() => new Set(activeContracts.map(c => c.dest_system_id)), [activeContracts]);
   const galaxyAutopilotTarget = useGameStore(state => state.galaxyAutopilotTarget);
   const setGalaxyAutopilotTarget = useGameStore(state => state.setGalaxyAutopilotTarget);
   const updateGalaxyShipPosition = useGameStore(state => state.updateGalaxyShipPosition);
@@ -646,6 +648,13 @@ export const GalaxyFlightView = () => {
                   {/* Star dot */}
                   <circle cx={sys.x} cy={sys.y} r={size}
                     fill={color} opacity={discovered ? 1 : 0.4} />
+
+                  {/* Contract delivery marker (2026-09-22): green parcel at the
+                      upper-left when an active contract delivers here. */}
+                  {deliverySystems.has(sys.id) && (
+                    <text x={sys.x - size - 2 * uiScale} y={sys.y - size + 1 * uiScale} textAnchor="end"
+                      fill="#4ade80" fontSize={8 * uiScale} fontFamily="monospace" pointerEvents="none">📦</text>
+                  )}
 
                   {/* Station marker -- discovered systems with at
                       least one station get a small gold rect tucked

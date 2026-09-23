@@ -437,6 +437,39 @@ function buildSol(catalog) {
 // enemyId → { credits, isFlagship, fleetId } for /claim-loot. Flagship =
 // heaviest max_hull per fleet, first-seen tie-break — the SAME rule the
 // client's buildFleets uses, so payouts line up with what the player saw.
+// Contested-haul ambush (2026-09-22): one same-tier fleet, built from the
+// template catalog like any other, but per USER (it only exists for the
+// pilot carrying the contract). Members are placed around (0,0); the
+// client offsets them to the pilot's arrival point and starts them in
+// 'chase'. Returns { fleet, enemies, claimIndex }.
+export async function buildAmbushFleet({ systemId, tier, seed, fleetId, label }) {
+  const catalog = await getCatalog();
+  const t = Math.max(1, Math.min(5, tier || 1));
+  const rng = new SeededRandom((seed >>> 0) + 9191);
+  const roster = composeFleet(catalog, rng, t, 0);
+  const enemies = [];
+  const memberIds = [];
+  roster.forEach((template, m) => {
+    const inst = instantiate(template, rng, catalog);
+    const id = `${fleetId}_${m + 1}`;
+    memberIds.push(id);
+    const a = rng.range(0, Math.PI * 2), d = rng.range(0, 45);
+    enemies.push({
+      id, fleet_id: fleetId, ...inst, tier: t,
+      name: `Raider ${displayName(template, inst, t)}`,
+      x: Math.round(Math.cos(a) * d), y: Math.round(Math.sin(a) * d),
+      rotation: Math.round(rng.range(-180, 180)),
+      patrol_center: { x: 0, y: 0 }, patrol_radius: 120,
+      patrol_angle: m * (Math.PI * 2 / Math.max(1, roster.length)),
+      loot_credits: rollLoot(rng, inst, t, t, template),
+      ambush: true,
+    });
+  });
+  const claimIndex = buildClaimIndex(enemies);
+  const fleet = { id: fleetId, tier: t, ambush: true, name: `Raiders after your ${label || 'cargo'}`, patrol_center: { x: 0, y: 0 }, patrol_radius: 120, member_ids: memberIds };
+  return { fleet, enemies: enemies.map(e => ({ ...e, is_flagship: claimIndex.get(e.id).isFlagship })), claimIndex };
+}
+
 function buildClaimIndex(enemies) {
   const flagshipByFleet = new Map();
   const lootByFleet = new Map();

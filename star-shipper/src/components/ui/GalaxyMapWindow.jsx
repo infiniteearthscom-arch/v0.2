@@ -11,7 +11,7 @@ import { tierColor, tierLabel } from '@/utils/tiers';
 import { fleetWarpProfile, warpCheck, freeWarpCheck, warpBlockText } from '@/utils/warp';
 import { findRoute, routeSummary } from '@/utils/routePlanner';
 import presence from '@/utils/presence';
-import { galaxyAPI, harvesterAPI } from '@/utils/api';
+import { galaxyAPI, harvesterAPI, contractsAPI } from '@/utils/api';
 
 // ============================================
 // CONSTANTS
@@ -136,6 +136,22 @@ export const GalaxyMapWindow = () => {
   // My deployed harvesters by system id (2026-09-22): the info panel
   // lists them per planet and the map marks systems that have any.
   // Fetched on every open -- hopper/fuel numbers are live projections.
+  // Active hauling contracts by destination system (2026-09-22): a 📦
+  // marker on the map + a "Deliveries Here" row in the info panel.
+  const [deliveries, setDeliveries] = useState({});
+  useEffect(() => {
+    if (!isOpen) return;
+    contractsAPI.mine()
+      .then(r => {
+        const by = {};
+        for (const c of (r.contracts || [])) {
+          if (c.status !== 'active') continue;
+          (by[c.dest_system_id] = by[c.dest_system_id] || []).push(c);
+        }
+        setDeliveries(by);
+      })
+      .catch(() => {});
+  }, [isOpen]);
   const [myHarvesters, setMyHarvesters] = useState({});
   useEffect(() => {
     if (!isOpen) return;
@@ -424,6 +440,22 @@ export const GalaxyMapWindow = () => {
               </text>
             )}
 
+            {/* Delivery marker -- parcel at the upper-left when an active
+                contract delivers here. */}
+            {deliveries[sys.id]?.length > 0 && (
+              <text
+                x={sys.x - size - 3 * uiScale}
+                y={sys.y - size + 2 * uiScale}
+                textAnchor="end"
+                fill="#4ade80"
+                fontSize={8 * uiScale}
+                fontFamily="monospace"
+                opacity={0.9}
+              >
+                📦{deliveries[sys.id].length}
+              </text>
+            )}
+
             {/* Harvester marker -- amber gear at the upper-right of the
                 dot when I have harvesters on any planet here. */}
             {myHarvesters[sys.id]?.count > 0 && (
@@ -457,7 +489,7 @@ export const GalaxyMapWindow = () => {
         );
       })}
     </g>
-  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile, myHarvesters]);
+  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile, myHarvesters, deliveries]);
 
   if (!isOpen) return null;
 
@@ -749,6 +781,14 @@ export const GalaxyMapWindow = () => {
                     {bySystem[selectedSys.id] || 0}
                   </span>
                 </div>
+                {deliveries[selectedSys.id]?.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Deliveries Here</span>
+                    <span className="text-green-300 font-bold">
+                      {deliveries[selectedSys.id].map(c => c.dest_station).join(', ')}
+                    </span>
+                  </div>
+                )}
                 {/* My harvesters in this system (2026-09-22). */}
                 <div className="flex justify-between">
                   <span className="text-slate-500">Your Harvesters</span>

@@ -2237,11 +2237,16 @@ export const SystemView = () => {
       try {
         const res = await combatAPI.enterSystem(currentSystemId);
         if (manifestCancelled) return;
-        const enemies = hydrateEnemies(res?.manifest, currentSystemId);
+        const enemies = hydrateEnemies(res?.manifest, currentSystemId, { ambushAt: shipPosRef.current });
         enemiesRef.current = enemies;
         fleetsRef.current = buildFleets(enemies);
         prevEnemyCountRef.current = 0;
         setEnemyCount(enemies.length);
+        if (res?.manifest?.ambush) {
+          const st = useGameStore.getState();
+          if (st.pushToast) st.pushToast({ kind: 'error', text: `⚠ AMBUSH — raiders are after your ${res.manifest.ambush.cargo_label || 'cargo'}!`, duration: 6000 });
+          playSound('button_click');
+        }
       } catch (err) {
         if (manifestCancelled) return;
         // A system the server doesn't know can't ever succeed -- leave it
@@ -3979,7 +3984,9 @@ export const SystemView = () => {
                   if (st.fetchCredits) st.fetchCredits();
                   const mods = res?.modules_awarded || [];
                   const ress = res?.resources_awarded || [];
+                  const itms = res?.items_awarded || [];
                   const parts = [];
+                  if (itms.length) { parts.push(itms.map(i => `${i.quantity} ${i.name} (freight)`).join(', ')); const b = st.bumpContracts; if (b) b(); }
                   if (mods.length) parts.push(`${mods.length} module${mods.length === 1 ? '' : 's'} (${mods.slice(0, 3).join(', ')}${mods.length > 3 ? '…' : ''})`);
                   if (ress.length) parts.push(ress.slice(0, 3).map(r => `${r.quantity} ${r.name}`).join(', ') + (ress.length > 3 ? '…' : ''));
                   if (st.pushToast) st.pushToast({ kind: 'success', text: `Salvaged ${res?.ship_name ? `wreck of ${res.ship_name}` : 'wreck'}: ${parts.join(' · ') || 'nothing left'}`, duration: 5000 });

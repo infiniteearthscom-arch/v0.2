@@ -147,6 +147,16 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 079 (fetch contracts) ---
+  report('player_contracts.fetch_resource_type_id (079)', await columnExists('player_contracts', 'fetch_resource_type_id'));
+
+  // --- migration 078 (hauling contracts) ---
+  report('player_contracts table (078)', await tableExists('player_contracts'));
+  const sealed = await pool.query(`SELECT volume_per_unit FROM item_definitions WHERE id = 'sealed_cargo'`);
+  report('sealed_cargo item (078)', !!sealed.rows[0] && Number(sealed.rows[0].volume_per_unit) === 1, sealed.rows[0] ? `vol/unit=${sealed.rows[0].volume_per_unit}` : 'missing');
+  const contracting = await pool.query(`SELECT bonus_per_level->>'value' AS v FROM skill_definitions WHERE id = 'trd_contracting'`);
+  report('trd_contracting = +1/level (078)', contracting.rows[0]?.v === '1', `value=${contracting.rows[0]?.v}`);
+
   // --- migration 077 (elite loot tables) ---
   const lootT = await pool.query(`SELECT COUNT(*)::int AS n FROM enemy_templates WHERE jsonb_array_length(loot_table) > 0`);
   report('elite loot tables seeded (077)', lootT.rows[0].n >= 3, `${lootT.rows[0].n} templates with drops`);

@@ -18,7 +18,7 @@
 //     the "Quest Completed: X" notification for the in-the-moment
 //     "this just happened" signal.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 
 const EDGE = '#1a3050';
@@ -49,8 +49,17 @@ export const PinnedQuestsOverlay = () => {
       .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
     [quests]
   );
+  // Active contracts ride in the same stack (2026-09-22) so the pilot
+  // always sees where the freight goes and how long is left.
+  const contracts = useGameStore(state => state.activeContracts) || [];
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!contracts.length) return undefined;
+    const t = setInterval(() => tick(n => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [contracts.length]);
 
-  if (pinned.length === 0) return null;
+  if (pinned.length === 0 && contracts.length === 0) return null;
 
   return (
     <>
@@ -85,8 +94,40 @@ export const PinnedQuestsOverlay = () => {
         {pinned.map(q => (
           <PinnedTile key={q.quest_id} quest={q} onUnpin={() => pinQuest(q.quest_id, false)} />
         ))}
+        {contracts.map(c => <ContractTile key={c.id} contract={c} />)}
       </div>
     </>
+  );
+};
+
+const ContractTile = ({ contract: c }) => {
+  const isFetch = c.contract_type === 'fetch';
+  const left = Math.max(0, Math.round((new Date(c.deadline_at).getTime() - Date.now()) / 60000));
+  const urgent = left < 5;
+  const accent = urgent ? { pri: '#ef4444', light: '#f87171' } : isFetch ? { pri: '#22d3ee', light: '#67e8f9' } : { pri: GOLD.pri, light: GOLD.light };
+  const missingFreight = !isFetch && c.freight_units != null && c.freight_units < c.cargo_volume;
+  return (
+    <div style={{
+      pointerEvents: 'auto', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 14px',
+      minWidth: 360, maxWidth: 520, background: 'rgba(8,14,28,0.92)',
+      border: `1px solid ${accent.pri}55`, borderLeft: `3px solid ${accent.pri}`, borderRadius: 3, backdropFilter: 'blur(4px)',
+    }}>
+      <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>{isFetch ? '⛏' : '📦'}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, color: accent.light, letterSpacing: 0.5 }}>
+          <span>{isFetch ? `Bring ${c.cargo_volume} × ${c.cargo_label}` : c.cargo_label}</span>
+          <span style={{ fontSize: '0.5rem', fontFamily: FM, fontWeight: 700, color: accent.pri, opacity: 0.65, letterSpacing: 1.2 }}>
+            {isFetch ? 'FETCH' : 'HAUL'}{c.contested ? ' · CONTESTED' : ''}{c.rush ? ' · RUSH' : ''}
+          </span>
+        </div>
+        <div style={{ fontSize: '0.8rem', color: '#a8b4c5', fontFamily: F, lineHeight: 1.4, marginTop: 2 }}>
+          {isFetch ? 'turn in at' : 'deliver to'} {c.dest_station}, {c.dest_system_name} ·{' '}
+          <span style={{ color: urgent ? '#f87171' : '#a8b4c5' }}>{left} min</span> · {Number(c.reward).toLocaleString()} CR
+          {isFetch && <span> · have {c.have_qualifying || 0}/{c.cargo_volume}</span>}
+          {missingFreight && <span style={{ color: '#f87171' }}> · freight lost — reclaim your wreck</span>}
+        </div>
+      </div>
+    </div>
   );
 };
 

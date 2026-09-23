@@ -5,7 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
-import { fittingAPI } from '@/utils/api';
+import { fittingAPI, contractsAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { SystemMapWindow } from '@/components/system/SystemMapWindow';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
@@ -635,6 +635,26 @@ const TradeBootstrap = () => {
 // the same store key immediately after read/delete/send actions, so
 // the badge updates instantly for user actions; the poll is just a
 // fallback for "new mail arrived while idle".
+// Keeps store.activeContracts fresh for the HUD tiles + galaxy markers:
+// on mount, every 60s, and whenever contractsVersion bumps (accept /
+// deliver / abandon in the Contracts tab).
+const ContractsPoller = () => {
+  const setActiveContracts = useGameStore(s => s.setActiveContracts);
+  const version = useGameStore(s => s.contractsVersion);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOnce = () => {
+      contractsAPI.mine()
+        .then(r => { if (!cancelled) setActiveContracts?.((r?.contracts || []).filter(c => c.status === 'active')); })
+        .catch(() => {});
+    };
+    fetchOnce();
+    const t = setInterval(fetchOnce, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [setActiveContracts, version]);
+  return null;
+};
+
 const MailUnreadPoller = () => {
   const setMailUnread = useGameStore(s => s.setMailUnread);
   useEffect(() => {
@@ -663,6 +683,7 @@ export const GameFrame = ({ children }) => {
       <DockedBodyPresenceBridge />
       <TradeBootstrap />
       <MailUnreadPoller />
+      <ContractsPoller />
       <TopBar />
       <LeftToolbar />
       {systemMapOpen && <SystemMapWindow />}

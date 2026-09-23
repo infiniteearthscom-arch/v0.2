@@ -38,9 +38,21 @@ export const behaviorFor = (behaviorMode, tier) => {
 // systemId: stamped on every enemy (wreck claims read it off the wreck
 // because the game loop's closure copy of currentSystemId can be stale
 // -- CLAUDE.md pitfall #7).
-export const hydrateEnemies = (manifest, systemId) => {
+// opts.ambushAt: the pilot's position -- contested-haul raider fleets
+// (manifest fleet.ambush) are placed ~320 units from it and start in
+// 'chase' instead of patrolling.
+export const hydrateEnemies = (manifest, systemId, opts = {}) => {
   if (!manifest || !Array.isArray(manifest.enemies)) return [];
+  const ambushFleets = new Map();
+  for (const f of (manifest.fleets || [])) {
+    if (!f.ambush) continue;
+    let h = 0; for (const ch of String(f.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const ang = (h % 360) * Math.PI / 180;
+    const at = opts.ambushAt || { x: 0, y: 0 };
+    ambushFleets.set(f.id, { x: at.x + Math.cos(ang) * 320, y: at.y + Math.sin(ang) * 320 });
+  }
   return manifest.enemies.map(e => {
+    const ambushCenter = ambushFleets.get(e.fleet_id) || null;
     let hullId = e.hull_type_id;
     let hull = lookupHull(hullId);
     if (!hull) { hullId = FALLBACK_HULL_ID; hull = lookupHull(hullId); }
@@ -76,7 +88,8 @@ export const hydrateEnemies = (manifest, systemId) => {
       // the rolled quality + resolved per-module numbers.
       modules: e.modules || [],
 
-      x: e.x, y: e.y,
+      x: ambushCenter ? ambushCenter.x + e.x : e.x,
+      y: ambushCenter ? ambushCenter.y + e.y : e.y,
       vx: 0, vy: 0,
       rotation: e.rotation || 0,
 
@@ -95,7 +108,8 @@ export const hydrateEnemies = (manifest, systemId) => {
       shieldRegenTimer: 0,
       engineColor,
       displaySize,
-      state: 'patrol',
+      state: ambushCenter ? 'chase' : 'patrol',
+      isAmbush: !!ambushCenter,
       // Phase 4 behavior tiers. A template can pin a behavior via
       // behavior_mode; the default 'aggressive' means "by tier".
       behavior: behaviorFor(e.behavior_mode, e.tier || 1),
@@ -104,7 +118,7 @@ export const hydrateEnemies = (manifest, systemId) => {
       jinkTimer: 0,       // evasive: seconds until the next direction flip
       specialTimer: 0,    // elite / T5: cooldown for the signature move
       regroupTimer: 0,    // tactical: time spent regrouping
-      patrolCenter: { x: e.patrol_center?.x ?? e.x, y: e.patrol_center?.y ?? e.y },
+      patrolCenter: ambushCenter ? { x: ambushCenter.x, y: ambushCenter.y } : { x: e.patrol_center?.x ?? e.x, y: e.patrol_center?.y ?? e.y },
       patrolAngle: e.patrol_angle || 0,
       patrolRadius: e.patrol_radius || 100,
       targetId: null,

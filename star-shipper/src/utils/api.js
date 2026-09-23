@@ -493,6 +493,15 @@ export const researchAPI = {
 };
 
 // Harvester API
+// Contract board (hauling v1, 2026-09-22) -- docs/contracts-spec.md
+export const contractsAPI = {
+  board: () => request('/contracts/board'),
+  mine: () => request('/contracts/mine'),
+  accept: (contractKey) => request('/contracts/accept', { method: 'POST', body: JSON.stringify({ contract_key: contractKey }) }),
+  deliver: (id) => request(`/contracts/${encodeURIComponent(id)}/deliver`, { method: 'POST' }),
+  abandon: (id) => request(`/contracts/${encodeURIComponent(id)}/abandon`, { method: 'POST' }),
+};
+
 export const harvesterAPI = {
   getPlanetHarvesters: (bodyId) => request(`/harvesters/planet/${bodyId}`),
   // Every harvester I own, grouped by system procedural id (galaxy map).

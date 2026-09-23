@@ -97,8 +97,12 @@ export const resetPricingCatalog = () => { catalogCache = null; };
 // Sell price of one unit of an inventory ITEM row (module, supply,
 // harvester, ...). Returns { price, name, basis } -- basis is for logs/UI:
 // 'vendor' | 'supply' | 'materials' | 'floor'.
+// Never vendorable: contract freight (078) -- the contract pays on delivery.
+export const UNSELLABLE = new Set(['sealed_cargo']);
+
 export function itemSellPrice(row, catalog) {
   const itemId = row.item_id;
+  if (UNSELLABLE.has(itemId)) return { price: 0, name: row.item_name || 'Sealed Cargo', basis: 'unsellable' };
   const data = row.item_data || {};
   const mod = catalog.moduleById.get(itemId) || null;
   const tier = Math.max(1, Math.min(5, Number(mod?.tier ?? data.tier ?? 1)));

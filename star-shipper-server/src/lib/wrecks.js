@@ -87,6 +87,22 @@ export async function ejectResources(client, userId, fraction) {
 }
 
 // Insert the wreck row. contents = { modules, resources, credits?, ship_name, source_name }.
+// Eject whole ITEM stacks (contract freight, 2026-09-22) into a wreck.
+// Returns [{ item_id, quantity, item_data }] and deletes the stacks.
+export async function ejectItems(client, userId, itemIds) {
+  if (!itemIds?.length) return [];
+  const r = await client.query(
+    `SELECT id, item_id, quantity, item_data FROM player_resource_inventory
+      WHERE user_id = $1 AND item_type = 'item' AND item_id = ANY($2::text[]) AND quantity > 0
+      FOR UPDATE`, [userId, itemIds]);
+  const out = [];
+  for (const s of r.rows) {
+    await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [s.id]);
+    out.push({ item_id: s.item_id, quantity: Number(s.quantity), item_data: s.item_data || {} });
+  }
+  return out;
+}
+
 export async function insertWreck(client, { systemProceduralId, x, y, contents, source }) {
   const systemId = await resolveWreckSystemId(client, systemProceduralId);
   if (!systemId) return null;

@@ -2092,10 +2092,23 @@ router.post('/wrecks/claim', authMiddleware, async (req, res) => {
         await addResourceStack(client, userId, r.resource_type_id, r.quantity, r.stats);
         resourcesAwarded.push({ name: r.resource_name || r.resource_type_id, quantity: r.quantity });
       }
+      // Ejected item stacks (contract freight): restored whole, with
+      // their item_data (contract id) intact so delivery still works.
+      const itemsAwarded = [];
+      for (const it of (Array.isArray(contents.items) ? contents.items : [])) {
+        if (!it?.item_id || !(it.quantity > 0)) continue;
+        const slot = await getNextSlotIndex(userId, client);
+        await client.query(`
+          INSERT INTO player_resource_inventory (user_id, item_type, item_id, quantity, slot_index, item_data)
+          VALUES ($1, 'item', $2, $3, $4, $5)`,
+          [userId, it.item_id, it.quantity, slot, JSON.stringify(it.item_data || {})]);
+        itemsAwarded.push({ name: it.item_data?.label || it.item_id, quantity: it.quantity });
+      }
       return {
         credits_awarded: creditsAwarded,
         modules_awarded: modulesAwarded,
         resources_awarded: resourcesAwarded,
+        items_awarded: itemsAwarded,
         ship_name: contents.ship_name || null,
       };
     });

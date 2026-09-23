@@ -94,6 +94,10 @@ const initialState = {
   // InboxWindow after read/delete/send actions. Drives the badge on
   // the 📬 Mail toolbar button.
   mailUnreadCount: 0,
+  // Active contracts (hauling / fetch) for the HUD + galaxy views; fed by
+  // ContractsPoller in GameFrame. contractsVersion bumps force a refetch.
+  activeContracts: [],
+  contractsVersion: 0,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   fitGates: null,              // { module_gates, hull_gates, fleet } from GET /skills (Phase 3 capability gating)
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
@@ -368,6 +372,8 @@ export const useGameStore = create(
       }),
       // Mail unread count -- pushed by the InboxWindow + the poller.
       setMailUnread: (n) => set(state => { state.mailUnreadCount = Math.max(0, parseInt(n, 10) || 0); }),
+      setActiveContracts: (list) => set(state => { state.activeContracts = Array.isArray(list) ? list : []; }),
+      bumpContracts: () => set(state => { state.contractsVersion = (state.contractsVersion || 0) + 1; }),
 
       tick: (deltaTime) => set(state => {
         if (state.gamePaused) return;

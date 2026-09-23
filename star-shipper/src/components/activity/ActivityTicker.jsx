@@ -87,6 +87,16 @@ function formatEvent(evt) {
         text: `${name} traded with ${p.partner_name || 'another pilot'}`,
       };
     }
+    case 'contract_delivered': {
+      const pay = (typeof p.payout === 'number') ? ` for ${p.payout.toLocaleString()}cr` : '';
+      return {
+        icon: '📦',
+        color: '#4ade80',
+        text: p.contract_type === 'fetch'
+          ? `${name} supplied ${p.quantity || ''} ${p.cargo_label || 'resources'} to ${p.dest_station || 'a station'}${pay}`
+          : `${name} delivered ${p.cargo_label || 'freight'} to ${p.dest_station || 'a station'}${pay}`,
+      };
+    }
     case 'bounty_claimed': {
       const tgt = p.target_hull === 'any' ? 'a pirate' : `a Pirate ${p.target_hull}`;
       const reward = (typeof p.reward === 'number')

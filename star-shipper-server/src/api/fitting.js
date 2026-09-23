@@ -8,7 +8,7 @@ import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
 import { moduleGateFor, hullGateFor, assertGate, getFleetCap, MAX_FLEET_CAP } from '../game/fitGates.js';
-import { modulesFromFitted, ejectResources, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
+import { modulesFromFitted, ejectResources, ejectItems, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
 
 const router = express.Router();
@@ -1214,6 +1214,7 @@ router.post('/sell-item', authMiddleware, async (req, res) => {
 
       const catalog = await loadPricingCatalog(queryAll);
       const priced = itemSellPrice(row, catalog);
+      if (priced.price <= 0) throw new Error(`${priced.name} can't be sold to a vendor`);
       const pricePerUnit = priced.price;
       const itemName = priced.name;
 
@@ -1417,11 +1418,14 @@ router.post('/enter-pod', authMiddleware, async (req, res) => {
       if (system_procedural_id && x != null && y != null) {
         const modules = modulesFromFitted(ship.fitted_modules);
         const resources = await ejectResources(client, userId, EJECT_CARGO_FRACTION);
-        if (modules.length || resources.length) {
+        // Contract freight (sealed cargo) goes down with the ship -- ALL of
+        // it. Reclaim the wreck before the deadline and the haul is still on.
+        const items = await ejectItems(client, userId, ['sealed_cargo']);
+        if (modules.length || resources.length || items.length) {
           wreck = await insertWreck(client, {
             systemProceduralId: system_procedural_id, x, y,
             source: 'player_flagship',
-            contents: { modules, resources, ship_name: destroyedShipName, owner_id: userId },
+            contents: { modules, resources, items, ship_name: destroyedShipName, owner_id: userId },
           });
         }
       }
@@ -1650,6 +1654,9 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
 
       // 11. Wipe galaxy-map fog of war (visited systems).
       await client.query(`DELETE FROM player_system_visits WHERE user_id = $1`, [userId]);
+
+      // 12. Contract board history (078). Sealed cargo went with the inventory wipe above.
+      await client.query(`DELETE FROM player_contracts WHERE user_id = $1`, [userId]);
     });
 
     // 9. Re-grant the Starter Scout so RESET produces the same
