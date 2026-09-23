@@ -488,7 +488,7 @@ function buildClaimIndex(enemies) {
     }
     // templateId lets /combat/claim-loot roll the template's loot_table
     // (Phase 4b elite drops) without a second lookup.
-    index.set(e.id, { credits, isFlagship, fleetId: e.fleet_id, templateId: e.template_id, isElite: !!e.is_elite });
+    index.set(e.id, { credits, isFlagship, fleetId: e.fleet_id, templateId: e.template_id, isElite: !!e.is_elite, tier: e.tier || 1 });
   }
   return index;
 }

@@ -24,6 +24,18 @@ export const hasResourceCatalog = () => _resources.length > 0;
 export const BOARD_BUCKET_HOURS = 4;
 export const BOARD_SIZE = 7;               // hauling offers per port
 export const FETCH_SIZE = 3;               // find-resource offers per port (079)
+export const BOUNTY_SIZE = 2;              // bounty offers per port (080)
+// Bounties: destroy N pirates of the offer's tier or higher (verified via
+// the loot-claim record -- salvage the wreck to log the kill), turn in
+// here. Pay per kill sits above a fleet's own loot so hunting beats
+// farming; flagship-only bounties pay more per kill, named elites most.
+export const BOUNTY_PER_KILL = { 1: 700, 2: 1600, 3: 4200, 4: 9500, 5: 19000 };
+export const BOUNTY_KILLS = { 1: [3, 6], 2: [3, 5], 3: [2, 4], 4: [2, 3], 5: [1, 2] };
+export const BOUNTY_FLAGSHIP_CHANCE = 0.3, BOUNTY_FLAGSHIP_PAY = 1.8;
+export const BOUNTY_ELITE_CHANCE = 0.25;   // at T4/T5 ports: a named-elite bounty
+export const BOUNTY_ELITES = { 4: { template_id: 'reaver_dread_captain', name: 'Dread Captain Orsk', pay: 45000 },
+                               5: { template_id: 'reaver_admiral_vask',  name: 'Admiral Vask',       pay: 110000 } };
+export const BOUNTY_DEADLINE_MIN = { 1: 120, 2: 150, 3: 180, 4: 240, 5: 300 };
 // Fetch contracts: bring N units of a resource at avg quality >= floor to
 // the posting station. Pay per unit = the vendor's sell price for that
 // resource AT the floor quality x FETCH_PREMIUM[tier] -- always better
@@ -206,6 +218,35 @@ export function generateBoard(systemId, stationName, bucket = currentBucket()) {
       danger_tier: originTier,
       reward: unitPay * quantity,
       deadline_minutes: FETCH_DEADLINE_MIN[tier],
+      board_expires_at: bucketEndsAt(bucket),
+    });
+  }
+  // ---- bounty offers (080): indices BOARD_SIZE+FETCH_SIZE .. ----
+  const brng = new SRng(hashStr(`bounty|${systemId}|${normName(station)}|${bucket}`));
+  const ROMAN = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V' };
+  for (let j = 0; j < BOUNTY_SIZE; j++) {
+    const i = BOARD_SIZE + FETCH_SIZE + j;
+    let tier = Math.max(1, Math.min(5, originTier + [-1, 0, 0, 1][brng.int(0, 3)]));
+    if (originTier === 1 && j === 0) tier = 1;
+    const elite = BOUNTY_ELITES[tier];
+    const namedElite = !!elite && brng.chance(BOUNTY_ELITE_CHANCE);
+    const flagship = !namedElite && brng.chance(BOUNTY_FLAGSHIP_CHANCE);
+    const [kMin, kMax] = BOUNTY_KILLS[tier];
+    const kills = namedElite ? 1 : flagship ? Math.max(1, Math.round(brng.range(kMin, kMax) / 2)) : brng.int(kMin, kMax);
+    const reward = namedElite ? elite.pay : Math.round(kills * BOUNTY_PER_KILL[tier] * (flagship ? BOUNTY_FLAGSHIP_PAY : 1));
+    const label = namedElite ? `Destroy ${elite.name}`
+      : flagship ? `Destroy ${kills} Tier ${ROMAN[tier]}+ pirate flagship${kills === 1 ? '' : 's'}`
+      : `Destroy ${kills} Tier ${ROMAN[tier]}+ pirate ship${kills === 1 ? '' : 's'}`;
+    offers.push({
+      contract_key: `${systemId}|${station}|${bucket}|${i}`,
+      contract_type: 'bounty',
+      tier, rush: false, hops: 0, volume: kills, cargo_label: label,
+      target_tier: namedElite ? null : tier, target_template_id: namedElite ? elite.template_id : null, target_flagship: flagship,
+      origin_system_id: systemId, origin_system_name: origin.name, origin_station: station,
+      dest_system_id: systemId, dest_system_name: origin.name, dest_station: station,
+      danger_tier: tier,
+      reward,
+      deadline_minutes: BOUNTY_DEADLINE_MIN[tier],
       board_expires_at: bucketEndsAt(bucket),
     });
   }

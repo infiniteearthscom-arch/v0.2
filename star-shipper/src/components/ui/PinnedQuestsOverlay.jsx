@@ -102,28 +102,30 @@ export const PinnedQuestsOverlay = () => {
 
 const ContractTile = ({ contract: c }) => {
   const isFetch = c.contract_type === 'fetch';
+  const isBounty = c.contract_type === 'bounty';
   const left = Math.max(0, Math.round((new Date(c.deadline_at).getTime() - Date.now()) / 60000));
   const urgent = left < 5;
-  const accent = urgent ? { pri: '#ef4444', light: '#f87171' } : isFetch ? { pri: '#22d3ee', light: '#67e8f9' } : { pri: GOLD.pri, light: GOLD.light };
-  const missingFreight = !isFetch && c.freight_units != null && c.freight_units < c.cargo_volume;
+  const accent = urgent ? { pri: '#ef4444', light: '#f87171' } : isFetch ? { pri: '#22d3ee', light: '#67e8f9' } : isBounty ? { pri: '#ef4444', light: '#fca5a5' } : { pri: GOLD.pri, light: GOLD.light };
+  const missingFreight = !isFetch && !isBounty && c.freight_units != null && c.freight_units < c.cargo_volume;
   return (
     <div style={{
       pointerEvents: 'auto', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 14px',
       minWidth: 360, maxWidth: 520, background: 'rgba(8,14,28,0.92)',
       border: `1px solid ${accent.pri}55`, borderLeft: `3px solid ${accent.pri}`, borderRadius: 3, backdropFilter: 'blur(4px)',
     }}>
-      <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>{isFetch ? '⛏' : '📦'}</div>
+      <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>{isFetch ? '⛏' : isBounty ? '🎯' : '📦'}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, color: accent.light, letterSpacing: 0.5 }}>
           <span>{isFetch ? `Bring ${c.cargo_volume} × ${c.cargo_label}` : c.cargo_label}</span>
           <span style={{ fontSize: '0.5rem', fontFamily: FM, fontWeight: 700, color: accent.pri, opacity: 0.65, letterSpacing: 1.2 }}>
-            {isFetch ? 'FETCH' : 'HAUL'}{c.contested ? ' · CONTESTED' : ''}{c.rush ? ' · RUSH' : ''}
+            {isFetch ? 'FETCH' : isBounty ? 'BOUNTY' : 'HAUL'}{c.contested ? ' · CONTESTED' : ''}{c.rush ? ' · RUSH' : ''}
           </span>
         </div>
         <div style={{ fontSize: '0.8rem', color: '#a8b4c5', fontFamily: F, lineHeight: 1.4, marginTop: 2 }}>
-          {isFetch ? 'turn in at' : 'deliver to'} {c.dest_station}, {c.dest_system_name} ·{' '}
+          {isFetch || isBounty ? 'turn in at' : 'deliver to'} {c.dest_station}, {c.dest_system_name} ·{' '}
           <span style={{ color: urgent ? '#f87171' : '#a8b4c5' }}>{left} min</span> · {Number(c.reward).toLocaleString()} CR
           {isFetch && <span> · have {c.have_qualifying || 0}/{c.cargo_volume}</span>}
+          {isBounty && <span> · kills {c.progress || 0}/{c.cargo_volume}</span>}
           {missingFreight && <span style={{ color: '#f87171' }}> · freight lost — reclaim your wreck</span>}
         </div>
       </div>

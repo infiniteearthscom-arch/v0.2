@@ -20,6 +20,7 @@ import { getSystemManifest, invalidateManifests, getCatalog, buildAmbushFleet } 
 import { insertModuleItem } from '../lib/wrecks.js';
 import { queryAll } from '../db/index.js';
 import { offerByKey, pathBetween } from '../game/contracts.js';
+import { progressBounties } from './contracts.js';
 
 // ---- contested-haul ambushes (2026-09-22) ----
 // userId -> Set(contractId) that already got their one ambush;
@@ -221,11 +222,18 @@ router.post('/claim-loot', async (req, res) => {
       throw e;
     }
 
+    // Bounty contracts (080): a validated salvage is the kill record.
+    let bounties = [];
+    try {
+      bounties = await progressBounties(req.user.id, { tier: entry.tier, templateId: entry.templateId, isFlagship: entry.isFlagship });
+    } catch (e) { console.warn('bounty progress failed:', e.message); }
+
     res.json({
       success: true,
       awarded: entry.credits,
       is_flagship: entry.isFlagship,
       items,
+      bounties,
       credits: parseInt(user.credits),
     });
   } catch (e) {

@@ -493,6 +493,12 @@ export const researchAPI = {
 };
 
 // Harvester API
+// Refinery (2026-09-22) -- docs/refining-spec.md
+export const refiningAPI = {
+  quote: (inventoryId, quantity) => request(`/refining/quote?inventory_id=${encodeURIComponent(inventoryId)}&quantity=${encodeURIComponent(quantity)}`),
+  run: (inventoryId, quantity) => request('/refining/run', { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity }) }),
+};
+
 // Contract board (hauling v1, 2026-09-22) -- docs/contracts-spec.md
 export const contractsAPI = {
   board: () => request('/contracts/board'),

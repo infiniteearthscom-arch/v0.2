@@ -63,9 +63,13 @@ Each port adds `FETCH_SIZE` (3) offers after its hauling offers: "bring N units 
 - **Freight at stake.** Podding now ejects every sealed-cargo stack into the flagship wreck (`ejectItems`); reclaiming the wreck restores the stacks with their contract id intact, so the haul can still be delivered before the deadline. `GET /contracts/mine` reports `freight_units` and the UI shows "freight lost — reclaim your wreck" instead of a Deliver button.
 - **HUD.** Active contracts render as tiles in the pinned-quest stack (destination, minutes left, reward, have N/M for fetches), refreshed by `ContractsPoller` every 60 s and on every accept / deliver / abandon; 📦 markers also show in the in-flight galaxy view.
 
+## Bounty contracts (`type = 'bounty'`, migration 080)
+
+Each port adds `BOUNTY_SIZE` (2) offers: "Destroy N Tier T+ pirate ships" (kills of any pirate at tier ≥ T), a 30 % flagship-only variant (fewer kills, pay × 1.8), and at tier 4/5 ports a 25 % chance of a named-elite bounty (Dread Captain Orsk 45 k, Admiral Vask 110 k). Pay per kill `BOUNTY_PER_KILL` {700, 1 600, 4 200, 9 500, 19 000} × kills; deadlines 2–5 h. **Kill verification:** the server already validates every salvage in `POST /combat/claim-loot` against its spawn manifest; a validated claim calls `progressBounties` which advances every active bounty the kill satisfies (tier ≥ target, flagship if required, template id if named). So the pilot must salvage the wreck to log the kill — the client toasts progress and "bounty complete". Turn in at the posting station. Player-posted bounties (the separate Bounty Board, migration 060) still trust the client; promoting them to the same hook is a follow-up.
+
 ## Not in v1 (next on this framework)
 
-- Bounty contracts verified against the loot-claim record.
+- Player-posted bounties (migration 060 board) promoted to the verified loot-claim hook.
 - Reputation / faction standing per port; failure penalties.
 
 ## Levers

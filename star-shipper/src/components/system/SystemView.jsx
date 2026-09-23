@@ -4019,6 +4019,16 @@ export const SystemView = () => {
                   const st = useGameStore.getState();
                   if (st.fetchCargoInfo) st.fetchCargoInfo();
                 }
+                // Bounty contracts (080): a verified salvage logs the kill.
+                const bounties = res?.bounties || [];
+                if (bounties.length) {
+                  for (const b of bounties) {
+                    const done = b.progress >= b.cargo_volume;
+                    if (pt) pt({ kind: done ? 'success' : 'info', text: `🎯 ${b.cargo_label}: ${b.progress}/${b.cargo_volume}${done ? ' — bounty complete, collect it at the station' : ''}`, duration: 6000 });
+                  }
+                  const bump = useGameStore.getState().bumpContracts;
+                  if (bump) bump();
+                }
                 claimingWrecksRef.current.delete(wreckId);
               })
               .catch(err => {

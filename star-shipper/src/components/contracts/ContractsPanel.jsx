@@ -113,14 +113,17 @@ export const ContractsPanel = ({ body }) => {
         const here = c.dest_system_id === currentSystem && normName(c.dest_station) === hereName;
         const left = minutesLeft(c.deadline_at);
         const isFetch = c.contract_type === 'fetch';
-        const enough = isFetch ? (c.have_qualifying || 0) >= c.cargo_volume : (c.freight_units == null || c.freight_units >= c.cargo_volume);
-        const freightLost = !isFetch && c.freight_units != null && c.freight_units < c.cargo_volume;
+        const isBounty = c.contract_type === 'bounty';
+        const enough = isFetch ? (c.have_qualifying || 0) >= c.cargo_volume
+          : isBounty ? (c.progress || 0) >= c.cargo_volume
+          : (c.freight_units == null || c.freight_units >= c.cargo_volume);
+        const freightLost = !isFetch && !isBounty && c.freight_units != null && c.freight_units < c.cargo_volume;
         return (
           <Row key={c.id} accent={here && enough ? '#22c55e' : tierColor(c.tier)}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>
-                {isFetch ? '⛏' : '📦'} {isFetch ? `Bring ${c.cargo_volume} × ${c.cargo_label}` : c.cargo_label}
-                {!isFetch && <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}> ×{c.cargo_volume}</span>}
+                {isFetch ? '⛏' : isBounty ? '🎯' : '📦'} {isFetch ? `Bring ${c.cargo_volume} × ${c.cargo_label}` : c.cargo_label}
+                {!isFetch && !isBounty && <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}> ×{c.cargo_volume}</span>}
                 {isFetch && c.fetch_min_quality > 0 && <span style={{ color: '#8fa3b8', fontFamily: FM, fontSize: '0.75rem' }}> Q{c.fetch_min_quality}+</span>}
                 {c.rush && <span style={{ color: '#f87171', fontSize: '0.7rem', marginLeft: 6 }}>RUSH</span>}
                 {c.contested && <span style={{ color: '#f87171', fontSize: '0.7rem', marginLeft: 6 }}>CONTESTED</span>}
@@ -128,12 +131,14 @@ export const ContractsPanel = ({ body }) => {
               <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: FM }}>
                 {isFetch
                   ? <>turn in at {c.dest_station}, {c.dest_system_name} · <span style={{ color: enough ? '#4ade80' : '#a0b0c0' }}>have {c.have_qualifying || 0}/{c.cargo_volume}</span> · </>
+                  : isBounty
+                  ? <>turn in at {c.dest_station}, {c.dest_system_name} · <span style={{ color: enough ? '#4ade80' : '#a0b0c0' }}>kills {c.progress || 0}/{c.cargo_volume}</span> (salvage the wreck to log a kill) · </>
                   : <>→ {c.dest_station}, {c.dest_system_name} · {c.hops} hop{c.hops === 1 ? '' : 's'} · {freightLost && <span style={{ color: '#f87171' }}>freight lost — reclaim your wreck · </span>}</>}
                 <span style={{ color: left < 3 ? '#f87171' : '#a0b0c0' }}>{left} min left</span> · {fmt(c.reward)} CR
               </div>
             </div>
             {here && enough
-              ? <Btn accent="#22c55e" onClick={() => deliver(c.id)} disabled={busy}>{isFetch ? 'TURN IN' : 'DELIVER HERE'}</Btn>
+              ? <Btn accent="#22c55e" onClick={() => deliver(c.id)} disabled={busy}>{isFetch ? 'TURN IN' : isBounty ? 'COLLECT BOUNTY' : 'DELIVER HERE'}</Btn>
               : <Btn onClick={() => abandon(c.id)} disabled={busy} accent="#f87171">ABANDON</Btn>}
           </Row>
         );
@@ -163,7 +168,8 @@ export const ContractsPanel = ({ body }) => {
         const tierLocked = o.tier > board.limits.tier_cap;
         const full = board.limits.active_count >= board.limits.active_cap;
         const isFetch = o.contract_type === 'fetch';
-        const noRoom = !isFetch && board.limits.cargo_remaining < o.volume;
+        const isBounty = o.contract_type === 'bounty';
+        const noRoom = !isFetch && !isBounty && board.limits.cargo_remaining < o.volume;
         const reason = o.held ? 'Already accepted' : tierLocked ? `Needs Contracting ${o.tier - 1}` : full ? 'Contract limit reached' : noRoom ? `Needs ${o.volume} free cargo` : null;
         const left = minutesLeft(new Date(Date.now() + o.deadline_minutes * 60000).toISOString());
         return (
@@ -171,8 +177,8 @@ export const ContractsPanel = ({ body }) => {
             <div style={{ width: 22, textAlign: 'center', color: tierColor(o.tier), fontWeight: 800, fontFamily: FM }}>{tierLabel(o.tier)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>
-                {isFetch ? `⛏ Bring ${o.volume} × ${o.cargo_label}` : o.cargo_label}
-                {!isFetch && <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}> ×{o.volume}</span>}
+                {isFetch ? `⛏ Bring ${o.volume} × ${o.cargo_label}` : isBounty ? `🎯 ${o.cargo_label}` : o.cargo_label}
+                {!isFetch && !isBounty && <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}> ×{o.volume}</span>}
                 {isFetch && o.fetch_min_quality > 0 && <span style={{ color: '#8fa3b8', fontFamily: FM, fontSize: '0.75rem' }}> Q{o.fetch_min_quality}+</span>}
                 {o.rush && <span style={{ color: '#f87171', fontSize: '0.7rem', marginLeft: 6 }}>RUSH</span>}
                 {o.contested && <span style={{ color: '#f87171', fontSize: '0.7rem', marginLeft: 6 }} title="Raiders will ambush you on the route. Pay x1.5.">CONTESTED</span>}
@@ -180,6 +186,8 @@ export const ContractsPanel = ({ body }) => {
               <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: FM }}>
                 {isFetch
                   ? <>turn in here · {o.unit_pay} CR/unit · you have {o.have_qualifying || 0} · {left} min</>
+                  : isBounty
+                  ? <>turn in here · kills verified when you salvage the wreck{o.target_flagship ? ' · flagships only' : ''} · {left} min</>
                   : <>→ {o.dest_station}, {o.dest_system_name} · {o.hops} hop{o.hops === 1 ? '' : 's'} · danger {'★'.repeat(o.danger_tier)} · {left} min</>}
               </div>
             </div>

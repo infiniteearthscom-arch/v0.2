@@ -147,6 +147,13 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 081 (refining) ---
+  const refTech = await pool.query(`SELECT COUNT(*)::int AS n FROM tech_definitions WHERE id IN ('tech_refining','tech_deep_refining')`);
+  report('refining research nodes (081)', refTech.rows[0].n === 2, `${refTech.rows[0].n}/2`);
+
+  // --- migration 080 (bounty contracts) ---
+  report('player_contracts.progress (080)', await columnExists('player_contracts', 'progress'));
+
   // --- migration 079 (fetch contracts) ---
   report('player_contracts.fetch_resource_type_id (079)', await columnExists('player_contracts', 'fetch_resource_type_id'));
 

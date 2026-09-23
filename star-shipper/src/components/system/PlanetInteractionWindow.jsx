@@ -16,6 +16,7 @@ import trade from '@/utils/trade';
 import { generateGalaxy } from '@/utils/galaxyGenerator';
 import { MarketPanel } from '@/components/market/MarketPanel';
 import { ContractsPanel } from '@/components/contracts/ContractsPanel';
+import { RefineryPanel } from '@/components/refinery/RefineryPanel';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -3161,6 +3162,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
     { id: 'repair',    label: 'Repair',    icon: '🔧' },
     { id: 'market',    label: 'Market',    icon: '📈' },
     ...(kind === 'station' ? [{ id: 'contracts', label: 'Contracts', icon: '📦' }] : []),
+    { id: 'refinery',  label: 'Refinery',  icon: '⚗️' },
     { id: 'ships',     label: 'Ships',     icon: '🚀' },
     { id: 'pilots',    label: 'Pilots',    icon: '👤' },
     { id: 'npcs',      label: 'NPCs',      icon: '🛸' },
@@ -3212,6 +3214,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
       {section === 'repair'    && <RepairTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'market'    && <MarketPanel stationBodyId={effectiveBodyId} />}
       {section === 'contracts' && <ContractsPanel body={body} />}
+      {section === 'refinery'  && <RefineryPanel />}
       {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'pilots'    && <PilotsTab effectiveBodyId={effectiveBodyId} />}
       {section === 'npcs'      && <NPCsStub />}

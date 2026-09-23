@@ -55,6 +55,9 @@ const WIRED_BONUS_TYPES = new Set([
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'crafted_quality_flat',       // /craft endpoint output stat bonus
+  'reprocessing_yield_pct',     // Processing -> refinery yield (api/refining.js, 2026-09-22)
+  'metal_refining_pct',         // Processing / Metallurgy -> refinery yield + cap on ores
+  'common_ore_refining_pct',    // Processing / Ore Specialty -> refinery yield on commons
   // Cargo (applied server-side in getPlayerCargoInfo)
   'cargo_capacity_pct',         // Industry / Cargo Handling
   'cargo_volume_pct',           // Logistics / Cargo Compression

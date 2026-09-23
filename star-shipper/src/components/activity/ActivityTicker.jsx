@@ -94,6 +94,8 @@ function formatEvent(evt) {
         color: '#4ade80',
         text: p.contract_type === 'fetch'
           ? `${name} supplied ${p.quantity || ''} ${p.cargo_label || 'resources'} to ${p.dest_station || 'a station'}${pay}`
+          : p.contract_type === 'bounty'
+          ? `${name} collected a bounty at ${p.dest_station || 'a station'} (${p.cargo_label || 'pirates'})${pay}`
           : `${name} delivered ${p.cargo_label || 'freight'} to ${p.dest_station || 'a station'}${pay}`,
       };
     }

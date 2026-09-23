@@ -75,6 +75,7 @@ const shapeContract = (c) => ({
   id: c.id,
   contested: !!offerByKey(c.contract_key, { anyBucket: true })?.contested,
   fetch_resource_type_id: c.fetch_resource_type_id, fetch_min_quality: c.fetch_min_quality,
+  target_tier: c.target_tier, target_template_id: c.target_template_id, target_flagship: !!c.target_flagship, progress: c.progress || 0,
   contract_key: c.contract_key,
   contract_type: c.contract_type,
   tier: c.tier,
@@ -169,7 +170,8 @@ router.post('/accept', async (req, res) => {
       if (active.rows.some(r => r.contract_key === key)) throw Object.assign(new Error('You already hold this contract'), { statusCode: 409 });
       if (active.rows.length >= caps.active_cap) throw Object.assign(new Error(`You can hold ${caps.active_cap} contracts (train Contracting for more)`), { statusCode: 403 });
       const isFetch = offer.contract_type === 'fetch';
-      if (!isFetch) {
+      const isBounty = offer.contract_type === 'bounty';
+      if (!isFetch && !isBounty) {
         const cargo = await getPlayerCargoInfo(userId, client);
         if (cargo.remaining < offer.volume) {
           throw Object.assign(new Error(`Needs ${offer.volume} free cargo (you have ${Math.floor(cargo.remaining)})`), { statusCode: 400 });
@@ -179,15 +181,16 @@ router.post('/accept', async (req, res) => {
         INSERT INTO player_contracts
           (user_id, contract_key, contract_type, tier, origin_system_id, origin_station,
            dest_system_id, dest_station, hops, cargo_label, cargo_volume, reward, rush, deadline_at,
-           fetch_resource_type_id, fetch_min_quality)
-        VALUES ($1,$2,$14,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW() + ($13 || ' minutes')::interval, $15, $16)
+           fetch_resource_type_id, fetch_min_quality, target_tier, target_template_id, target_flagship)
+        VALUES ($1,$2,$14,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW() + ($13 || ' minutes')::interval, $15, $16, $17, $18, $19)
         RETURNING *`,
         [userId, key, offer.tier, offer.origin_system_id, offer.origin_station,
          offer.dest_system_id, offer.dest_station, offer.hops, offer.cargo_label, offer.volume,
          offer.reward, offer.rush, String(offer.deadline_minutes), offer.contract_type,
-         isFetch ? offer.fetch_resource_type_id : null, isFetch ? offer.fetch_min_quality : null]);
+         isFetch ? offer.fetch_resource_type_id : null, isFetch ? offer.fetch_min_quality : null,
+         isBounty ? offer.target_tier : null, isBounty ? offer.target_template_id : null, isBounty ? !!offer.target_flagship : false]);
       const contract = ins.rows[0];
-      if (isFetch) return contract; // nothing to carry yet -- go find it
+      if (isFetch || isBounty) return contract; // nothing to carry -- go find / hunt it
       const slot = await getNextSlotIndex(userId, client);
       const itemData = {
         contract_id: contract.id, sealed: true, label: offer.cargo_label,
@@ -225,6 +228,22 @@ router.post('/:id/deliver', async (req, res) => {
         throw Object.assign(new Error(`Deliver to ${c.dest_station} in ${systemName(c.dest_system_id)}`), { statusCode: 400 });
       }
       const late = new Date(c.deadline_at).getTime() < Date.now();
+      if (c.contract_type === 'bounty') {
+        // ---- bounty turn-in (080): progress is written by /combat/claim-loot ----
+        if (late) {
+          await client.query(`UPDATE player_contracts SET status = 'failed', resolved_at = NOW() WHERE id = $1`, [c.id]);
+          return { failed: true, why: 'Past the deadline', contract: { ...c, status: 'failed' } };
+        }
+        if ((c.progress || 0) < c.cargo_volume) {
+          throw Object.assign(new Error(`Bounty incomplete (${c.progress || 0}/${c.cargo_volume} kills logged -- salvage the wreck to log a kill)`), { statusCode: 400 });
+        }
+        const payout = Math.round(c.reward * (1 + caps.reward_pct / 100));
+        await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [payout, userId]);
+        await client.query(
+          `UPDATE player_contracts SET status = 'delivered', resolved_at = NOW(), payout = $2 WHERE id = $1`, [c.id, payout]);
+        const u = await client.query(`SELECT credits FROM users WHERE id = $1`, [userId]);
+        return { failed: false, payout, credits: parseInt(u.rows[0].credits), contract: { ...c, status: 'delivered', payout } };
+      }
       if (c.contract_type === 'fetch') {
         // ---- find-resource turn-in (079): consume qualifying stacks, lowest quality first ----
         if (late) {
@@ -309,5 +328,22 @@ router.post('/:id/abandon', async (req, res) => {
     res.status(500).json({ error: 'Failed to abandon contract' });
   }
 });
+
+// Called by /combat/claim-loot after a verified salvage: advance every
+// active bounty this kill satisfies. Returns the contracts that moved.
+export async function progressBounties(userId, { tier, templateId, isFlagship }) {
+  const r = await query(`
+    UPDATE player_contracts
+       SET progress = progress + 1
+     WHERE user_id = $1 AND status = 'active' AND contract_type = 'bounty'
+       AND progress < cargo_volume
+       AND deadline_at > NOW()
+       AND (target_template_id IS NULL OR target_template_id = $2)
+       AND (target_tier IS NULL OR $3 >= target_tier)
+       AND (NOT target_flagship OR $4)
+     RETURNING id, cargo_label, progress, cargo_volume`,
+    [userId, templateId || null, Number(tier) || 0, !!isFlagship]);
+  return r.rows || r;
+}
 
 export default router;
