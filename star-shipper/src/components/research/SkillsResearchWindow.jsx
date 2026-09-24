@@ -55,6 +55,9 @@ const WIRED_BONUS_TYPES = new Set([
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'crafted_quality_flat',       // /craft endpoint output stat bonus
+  // Anomalies (api/anomalies.js, 2026-09-23)
+  'probe_cycle_time_pct', 'probe_scan_time_pct', 'probe_scan_deviation_pct', 'probe_scan_strength_pct',
+  'salvage_chance_pct', 'data_virus_coherence_flat', 'relic_virus_coherence_flat',
   'reprocessing_yield_pct',     // Processing -> refinery yield (api/refining.js, 2026-09-22)
   'metal_refining_pct',         // Processing / Metallurgy -> refinery yield + cap on ores
   'common_ore_refining_pct',    // Processing / Ore Specialty -> refinery yield on commons

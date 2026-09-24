@@ -1659,6 +1659,8 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
       await client.query(`DELETE FROM player_contracts WHERE user_id = $1`, [userId]);
       // 13. Player bases (082) -- depot rows cascade from the base.
       await client.query(`DELETE FROM player_bases WHERE user_id = $1`, [userId]);
+      // 14. Signature site progress (083).
+      await client.query(`DELETE FROM player_anomaly_progress WHERE user_id = $1`, [userId]);
     });
 
     // 9. Re-grant the Starter Scout so RESET produces the same

@@ -87,6 +87,10 @@ function formatEvent(evt) {
         text: `${name} traded with ${p.partner_name || 'another pilot'}`,
       };
     }
+    case 'anomaly_resolved': {
+      const mods = p.modules ? ` and pulled ${p.modules} module${p.modules === 1 ? '' : 's'}` : '';
+      return { icon: '🔭', color: '#22d3ee', text: `${name} investigated a T${p.tier || '?'} ${p.site || 'signature'}${mods}` };
+    }
     case 'base_founded': {
       return { icon: '🏠', color: '#4ade80', text: `${name} founded ${p.name || 'a base'} on ${p.body_name || 'a planet'}` };
     }

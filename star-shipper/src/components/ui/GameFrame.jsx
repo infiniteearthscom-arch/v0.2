@@ -17,6 +17,7 @@ import { TradeWindow } from '@/components/trade/TradeWindow';
 import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
 import { CorpWindow } from '@/components/corp/CorpWindow';
 import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
+import { AnomaliesWindow } from '@/components/anomalies/AnomaliesWindow';
 import { InboxWindow } from '@/components/mail/InboxWindow';
 import { CargoTooltipLayer } from '@/components/items/CargoTooltipLayer';
 import { mailAPI } from '@/utils/api';
@@ -36,6 +37,7 @@ const TOOLBAR_BUTTONS = [
   { id: 'questLog', icon: '📋', label: 'Missions', color: '#22d3ee' },
   { id: 'galaxyMap', icon: '🌌', label: 'Galaxy', color: '#8844ff' },
   { id: 'research', icon: '🔬', label: 'Research', color: '#22c55e' },
+  { id: 'anomalies', icon: '🔭', label: 'Signals', color: '#22d3ee' },
   // badgeStoreKey: when set, the toolbar reads gameStore[badgeStoreKey]
   // and renders a small red unread counter on the button (used by the
   // mail entry in the player menu; still supported here).
@@ -730,6 +732,9 @@ export const GameFrame = ({ children }) => {
       {/* Bounty board — same pattern: toolbar button, modal, self-
           hides when not open. */}
       <BountyBoardWindow />
+
+      {/* Signals -- cosmic signature sites in the current system (083). */}
+      <AnomaliesWindow />
 
       {/* Inbox / Mail — same pattern. */}
       <InboxWindow />

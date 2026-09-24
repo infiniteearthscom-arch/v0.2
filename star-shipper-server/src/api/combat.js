@@ -28,6 +28,14 @@ import { progressBounties } from './contracts.js';
 const ambushDoneByUser = new Map();
 const ambushIndexByUser = new Map();
 const strHash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+// Register a per-user ambush fleet's claim entries (anomaly sites use this).
+export function registerUserAmbush(userId, systemId, claimIndex) {
+  let bySystem = ambushIndexByUser.get(userId);
+  if (!bySystem) { bySystem = new Map(); ambushIndexByUser.set(userId, bySystem); }
+  const existing = bySystem.get(systemId);
+  if (existing) { for (const [k, v] of claimIndex) existing.set(k, v); }
+  else bySystem.set(systemId, new Map(claimIndex));
+}
 async function maybeAmbush(userId, systemId) {
   const rows = await queryAll(
     `SELECT id, contract_key, tier, origin_system_id, dest_system_id, cargo_label

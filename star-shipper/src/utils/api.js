@@ -493,6 +493,13 @@ export const researchAPI = {
 };
 
 // Harvester API
+// Anomalies / signatures (2026-09-23) -- docs/anomalies-spec.md
+export const anomaliesAPI = {
+  system: (systemId) => request(`/anomalies/system/${encodeURIComponent(systemId)}`),
+  probe: (systemId, siteIndex) => request('/anomalies/probe', { method: 'POST', body: JSON.stringify({ system_id: systemId, site_index: siteIndex }) }),
+  resolve: (systemId, siteIndex, x, y) => request('/anomalies/resolve', { method: 'POST', body: JSON.stringify({ system_id: systemId, site_index: siteIndex, x, y }) }),
+};
+
 // Player bases (2026-09-22) -- docs/bases-spec.md
 export const basesAPI = {
   mine: () => request('/bases/mine'),

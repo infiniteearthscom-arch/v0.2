@@ -98,6 +98,10 @@ const initialState = {
   // ContractsPoller in GameFrame. contractsVersion bumps force a refetch.
   activeContracts: [],
   contractsVersion: 0,
+  // Signature sites for the current system (AnomaliesWindow -> SystemView markers)
+  // and a raider fleet handed back by an investigation for SystemView to spawn.
+  anomalySites: [],
+  pendingAmbush: null,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   fitGates: null,              // { module_gates, hull_gates, fleet } from GET /skills (Phase 3 capability gating)
   skillQueue: [],              // [{ position, skill_id, target_level, started_at, finishes_at, live_sp }]
@@ -137,6 +141,7 @@ const initialState = {
     profile: { open: false, x: 220, y: 110, minimized: false },
     corp: { open: false, x: 240, y: 120, minimized: false },
     bounties: { open: false, x: 260, y: 130, minimized: false },
+    anomalies: { open: false, x: 240, y: 120, minimized: false },
     mail: { open: false, x: 280, y: 140, minimized: false },
   },
   windowZIndex: {},
@@ -373,6 +378,9 @@ export const useGameStore = create(
       // Mail unread count -- pushed by the InboxWindow + the poller.
       setMailUnread: (n) => set(state => { state.mailUnreadCount = Math.max(0, parseInt(n, 10) || 0); }),
       setActiveContracts: (list) => set(state => { state.activeContracts = Array.isArray(list) ? list : []; }),
+      setAnomalySites: (list) => set(state => { state.anomalySites = Array.isArray(list) ? list : []; }),
+      setPendingAmbush: (a) => set(state => { state.pendingAmbush = a || null; }),
+      clearPendingAmbush: () => set(state => { state.pendingAmbush = null; }),
       bumpContracts: () => set(state => { state.contractsVersion = (state.contractsVersion || 0) + 1; }),
 
       tick: (deltaTime) => set(state => {

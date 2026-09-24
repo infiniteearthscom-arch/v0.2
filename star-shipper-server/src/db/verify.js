@@ -147,6 +147,11 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 083 (anomalies) ---
+  report('player_anomaly_progress table (083)', await tableExists('player_anomaly_progress'));
+  const probe = await pool.query(`SELECT 1 FROM module_types mt JOIN item_definitions i ON i.id = mt.id WHERE mt.id = 'utility_probe_launcher'`);
+  report('probe launcher module + item twin (083)', probe.rows.length === 1);
+
   // --- migration 082 (player bases) ---
   report('player_bases table (082)', await tableExists('player_bases'));
   const baseMods = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types mt JOIN item_definitions i ON i.id = mt.id WHERE mt.slot_type = 'base'`);

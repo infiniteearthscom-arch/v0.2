@@ -2298,6 +2298,24 @@ export const SystemView = () => {
     };
   }, [currentSystemId, currentSystem]);
 
+  // Investigated a guarded signature: the server handed back a raider
+  // fleet. Merge it into the live sim (pools for the NEW fleet only, so
+  // fleets already in the fight keep their damage).
+  const pendingAmbush = useGameStore(state => state.pendingAmbush);
+  useEffect(() => {
+    if (!pendingAmbush) return;
+    const st = useGameStore.getState();
+    try {
+      const enemies = hydrateEnemies({ fleets: [pendingAmbush.fleet], enemies: pendingAmbush.enemies }, currentSystemId, { ambushAt: shipPosRef.current });
+      const add = buildFleets(enemies);
+      enemiesRef.current = [...enemiesRef.current, ...enemies];
+      for (const [k, v] of add) fleetsRef.current.set(k, v);
+      setEnemyCount(enemiesRef.current.length);
+      if (st.pushToast) st.pushToast({ kind: 'error', text: `⚠ RAIDERS — the ${pendingAmbush.label || 'site'} was guarded!`, duration: 6000 });
+    } catch (e) { console.warn('ambush spawn failed:', e); }
+    if (st.clearPendingAmbush) st.clearPendingAmbush();
+  }, [pendingAmbush]);
+
   // Galaxy map v2 route planner: fly the active route hop by hop. On
   // every system entry (and when a route is first plotted) the next hop
   // becomes pendingJump + an autopilot to the matching exit body: the
@@ -2416,6 +2434,14 @@ export const SystemView = () => {
         // body so the same intercept/approach math applies: an "orbit"
         // of radius |pos| at speed 0 with the rock's bearing as offset.
         let targetBody = currentSystem.bodies.find(b => b.id === target.id);
+        // Signature sites (083): a static virtual body at the pinned position.
+        if (!targetBody && target.type === 'anomaly' && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+          targetBody = {
+            id: target.id, name: target.name || 'Signature', type: 'asteroid', // asteroid arrival rule: hold station, no dock
+            orbitRadius: Math.hypot(target.x, target.y), orbitSpeed: 0, orbitOffset: Math.atan2(target.y, target.x),
+            size: 6,
+          };
+        }
         if (!targetBody && target.type === 'asteroid') {
           const rock = (asteroidsRef.current || []).find(a => a.id === target.id);
           if (rock) {
@@ -5203,6 +5229,30 @@ export const SystemView = () => {
                   )}
                 </g>
               );
+            })}
+
+            {/* Signature sites (083): pinned sites as a glyph, in-progress
+                ones as their estimate circle. Fed by AnomaliesWindow. */}
+            {(useGameStore.getState().anomalySites || []).map(site => {
+              if (site.resolved) return null;
+              if (site.pinned && site.position) {
+                return (
+                  <g key={`site-${site.index}`} transform={`translate(${site.position.x}, ${site.position.y})`} pointerEvents="none">
+                    <circle r={14} fill="none" stroke="#22d3ee" strokeWidth={1} strokeDasharray="3 3" opacity={0.8} />
+                    <text textAnchor="middle" y={5} fill="#67e8f9" fontSize="12" fontFamily="monospace">{site.icon}</text>
+                    <text textAnchor="middle" y={26} fill="#22d3ee99" fontSize="8" fontFamily="sans-serif">{site.name}</text>
+                  </g>
+                );
+              }
+              if (site.estimate && site.estimate.radius > 0) {
+                return (
+                  <g key={`site-${site.index}`} pointerEvents="none">
+                    <circle cx={site.estimate.x} cy={site.estimate.y} r={site.estimate.radius} fill="#22d3ee08" stroke="#22d3ee55" strokeWidth={1} strokeDasharray="6 6" />
+                    <text x={site.estimate.x} y={site.estimate.y - site.estimate.radius - 4} textAnchor="middle" fill="#22d3ee99" fontSize="8" fontFamily="sans-serif">{site.name} · {site.cycles_done}/{site.cycles_needed}</text>
+                  </g>
+                );
+              }
+              return null;
             })}
 
             {/* Wrecks (lootable credit drops). Render between enemies and
