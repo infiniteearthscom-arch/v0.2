@@ -2136,6 +2136,23 @@ const ASTEROIDS_PER_BELT_MIN = 20;
 const ASTEROIDS_PER_BELT_MAX = 40;
 const ASTEROID_RESPAWN_MINUTES = 10;
 
+// Shared-asteroid events (2026-09-25): every pilot in the system room
+// hears depletion / quantity changes / respawns the moment they happen
+// (before this, other pilots' mining only showed at the next listing).
+// Rooms are the presence rooms keyed by PROCEDURAL system id.
+const SOL_SYSTEM_UUID = '00000000-0000-0000-0000-000000000001';
+async function proceduralIdFor(client, systemDbId) {
+  if (String(systemDbId) === SOL_SYSTEM_UUID) return 'sol';
+  const r = await client.query(`SELECT procedural_id FROM star_systems WHERE id = $1`, [systemDbId]);
+  return r.rows[0]?.procedural_id || null;
+}
+function emitAsteroidEvent(req, proceduralId, event, payload) {
+  try {
+    const io = req.app.get('io');
+    if (io && proceduralId) io.to(`presence:system:${proceduralId}`).emit(event, payload);
+  } catch (e) { /* never let a broadcast break the request */ }
+}
+
 // Danger-scaled rarity weights (Phase 1 / plan B5, 2026-09-04).
 // Belts previously used FIXED 70/25/5 weights in every system — the
 // starter system's rocks were as rare-rich as a danger-5 system's,
@@ -2291,6 +2308,7 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
     const { system_procedural_id } = req.query;
     if (!system_procedural_id) return res.status(400).json({ error: 'system_procedural_id required' });
 
+    let respawnedRocks = [];
     const asteroids = await transaction(async (client) => {
       // Resolve system id (Sol special-case mirrors wrecks/spawn).
       let systemId;
@@ -2359,9 +2377,10 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
       // need a background job. Re-rolled with Math.random (not seeded)
       // so successive respawns vary.
       const respawnable = await client.query(`
-        SELECT id, size FROM asteroids
+        SELECT id, size, x, y, rotation, belt_body_id FROM asteroids
         WHERE system_id = $1 AND depleted_at IS NOT NULL AND respawn_at < NOW()
       `, [systemId]);
+      respawnedRocks = respawnable.rows.map(r => ({ id: r.id, x: r.x, y: r.y, size: r.size, rotation: r.rotation, belt_body_id: r.belt_body_id }));
       if (respawnable.rows.length > 0) {
         const resByRarity = await loadResByRarity(client);
         for (const a of respawnable.rows) {
@@ -2426,6 +2445,8 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
     });
 
     res.json({ asteroids });
+    // Respawned rocks come back UNSCANNED for everyone -- tell the room.
+    for (const r of respawnedRocks) emitAsteroidEvent(req, String(system_procedural_id), 'asteroid:respawn', r);
   } catch (error) {
     console.error('Error listing asteroids:', error);
     res.status(500).json({ error: 'Failed to list asteroids' });
@@ -2907,10 +2928,19 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
         asteroid_depleted: allEmpty,
         cargo_used: afterCargo.used,
         cargo_capacity: afterCargo.capacity,
+        _system_procedural_id: await proceduralIdFor(client, ast.rows[0].system_id),
+        _remaining_raw: Object.fromEntries(Object.entries(contents).map(([k, v]) => [k, v?.remaining || 0])),
       };
     });
 
-    res.json({ success: true, ...out });
+    const { _system_procedural_id, _remaining_raw, ...pub } = out;
+    res.json({ success: true, ...pub });
+    // Everyone else in the system: quantity tick / depletion. Contents are
+    // sent as raw remaining-by-resource-id; clients only APPLY them to
+    // rocks they have scanned themselves (the scan gate stays).
+    emitAsteroidEvent(req, _system_procedural_id, 'asteroid:update', {
+      id: asteroid_id, depleted: !!pub.asteroid_depleted, remaining: _remaining_raw, by: userId,
+    });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error('Error mining asteroid:', error);

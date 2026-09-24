@@ -7,6 +7,8 @@ import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
 import { getPlanetSheet, getShadeMask, lightIndexFor, spinRate } from '@/utils/planetRenderer';
 import { getStarSheet, getPulsarBeamSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
+import { getAsteroidSheet, asteroidSpin } from '@/utils/asteroidRenderer';
+import socketBus from '@/utils/socket';
 
 // Pixel sprite frame picker shared by star / station / gate / warp
 // (planets inline the same nested-svg trick). `world` = the frame's
@@ -2298,6 +2300,43 @@ export const SystemView = () => {
     };
   }, [currentSystemId, currentSystem]);
 
+  // Shared asteroids (2026-09-25): other pilots' mining ticks the rock's
+  // quantity (only if WE have scanned it -- the scan gate stays), removes
+  // it when they empty it, and respawns land as fresh unscanned rocks.
+  useEffect(() => {
+    if (!socketBus.isEnabled?.()) return undefined;
+    const offUpdate = socketBus.onSocketEvent('asteroid:update', (evt) => {
+      if (!evt?.id) return;
+      const a = asteroidsRef.current.find(x => x.id === evt.id);
+      if (!a) return;
+      if (evt.depleted) {
+        asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== evt.id);
+        const toRelease = [];
+        for (const [k, asn] of miningAssignmentsRef.current) if (asn.asteroidId === evt.id) toRelease.push(k);
+        if (toRelease.length) {
+          for (const k of toRelease) miningAssignmentsRef.current.delete(k);
+          const pt = useGameStore.getState().pushToast;
+          if (pt) pt({ kind: 'warning', text: 'Asteroid mined out by another pilot', duration: 3000 });
+        }
+        return;
+      }
+      if (a.scanned && a.contents && evt.remaining) {
+        for (const [rid, rem] of Object.entries(evt.remaining)) {
+          if (a.contents[rid]) a.contents[rid] = { ...a.contents[rid], remaining: rem };
+        }
+      }
+    });
+    const offRespawn = socketBus.onSocketEvent('asteroid:respawn', (r) => {
+      if (!r?.id || asteroidsRef.current.some(x => x.id === r.id)) return;
+      asteroidsRef.current = [...asteroidsRef.current, {
+        id: r.id, x: Number(r.x) || 0, y: Number(r.y) || 0, size: Number(r.size) || 4, rotation: Number(r.rotation) || 0,
+        belt_body_id: r.belt_body_id || null, contents: null, scanned: false,
+        stat_purity: null, stat_stability: null, stat_potency: null, stat_density: null,
+      }];
+    });
+    return () => { offUpdate?.(); offRespawn?.(); };
+  }, []);
+
   // Investigated a guarded signature: the server handed back a raider
   // fleet. Merge it into the live sim (pools for the NEW fleet only, so
   // fleets already in the fight keep their damage).
@@ -4242,6 +4281,25 @@ export const SystemView = () => {
             hull_type_id: fs.hull_type_id,
           });
         }
+        // Mining beams for peers: which of our ships lasers which rock.
+        // laserKey = `${shipId}::${slotKey}`; wingman index = position in
+        // fleetPayload (same order peers render them), flagship = -1.
+        const miningPayload = [];
+        if (miningAssignmentsRef.current.size > 0) {
+          const wingIndex = {};
+          let wi = 0;
+          for (const fs of (fleetShipsRef.current || [])) { if (fs.isActive) continue; if (wingmenPosRef.current[fs.id]) wingIndex[fs.id] = wi++; }
+          const seen = new Set();
+          for (const [laserKey, asn] of miningAssignmentsRef.current) {
+            const shipId = laserKey.split('::')[0];
+            const fs = (fleetShipsRef.current || []).find(s => s.id === shipId);
+            const i = !fs || fs.isActive ? -1 : (wingIndex[shipId] ?? -1);
+            const k = `${i}|${asn.asteroidId}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            miningPayload.push({ i, a: asn.asteroidId });
+          }
+        }
         presence.sendPos({
           x: shipPosRef.current.x,
           y: shipPosRef.current.y,
@@ -4249,6 +4307,7 @@ export const SystemView = () => {
           vy: shipVelRef.current.y,
           rot: shipRotationRef.current,
           fleet: fleetPayload,
+          mining: miningPayload,
         });
       }
 
@@ -4777,8 +4836,25 @@ export const SystemView = () => {
                     </g>
                   );
                 });
+                // Shared mining beams (2026-09-25): from the peer's ship or
+                // wingman to the rock it is lasering. Same green as ours,
+                // dimmer, so it reads as "someone else is on that rock".
+                const beams = (p.next?.mining || []).map((m, bi) => {
+                  const rock = asteroidsRef.current.find(a => a.id === m.a);
+                  if (!rock) return null;
+                  const src = m.i === -1 ? { x: px, y: py } : (fleet || [])[m.i];
+                  if (!src) return null;
+                  return (
+                    <g key={`peer:${userId}:beam${bi}`} pointerEvents="none">
+                      <line x1={src.x} y1={src.y} x2={rock.x} y2={rock.y} stroke="#7ad55a" strokeWidth={2.2} opacity={0.22} />
+                      <line x1={src.x} y1={src.y} x2={rock.x} y2={rock.y} stroke="#c8ff9a" strokeWidth={0.8} opacity={0.55} />
+                      <circle cx={rock.x} cy={rock.y} r={2} fill="#e8ffd0" opacity={0.7} />
+                    </g>
+                  );
+                });
                 return (
                   <g key={`peer:${userId}`}>
+                    {beams}
                     {/* Wingmen first so the flagship label paints on top */}
                     {wingmen}
                     <g transform={`translate(${px}, ${py})`}>
@@ -5187,11 +5263,28 @@ export const SystemView = () => {
                    onMouseEnter={(e) => showTooltip(buildTooltip(), { left: e.clientX, top: e.clientY, width: 14, height: 14 })}
                    onMouseLeave={() => hideTooltip()}
                    style={{ cursor: 'pointer' }}>
-                  <polygon points={pts}
-                    fill={a.scanned ? '#6b7a5c' : '#6b6258'}
-                    stroke={a.scanned ? '#a0c860' : '#3a3530'}
-                    strokeWidth={a.scanned ? 0.5 : 0.3} />
-                  <polygon points={pts} fill="url(#planetHighlight)" opacity={0.25} />
+                  {/* Pixel-art rock (asteroidRenderer.js, 2026-09-25): seeded
+                      silhouette + craters, lit rim + dark outline so it pops
+                      off the belt dust; scanned rocks carry ore veins in
+                      their quality-tier colour and a thin tier ring. */}
+                  {(() => {
+                    const tierName = a.scanned && a.stat_purity != null
+                      ? getQualityTier(a.stat_purity, a.stat_stability, a.stat_potency, a.stat_density).name : null;
+                    const sheet = getAsteroidSheet(a, tierName);
+                    const tNow = gameTimeRef.current;
+                    const frame = Math.floor(((tNow * asteroidSpin(a.id, a.size)) % 1) * sheet.frames);
+                    const world = a.size * 2.6 * (sheet.fw / sheet.px);
+                    return (
+                      <>
+                        <SpriteFrame sheet={sheet} frame={frame} world={world} opacity={a.scanned ? 1 : 0.85} />
+                        {a.scanned && tierName && (
+                          <circle r={a.size + 2.5} fill="none"
+                            stroke={getQualityTier(a.stat_purity, a.stat_stability, a.stat_potency, a.stat_density).color}
+                            strokeWidth={0.6} opacity={0.55} strokeDasharray="2,2" />
+                        )}
+                      </>
+                    );
+                  })()}
                   {/* Active mining target lock ring (orange dashed).
                       With multi-laser, an outer concentric ring stacks
                       per additional laser so you can see at a glance

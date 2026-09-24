@@ -64,7 +64,43 @@ router.get('/', authMiddleware, async (req, res) => {
 // atomically inside their own transaction — with full rewards + chain
 // triggers — instead of trusting the client to call /complete later.
 // Returns { already_complete: true } if the quest isn't active.
-export async function completeQuestInTx(client, userId, quest_id) {
+// Quests whose condition can already be TRUE when they activate (the
+// pilot did the thing before the chain reached it). On activation we
+// check the predicate and complete immediately, so out-of-order play or
+// a backfilled veteran never gets stuck. Refining leaves no record, so
+// Grade Up has no predicate.
+const AUTO_SATISFY = {
+  tutorial_first_contract:    `SELECT 1 FROM player_contracts WHERE user_id = $1 LIMIT 1`,
+  tutorial_first_delivery:    `SELECT 1 FROM player_contracts WHERE user_id = $1 AND status = 'delivered' AND contract_type IN ('haul','fetch') LIMIT 1`,
+  tutorial_first_refine:      `SELECT 1 FROM player_refine_jobs WHERE user_id = $1 AND status = 'collected' LIMIT 1`,
+  tutorial_first_signal:      `SELECT 1 FROM player_anomaly_progress WHERE user_id = $1 LIMIT 1`,
+  tutorial_first_investigate: `SELECT 1 FROM player_anomaly_progress WHERE user_id = $1 AND resolved_at IS NOT NULL LIMIT 1`,
+  tutorial_first_base:        `SELECT 1 FROM player_bases WHERE user_id = $1 LIMIT 1`,
+};
+
+// Activate a triggered quest. If the pilot already holds it COMPLETED
+// (backfill), keep walking its triggers; if its predicate is already
+// met, complete it now (which recurses into its own triggers).
+async function activateTriggered(client, userId, questId, depth = 0) {
+  if (depth > 12) return;
+  const def = await client.query(`SELECT category, triggers_quests FROM quest_definitions WHERE id = $1`, [questId]);
+  if (!def.rows[0]) return;
+  const autoPin = def.rows[0].category === 'tutorial';
+  await client.query(
+    `INSERT INTO player_quests (user_id, quest_id, pinned) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [userId, questId, autoPin]);
+  const row = await client.query(`SELECT status FROM player_quests WHERE user_id = $1 AND quest_id = $2`, [userId, questId]);
+  if (row.rows[0]?.status === 'completed') {
+    for (const next of (def.rows[0].triggers_quests || [])) await activateTriggered(client, userId, next, depth + 1);
+    return;
+  }
+  const pred = AUTO_SATISFY[questId];
+  if (pred && (await client.query(pred, [userId])).rows.length) {
+    await completeQuestInTx(client, userId, questId, depth + 1);
+  }
+}
+
+export async function completeQuestInTx(client, userId, quest_id, depth = 0) {
   // Verify quest is active for this player
   const pqResult = await client.query(
     `SELECT pq.*, qd.rewards, qd.triggers_quests, qd.title
@@ -139,15 +175,7 @@ export async function completeQuestInTx(client, userId, quest_id) {
   // top overlay without manually re-pinning each step. Non-
   // tutorial quests start unpinned -- player chooses what to focus.
   for (const nextQuestId of triggersQuests) {
-    const nextDef = await client.query(
-      `SELECT category FROM quest_definitions WHERE id = $1`, [nextQuestId]
-    );
-    const autoPin = nextDef.rows[0]?.category === 'tutorial';
-    await client.query(
-      `INSERT INTO player_quests (user_id, quest_id, pinned)
-       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-      [userId, nextQuestId, autoPin]
-    );
+    await activateTriggered(client, userId, nextQuestId, depth);
   }
 
   // Return updated credits for immediate HUD sync

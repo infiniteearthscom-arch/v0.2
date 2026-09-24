@@ -9,7 +9,7 @@ import { playSound } from '@/utils/audio';
 import { useGameStore } from '@/stores/gameStore';
 import { tierColor, tierLabel } from '@/utils/tiers';
 import { Portrait } from '@/components/pixel/PixelArt';
-import { npcName, npcLine } from '@/utils/pixelArt/portrait';
+import { npcName, npcLine, npcRace } from '@/utils/pixelArt/portrait';
 
 const F = "'Rajdhani', sans-serif";
 const FM = "'Share Tech Mono', monospace";
@@ -116,10 +116,10 @@ export const ContractsPanel = ({ body }) => {
         const seed = `${board.port.system_id}|${String(board.port.station).toLowerCase()}|broker`;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
-            <Portrait seed={seed} role="broker" size={44} />
+            <Portrait seed={seed} role="broker" size={64} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: '#67e8f9', fontWeight: 800, fontSize: '0.85rem' }}>{npcName(seed)} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· Contract Broker</span></div>
-              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontStyle: 'italic' }}>“{npcLine('broker', seed)}”</div>
+              <div style={{ color: '#67e8f9', fontWeight: 800, fontSize: '0.85rem' }}>{npcName(seed, npcRace(seed, 'broker'))} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· Contract Broker</span></div>
+              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontStyle: 'italic' }}>“{npcLine('broker', seed, npcRace(seed, 'broker'))}”</div>
             </div>
           </div>
         );
@@ -149,7 +149,7 @@ export const ContractsPanel = ({ body }) => {
         return (
           <Row key={o.contract_key} accent={tierColor(o.tier)}>
             {o.target_template_id
-              ? <Portrait seed={o.target_template_id} role="pirate" size={34} title={o.cargo_label} />
+              ? <Portrait seed={o.target_template_id} role="pirate" size={48} title={o.cargo_label} />
               : <div style={{ width: 22, textAlign: 'center', color: tierColor(o.tier), fontWeight: 800, fontFamily: FM }}>{tierLabel(o.tier)}</div>}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>

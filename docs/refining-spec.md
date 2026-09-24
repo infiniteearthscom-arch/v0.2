@@ -1,41 +1,27 @@
-# Refining (quality) — v1
+# Refining — v2 (base refineries, timed + queued)
 
-Built 2026-09-22, migration 081. Station / city service: a resource stack goes in, fewer units come out at a higher quality, for a credit fee.
-
-## Why
-
-Quality is the lever the whole economy reads (vendor curve, crafting output, contract quality floors), but until now the only way to get high-Q ore was to find it. Refining lets a pilot manufacture quality from bulk, at a real cost, and finally gives the Processing skills something to do.
+Rebuilt 2026-09-25, migration 086, after the owner's direction: refining should require a base and a CRAFTED refinery building, the refinery should get better with crafted quality, and jobs should be timed and queueable so there is something to manage.
 
 ## Rules
 
-```
-units_out   = floor(units_in × yield)
-yield       = min(0.92, 0.65 + reprocessing_yield_pct/100 + (ore ? metal_refining_pct : 0)/100 + (common ? common_ore_refining_pct : 0)/100)
-quality_out = min(cap, quality_in + gain)         every stat shifted by the same delta, clamped 0–100
-gain        = 8   (+4 with Deep Refining)
-cap         = 75  (95 with Deep Refining) + 1 per Metallurgy Refining level on ores, max 100
-fee         = ceil(units_in × base_price × 0.15)  credits, paid up front
-min input   = 5 units; refuses if the stack is already at the cap
-```
+- **Where:** only at a base you own, while docked at its planet, with at least one **Base Refinery** fitted. Stations and cities no longer refine.
+- **The building:** `base_refinery` is craft-only (Titanium 120, Copper 80, Crystite 30, Iron 100), gated by **Ore Refining** research. Its crafted quality is the machine's grade: Q100 gives +10 % yield, +10 to the quality cap and 1.5× speed over Q50. Each fitted refinery is a **lane**; a base can hold up to 3 (Station tier).
+- **A job:** N units of one cargo stack → `floor(N × yield)` units at `min(cap, Q + gain)`, every stat shifted equally. Yield 0.65 + Processing skills + module bonus (max 0.92); gain 8 (+4 Deep Refining); cap 75 (95 Deep) + Metallurgy on ores + module bonus.
+- **Time:** `(30 s + 0.8 s × units) ÷ speed`, Smelting −5 %/level. 200 units ≈ 3 min at Q50, 2 min at Q100.
+- **Cost:** 1 Fuel Cell per 100 units (ceil), taken from cargo at enqueue. No credit fee.
+- **Queue:** up to 6 jobs per lane; times are fixed at enqueue (a job starts when the lane's previous job ends), so no cron. Jobs that have not started can be cancelled for a full refund and the lane's later jobs pull forward.
+- **Collect:** finished jobs are collected while docked, to cargo (room check) or the base depot (capacity check). Collecting completes the Grade Up onboarding quest.
 
-Gates: docked at a station or a city planet; `tech_refining` (Industry T2, 450 RP, after Advanced Mining) unlocks the service; `tech_deep_refining` (Industry T3, 1 500 RP) adds the gain and cap bonus.
+## API (`/api/refining`)
 
-Skills wired (bonus contracts already in the catalog): `prc_reprocessing` (+3 % yield / level), `prc_reprocessing_eff` (+2 %), `prc_metallurgy_refining` (+2 % yield and +1 cap on ores), `prc_ore_specialty` (+2 % on commons).
-
-## No credit loop
-
-Vendor prices follow a steep quality curve (Q90 ≈ 2.56 × Q50), so the loss and the fee have to beat it. Iron, base 10 cr, Q50 → Q90 needs 5 passes at base skills: yield 0.65⁵ ≈ 0.12, fees ≈ 5 × 0.15 = 0.75 × base per input unit. Sale value 0.12 × 12.8 cr ≈ 1.5 cr per input unit against 5 cr raw and 7.5 cr of fees: a big loss. At MAX skills (yield 0.92, cap 100, gain 8): 0.92⁵ ≈ 0.66 → 8.4 cr of ore, minus 7.5 cr fees, versus 5 cr raw: still a loss. Refine for crafting and contracts, not for the vendor.
-
-## API
-
-- `GET /api/refining/quote?inventory_id=&quantity=` → `{ unlocked, deep, stack, quote {units_in, units_out, yield_pct, fee, quality_in, quality_out, cap, gain, reason} }` (or `{ unlocked: false, requires_tech, tech_name }`).
-- `POST /api/refining/run { inventory_id, quantity }` → consumes the input, charges the fee, merges the output into cargo (`addResourceStack`, same stat-tuple merge as everything else).
+`GET /status` (lanes + jobs with phase waiting/running/done and progress, fuel cells in cargo) · `GET /quote?inventory_id&quantity&lane` · `POST /queue {inventory_id, quantity, lane?}` · `POST /jobs/:id/cancel` · `POST /jobs/:id/collect {to}`.
 
 ## UI
 
-Station / city → **Refinery** sub-tab: cargo stack list (quality tier colored), units-in slider, live quote, REFINE. Locked state deep-links to the research node.
+Base tab → REFINERY card: lanes with their crafted Q, running job progress bars, queue with countdowns, TO CARGO / TO DEPOT on finished jobs, CANCEL on waiting ones; queue form with stack picker, units, lane choice and a live quote (out, Q in→out, time, fuel).
 
-## Next (not built)
+## Next
 
-- **Tier refining**: turning commons into a rare-grade product ("Titanium Alloy", "Crystite Lattice") as new `resource_types` rows with their own base_price, driven by a `refining_recipes` table. Nothing consumes such products yet, so it waits for recipes that want them (station modules, tier-4 crafts).
-- Timed batches / a refinery module on player stations (the station plan's Phase 1 refinery becomes "your own refinery, no fee").
+- A tier-3 Industrial Refinery module (two jobs at once, or bulk lanes).
+- Tier refining (commons into rare-grade products) as recipes on the same job system.
+- Fuel from the depot instead of cargo; by-products (slag) as a low-value output.

@@ -12,6 +12,7 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { resolveBodyId, getPlayerCargoInfo, getNextSlotIndex } from './resources.js';
 import { addResourceStack } from '../lib/wrecks.js';
 import { logActivity } from '../lib/activity.js';
+import { completeQuestInTx } from './quests.js';
 
 export const TIERS = {
   1: { name: 'Framework', slots: 1, build_minutes: 10,  credits: 5000,  resources: { Iron: 200, Titanium: 100, Copper: 50 }, tech: 'tech_base_construction' },
@@ -199,6 +200,7 @@ router.post('/build', async (req, res) => {
         INSERT INTO player_bases (user_id, celestial_body_id, system_procedural_id, body_name, kind, name, tier, build_completes_at)
         VALUES ($1, $2, $3, $4, $5, $6, 1, NOW() + ($7 || ' minutes')::interval) RETURNING *`,
         [userId, body.id, body.procedural_id || 'sol', body.name, kind, name, String(t.build_minutes)]);
+      await completeQuestInTx(client, userId, 'tutorial_first_base'); // onboarding (085)
       return ins.rows[0];
     });
     logActivity({ userId, senderName: req.user.username, type: 'base_founded', systemId: body.procedural_id, payload: { name, kind, body_name: body.name } });

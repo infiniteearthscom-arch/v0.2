@@ -514,8 +514,11 @@ export const basesAPI = {
 
 // Refinery (2026-09-22) -- docs/refining-spec.md
 export const refiningAPI = {
-  quote: (inventoryId, quantity) => request(`/refining/quote?inventory_id=${encodeURIComponent(inventoryId)}&quantity=${encodeURIComponent(quantity)}`),
-  run: (inventoryId, quantity) => request('/refining/run', { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity }) }),
+  status: () => request('/refining/status'),
+  quote: (inventoryId, quantity, lane) => request(`/refining/quote?inventory_id=${encodeURIComponent(inventoryId)}&quantity=${encodeURIComponent(quantity)}${lane ? `&lane=${encodeURIComponent(lane)}` : ''}`),
+  queue: (inventoryId, quantity, lane) => request('/refining/queue', { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity, ...(lane ? { lane } : {}) }) }),
+  cancel: (jobId) => request(`/refining/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
+  collect: (jobId, to) => request(`/refining/jobs/${encodeURIComponent(jobId)}/collect`, { method: 'POST', body: JSON.stringify({ to }) }),
 };
 
 // Contract board (hauling v1, 2026-09-22) -- docs/contracts-spec.md

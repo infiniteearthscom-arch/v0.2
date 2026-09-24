@@ -156,6 +156,7 @@ function ensureListenersBound() {
         ts: recvNow,
         x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot,
         fleet: p.fleet || [],
+        mining: p.mining || [],
       };
       peers.set(p.user_id, {
         name: p.name,
@@ -221,6 +222,7 @@ function ensureListenersBound() {
         ts: recvNow,
         x: u.x, y: u.y, vx: u.vx, vy: u.vy, rot: u.rot,
         fleet: Array.isArray(u.fleet) ? u.fleet : (p.next?.fleet || []),
+        mining: Array.isArray(u.mining) ? u.mining : (p.next?.mining || []),
       };
       p.prev = p.next || newSnap;
       p.next = newSnap;
@@ -275,6 +277,8 @@ function makePosPayload(state) {
     // Wingmen (denormalized): each entry is { x, y, rot, hull_type_id }.
     // Server caps at 4. Empty array if caller didn't pass one.
     fleet: Array.isArray(state.fleet) ? state.fleet : [],
+    // Mining beams: [{ i, a }] (i = -1 flagship, else wingman index into fleet).
+    mining: Array.isArray(state.mining) ? state.mining : [],
   };
 }
 

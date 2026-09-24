@@ -348,6 +348,7 @@ export function attachPresence(io) {
           ship_visual: p.ship_visual,
           x: p.x, y: p.y, vx: p.vx, vy: p.vy, rot: p.rot, ts: p.ts,
           fleet: p.fleet || [],
+          mining: p.mining || [],
         });
       }
       socket.emit('presence:snapshot', { system_id, peers: snapshot });
@@ -411,7 +412,7 @@ export function attachPresence(io) {
       const peers = systemPeers.get(systemId);
       const peer = peers?.get(user.id);
       if (!peer) return; // entered + left in race; ignore
-      const { x, y, vx, vy, rot, ship_visual_v, fleet } = payload || {};
+      const { x, y, vx, vy, rot, ship_visual_v, fleet, mining } = payload || {};
       if (typeof x !== 'number' || typeof y !== 'number') return;
       peer.x = x;
       peer.y = y;
@@ -435,6 +436,12 @@ export function attachPresence(io) {
         }
         peer.fleet = cleaned;
       }
+      // Mining beams (2026-09-25): [{ i: -1 flagship | wingman index, a: asteroidId }], capped.
+      if (Array.isArray(mining)) {
+        peer.mining = mining.slice(0, 8)
+          .filter(m => m && typeof m.a === 'string' && Number.isInteger(m.i) && m.i >= -1 && m.i < 4)
+          .map(m => ({ i: m.i, a: m.a.slice(0, 64) }));
+      } else if (mining === null) peer.mining = [];
 
       // Visual version bump -> refresh the descriptor so peers see the
       // new fit. Refetch async; the next snapshot includes it.
@@ -457,6 +464,7 @@ export function attachPresence(io) {
           x: peer.x, y: peer.y, vx: peer.vx, vy: peer.vy, rot: peer.rot,
           ts: peer.ts,
           fleet: peer.fleet,
+          mining: peer.mining || [],
         }],
       });
     });

@@ -14,7 +14,7 @@ import { contractsAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { tierColor, tierLabel } from '@/utils/tiers';
 import { Portrait } from '@/components/pixel/PixelArt';
-import { questGiverFor, npcName } from '@/utils/pixelArt/portrait';
+import { questGiverFor, npcName, npcRace } from '@/utils/pixelArt/portrait';
 
 // Category → accent color mapping (story) + contract types
 const CATEGORY_COLORS = {
@@ -100,7 +100,7 @@ const QuestCard = ({ quest, isActive }) => {
   return (
     <div style={cardStyle(isActive, accent)}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
-        <Portrait seed={giverSeed} role={giverRole} size={36} title={npcName(giverSeed)} />
+        <Portrait seed={giverSeed} role={giverRole} size={48} title={npcName(giverSeed, npcRace(giverSeed, giverRole))} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           <span style={titleStyle}>{quest.title}</span>
           <Pill color={accent}>{category}</Pill>
@@ -141,7 +141,7 @@ const ContractCard = ({ contract: c, isActive, here, busy, onDeliver, onAbandon,
   return (
     <div style={cardStyle(isActive, accent)}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
-        <Portrait seed={faceSeed} role={faceRole} size={36} title={c.target_template_id ? c.cargo_label : `${npcName(faceSeed)} · Contract Broker`} />
+        <Portrait seed={faceSeed} role={faceRole} size={48} title={c.target_template_id ? c.cargo_label : `${npcName(faceSeed, npcRace(faceSeed, 'broker'))} · Contract Broker`} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           <span style={titleStyle}>{contractTitle(c)}</span>
           <Pill color={accent}>{c.contract_type}</Pill>

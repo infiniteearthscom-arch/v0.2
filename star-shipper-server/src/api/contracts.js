@@ -15,6 +15,7 @@ import {
   generateBoard, offerByKey, capsForLevel, isPort, normName, systemName,
   SEALED_ITEM_ID, currentBucket, bucketEndsAt, setResourceCatalog, hasResourceCatalog,
 } from '../game/contracts.js';
+import { completeQuestInTx } from './quests.js';
 
 // Fetch offers need the resource catalog (079). Load once per process.
 async function ensureCatalog() {
@@ -192,6 +193,7 @@ router.post('/accept', async (req, res) => {
          isFetch ? offer.fetch_resource_type_id : null, isFetch ? offer.fetch_min_quality : null,
          isBounty ? offer.target_tier : null, isBounty ? offer.target_template_id : null, isBounty ? !!offer.target_flagship : false]);
       const contract = ins.rows[0];
+      await completeQuestInTx(client, userId, 'tutorial_first_contract'); // onboarding (085)
       if (isFetch || isBounty) return contract; // nothing to carry -- go find / hunt it
       const slot = await getNextSlotIndex(userId, client);
       const itemData = {
@@ -272,6 +274,7 @@ router.post('/:id/deliver', async (req, res) => {
         await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [payout, userId]);
         await client.query(
           `UPDATE player_contracts SET status = 'delivered', resolved_at = NOW(), payout = $2 WHERE id = $1`, [c.id, payout]);
+        await completeQuestInTx(client, userId, 'tutorial_first_delivery'); // onboarding (085)
         const u = await client.query(`SELECT credits FROM users WHERE id = $1`, [userId]);
         return { failed: false, payout, credits: parseInt(u.rows[0].credits), contract: { ...c, status: 'delivered', payout } };
       }
@@ -291,6 +294,7 @@ router.post('/:id/deliver', async (req, res) => {
       await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [payout, userId]);
       await client.query(
         `UPDATE player_contracts SET status = 'delivered', resolved_at = NOW(), payout = $2 WHERE id = $1`, [c.id, payout]);
+      await completeQuestInTx(client, userId, 'tutorial_first_delivery'); // onboarding (085)
       const u = await client.query(`SELECT credits FROM users WHERE id = $1`, [userId]);
       return { failed: false, payout, credits: parseInt(u.rows[0].credits), contract: { ...c, status: 'delivered', payout } };
     });

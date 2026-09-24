@@ -8,7 +8,7 @@ import { getPortrait, ROLE_STYLE } from '@/utils/pixelArt/portrait';
 import { getItemIcon } from '@/utils/pixelArt/itemIcon';
 import { RESOURCE_TYPES } from '@/data/resources';
 
-export const Portrait = ({ seed, role = 'vendor', size = 48, style, title }) => {
+export const Portrait = ({ seed, role = 'vendor', size = 64, style, title }) => {
   const s = getPortrait(String(seed || 'anon'), role);
   const st = ROLE_STYLE[role] || ROLE_STYLE.vendor;
   return (

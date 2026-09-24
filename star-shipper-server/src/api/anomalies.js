@@ -14,6 +14,7 @@ import { SRng } from '../util/seed.js';
 import {
   sitesFor, estimateFor, cyclesNeededFor, probeCycleSeconds, rollRewards, currentBucket, hashStr, INVESTIGATE_RANGE, SITE_TYPES,
 } from '../game/anomalies.js';
+import { completeQuestInTx } from './quests.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -117,6 +118,7 @@ router.post('/probe', async (req, res) => {
         VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (user_id, system_procedural_id, site_index, bucket)
         DO UPDATE SET cycles_done = $5, pinned = $6, last_probe_at = NOW()`, [userId, systemId, idx, bucket, done, pinned]);
+      await completeQuestInTx(client, userId, 'tutorial_first_signal'); // onboarding (085)
       return { done, pinned };
     });
     const sitesNow = await shapeSites(userId, systemId, bucket, bonuses, launcher);
@@ -172,6 +174,7 @@ router.post('/resolve', async (req, res) => {
       await client.query(`
         UPDATE player_anomaly_progress SET resolved_at = NOW(), pinned = TRUE
          WHERE user_id = $1 AND system_procedural_id = $2 AND site_index = $3 AND bucket = $4`, [userId, systemId, idx, bucket]);
+      await completeQuestInTx(client, userId, 'tutorial_first_investigate'); // onboarding (085)
       return awarded;
     });
     // Guarded sites: a raider fleet arrives as you crack it open.

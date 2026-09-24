@@ -17,10 +17,9 @@ import { generateGalaxy } from '@/utils/galaxyGenerator';
 import { PlanetSprite } from '@/components/system/PlanetSprite';
 import { MarketPanel } from '@/components/market/MarketPanel';
 import { ContractsPanel } from '@/components/contracts/ContractsPanel';
-import { RefineryPanel } from '@/components/refinery/RefineryPanel';
 import { BaseTab } from '@/components/base/BaseTab';
 import { Portrait, PixelItemIcon, moduleIconSpec } from '@/components/pixel/PixelArt';
-import { stationCast, npcName, npcLine } from '@/utils/pixelArt/portrait';
+import { stationCast, npcName, npcLine, npcRace } from '@/utils/pixelArt/portrait';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -2415,10 +2414,10 @@ const VendorTab = ({ body }) => {
         const seed = `${sys}|${String(body?.name || '').toLowerCase()}|vendor`;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
-            <Portrait seed={seed} role="vendor" size={44} />
+            <Portrait seed={seed} role="vendor" size={64} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: GOLD.light, fontWeight: 800, fontSize: '0.85rem', fontFamily: F }}>{npcName(seed)} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· Quartermaster</span></div>
-              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: F, fontStyle: 'italic' }}>“{npcLine('vendor', seed)}”</div>
+              <div style={{ color: GOLD.light, fontWeight: 800, fontSize: '0.85rem', fontFamily: F }}>{npcName(seed, npcRace(seed, 'vendor'))} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· Quartermaster</span></div>
+              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: F, fontStyle: 'italic' }}>“{npcLine('vendor', seed, npcRace(seed, 'vendor'))}”</div>
             </div>
           </div>
         );
@@ -2590,7 +2589,7 @@ const VendorTab = ({ body }) => {
                         // padding without clipping.
                         minHeight: 66,
                       }}>
-                        <PixelItemIcon size={36} spec={moduleIconSpec({ itemId: m.id, slotType: m.slot_type, tier: m.tier, damageType: m.stats?.damage_type })} style={{ flexShrink: 0 }} />
+                        <PixelItemIcon size={32} spec={moduleIconSpec({ itemId: m.id, slotType: m.slot_type, tier: m.tier, damageType: m.stats?.damage_type })} style={{ flexShrink: 0 }} />
                         <div style={{
                           width: 3,
                           // Span the new taller content (name + desc +
@@ -2991,7 +2990,7 @@ const NPCsStub = ({ body, kind }) => {
     <div>
       {cast.map(n => (
         <div key={n.role} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 9px', marginBottom: 6, background: 'rgba(4,8,16,0.55)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
-          <Portrait seed={n.seed} role={n.role} size={48} />
+          <Portrait seed={n.seed} role={n.role} size={64} />
           <div style={{ minWidth: 0 }}>
             <div style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '0.85rem', fontFamily: F }}>{n.name} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· {n.title}</span></div>
             <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: F, fontStyle: 'italic' }}>“{n.line}”</div>
@@ -3188,7 +3187,6 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
     { id: 'repair',    label: 'Repair',    icon: '🔧' },
     { id: 'market',    label: 'Market',    icon: '📈' },
     ...(kind === 'station' ? [{ id: 'contracts', label: 'Contracts', icon: '📦' }] : []),
-    { id: 'refinery',  label: 'Refinery',  icon: '⚗️' },
     { id: 'ships',     label: 'Ships',     icon: '🚀' },
     { id: 'pilots',    label: 'Pilots',    icon: '👤' },
     { id: 'npcs',      label: 'NPCs',      icon: '🛸' },
@@ -3240,7 +3238,6 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
       {section === 'repair'    && <RepairTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'market'    && <MarketPanel stationBodyId={effectiveBodyId} />}
       {section === 'contracts' && <ContractsPanel body={body} />}
-      {section === 'refinery'  && <RefineryPanel />}
       {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'pilots'    && <PilotsTab effectiveBodyId={effectiveBodyId} />}
       {section === 'npcs'      && <NPCsStub body={body} kind={kind} />}

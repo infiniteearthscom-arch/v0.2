@@ -166,7 +166,7 @@ export const BaseTab = ({ body }) => {
       {/* base refinery: the refinery panel right here, fee-free */}
       {!base.building && Object.values(base.modules).some(m => m.stats?.refinery) && (
         <Card accent={GOLD.pri}>
-          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem', marginBottom: 8 }}>BASE REFINERY · no fee</div>
+          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem', marginBottom: 8 }}>REFINERY</div>
           <RefineryPanel />
         </Card>
       )}

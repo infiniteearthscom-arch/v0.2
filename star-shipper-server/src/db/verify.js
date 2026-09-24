@@ -147,6 +147,17 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 086 (base refining) ---
+  report('player_refine_jobs table (086)', await tableExists('player_refine_jobs'));
+  const bref = await pool.query(`SELECT buy_price, requires_tech FROM module_types WHERE id = 'base_refinery'`);
+  report('base_refinery is craft-only + gated by tech_refining (086)', bref.rows[0]?.buy_price == null && bref.rows[0]?.requires_tech === 'tech_refining');
+
+  // --- migration 085 (onboarding expansion) ---
+  const onb = await pool.query(`SELECT COUNT(*)::int AS n FROM quest_definitions WHERE id LIKE 'tutorial_first_%'`);
+  report('onboarding expansion quests (085)', onb.rows[0].n === 6, `${onb.rows[0].n}/6`);
+  const hook = await pool.query(`SELECT triggers_quests::text AS t FROM quest_definitions WHERE id = 'tutorial_collect_harvester'`);
+  report('Coming Home triggers Hired Gun (085)', (hook.rows[0]?.t || '').includes('tutorial_first_contract'));
+
   // --- migration 084 (contracts on the Missions board) ---
   report('player_contracts.pinned (084)', await columnExists('player_contracts', 'pinned'));
 
