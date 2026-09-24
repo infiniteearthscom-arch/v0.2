@@ -14,10 +14,13 @@ import { STAT_META, fmtStatValue } from '@/utils/quality';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
 import { generateGalaxy } from '@/utils/galaxyGenerator';
+import { PlanetSprite } from '@/components/system/PlanetSprite';
 import { MarketPanel } from '@/components/market/MarketPanel';
 import { ContractsPanel } from '@/components/contracts/ContractsPanel';
 import { RefineryPanel } from '@/components/refinery/RefineryPanel';
 import { BaseTab } from '@/components/base/BaseTab';
+import { Portrait, PixelItemIcon, moduleIconSpec } from '@/components/pixel/PixelArt';
+import { stationCast, npcName, npcLine } from '@/utils/pixelArt/portrait';
 
 // ============================================
 // DESIGN TOKENS (shared with GameFrame aesthetic)
@@ -183,18 +186,19 @@ const PlanetBanner = ({ body, onClose }) => {
         }} />
       ))}
 
-      {/* Planet orb in the sky (right side) */}
-      <div style={{
-        position: 'absolute',
-        top: 14,
-        right: 30,
-        width: 38,
-        height: 38,
-        borderRadius: isStation ? 4 : 19,
-        background: `radial-gradient(circle at 32% 32%, ${color}ee, ${color}66)`,
-        boxShadow: `${glow(color, 0.35)}, inset -4px -4px 8px rgba(0,0,0,0.3)`,
-        border: `1px solid ${color}55`,
-      }} />
+      {/* The body in the sky (right side): stations keep the old chip,
+          planets get the live pixel-art sprite from SystemView's
+          renderer (rotating, star-lit, rings/atmosphere, lava glow). */}
+      {isStation ? (
+        <div style={{
+          position: 'absolute', top: 14, right: 30, width: 38, height: 38, borderRadius: 4,
+          background: `radial-gradient(circle at 32% 32%, ${color}ee, ${color}66)`,
+          boxShadow: `${glow(color, 0.35)}, inset -4px -4px 8px rgba(0,0,0,0.3)`,
+          border: `1px solid ${color}55`,
+        }} />
+      ) : (
+        <PlanetSprite body={body} size={72} style={{ position: 'absolute', top: 6, right: 22 }} />
+      )}
 
       {/* Terrain silhouettes (back first, then front) */}
       <svg
@@ -2405,6 +2409,21 @@ const VendorTab = ({ body }) => {
         }}>⬡ {credits.toLocaleString()} CR</span>
       </div>
 
+      {/* The quartermaster (procedural NPC, stable per port) */}
+      {(() => {
+        const sys = useGameStore.getState().currentSystem;
+        const seed = `${sys}|${String(body?.name || '').toLowerCase()}|vendor`;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
+            <Portrait seed={seed} role="vendor" size={44} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: GOLD.light, fontWeight: 800, fontSize: '0.85rem', fontFamily: F }}>{npcName(seed)} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· Quartermaster</span></div>
+              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: F, fontStyle: 'italic' }}>“{npcLine('vendor', seed)}”</div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Section tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
         {[
@@ -2571,6 +2590,7 @@ const VendorTab = ({ body }) => {
                         // padding without clipping.
                         minHeight: 66,
                       }}>
+                        <PixelItemIcon size={36} spec={moduleIconSpec({ itemId: m.id, slotType: m.slot_type, tier: m.tier, damageType: m.stats?.damage_type })} style={{ flexShrink: 0 }} />
                         <div style={{
                           width: 3,
                           // Span the new taller content (name + desc +
@@ -2961,21 +2981,26 @@ const VendorTab = ({ body }) => {
 // Buildings. Same component is used for both cities and stations -- the
 // outer "Populated" label/icon swap is handled by the parent's iconTabs.
 
-const NPCsStub = () => (
-  <div style={{
-    textAlign: 'center',
-    padding: '40px 16px',
-    color: '#3a5a6a',
-    fontSize: '0.6875rem',
-    fontFamily: F,
-  }}>
-    <div style={{ fontSize: '1.75rem', marginBottom: 8, opacity: 0.5 }}>👥</div>
-    <div style={{ marginBottom: 4 }}>No NPCs available yet.</div>
-    <div style={{ fontSize: '0.8rem', color: '#2a3a4a', fontFamily: FM, letterSpacing: 0.5 }}>
-      QUEST GIVERS COMING SOON
+// The people at this port (2026-09-24): procedural, stable per body.
+// Vendor = the Quartermaster in the Vendor tab, Broker = the Contracts
+// tab, Refinery Chief = the Refinery tab. Names / faces never change.
+const NPCsStub = ({ body, kind }) => {
+  const sys = useGameStore(state => state.currentSystem);
+  const cast = stationCast(sys, body?.name || '', { isStation: kind === 'station' });
+  return (
+    <div>
+      {cast.map(n => (
+        <div key={n.role} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 9px', marginBottom: 6, background: 'rgba(4,8,16,0.55)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
+          <Portrait seed={n.seed} role={n.role} size={48} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '0.85rem', fontFamily: F }}>{n.name} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· {n.title}</span></div>
+            <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: F, fontStyle: 'italic' }}>“{n.line}”</div>
+          </div>
+        </div>
+      ))}
     </div>
-  </div>
-);
+  );
+};
 
 const BuildingsStub = () => (
   <div style={{
@@ -3218,7 +3243,7 @@ const PopulatedBodyTab = ({ body, kind /* 'city' | 'station' */, effectiveBodyId
       {section === 'refinery'  && <RefineryPanel />}
       {section === 'ships'     && <ShipsTab body={body} effectiveBodyId={effectiveBodyId} />}
       {section === 'pilots'    && <PilotsTab effectiveBodyId={effectiveBodyId} />}
-      {section === 'npcs'      && <NPCsStub />}
+      {section === 'npcs'      && <NPCsStub body={body} kind={kind} />}
       {section === 'buildings' && <BuildingsStub />}
     </div>
   );

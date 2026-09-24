@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { shipsAPI, questsAPI, galaxyAPI } from '@/utils/api';
+import { shipsAPI, questsAPI, galaxyAPI, contractsAPI } from '@/utils/api';
 
 // ============================================
 // INITIAL STATE
@@ -97,6 +97,7 @@ const initialState = {
   // Active contracts (hauling / fetch) for the HUD + galaxy views; fed by
   // ContractsPoller in GameFrame. contractsVersion bumps force a refetch.
   activeContracts: [],
+  allContracts: [],          // active + recent history, for the Missions board
   contractsVersion: 0,
   // Signature sites for the current system (AnomaliesWindow -> SystemView markers)
   // and a raider fleet handed back by an investigation for SystemView to spawn.
@@ -378,6 +379,17 @@ export const useGameStore = create(
       // Mail unread count -- pushed by the InboxWindow + the poller.
       setMailUnread: (n) => set(state => { state.mailUnreadCount = Math.max(0, parseInt(n, 10) || 0); }),
       setActiveContracts: (list) => set(state => { state.activeContracts = Array.isArray(list) ? list : []; }),
+      setAllContracts: (list) => set(state => { state.allContracts = Array.isArray(list) ? list : []; }),
+      // Optimistic pin flip for contracts (mirrors pinQuest); the HUD reads
+      // `pinned` off activeContracts.
+      pinContract: async (id, pinned) => {
+        const flip = (v) => set(state => {
+          for (const list of [state.activeContracts, state.allContracts]) { const c = (list || []).find(x => x.id === id); if (c) c.pinned = v; }
+        });
+        flip(pinned);
+        try { await contractsAPI.pin(id, pinned); }
+        catch (e) { flip(!pinned); get().pushToast({ kind: 'error', text: e?.message || 'Failed to update pin', duration: 3000 }); }
+      },
       setAnomalySites: (list) => set(state => { state.anomalySites = Array.isArray(list) ? list : []; }),
       setPendingAmbush: (a) => set(state => { state.pendingAmbush = a || null; }),
       clearPendingAmbush: () => set(state => { state.pendingAmbush = null; }),

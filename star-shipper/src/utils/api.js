@@ -525,6 +525,7 @@ export const contractsAPI = {
   accept: (contractKey) => request('/contracts/accept', { method: 'POST', body: JSON.stringify({ contract_key: contractKey }) }),
   deliver: (id) => request(`/contracts/${encodeURIComponent(id)}/deliver`, { method: 'POST' }),
   abandon: (id) => request(`/contracts/${encodeURIComponent(id)}/abandon`, { method: 'POST' }),
+  pin: (id, pinned) => request(`/contracts/${encodeURIComponent(id)}/pin`, { method: 'POST', body: JSON.stringify({ pinned }) }),
 };
 
 export const harvesterAPI = {

@@ -43,8 +43,10 @@ const F = "'Rajdhani', sans-serif";
 const FM = "'Share Tech Mono', monospace";
 
 // Format event -> { icon, color, text }. Per-type so we can tweak any
-// one rendering without affecting the others.
-function formatEvent(evt) {
+// one rendering without affecting the others. Exported (2026-09-24):
+// the ChatPanel "Events" tab renders the feed now; the top-center strip
+// below is kept for reference but is no longer mounted.
+export function formatEvent(evt) {
   const name = evt.sender_name || 'Pilot';
   const p = evt.payload || {};
   switch (evt.type) {
@@ -122,7 +124,7 @@ function formatEvent(evt) {
   }
 }
 
-function formatAge(ts, now) {
+export function formatAge(ts, now) {
   const sec = Math.max(0, Math.round((now - ts) / 1000));
   if (sec < 60) return `${sec}s`;
   if (sec < 3600) return `${Math.round(sec / 60)}m`;

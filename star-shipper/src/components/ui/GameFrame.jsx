@@ -10,7 +10,6 @@ import { playSound } from '@/utils/audio';
 import { SystemMapWindow } from '@/components/system/SystemMapWindow';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 import { ChatPanel } from '@/components/chat/ChatPanel';
-import { ActivityTicker } from '@/components/activity/ActivityTicker';
 import { LeaderboardsWindow } from '@/components/leaderboards/LeaderboardsWindow';
 import { ProfileWindow } from '@/components/profile/ProfileWindow';
 import { TradeWindow } from '@/components/trade/TradeWindow';
@@ -642,18 +641,24 @@ const TradeBootstrap = () => {
 // deliver / abandon in the Contracts tab).
 const ContractsPoller = () => {
   const setActiveContracts = useGameStore(s => s.setActiveContracts);
+  const setAllContracts = useGameStore(s => s.setAllContracts);
   const version = useGameStore(s => s.contractsVersion);
   useEffect(() => {
     let cancelled = false;
     const fetchOnce = () => {
       contractsAPI.mine()
-        .then(r => { if (!cancelled) setActiveContracts?.((r?.contracts || []).filter(c => c.status === 'active')); })
+        .then(r => {
+          if (cancelled) return;
+          const all = r?.contracts || [];
+          setAllContracts?.(all);
+          setActiveContracts?.(all.filter(c => c.status === 'active'));
+        })
         .catch(() => {});
     };
     fetchOnce();
     const t = setInterval(fetchOnce, 60_000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [setActiveContracts, version]);
+  }, [setActiveContracts, setAllContracts, version]);
   return null;
 };
 
@@ -705,7 +710,7 @@ export const GameFrame = ({ children }) => {
       {/* Activity ticker — fixed top-center strip showing the latest
           galaxy-wide event. Self-hides until the first event arrives,
           self-disables when the presence feature flag is off. */}
-      <ActivityTicker />
+      {/* Activity feed moved into the ChatPanel "Events" tab (2026-09-24). */}
 
       {/* Leaderboards modal — mounted globally so the toolbar button
           can open/close it from anywhere. ModalOverlay short-circuits

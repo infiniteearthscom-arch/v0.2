@@ -8,6 +8,8 @@ import { contractsAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { useGameStore } from '@/stores/gameStore';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { Portrait } from '@/components/pixel/PixelArt';
+import { npcName, npcLine } from '@/utils/pixelArt/portrait';
 
 const F = "'Rajdhani', sans-serif";
 const FM = "'Share Tech Mono', monospace";
@@ -40,6 +42,7 @@ export const ContractsPanel = ({ body }) => {
   const pushToast = useGameStore(s => s.pushToast);
   const fetchCredits = useGameStore(s => s.fetchCredits);
   const bumpContracts = useGameStore(s => s.bumpContracts);
+  const openWindow = useGameStore(s => s.openWindow);
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
 
   const [board, setBoard] = useState(null);
@@ -99,57 +102,28 @@ export const ContractsPanel = ({ body }) => {
 
   return (
     <div style={{ fontFamily: F }}>
-      {/* ---- My contracts ---- */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <div style={{ color: GOLD.light, fontWeight: 800, letterSpacing: 1, fontSize: '0.85rem' }}>MY CONTRACTS</div>
-        {limits && (
-          <div style={{ color: '#5a7080', fontSize: '0.75rem', fontFamily: FM }}>
-            {limits.active_count}/{limits.active_cap} active · tier cap {tierLabel(limits.tier_cap)} · train Contracting for more
-          </div>
-        )}
-      </div>
-      {active.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.8rem', marginBottom: 10 }}>No active contracts.</div>}
-      {active.map(c => {
-        const here = c.dest_system_id === currentSystem && normName(c.dest_station) === hereName;
-        const left = minutesLeft(c.deadline_at);
-        const isFetch = c.contract_type === 'fetch';
-        const isBounty = c.contract_type === 'bounty';
-        const enough = isFetch ? (c.have_qualifying || 0) >= c.cargo_volume
-          : isBounty ? (c.progress || 0) >= c.cargo_volume
-          : (c.freight_units == null || c.freight_units >= c.cargo_volume);
-        const freightLost = !isFetch && !isBounty && c.freight_units != null && c.freight_units < c.cargo_volume;
-        return (
-          <Row key={c.id} accent={here && enough ? '#22c55e' : tierColor(c.tier)}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>
-                {isFetch ? '⛏' : isBounty ? '🎯' : '📦'} {isFetch ? `Bring ${c.cargo_volume} × ${c.cargo_label}` : c.cargo_label}
-                {!isFetch && !isBounty && <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}> ×{c.cargo_volume}</span>}
-                {isFetch && c.fetch_min_quality > 0 && <span style={{ color: '#8fa3b8', fontFamily: FM, fontSize: '0.75rem' }}> Q{c.fetch_min_quality}+</span>}
-                {c.rush && <span style={{ color: '#f87171', fontSize: '0.7rem', marginLeft: 6 }}>RUSH</span>}
-                {c.contested && <span style={{ color: '#f87171', fontSize: '0.7rem', marginLeft: 6 }}>CONTESTED</span>}
-              </div>
-              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: FM }}>
-                {isFetch
-                  ? <>turn in at {c.dest_station}, {c.dest_system_name} · <span style={{ color: enough ? '#4ade80' : '#a0b0c0' }}>have {c.have_qualifying || 0}/{c.cargo_volume}</span> · </>
-                  : isBounty
-                  ? <>turn in at {c.dest_station}, {c.dest_system_name} · <span style={{ color: enough ? '#4ade80' : '#a0b0c0' }}>kills {c.progress || 0}/{c.cargo_volume}</span> (salvage the wreck to log a kill) · </>
-                  : <>→ {c.dest_station}, {c.dest_system_name} · {c.hops} hop{c.hops === 1 ? '' : 's'} · {freightLost && <span style={{ color: '#f87171' }}>freight lost — reclaim your wreck · </span>}</>}
-                <span style={{ color: left < 3 ? '#f87171' : '#a0b0c0' }}>{left} min left</span> · {fmt(c.reward)} CR
-              </div>
-            </div>
-            {here && enough
-              ? <Btn accent="#22c55e" onClick={() => deliver(c.id)} disabled={busy}>{isFetch ? 'TURN IN' : isBounty ? 'COLLECT BOUNTY' : 'DELIVER HERE'}</Btn>
-              : <Btn onClick={() => abandon(c.id)} disabled={busy} accent="#f87171">ABANDON</Btn>}
-          </Row>
-        );
-      })}
-      {recent.length > 0 && (
-        <div style={{ color: '#4a6580', fontSize: '0.75rem', fontFamily: FM, marginBottom: 10 }}>
-          {recent.map(c => (
-            <div key={c.id}>{c.status.toUpperCase()} · {c.cargo_label} → {c.dest_station}{c.payout ? ` · +${fmt(c.payout)} CR` : ''}</div>
-          ))}
+      {/* ---- My contracts: managed on the Missions board (2026-09-24) ---- */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '7px 9px', background: 'rgba(4,8,16,0.55)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
+        <div style={{ color: '#8fa3b8', fontSize: '0.8rem', fontFamily: FM }}>
+          {active.length} active contract{active.length === 1 ? '' : 's'}
+          {limits ? ` · ${limits.active_count}/${limits.active_cap} slots · tier cap ${tierLabel(limits.tier_cap)}` : ''}
         </div>
-      )}
+        <Btn onClick={() => { playSound('button_click'); if (openWindow) openWindow('questLog'); }}>📋 OPEN MISSIONS</Btn>
+      </div>
+
+      {/* ---- The broker ---- */}
+      {board?.port && (() => {
+        const seed = `${board.port.system_id}|${String(board.port.station).toLowerCase()}|broker`;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: '6px 8px', background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderRadius: 3 }}>
+            <Portrait seed={seed} role="broker" size={44} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: '#67e8f9', fontWeight: 800, fontSize: '0.85rem' }}>{npcName(seed)} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· Contract Broker</span></div>
+              <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontStyle: 'italic' }}>“{npcLine('broker', seed)}”</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---- Board ---- */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '12px 0 6px' }}>
@@ -174,7 +148,9 @@ export const ContractsPanel = ({ body }) => {
         const left = minutesLeft(new Date(Date.now() + o.deadline_minutes * 60000).toISOString());
         return (
           <Row key={o.contract_key} accent={tierColor(o.tier)}>
-            <div style={{ width: 22, textAlign: 'center', color: tierColor(o.tier), fontWeight: 800, fontFamily: FM }}>{tierLabel(o.tier)}</div>
+            {o.target_template_id
+              ? <Portrait seed={o.target_template_id} role="pirate" size={34} title={o.cargo_label} />
+              : <div style={{ width: 22, textAlign: 'center', color: tierColor(o.tier), fontWeight: 800, fontFamily: FM }}>{tierLabel(o.tier)}</div>}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>
                 {isFetch ? `⛏ Bring ${o.volume} × ${o.cargo_label}` : isBounty ? `🎯 ${o.cargo_label}` : o.cargo_label}

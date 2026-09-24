@@ -19,6 +19,8 @@ import chat from '@/utils/chat';
 import { corpAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
+import activity from '@/utils/activity';
+import { formatEvent, formatAge } from '@/components/activity/ActivityTicker';
 
 const EDGE = '#1a3050';
 const BLUE = { pri: '#3b82f6', light: '#60a5fa', dim: '#1e3a5f' };
@@ -30,6 +32,7 @@ const CHANNELS = [
   { id: 'system', label: 'System', color: CYAN },
   { id: 'global', label: 'Global', color: '#aa66ff' },
   { id: 'fleet',  label: 'Corp',   color: '#fbbf24' },
+  { id: 'events', label: 'Events', color: '#4ade80' },   // galaxy-wide activity feed (moved from the top strip, 2026-09-24)
 ];
 
 const formatTime = (ts) => {
@@ -119,6 +122,35 @@ const MessageList = ({ messages, ownUserId, onOpenProfile, renderTick }) => {
   );
 };
 
+// Galaxy-wide activity feed, newest first. Same buffer + formatters the
+// old top-center ticker used.
+const EventsList = ({ renderTick, onOpenProfile }) => {
+  const events = activity.getEvents().slice().reverse();
+  const now = Date.now();
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px', minHeight: 0 }} data-tick={renderTick}>
+      {events.length === 0 && (
+        <div style={{ color: '#4a5a6a', fontSize: '0.6875rem', fontFamily: F, padding: '12px 0', textAlign: 'center' }}>No galaxy activity yet.</div>
+      )}
+      {events.map(evt => {
+        const f = formatEvent(evt);
+        return (
+          <div key={evt.id} style={{ display: 'flex', gap: 6, alignItems: 'baseline', padding: '3px 0', borderBottom: `1px solid ${EDGE}55` }}>
+            <span style={{ color: f.color, fontSize: '0.75rem', width: 14, textAlign: 'center', flexShrink: 0 }}>{f.icon}</span>
+            <span style={{ flex: 1, color: '#c8d2dc', fontSize: '0.6875rem', fontFamily: F, lineHeight: 1.4 }}>
+              {evt.sender_id && onOpenProfile
+                ? <span onClick={() => onOpenProfile(evt.sender_id)} style={{ cursor: 'pointer', color: f.color, fontWeight: 700 }} title="Open profile">{evt.sender_name || 'Pilot'}</span>
+                : <span style={{ color: f.color, fontWeight: 700 }}>{evt.sender_name || 'Pilot'}</span>}
+              {f.text.startsWith(evt.sender_name || 'Pilot') ? f.text.slice((evt.sender_name || 'Pilot').length) : ` ${f.text}`}
+            </span>
+            <span style={{ color: '#4a5a6a', fontSize: '0.6rem', fontFamily: FM, flexShrink: 0 }}>{formatAge(new Date(evt.ts || evt.created_at || Date.now()).getTime(), now)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const ChatPanel = () => {
   // Starts collapsed on every load/reset (component state is not
   // persisted, so a page load always lands here); expanding is a
@@ -129,7 +161,7 @@ export const ChatPanel = () => {
   // buffer in place; we bump this state on each new message so React
   // re-renders the MessageList. Cheaper than copying the buffer.
   const [renderTick, setRenderTick] = useState(0);
-  const [unread, setUnread] = useState({ system: 0, global: 0 });
+  const [unread, setUnread] = useState({ system: 0, global: 0, fleet: 0, events: 0 });
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
 
@@ -142,6 +174,21 @@ export const ChatPanel = () => {
   // refetches via the corp window). Null = not in a corp.
   const [corpId, setCorpId] = useState(null);
   const [corpTicker, setCorpTicker] = useState(null);
+
+  // Events tab: the activity singleton keeps the buffer; we hydrate once
+  // and bump renderTick + the tab's unread badge on each live event.
+  const activeRef = useRef({ collapsed: true, channel: 'system' });
+  useEffect(() => { activeRef.current = { collapsed, channel: activeChannel }; }, [collapsed, activeChannel]);
+  useEffect(() => {
+    if (!activity.isEnabled()) return undefined;
+    activity.loadEvents().then(() => setRenderTick(t => t + 1)).catch(() => {});
+    const off = activity.on('event', () => {
+      setRenderTick(t => t + 1);
+      const a = activeRef.current;
+      if (a.collapsed || a.channel !== 'events') setUnread(u => ({ ...u, events: (u.events || 0) + 1 }));
+    });
+    return () => { if (typeof off === 'function') off(); };
+  }, []);
 
   // Keep chat singleton's idea of "current system" in sync with the
   // store so the 'system' channel resolves to the right channel_id.
@@ -210,7 +257,7 @@ export const ChatPanel = () => {
 
   if (!chat.isEnabled()) return null;
 
-  const totalUnread = (unread.system || 0) + (unread.global || 0) + (unread.fleet || 0);
+  const totalUnread = (unread.system || 0) + (unread.global || 0) + (unread.fleet || 0) + (unread.events || 0);
   // getMessages auto-resolves channel_id from the singleton's tracked
   // systemId/corpId, so we just pass the channel name.
   const messages = chat.getMessages(activeChannel);
@@ -358,19 +405,21 @@ export const ChatPanel = () => {
           renderTick rides as a plain prop instead: the singleton
           mutates its buffer in place, so the prop change is what
           triggers the re-render. Audit fix 2026-09-03. */}
-      <MessageList
-        messages={messages}
-        ownUserId={ownUserId}
-        onOpenProfile={openProfile}
-        renderTick={renderTick}
-        key={activeChannel}
-      />
+      {activeChannel === 'events'
+        ? <EventsList renderTick={renderTick} onOpenProfile={openProfile} />
+        : <MessageList
+            messages={messages}
+            ownUserId={ownUserId}
+            onOpenProfile={openProfile}
+            renderTick={renderTick}
+            key={activeChannel}
+          />}
 
       {/* Input */}
       <div style={{
         borderTop: `1px solid ${EDGE}`,
         padding: 6,
-        display: 'flex',
+        display: activeChannel === 'events' ? 'none' : 'flex',
         gap: 4,
         background: 'rgba(12,26,51,0.3)',
       }}>

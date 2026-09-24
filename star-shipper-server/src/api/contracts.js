@@ -76,6 +76,7 @@ const shapeContract = (c) => ({
   contested: !!offerByKey(c.contract_key, { anyBucket: true })?.contested,
   fetch_resource_type_id: c.fetch_resource_type_id, fetch_min_quality: c.fetch_min_quality,
   target_tier: c.target_tier, target_template_id: c.target_template_id, target_flagship: !!c.target_flagship, progress: c.progress || 0,
+  pinned: c.pinned !== false,
   contract_key: c.contract_key,
   contract_type: c.contract_type,
   tier: c.tier,
@@ -124,8 +125,9 @@ router.get('/mine', async (req, res) => {
     await expireOverdue(userId);
     const rows = await queryAll(`
       SELECT * FROM player_contracts
-       WHERE user_id = $1 AND (status = 'active' OR resolved_at > NOW() - INTERVAL '10 minutes')
-       ORDER BY status = 'active' DESC, deadline_at ASC`, [userId]);
+       WHERE user_id = $1 AND (status = 'active' OR resolved_at > NOW() - INTERVAL '14 days')
+       ORDER BY status = 'active' DESC, deadline_at ASC
+       LIMIT 80`, [userId]);
     const caps = await capsFor(userId);
     const shaped = [];
     for (const r of rows) {
@@ -304,6 +306,16 @@ router.post('/:id/deliver', async (req, res) => {
     console.error('contracts/deliver:', e);
     res.status(500).json({ error: 'Failed to deliver contract' });
   }
+});
+
+// POST /contracts/:id/pin { pinned } -- HUD tile on/off (Missions board, 084)
+router.post('/:id/pin', async (req, res) => {
+  try {
+    const pinned = req.body?.pinned !== false;
+    const r = await query(`UPDATE player_contracts SET pinned = $3 WHERE id = $1 AND user_id = $2 RETURNING id`, [String(req.params.id), req.user.id, pinned]);
+    if (!(r.rows || r)[0]) return res.status(404).json({ error: 'Contract not found' });
+    res.json({ success: true, pinned });
+  } catch (e) { console.error('contracts/pin:', e); res.status(500).json({ error: 'Failed to pin' }); }
 });
 
 // POST /contracts/:id/abandon -- drop the freight, no penalty (v1)

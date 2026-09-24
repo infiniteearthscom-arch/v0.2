@@ -11,6 +11,7 @@ import { COLORS, FONT, SectionHead, PanelButton, MessageBar } from '@/components
 import { normalizeItem } from '@/utils/itemShape';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 import { cargoTooltip } from '@/components/items/CargoTooltipLayer';
+import { PixelItemIcon, resourceIconSpec, moduleIconSpec } from '@/components/pixel/PixelArt';
 
 // ============================================
 // CONSTANTS
@@ -469,18 +470,13 @@ export const InventoryWindow = () => {
                         ...overrideStyle,
                       }}
                     >
-                      <div
-                        className="absolute inset-1 rounded flex items-center justify-center font-bold"
-                        style={isItem ? {
-                          fontSize: '16px',
-                        } : {
-                          fontSize: '11px',
-                          backgroundColor: iconBg,
-                          color: iconColor,
-                          textShadow: `0 0 4px ${iconColor}66`,
-                        }}
-                      >
-                        {iconContent}
+                      {/* Procedural pixel icon (2026-09-24): every module /
+                          resource gets its own glyph, tier frame, quality gem. */}
+                      <div className="absolute inset-1 rounded flex items-center justify-center" style={{ backgroundColor: isItem ? 'rgba(4,8,16,0.35)' : iconBg }}>
+                        <PixelItemIcon size={SLOT_SIZE - 12} spec={isItem
+                          ? moduleIconSpec({ itemId: stack.item_id, slotType: stack.item_data?.slot_type, tier: stack.item_data?.tier, damageType: stack.item_data?.base_stats?.damage_type,
+                              avgQuality: stack.item_data?.quality ? ((stack.item_data.quality.purity || 50) + (stack.item_data.quality.stability || 50) + (stack.item_data.quality.potency || 50) + (stack.item_data.quality.density || 50)) / 4 : null })
+                          : resourceIconSpec(stack.resource_type_id, stack.stats ? ((stack.stats.purity ?? 50) + (stack.stats.stability ?? 50) + (stack.stats.potency ?? 50) + (stack.stats.density ?? 50)) / 4 : null)} />
                       </div>
 
                       {stack.quantity > 1 && (

@@ -147,6 +147,9 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 084 (contracts on the Missions board) ---
+  report('player_contracts.pinned (084)', await columnExists('player_contracts', 'pinned'));
+
   // --- migration 083 (anomalies) ---
   report('player_anomaly_progress table (083)', await tableExists('player_anomaly_progress'));
   const probe = await pool.query(`SELECT 1 FROM module_types mt JOIN item_definitions i ON i.id = mt.id WHERE mt.id = 'utility_probe_launcher'`);

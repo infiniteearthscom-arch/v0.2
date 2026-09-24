@@ -10,6 +10,7 @@ import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
 import { cargoTooltip } from '@/components/items/CargoTooltipLayer';
+import { PixelItemIcon, resourceIconSpec } from '@/components/pixel/PixelArt';
 
 // ============================================
 // CONSTANTS
@@ -628,16 +629,8 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLe
         opacity: matchesRecipe || !onClick ? 1 : 0.55,
       }}
     >
-      <div
-        className="absolute inset-1 rounded flex items-center justify-center font-bold"
-        style={{
-          fontSize: '11px',
-          backgroundColor: iconBg,
-          color: iconColor,
-          textShadow: `0 0 4px ${iconColor}66`,
-        }}
-      >
-        {iconContent}
+      <div className="absolute inset-1 rounded flex items-center justify-center" style={{ backgroundColor: iconBg }}>
+        <PixelItemIcon size={28} spec={resourceIconSpec(stack.resource_type_id, ((stack.stats?.purity ?? 50) + (stack.stats?.stability ?? 50) + (stack.stats?.potency ?? 50) + (stack.stats?.density ?? 50)) / 4)} />
       </div>
       {stack.quantity > 1 && (
         <div

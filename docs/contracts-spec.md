@@ -50,6 +50,7 @@ Reference points (Q50 vendor prices): a starter mining Iron nets ~250 cr/min aft
 
 ## UI
 
+- **Missions board (2026-09-24):** story quests and contracts share ONE board (`QuestLogWindow`): filter chips (All / Story / Hauling / Fetch / Bounty), sort (Priority = pinned then soonest deadline then story order; Time left; Reward; Tier; System; Newest), search, Active / Completed tabs (contract history keeps 14 days). Deliver / turn in / collect (when docked at the destination), abandon and pin live here; pinned contracts (default on) show as HUD tiles like pinned quests (`player_contracts.pinned`, migration 084).
 - Station → **Contracts** sub-tab: the board (label, destination, hops, tier, volume, reward, deadline, Accept) and My Contracts (time left, Deliver here / Abandon).
 - Galaxy map: a `📦` marker on every destination system with an active delivery and a "Deliveries here" row in the info panel; Plot course does the rest.
 

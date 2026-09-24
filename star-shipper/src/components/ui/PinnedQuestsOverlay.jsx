@@ -51,7 +51,8 @@ export const PinnedQuestsOverlay = () => {
   );
   // Active contracts ride in the same stack (2026-09-22) so the pilot
   // always sees where the freight goes and how long is left.
-  const contracts = useGameStore(state => state.activeContracts) || [];
+  const allActive = useGameStore(state => state.activeContracts) || [];
+  const contracts = useMemo(() => allActive.filter(c => c.pinned !== false), [allActive]);
   const [, tick] = useState(0);
   useEffect(() => {
     if (!contracts.length) return undefined;
@@ -79,9 +80,10 @@ export const PinnedQuestsOverlay = () => {
       <div
         className="fixed z-20"
         style={{
-          // Below the fleet status readout (top:38) + activity ticker
-          // (top:100, 24px tall) stack.
-          top: 132,
+          // Below the fleet status readout (top:38). The activity ticker
+          // that used to sit at top:100 now lives in the chat panel's
+          // Events tab (2026-09-24), so the tiles take its slot.
+          top: 100,
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',

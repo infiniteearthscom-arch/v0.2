@@ -15,6 +15,7 @@
 import React from 'react';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
+import { PixelItemIcon, resourceIconSpec, moduleIconSpec } from '@/components/pixel/PixelArt';
 
 // ============================================
 // ITEM ICON — pure presentation
@@ -53,21 +54,14 @@ export const ItemIcon = ({
         ...style,
       }}
     >
-      {/* Icon glyph */}
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: Math.round(size * 0.55),
-          lineHeight: 1,
-          userSelect: 'none',
-          filter: `drop-shadow(0 0 3px ${color}44)`,
-        }}
-      >
-        {icon}
+      {/* Icon: procedural pixel glyph when we know what the item is
+          (normalizeItem keeps the source row on .raw); emoji fallback. */}
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.55), lineHeight: 1, userSelect: 'none' }}>
+        {item.kind === 'resource' && item.raw?.resource_type_id != null
+          ? <PixelItemIcon size={Math.round(size * 0.78)} spec={resourceIconSpec(item.raw.resource_type_id, item.avgQ)} />
+          : (item.kind === 'module' || item.kind === 'item') && (item.raw?.item_id || item.raw?.id)
+            ? <PixelItemIcon size={Math.round(size * 0.78)} spec={moduleIconSpec({ itemId: item.raw.item_id || item.raw.id, slotType: item.slotType || item.raw.slot_type || item.raw.item_data?.slot_type, tier: item.tier || item.raw.tier || item.raw.item_data?.tier, damageType: item.raw.item_data?.base_stats?.damage_type || item.raw.stats?.damage_type, avgQuality: item.avgQ })} />
+            : icon}
       </div>
 
       {/* Quality dot (top-right) */}
