@@ -967,6 +967,15 @@ export const SystemView = () => {
     return () => clearInterval(t);
   }, [fetchSkillsAndResearch]);
   const { showTooltip, hideTooltip } = useTooltip();
+  // The asteroid under the cursor. A rock that gets mined out unmounts
+  // without firing onMouseLeave, so its tooltip stuck around until the
+  // next hover -- every removal path checks this and hides it.
+  const hoveredAsteroidRef = useRef(null);
+  const hideTooltipRef = useRef(hideTooltip);
+  hideTooltipRef.current = hideTooltip;
+  const forgetAsteroid = (id) => {
+    if (hoveredAsteroidRef.current === id) { hoveredAsteroidRef.current = null; hideTooltipRef.current?.(); }
+  };
   // Pod state: when active ship is the 'pod' hull, pirates ignore us and
   // we can't fight back. See migration 019 + /enter-pod endpoint.
   const isPod = playerShip?.hull_type_id === 'pod';
@@ -2311,6 +2320,7 @@ export const SystemView = () => {
       if (!a) return;
       if (evt.depleted) {
         asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== evt.id);
+        forgetAsteroid(evt.id);
         const toRelease = [];
         for (const [k, asn] of miningAssignmentsRef.current) if (asn.asteroidId === evt.id) toRelease.push(k);
         if (toRelease.length) {
@@ -3861,6 +3871,8 @@ export const SystemView = () => {
             if (a) {
               if (asteroid_depleted) {
                 asteroidsRef.current = asteroidsRef.current.filter(x => x.id !== targetId);
+              forgetAsteroid(targetId);
+                forgetAsteroid(targetId);
                 releaseAllOnAsteroid(targetId);
               } else {
                 a.contents = asteroid_remaining;
@@ -5260,8 +5272,8 @@ export const SystemView = () => {
                 <g key={`ast-${a.id}`}
                    transform={`translate(${a.x}, ${a.y})`}
                    onClick={(e) => { e.stopPropagation(); handleAsteroidClick(a); }}
-                   onMouseEnter={(e) => showTooltip(buildTooltip(), { left: e.clientX, top: e.clientY, width: 14, height: 14 })}
-                   onMouseLeave={() => hideTooltip()}
+                   onMouseEnter={(e) => { hoveredAsteroidRef.current = a.id; showTooltip(buildTooltip(), { left: e.clientX, top: e.clientY, width: 14, height: 14 }); }}
+                   onMouseLeave={() => { if (hoveredAsteroidRef.current === a.id) hoveredAsteroidRef.current = null; hideTooltip(); }}
                    style={{ cursor: 'pointer' }}>
                   {/* Pixel-art rock (asteroidRenderer.js, 2026-09-25): seeded
                       silhouette + craters, lit rim + dark outline so it pops

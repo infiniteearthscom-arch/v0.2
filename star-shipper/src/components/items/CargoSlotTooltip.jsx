@@ -19,6 +19,7 @@ import React from 'react';
 import { getQualityTier, RARITY_INFO } from '@/data/resources';
 import { normalizeItem } from '@/utils/itemShape';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
+import { PixelItemIcon, resourceIconSpec } from '@/components/pixel/PixelArt';
 
 export const CargoSlotTooltip = ({ stack, screenX, screenY, slotSize = 44, resourceIcons }) => {
   if (!stack) return null;
@@ -79,18 +80,13 @@ export const CargoSlotTooltip = ({ stack, screenX, screenY, slotSize = 44, resou
         }}
       >
         <div className="flex items-center gap-2 mb-2">
-          {iconInfo && (
-            <div
-              className="w-7 h-7 rounded flex items-center justify-center text-xs font-bold"
-              style={{
-                backgroundColor: iconInfo.color + '44',
-                color: iconInfo.color,
-                border: `1px solid ${iconInfo.color}88`,
-              }}
-            >
-              {iconInfo.abbr}
-            </div>
-          )}
+          <div
+            className="rounded flex items-center justify-center"
+            style={{ width: 36, height: 36, backgroundColor: (iconInfo?.color || tier.color) + '33', border: `1px solid ${(iconInfo?.color || tier.color)}88` }}
+          >
+            <PixelItemIcon size={32} spec={resourceIconSpec(stack.resource_type_id,
+              (stack.stats.purity + stack.stats.stability + stack.stats.potency + stack.stats.density) / 4)} />
+          </div>
           <div>
             <div className="font-medium text-sm" style={{ color: rarityInfo?.color || '#fff' }}>
               {stack.resource_name}

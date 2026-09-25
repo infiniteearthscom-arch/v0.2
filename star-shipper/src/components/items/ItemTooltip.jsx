@@ -27,6 +27,7 @@ import React from 'react';
 import { tierColor, tierLabel } from '@/utils/tiers';
 import { useGameStore } from '@/stores/gameStore';
 import { moduleGateForModule, gateStatus } from '@/utils/fitGates';
+import { PixelItemIcon, resourceIconSpec, moduleIconSpec } from '@/components/pixel/PixelArt';
 
 // ============================================
 // SHARED TOOLTIP SHELL
@@ -107,14 +108,19 @@ export const ItemTooltipContent = ({ item }) => {
       {/* Icon + quick chips row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{
-          width: 32, height: 32, flexShrink: 0,
+          width: 40, height: 40, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '1.25rem',
           background: `linear-gradient(135deg, ${color}22, ${color}08)`,
           border: `1px solid ${color}66`,
           borderRadius: 3,
         }}>
-          {icon}
+          {/* Same procedural pixel icon as the cargo / fitting tiles (2026-09-25). */}
+          {kind === 'resource' && item.raw?.resource_type_id != null
+            ? <PixelItemIcon size={32} spec={resourceIconSpec(item.raw.resource_type_id, avgQ)} />
+            : (kind === 'module' || kind === 'item') && (item.raw?.item_id || item.raw?.id)
+              ? <PixelItemIcon size={32} spec={moduleIconSpec({ itemId: item.raw.item_id || item.raw.id, slotType: slotType || item.raw.slot_type || item.raw.item_data?.slot_type, tier: tier || item.raw.tier || item.raw.item_data?.tier, damageType: item.raw.item_data?.base_stats?.damage_type || item.raw.stats?.damage_type, avgQuality: avgQ })} />
+              : icon}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           {tier != null && (
