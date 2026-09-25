@@ -154,10 +154,14 @@ export const GalaxyMapWindow = () => {
   }, [isOpen]);
   // My bases by system id (082): 🏠 marker + info-panel row.
   const [myBases, setMyBases] = useState({});
+  const [otherBases, setOtherBases] = useState({});
   useEffect(() => {
     if (!isOpen) return;
-    basesAPI.mine()
-      .then(r => { const by = {}; for (const b of (r.bases || [])) (by[b.system_procedural_id] = by[b.system_procedural_id] || []).push(b); setMyBases(by); })
+    basesAPI.galaxy()
+      .then(r => {
+        const by = {}; for (const b of (r.mine || [])) (by[b.system_procedural_id] = by[b.system_procedural_id] || []).push(b); setMyBases(by);
+        const ob = {}; for (const b of (r.others || [])) (ob[b.system_procedural_id] = ob[b.system_procedural_id] || []).push(b); setOtherBases(ob);
+      })
       .catch(() => {});
   }, [isOpen]);
   const [myHarvesters, setMyHarvesters] = useState({});
@@ -454,6 +458,12 @@ export const GalaxyMapWindow = () => {
                 fill="#4ade80" fontSize={8 * uiScale} fontFamily="monospace" opacity={0.9}>🏠</text>
             )}
 
+            {/* Other pilots' bases -- grey house next to mine (lower-left). */}
+            {otherBases[sys.id]?.length > 0 && !myBases[sys.id]?.length && (
+              <text x={sys.x - size - 3 * uiScale} y={sys.y + size + 8 * uiScale} textAnchor="end"
+                fill="#8fa3b8" fontSize={8 * uiScale} fontFamily="monospace" opacity={0.8}>🏘</text>
+            )}
+
             {/* Delivery marker -- parcel at the upper-left when an active
                 contract delivers here. */}
             {deliveries[sys.id]?.length > 0 && (
@@ -503,7 +513,7 @@ export const GalaxyMapWindow = () => {
         );
       })}
     </g>
-  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile, myHarvesters, deliveries, myBases]);
+  ), [systems, discoveredSet, uiScale, zoom, selectedSys, hoveredSystem, currentSystemId, galaxyAutopilotTarget, bySystem, handleClickSystem, warpProfile, myHarvesters, deliveries, myBases, otherBases]);
 
   if (!isOpen) return null;
 
@@ -800,6 +810,14 @@ export const GalaxyMapWindow = () => {
                     <span className="text-slate-500">Your Base</span>
                     <span className="text-green-300 font-bold">
                       {myBases[selectedSys.id].map(b => `${b.name} (${b.tier_name}, ${b.body_name})`).join(', ')}
+                    </span>
+                  </div>
+                )}
+                {otherBases[selectedSys.id]?.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Other Bases</span>
+                    <span className="text-slate-300">
+                      {otherBases[selectedSys.id].map(b => `${b.owner_name}: ${b.name} (${b.kind === 'orbital' ? 'starbase' : 'surface'}, ${b.body_name})`).join(', ')}
                     </span>
                   </div>
                 )}

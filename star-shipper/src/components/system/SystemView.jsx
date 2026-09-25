@@ -31,7 +31,7 @@ import { applyDamage } from '@/utils/combat';
 import { buildFleets, damageFleet, fleetFrontLayer } from '@/utils/fleetEntities';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
-import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI } from '@/utils/api';
+import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI, basesAPI } from '@/utils/api';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
@@ -553,6 +553,11 @@ const Station = ({ body, parentPosition, time, onClick, isTarget }) => {
         frame={Math.floor(time * 1.5) % STATION_FRAMES}
         world={Math.max(24, (body.size || 8) * 3.2)}
       />
+      {body.isStarbase && (
+        <text y={26} textAnchor="middle" fill="#4ade80" fontSize="7" fontFamily="sans-serif" opacity={0.9}>
+          {body.owner_name}'s starbase · {body.tier_name}
+        </text>
+      )}
       
       {/* Label */}
       <text
@@ -1021,19 +1026,55 @@ export const SystemView = () => {
   const arrivalType = useGameStore(state => state.arrivalType) || 'warp';
   const prevSystemIdRef = useRef(currentSystemId);
   
-  const currentSystem = useMemo(() => {
+  const baseSystem = useMemo(() => {
     if (currentSystemId === 'sol') return SOL_SYSTEM;
-    
+
     // Look up galaxy data and generate system content
     const galaxy = getGalaxy();
     const galaxySys = galaxy.systemMap[currentSystemId];
     if (!galaxySys) return SOL_SYSTEM; // fallback
-    
+
     const content = generateSystemContent(galaxySys);
     if (!content) return SOL_SYSTEM; // fallback
-    
+
     return content;
   }, [currentSystemId]);
+
+  // Player STARBASES (orbital bases, 2026-09-25): every pilot's orbital
+  // base in this system becomes a station body orbiting its planet, drawn
+  // with the station sprite and dockable by anyone. Fetched on entry.
+  const [starbases, setStarbases] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    setStarbases([]);
+    const load = () => basesAPI.inSystem(currentSystemId)
+      .then(r => { if (!cancelled) setStarbases((r?.bases || []).filter(b => b.kind === 'orbital' && !b.building)); })
+      .catch(() => {});
+    load();
+    // Newly finished starbases (yours or anyone's) appear within a minute.
+    const iv = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [currentSystemId]);
+  const currentSystem = useMemo(() => {
+    if (!starbases.length) return baseSystem;
+    const extra = [];
+    starbases.forEach((b, i) => {
+      const parent = (baseSystem.bodies || []).find(p => String(p.name || '').toLowerCase() === String(b.body_name || '').toLowerCase());
+      if (!parent) return;
+      let h = 0; for (const ch of String(b.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      extra.push({
+        id: 'starbase_' + b.id, name: b.name, type: 'station', isStarbase: true, base_id: b.id,
+        owner_name: b.owner_name, owner_id: b.owner_id, tier_name: b.tier_name, modules: b.modules,
+        parentBody: parent.id, orbitRadius: (parent.size || 20) + 26 + i * 6, orbitSpeed: 0.03,
+        orbitOffset: (h % 628) / 100, size: 8,
+      });
+    });
+    return { ...baseSystem, bodies: [...(baseSystem.bodies || []), ...extra] };
+  }, [baseSystem, starbases]);
+  // Effects that must NOT re-run when starbases load read the bodies
+  // through this ref (the manifest reload would wipe live enemies).
+  const currentSystemRef = useRef(currentSystem);
+  currentSystemRef.current = currentSystem;
 
   // Push static body list to the store for the right outliner panel
   useEffect(() => {
@@ -1059,7 +1100,7 @@ export const SystemView = () => {
   // re-firing on every entry is safe + cheap.
   useEffect(() => {
     if (!currentSystemId || currentSystemId === 'sol') return;
-    const belts = (currentSystem?.bodies || []).filter(b => b.type === 'asteroid_belt');
+    const belts = (currentSystemRef.current?.bodies || []).filter(b => b.type === 'asteroid_belt');
     if (belts.length === 0) return;
     (async () => {
       try {
@@ -1072,7 +1113,7 @@ export const SystemView = () => {
         // singleton is 70 lines up.)
         const galaxy = getGalaxy();
         const galaxySys = galaxy.systemMap[currentSystemId];
-        const planetCount = (currentSystem.bodies || []).filter(b => b.type === 'planet').length;
+        const planetCount = (currentSystemRef.current.bodies || []).filter(b => b.type === 'planet').length;
         // Fire-and-forget; failures are harmless (next visit retries +
         // /asteroids just stays empty until persistence catches up).
         // Promise.all so multiple belts in one system register in
@@ -1105,7 +1146,7 @@ export const SystemView = () => {
         } catch (e) { /* will retry on next system entry */ }
       } catch (e) { /* fire-and-forget */ }
     })();
-  }, [currentSystemId, currentSystem]);
+  }, [currentSystemId]); // eslint-disable-line react-hooks/exhaustive-deps -- bodies via ref
 
   // Realtime presence (Phase 1): tell the server which system we're in
   // so other players in the same room start receiving our position
@@ -1195,9 +1236,9 @@ export const SystemView = () => {
     if (currentSystemId === 'sol') return { x: 900, y: 0 };
     // Find the arrival body (warp point or jump gate)
     const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
-    const body = currentSystem.bodies.find(b => b.type === bodyType)
-              || currentSystem.bodies.find(b => b.type === 'warp_point')
-              || currentSystem.bodies.find(b => b.type === 'jump_gate');
+    const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
+              || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
+              || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
     if (body) {
       const angle = body.orbitOffset || 0;
       return {
@@ -1206,7 +1247,7 @@ export const SystemView = () => {
       };
     }
     return { x: 300, y: 0 };
-  }, [currentSystemId, currentSystem, arrivalType]);
+  }, [currentSystemId, arrivalType]); // eslint-disable-line react-hooks/exhaustive-deps -- bodies via ref
   
   const shipPosRef = useRef(initialShipPos);
   const shipVelRef = useRef({ x: 0, y: 0 });
@@ -2277,9 +2318,9 @@ export const SystemView = () => {
       prevSystemIdRef.current = currentSystemId;
       // Spawn at arrival body based on how we got here
       const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
-      const body = currentSystem.bodies.find(b => b.type === bodyType)
-                || currentSystem.bodies.find(b => b.type === 'warp_point')
-                || currentSystem.bodies.find(b => b.type === 'jump_gate');
+      const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
+                || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
+                || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
       if (body) {
         const angle = body.orbitOffset || 0;
         shipPosRef.current = {
@@ -2307,7 +2348,7 @@ export const SystemView = () => {
       manifestCancelled = true;
       if (manifestRetry) clearTimeout(manifestRetry);
     };
-  }, [currentSystemId, currentSystem]);
+  }, [currentSystemId]); // eslint-disable-line react-hooks/exhaustive-deps -- bodies via ref
 
   // Shared asteroids (2026-09-25): other pilots' mining ticks the rock's
   // quantity (only if WE have scanned it -- the scan gate stays), removes
@@ -2383,9 +2424,9 @@ export const SystemView = () => {
     const hop = plannedRoute.hops[plannedRoute.index];
     if (!hop) return;
     const exitType = hop.via === 'gate' ? 'jump_gate' : 'warp_point';
-    const exitBody = currentSystem.bodies.find(b => b.type === exitType)
-      || currentSystem.bodies.find(b => b.type === 'warp_point')
-      || currentSystem.bodies.find(b => b.type === 'jump_gate');
+    const exitBody = currentSystemRef.current.bodies.find(b => b.type === exitType)
+      || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
+      || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
     if (!exitBody) return;
     st.setPendingJump(hop.id);
     st.setAutopilotTarget({ id: exitBody.id, name: exitBody.name, type: exitBody.type });
@@ -2395,11 +2436,11 @@ export const SystemView = () => {
       text: `Route: hop ${plannedRoute.index + 1}/${plannedRoute.hops.length} — ${hop.via === 'gate' ? 'jump gate' : 'warp'} to ${hopSys?.name || hop.id}`,
       duration: 2500,
     });
-  }, [plannedRoute, currentSystemId, currentSystem]);
+  }, [plannedRoute, currentSystemId]); // eslint-disable-line react-hooks/exhaustive-deps -- bodies via ref
   
   // Calculate body position at current time
   const getBodyPositionAtTime = useCallback((bodyId, time) => {
-    const body = currentSystem.bodies.find(b => b.id === bodyId);
+    const body = currentSystemRef.current.bodies.find(b => b.id === bodyId);
     if (!body) return { x: 0, y: 0 };
     
     // Handle stations orbiting planets
@@ -2417,7 +2458,7 @@ export const SystemView = () => {
       x: Math.cos(angle) * body.orbitRadius,
       y: Math.sin(angle) * body.orbitRadius,
     };
-  }, [currentSystem.bodies]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- bodies via ref
   
   // Set autopilot destination
   const setDestination = useCallback((body) => {
@@ -2482,7 +2523,7 @@ export const SystemView = () => {
         // Asteroid targets (telemetry list, 076) get a virtual static
         // body so the same intercept/approach math applies: an "orbit"
         // of radius |pos| at speed 0 with the rock's bearing as offset.
-        let targetBody = currentSystem.bodies.find(b => b.id === target.id);
+        let targetBody = currentSystemRef.current.bodies.find(b => b.id === target.id);
         // Signature sites (083): a static virtual body at the pinned position.
         if (!targetBody && target.type === 'anomaly' && Number.isFinite(target.x) && Number.isFinite(target.y)) {
           targetBody = {
@@ -2507,7 +2548,7 @@ export const SystemView = () => {
           // First, get current target position for distance check
           let currentTargetPos;
           if (targetBody.parentBody) {
-            const parentBody = currentSystem.bodies.find(b => b.id === targetBody.parentBody);
+            const parentBody = currentSystemRef.current.bodies.find(b => b.id === targetBody.parentBody);
             const parentAngle = gameTime * parentBody.orbitSpeed + (parentBody.orbitOffset || 0);
             const parentPos = {
               x: Math.cos(parentAngle) * parentBody.orbitRadius,
@@ -2545,7 +2586,7 @@ export const SystemView = () => {
           let targetPos;
           const futureTime = (frameNum + estimatedFramesToArrival * 0.7) / 60; // 70% prediction
           if (targetBody.parentBody) {
-            const parentBody = currentSystem.bodies.find(b => b.id === targetBody.parentBody);
+            const parentBody = currentSystemRef.current.bodies.find(b => b.id === targetBody.parentBody);
             const parentAngle = futureTime * parentBody.orbitSpeed + (parentBody.orbitOffset || 0);
             const parentPos = {
               x: Math.cos(parentAngle) * parentBody.orbitRadius,

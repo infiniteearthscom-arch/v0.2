@@ -26,6 +26,8 @@ const SOUND_FILES = {
   dock_complete:        '/sounds/doorClose_000.ogg',
   button_click:         '/sounds/universfield-computer-mouse-click-02-383961.mp3',
   sonar_ping:           '/sounds/freesound_community-sonar-ping-95840.mp3',
+  // Signature probe launch (Signals window, every PROBE press).
+  probe_ping:           '/sounds/ping.mp3',
 };
 
 // Looping ambient sounds -- separate from one-shots because they need

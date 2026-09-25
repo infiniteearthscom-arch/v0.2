@@ -23,6 +23,11 @@ Everything happens while docked at the planet: the planet window gets a **Base**
 
 `GET /mine` · `GET /here` (docked body: base, build eligibility with reasons, tier costs, base modules in cargo, cargo resources) · `POST /build {kind, name}` · `POST /:id/upgrade` · `POST /:id/fit {slot, inventory_id}` · `POST /:id/unfit {slot}` · `POST /:id/depot/deposit {inventory_id, quantity}` · `POST /:id/depot/withdraw {stack_id, quantity}`. Exports `baseRpPerMin(userId)` (research.js) and `baseAtBody(userId, bodyId)` (refining.js).
 
+## Public bases + starbases (2026-09-25)
+
+- Bases are visible to everyone: `GET /bases/system/:id` (public projection: owner, name, kind, tier, planet, fitted module names), `GET /bases/galaxy` (mine + others) for the map, and `/here` lists other pilots' bases on the planet. The Base tab shows "Other bases on this planet"; the galaxy map marks systems with other pilots' bases (grey) and lists them in the info panel.
+- **Orbital bases are starbases.** Not allowed on a planet that already has a station in orbit (Earth / Luna Station in Sol; generator stations elsewhere). A built orbital base becomes a station body orbiting its planet in every pilot's system view, drawn with the station sprite and an owner tag, dockable by anyone. Docking opens a Starbase view (owner, tier, fitted modules). Owner-run vendors, storage access and services are the next base phase.
+
 ## Phase 2 (not built)
 
 Defense slot + turrets / shield; pirate raids (server cron, damaged modules go offline until repaired); Med Bay respawn override; automated haulers; local market / trade post; manufacturing queue; sensor array; influence radius / system claim (first-priority harvester slots). Surface vs orbital should diverge here (surface: harvester bonuses; orbital: acts as a contract port).

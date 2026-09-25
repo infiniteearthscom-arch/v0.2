@@ -72,7 +72,18 @@ export const BaseTab = ({ body }) => {
   if (err) return <div style={{ color: '#f87171', fontFamily: F, fontSize: '0.85rem' }}>{err}</div>;
   if (!data) return <div style={{ color: '#4a6580', fontFamily: F, fontSize: '0.85rem' }}>Loading…</div>;
 
-  const { base, can_build, tiers, cargo_modules, cargo_resources, can_expand } = data;
+  const { base, can_build, tiers, cargo_modules, cargo_resources, can_expand, others = [] } = data;
+  const OthersHere = () => others.length === 0 ? null : (
+    <Card accent="#5a7080">
+      <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>OTHER BASES ON THIS PLANET · {others.length}</div>
+      {others.map(o => (
+        <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '0.8rem', color: '#a8b4c5', padding: '3px 0', borderTop: `1px solid ${EDGE}55` }}>
+          <span><b style={{ color: '#e2e8f0' }}>{o.name}</b> · {o.kind === 'orbital' ? '🛰️ starbase' : '🏠 surface'} · {o.tier_name}{o.building ? ' (building)' : ''}</span>
+          <span style={{ color: '#5a7080', fontFamily: FM }}>{o.owner_name}{o.modules?.length ? ` · ${o.modules.join(', ')}` : ''}</span>
+        </div>
+      ))}
+    </Card>
+  );
 
   // ---------- no base here: build ----------
   if (!base) {
@@ -96,11 +107,15 @@ export const BaseTab = ({ body }) => {
           {can_build && !can_build.ok && (
             <div style={{ color: '#f87171', fontSize: '0.8rem', marginTop: 6 }}>{can_build.reasons.map(r => <div key={r}>🔒 {r}</div>)}</div>
           )}
+          {kind === 'orbital' && can_build?.orbital_blocked && (
+            <div style={{ color: '#f87171', fontSize: '0.8rem', marginTop: 6 }}>🔒 {can_build.orbital_blocked}</div>
+          )}
           <div style={{ marginTop: 10 }}>
-            <Btn disabled={busy || !can_build?.ok} onClick={() => act(() => basesAPI.build(kind, name), 'Construction started')}>BUILD FRAMEWORK</Btn>
+            <Btn disabled={busy || !can_build?.ok || (kind === 'orbital' && !!can_build?.orbital_blocked)} onClick={() => act(() => basesAPI.build(kind, name), 'Construction started')}>BUILD FRAMEWORK</Btn>
             {can_build && <span style={{ color: '#5a7080', fontSize: '0.75rem', fontFamily: FM, marginLeft: 10 }}>bases {can_build.base_count}/{can_build.base_cap}</span>}
           </div>
         </Card>
+        <OthersHere />
       </div>
     );
   }
@@ -162,6 +177,8 @@ export const BaseTab = ({ body }) => {
           </div>
         </Card>
       )}
+
+      <OthersHere />
 
       {/* base refinery: the refinery panel right here, fee-free */}
       {!base.building && Object.values(base.modules).some(m => m.stats?.refinery) && (

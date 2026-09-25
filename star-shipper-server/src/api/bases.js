@@ -13,6 +13,33 @@ import { resolveBodyId, getPlayerCargoInfo, getNextSlotIndex } from './resources
 import { addResourceStack } from '../lib/wrecks.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
+import { generateGalaxy, generateSystemContent } from '../game/galaxyGenerator.js';
+
+// ---- public visibility (2026-09-25) ----
+// Planets that already have a station in orbit can't take an ORBITAL
+// base (a starbase). Sol's Earth has Luna Station; procedural systems
+// come from the generator (station bodies carry parentBody).
+let _galaxy = null;
+const galaxy = () => (_galaxy ||= generateGalaxy(12345, 200));
+const SOL_STATION_PLANETS = new Set(['earth']);
+function planetHasStation(systemId, planetName) {
+  const key = String(planetName || '').toLowerCase();
+  if (systemId === 'sol') return SOL_STATION_PLANETS.has(key);
+  const sys = galaxy().systemMap[systemId];
+  const content = sys ? generateSystemContent(sys) : null;
+  const bodies = content?.bodies || [];
+  const planet = bodies.find(b => String(b.name || '').toLowerCase() === key);
+  if (!planet) return false;
+  return bodies.some(b => b.type === 'station' && b.parentBody === planet.id);
+}
+// What everyone may see about a base.
+const publicBase = (b) => ({
+  id: b.id, owner_id: b.user_id, owner_name: b.owner_name, name: b.name, kind: b.kind, tier: b.tier,
+  tier_name: (TIERS[b.tier] || TIERS[1]).name, body_name: b.body_name, celestial_body_id: b.celestial_body_id,
+  system_procedural_id: b.system_procedural_id,
+  building: new Date(b.build_completes_at).getTime() > Date.now(),
+  modules: Object.values(b.fitted_modules || {}).map(m => m.name).filter(Boolean),
+});
 
 export const TIERS = {
   1: { name: 'Framework', slots: 1, build_minutes: 10,  credits: 5000,  resources: { Iron: 200, Titanium: 100, Copper: 50 }, tech: 'tech_base_construction' },
@@ -135,8 +162,28 @@ async function buildEligibility(userId, body, existingCount) {
   const cap = 1 + (await skillLevel(userId, EXTRA_BASE_SKILL));
   if (existingCount >= cap) reasons.push(`Base limit ${cap} (train Interplanetary Consolidation)`);
   if (body.body_type === 'station') reasons.push('Bases anchor to planets, not stations');
-  return { ok: reasons.length === 0, reasons, base_cap: cap, base_count: existingCount };
+  return { ok: reasons.length === 0, reasons, base_cap: cap, base_count: existingCount,
+    orbital_blocked: body.body_type !== 'station' && planetHasStation(body.procedural_id || 'sol', body.name) ? 'This planet already has a station in orbit -- build a surface base instead' : null };
 }
+
+// GET /bases/system/:id -- every base in a system (public projection)
+router.get('/system/:id', async (req, res) => {
+  try {
+    const rows = await queryAll(`SELECT b.*, u.username AS owner_name FROM player_bases b JOIN users u ON u.id = b.user_id WHERE b.system_procedural_id = $1 ORDER BY b.created_at`, [String(req.params.id)]);
+    res.json({ bases: rows.map(publicBase) });
+  } catch (e) { console.error('bases/system:', e); res.status(500).json({ error: 'Failed to load bases' }); }
+});
+
+// GET /bases/galaxy -- mine (full) + everyone else's (public) for the galaxy map
+router.get('/galaxy', async (req, res) => {
+  try {
+    const mineRows = await queryAll(`SELECT * FROM player_bases WHERE user_id = $1 ORDER BY created_at`, [req.user.id]);
+    const mine = [];
+    for (const b of mineRows) mine.push(await shapeBase(b));
+    const others = await queryAll(`SELECT b.*, u.username AS owner_name FROM player_bases b JOIN users u ON u.id = b.user_id WHERE b.user_id <> $1`, [req.user.id]);
+    res.json({ mine, others: others.map(publicBase) });
+  } catch (e) { console.error('bases/galaxy:', e); res.status(500).json({ error: 'Failed to load bases' }); }
+});
 
 // GET /bases/mine
 router.get('/mine', async (req, res) => {
@@ -165,8 +212,10 @@ router.get('/here', async (req, res) => {
       SELECT pri.id, pri.quantity, pri.stat_purity, pri.stat_stability, pri.stat_potency, pri.stat_density, rt.name AS resource_name
         FROM player_resource_inventory pri JOIN resource_types rt ON rt.id = pri.resource_type_id
        WHERE pri.user_id = $1 AND pri.item_type = 'resource' AND pri.quantity > 0 ORDER BY rt.name`, [userId]);
+    const othersHere = await queryAll(`SELECT b.*, u.username AS owner_name FROM player_bases b JOIN users u ON u.id = b.user_id WHERE b.celestial_body_id = $1 AND b.user_id <> $2 ORDER BY b.created_at`, [body.id, userId]);
     res.json({
       body: { id: body.id, name: body.name, body_type: body.body_type, planet_type: body.planet_type, system_procedural_id: body.procedural_id, system_name: body.system_name },
+      others: othersHere.map(publicBase),
       base: mine ? await shapeBase(mine) : null,
       can_build: mine ? null : await buildEligibility(userId, body, count),
       can_expand: techs.has('tech_base_expansion'),
@@ -191,6 +240,7 @@ router.post('/build', async (req, res) => {
       if (here.rows[0]) throw Object.assign(new Error('You already have a base here'), { statusCode: 409 });
       const elig = await buildEligibility(userId, body, existing.rows.length);
       if (!elig.ok) throw Object.assign(new Error(elig.reasons[0]), { statusCode: 403 });
+      if (kind === 'orbital' && elig.orbital_blocked) throw Object.assign(new Error(elig.orbital_blocked), { statusCode: 403 });
       const t = TIERS[1];
       const u = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
       if (parseInt(u.rows[0]?.credits || 0) < t.credits) throw Object.assign(new Error(`Needs ${t.credits.toLocaleString()} CR`), { statusCode: 400 });

@@ -5,7 +5,7 @@
 // SystemView spawns via store.pendingAmbush.
 
 import React, { useEffect, useState } from 'react';
-import { ModalOverlay } from '@/components/ui/ModalOverlay';
+import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { anomaliesAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
@@ -53,7 +53,7 @@ export const AnomaliesWindow = () => {
   const probe = async (site) => {
     if (busy) return; setBusy(true);
     try {
-      playSound('button_click');
+      playSound('probe_ping');
       const r = await anomaliesAPI.probe(currentSystem, site.index);
       flash(r.pinned ? 'success' : 'info', r.pinned ? `${site.name} pinned — fly to it` : `Probe cycle ${r.done}/${r.site?.cycles_needed || 3} — circle tightened`);
       await load();
@@ -87,8 +87,8 @@ export const AnomaliesWindow = () => {
   const dist = (site) => site.position ? Math.hypot((shipPosition?.x ?? 0) - site.position.x, (shipPosition?.y ?? 0) - site.position.y) : null;
 
   return (
-    <ModalOverlay windowId="anomalies" title="Signals" icon="🔭" accent={CYAN.pri} width={620} height={440}>
-      <div style={{ fontFamily: F, padding: 12, color: '#e2e8f0' }}>
+    <ContextPanel windowId="anomalies" title="Signals" icon="🔭" accent={CYAN.pri} width={520}>
+      <div style={{ fontFamily: F, color: '#e2e8f0' }}>
         {err && <div style={{ color: '#f87171', fontSize: '0.85rem' }}>{err}</div>}
         {!data && !err && <div style={{ color: '#4a6580' }}>Listening…</div>}
         {data && (
@@ -139,7 +139,7 @@ export const AnomaliesWindow = () => {
           </>
         )}
       </div>
-    </ModalOverlay>
+    </ContextPanel>
   );
 };
 

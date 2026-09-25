@@ -2998,6 +2998,26 @@ const NPCsStub = ({ body, kind }) => {
   );
 };
 
+// Docked at another pilot's (or your own) STARBASE (2026-09-25). Phase 1:
+// who owns it, what it is, what's fitted. Vendors / services come later.
+const StarbaseTab = ({ body }) => {
+  const currentSystem = useGameStore(state => state.currentSystem);
+  const seed = `starbase|${body.base_id}`;
+  return (
+    <div style={{ fontFamily: F }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'rgba(4,8,16,0.55)', border: `1px solid ${EDGE}`, borderLeft: '3px solid #4ade80', borderRadius: 3, marginBottom: 8 }}>
+        <Portrait seed={seed} role="dockmaster" size={64} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '0.9rem' }}>{body.name} <span style={{ color: '#5a7080', fontWeight: 600, fontSize: '0.75rem' }}>· {body.tier_name} starbase</span></div>
+          <div style={{ color: '#8fa3b8', fontSize: '0.8rem' }}>Owned by <b style={{ color: '#4ade80' }}>{body.owner_name}</b> · orbiting {currentSystem} system</div>
+          <div style={{ color: '#5a7080', fontSize: '0.78rem', fontFamily: FM, marginTop: 2 }}>{(body.modules || []).length ? `Fitted: ${body.modules.join(', ')}` : 'No modules fitted'}</div>
+        </div>
+      </div>
+      <div style={{ color: '#4a6580', fontSize: '0.8rem' }}>Docking only for now. Owner-run vendors, storage access and services arrive with the next base phase.</div>
+    </div>
+  );
+};
+
 const BuildingsStub = () => (
   <div style={{
     textAlign: 'center',
@@ -3579,6 +3599,9 @@ export const PlanetInteractionWindow = ({ body }) => {
   // For procedural systems, register the body in DB first and use the returned UUID.
   useEffect(() => {
     if (!body?.id || !isOpen) { setResolvedBodyId(null); setHasCity(false); return; }
+    // Starbases are player structures, not celestial bodies -- never
+    // register them server-side.
+    if (body.isStarbase) { setResolvedBodyId(null); setHasCity(false); return; }
 
     if (currentSystemId === 'sol') {
       setResolvedBodyId(body.id);
@@ -3763,10 +3786,11 @@ export const PlanetInteractionWindow = ({ body }) => {
   // Populated-body tab: stations always show one (labeled "Station"),
   // planets only if the server flagged has_city (labeled "City"). Same
   // tab id either way so content rendering stays uniform.
-  const isStation = body.type === 'station';
+  const isStarbase = !!body.isStarbase;
+  const isStation = body.type === 'station' && !isStarbase;
   const isPopulated = isStation || hasCity;
   const populatedKind = isStation ? 'station' : 'city';
-  const iconTabs = [
+  const iconTabs = isStarbase ? [{ id: 'starbase', icon: '🛰️', label: 'Starbase', color: '#4ade80' }] : [
     { id: 'scan',       icon: '📡', label: 'Scan', color: '#22d3ee'  },
     { id: 'mine',       icon: '⛏️', label: 'Mine', color: GOLD.pri   },
     { id: 'harvesters', icon: '⚙️', label: 'Auto', color: '#ff6622'  },
@@ -3777,7 +3801,7 @@ export const PlanetInteractionWindow = ({ body }) => {
       color: GOLD.light,
     }] : []),
     // Player bases (082): planets only -- bases anchor to planets.
-    ...(!isStation ? [{ id: 'base', icon: '🏠', label: 'Base', color: '#4ade80' }] : []),
+    ...(!isStation && !isStarbase ? [{ id: 'base', icon: '🏠', label: 'Base', color: '#4ade80' }] : []),
   ];
 
   return (
@@ -4039,7 +4063,8 @@ export const PlanetInteractionWindow = ({ body }) => {
             {activeTab === 'mine' && <MineTab body={body} surveyStatus={surveyStatus} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'harvesters' && <HarvestersTab body={body} effectiveBodyId={effectiveBodyId} />}
             {activeTab === 'populated' && isPopulated && <PopulatedBodyTab body={body} kind={populatedKind} effectiveBodyId={effectiveBodyId} />}
-            {activeTab === 'base' && !isStation && <BaseTab body={body} />}
+            {activeTab === 'base' && !isStation && !isStarbase && <BaseTab body={body} />}
+            {activeTab === 'starbase' && isStarbase && <StarbaseTab body={body} />}
           </div>
         </div>
       </div>
