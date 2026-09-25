@@ -18,7 +18,7 @@ import { PlanetSprite } from '@/components/system/PlanetSprite';
 import { MarketPanel } from '@/components/market/MarketPanel';
 import { ContractsPanel } from '@/components/contracts/ContractsPanel';
 import { BaseTab } from '@/components/base/BaseTab';
-import { Portrait, PixelItemIcon, moduleIconSpec } from '@/components/pixel/PixelArt';
+import { Portrait, PixelItemIcon, moduleIconSpec, resourceIconSpec, resourceIconSpecByName } from '@/components/pixel/PixelArt';
 import { stationCast, npcName, npcLine, npcRace } from '@/utils/pixelArt/portrait';
 
 // ============================================
@@ -280,7 +280,7 @@ const OrbitalScanResults = ({ resources, probeQuality }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: '0.875rem' }}>{CATEGORY_INFO[resource.category]?.icon || '📦'}</span>
+            <PixelItemIcon size={20} spec={resourceIconSpecByName(resource.name)} />
             <span style={{
               fontWeight: 700,
               fontSize: '0.6875rem',
@@ -644,7 +644,7 @@ const DepositCard = ({ deposit, isMyActiveDeposit, hasActiveSession, onStartHarv
             fontFamily: FM,
             letterSpacing: 0.5,
           }}>#{deposit.slot_number}</span>
-          <span style={{ fontSize: '0.875rem' }}>{CATEGORY_INFO[deposit.category]?.icon || '📦'}</span>
+          <PixelItemIcon size={20} spec={resourceIconSpec(deposit.resource_type_id, deposit.stats ? (deposit.stats.purity + deposit.stats.stability + deposit.stats.potency + deposit.stats.density) / 4 : null)} />
           <span style={{
             fontWeight: 700,
             fontSize: '0.75rem',
@@ -854,7 +854,7 @@ const ActiveHarvestPanel = ({ session, cargo, onCollect, onStop, collecting, sto
         gap: 8,
         marginBottom: 10,
       }}>
-        <span style={{ fontSize: '0.875rem' }}>{CATEGORY_INFO[session.category]?.icon || '📦'}</span>
+        <PixelItemIcon size={20} spec={resourceIconSpec(session.resource_type_id)} />
         <span style={{
           fontWeight: 700,
           fontSize: '0.75rem',
@@ -1500,11 +1500,8 @@ const HarvesterItemTile = ({ stack, deployable, onClick }) => {
         opacity: deployable || !onClick ? 1 : 0.55,
       }}
     >
-      <div
-        className="absolute inset-1 rounded flex items-center justify-center font-bold"
-        style={{ fontSize: '16px' }}
-      >
-        {iconContent}
+      <div className="absolute inset-1 rounded flex items-center justify-center" style={{ backgroundColor: iconBg }}>
+        <PixelItemIcon size={32} spec={moduleIconSpec({ itemId: stack.item_id, slotType, tier: stack.item_data?.tier, avgQuality: stack.item_data?.quality ? (stack.item_data.quality.purity + stack.item_data.quality.stability + stack.item_data.quality.potency + stack.item_data.quality.density) / 4 : null })} />
       </div>
       {stack.quantity > 1 && (
         <div
@@ -2784,7 +2781,7 @@ const VendorTab = ({ body }) => {
               alignItems: 'center',
               gap: 8,
             }}>
-              <span style={{ fontSize: '1rem' }}>{s.icon}</span>
+              <PixelItemIcon size={32} spec={moduleIconSpec({ itemId: s.id })} />
               <div style={{ flex: 1 }}>
                 <div style={{
                   fontSize: '0.6875rem',
@@ -2942,7 +2939,7 @@ const VendorTab = ({ body }) => {
                       alignItems: 'center',
                       gap: 8,
                     }}>
-                      <span style={{ fontSize: '1rem' }}>{item.item_icon || '📦'}</span>
+                      <PixelItemIcon size={32} spec={moduleIconSpec({ itemId: item.item_id, slotType: item.item_data?.slot_type, tier: item.item_data?.tier, damageType: item.item_data?.base_stats?.damage_type, avgQuality: item.item_data?.quality ? (item.item_data.quality.purity + item.item_data.quality.stability + item.item_data.quality.potency + item.item_data.quality.density) / 4 : null })} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
                           fontSize: '0.6875rem',

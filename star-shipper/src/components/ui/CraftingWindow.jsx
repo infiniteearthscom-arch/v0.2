@@ -11,6 +11,7 @@ import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
 import { cargoTooltip } from '@/components/items/CargoTooltipLayer';
 import { PixelItemIcon, resourceIconSpec } from '@/components/pixel/PixelArt';
+import { recipeIconSpec, resourceIconSpecByName } from '@/components/pixel/PixelArt';
 
 // ============================================
 // CONSTANTS
@@ -101,7 +102,7 @@ const RecipeCard = ({ recipe, isSelected, onClick }) => {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: '0.875rem' }}>{recipe.icon}</span>
+        <PixelItemIcon size={24} spec={recipeIconSpec(recipe)} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: '0.8rem',
@@ -216,7 +217,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
         justifyContent: 'space-between',
         marginBottom: 5,
       }}>
-        <span style={{
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
           fontSize: '0.8rem',
           fontWeight: 700,
           color,
@@ -224,6 +225,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
           letterSpacing: 0.3,
           textTransform: 'capitalize',
         }}>
+          <PixelItemIcon size={20} spec={resourceIconSpecByName(resourceName)} />
           {resourceName}
         </span>
         <span style={{
@@ -407,7 +409,7 @@ const OutputPreview = ({ recipe, assignedIngredients }) => {
       }}>◆ Output</div>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: '1.125rem', lineHeight: 1, marginTop: 2 }}>{recipe.icon}</span>
+        <PixelItemIcon size={32} spec={recipeIconSpec(recipe)} style={{ marginTop: 2 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: '0.75rem',
@@ -1223,7 +1225,7 @@ export const CraftingWindow = () => {
                 borderLeft: `2px solid ${COLORS.PURPLE.light}`,
                 borderRadius: 3,
               }}>
-                <span style={{ fontSize: '1.375rem' }}>{selectedRecipe.icon}</span>
+                <PixelItemIcon size={40} spec={recipeIconSpec(selectedRecipe)} />
                 <div>
                   <div style={{
                     fontSize: '0.8125rem',

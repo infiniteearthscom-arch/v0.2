@@ -24,6 +24,17 @@ export const resourceIconSpec = (resourceTypeId, avgQuality) => {
   const r = resById(resourceTypeId);
   return { kind: 'resource', category: r?.category || 'ore', rarity: r?.rarity || 'common', quality: avgQuality ?? null };
 };
+// By resource NAME (recipes, scan results) -- looks the id up in the catalogue.
+export const resourceIconSpecByName = (name, avgQuality) => {
+  const r = Object.values(RESOURCE_TYPES).find(x => x.name.toLowerCase() === String(name || '').toLowerCase());
+  return { kind: 'resource', category: r?.category || 'ore', rarity: r?.rarity || 'common', quality: avgQuality ?? null };
+};
+// A crafting recipe's OUTPUT (module or item).
+export const recipeIconSpec = (recipe) => ({
+  kind: recipe?.item_data_defaults?.slot_type ? 'module' : 'item',
+  itemId: recipe?.output_item_id, slotType: recipe?.item_data_defaults?.slot_type || null,
+  tier: recipe?.module_tier || null, damageType: recipe?.module_stats?.damage_type || null, quality: null,
+});
 export const moduleIconSpec = ({ itemId, slotType, tier, damageType, avgQuality }) => ({
   kind: slotType ? 'module' : 'item', itemId, slotType, tier: tier || null, damageType: damageType || null, quality: avgQuality ?? null,
 });
