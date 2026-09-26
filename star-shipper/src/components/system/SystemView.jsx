@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 // DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
+import { useAuthStore } from '@/stores/authStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
@@ -2362,6 +2363,12 @@ export const SystemView = () => {
     if (!socketBus.isEnabled?.()) return undefined;
     const offUpdate = socketBus.onSocketEvent('asteroid:update', (evt) => {
       if (!evt?.id) return;
+      // The server broadcasts to the whole system room, including the
+      // pilot who fired. Our own ticks are already applied from the mine
+      // response, so skip them -- otherwise every rock WE empty toasted
+      // "mined out by another pilot".
+      const me = useAuthStore.getState().user?.id;
+      if (evt.by && me && String(evt.by) === String(me)) return;
       const a = asteroidsRef.current.find(x => x.id === evt.id);
       if (!a) return;
       if (evt.depleted) {

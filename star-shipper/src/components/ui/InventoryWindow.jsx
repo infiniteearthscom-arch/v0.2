@@ -21,6 +21,57 @@ const SLOT_SIZE = 40;
 const SLOT_GAP = 4;
 const GRID_COLS = 8; // 8 × (40+4) ≈ 358px — fills the 420px ContextPanel width
 
+// ---- Sort + filter (2026-09-26) ----
+// Every stack gets a coarse KIND for the filter chips and the type sort.
+// Modules come from item_definitions.category / a slot_type; supplies are
+// told apart by id because their categories are inconsistent (fuel cells
+// and probes are 'supply', harvesters 'harvester', freight has none).
+const KIND_ORDER = ['resource', 'module', 'fuel', 'probe', 'harvester', 'freight', 'other'];
+const KIND_LABEL = { resource: 'Resources', module: 'Modules', fuel: 'Fuel', probe: 'Probes', harvester: 'Harvesters', freight: 'Freight', other: 'Other' };
+export const cargoKind = (stack) => {
+  if (!stack) return 'other';
+  if (stack.item_type === 'resource') return 'resource';
+  const id = String(stack.item_id || '').toLowerCase();
+  if (stack.item_category === 'module' || stack.item_data?.slot_type) return 'module';
+  if (id.includes('fuel')) return 'fuel';
+  if (id.includes('probe')) return 'probe';
+  if (stack.item_category === 'harvester' || id.includes('harvester')) return 'harvester';
+  if (id === 'sealed_cargo') return 'freight';
+  return 'other';
+};
+const stackName = (stack) => stack.item_type === 'resource' ? (stack.resource_name || '') : (stack.item_name || stack.item_id || '');
+const stackValue = (stack) => (Number(stack.sell_price) || 0) * (Number(stack.quantity) || 0);
+const RARITY_RANK = { common: 0, uncommon: 1, rare: 2, exotic: 3, legendary: 4 };
+const byName = (a, b) => stackName(a).localeCompare(stackName(b));
+const SORTERS = {
+  name: byName,
+  // Kind → (resources: category, rarity) / (modules: slot, tier desc) → name
+  type: (a, b) => {
+    const ka = KIND_ORDER.indexOf(cargoKind(a)), kb = KIND_ORDER.indexOf(cargoKind(b));
+    if (ka !== kb) return ka - kb;
+    if (ka === 0) {
+      const c = String(a.category || '').localeCompare(String(b.category || ''));
+      if (c) return c;
+      const r = (RARITY_RANK[String(b.rarity || '').toLowerCase()] ?? 0) - (RARITY_RANK[String(a.rarity || '').toLowerCase()] ?? 0);
+      if (r) return r;
+    } else if (ka === 1) {
+      const c = String(a.item_data?.slot_type || '').localeCompare(String(b.item_data?.slot_type || ''));
+      if (c) return c;
+      const t = (Number(b.item_data?.tier) || 0) - (Number(a.item_data?.tier) || 0);
+      if (t) return t;
+    }
+    return byName(a, b);
+  },
+  // Stack value (unit sell price × quantity), richest first
+  value: (a, b) => (stackValue(b) - stackValue(a)) || byName(a, b),
+};
+const VIEW_KEY = 'cargo.view';
+const loadView = () => {
+  try { const v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); if (v && typeof v === 'object') return v; } catch {}
+  return {};
+};
+const saveView = (v) => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch {} };
+
 // Resource icon abbreviations and colors
 const RESOURCE_ICONS = {};
 Object.values(RESOURCE_TYPES).forEach(r => {
@@ -132,6 +183,11 @@ export const InventoryWindow = () => {
   const [trashDragOver, setTrashDragOver] = useState(false);
   const [trashConfirm, setTrashConfirm] = useState(null); // stack to confirm trashing
   const containerRef = useRef(null);
+  // View: filter chip, sort, search. 'position' = the player's own slot
+  // layout (drag to rearrange); any other sort or an active filter shows
+  // an ARRANGED list where rearranging is off (merges still work).
+  const [view, setView] = useState(() => ({ filter: 'all', sort: 'position', search: '', ...loadView() }));
+  const updateView = (patch) => setView(v => { const n = { ...v, ...patch }; saveView({ filter: n.filter, sort: n.sort }); return n; });
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -212,10 +268,26 @@ export const InventoryWindow = () => {
   }
 
   // Generate slot array
-  const slots = [];
-  for (let i = 0; i < totalSlots; i++) {
-    slots.push({ index: i, stack: slotMap[i] || null });
+  const kindCounts = {};
+  for (const st of inventory) { const k = cargoKind(st); kindCounts[k] = (kindCounts[k] || 0) + 1; }
+  const searchLc = String(view.search || '').trim().toLowerCase();
+  const arranged = view.sort !== 'position' || view.filter !== 'all' || searchLc.length > 0;
+  let slots = [];
+  const displayMap = {}; // arranged mode: display index -> stack
+  if (!arranged) {
+    for (let i = 0; i < totalSlots; i++) slots.push({ index: i, stack: slotMap[i] || null });
+  } else {
+    let shown = inventory.filter(st => (view.filter === 'all' || cargoKind(st) === view.filter)
+      && (!searchLc || stackName(st).toLowerCase().includes(searchLc)));
+    const sorter = SORTERS[view.sort];
+    if (sorter) shown = [...shown].sort(sorter);
+    else shown = [...shown].sort((a, b) => ((a.slot_index ?? a._tempSlot ?? 0) - (b.slot_index ?? b._tempSlot ?? 0)));
+    shown.forEach((st, i) => { displayMap[i] = st; slots.push({ index: i, stack: st }); });
+    // pad to a full row so the grid keeps its shape
+    const pad = (GRID_COLS - (shown.length % GRID_COLS)) % GRID_COLS;
+    for (let i = 0; i < Math.max(pad, shown.length === 0 ? GRID_COLS : 0); i++) slots.push({ index: shown.length + i, stack: null });
   }
+  const shownCount = arranged ? Object.keys(displayMap).length : usedSlots;
 
   // Drag handlers
   const handleDragStart = (stack, slotIndex) => {
@@ -236,10 +308,16 @@ export const InventoryWindow = () => {
     if (!dragItem) return;
     setDragOverSlot(null);
 
-    const targetStack = slotMap[targetSlotIndex];
+    const targetStack = arranged ? displayMap[targetSlotIndex] : slotMap[targetSlotIndex];
     const fromSlot = dragItem.fromSlot;
 
     if (fromSlot === targetSlotIndex) {
+      setDragItem(null);
+      return;
+    }
+    // Sorted / filtered view: positions are the view's, not the hold's.
+    if (arranged && !(targetStack && canMerge(dragItem, targetStack) && dragItem.id !== targetStack.id)) {
+      setError('Set sort to Position to rearrange slots (merging and trashing still work here).');
       setDragItem(null);
       return;
     }
@@ -346,6 +424,42 @@ export const InventoryWindow = () => {
           />
         )}
 
+        {/* Filter chips + sort + search (2026-09-26) */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+          {['all', ...KIND_ORDER.filter(k => kindCounts[k])].map(k => {
+            const on = view.filter === k;
+            const n = k === 'all' ? inventory.length : kindCounts[k];
+            return (
+              <button key={k} onClick={() => updateView({ filter: k })} title={k === 'all' ? 'Show everything' : `Only ${KIND_LABEL[k].toLowerCase()}`} style={{
+                padding: '2px 7px', borderRadius: 3, cursor: 'pointer', fontFamily: FONT.ui, fontSize: '0.7rem', fontWeight: 700, letterSpacing: 0.5,
+                background: on ? '#f59e0b22' : 'rgba(4,8,16,0.5)', border: `1px solid ${on ? '#f59e0b99' : '#1e293b'}`, color: on ? '#fbbf24' : '#7a8ea0',
+              }}>{k === 'all' ? 'ALL' : KIND_LABEL[k].toUpperCase()} <span style={{ opacity: 0.7 }}>{n}</span></button>
+            );
+          })}
+          <span style={{ flex: 1 }} />
+          <select value={view.sort} onChange={(e) => updateView({ sort: e.target.value })} title="Sort order" style={{
+            background: 'rgba(4,8,16,0.6)', border: '1px solid #1e293b', color: '#c9d4e0', borderRadius: 3, padding: '2px 4px', fontFamily: FONT.ui, fontSize: '0.7rem',
+          }}>
+            <option value="position">Position</option>
+            <option value="name">Name A–Z</option>
+            <option value="type">Type</option>
+            <option value="value">Value</option>
+          </select>
+          <input value={view.search} onChange={(e) => updateView({ search: e.target.value })} placeholder="search" spellCheck={false} style={{
+            width: 84, background: 'rgba(4,8,16,0.6)', border: '1px solid #1e293b', color: '#c9d4e0', borderRadius: 3, padding: '2px 6px', fontFamily: FONT.ui, fontSize: '0.7rem', outline: 'none',
+          }} />
+          {arranged && (
+            <button onClick={() => updateView({ filter: 'all', sort: 'position', search: '' })} title="Back to your own slot layout" style={{
+              background: 'none', border: 'none', color: '#5a7080', cursor: 'pointer', fontFamily: FONT.ui, fontSize: '0.7rem', padding: '0 2px',
+            }}>✕</button>
+          )}
+        </div>
+        {arranged && (
+          <div style={{ color: '#5a7080', fontSize: '0.65rem', fontFamily: FONT.ui, marginBottom: 4, letterSpacing: 0.3 }}>
+            {shownCount} of {inventory.length} stacks · sorted view — set Position to rearrange
+          </div>
+        )}
+
         {error && (
           <div style={{ marginBottom: 8 }}>
             <MessageBar type="error">
@@ -446,7 +560,7 @@ export const InventoryWindow = () => {
                           item_name: stack.item_name,
                           quantity: stack.quantity,
                           stats: stack.stats,
-                          slot_index: index,
+                          slot_index: stack.slot_index ?? stack._tempSlot ?? index,
                           category: stack.category,
                         }));
                         e.dataTransfer.effectAllowed = 'move';
