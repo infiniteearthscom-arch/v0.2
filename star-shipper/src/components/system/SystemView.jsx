@@ -1372,11 +1372,12 @@ export const SystemView = () => {
   // the key handler reaches them through hotbarActionsRef so its
   // effect (re-bound only on zoom change) never holds a stale closure.
   const HOTBAR_KEY = 'hotbar.v1';
-  const HOTBAR_DEFAULT = ['area_scan', 'belt_scan', 'system_sweep', 'target_nearest', null];
+  const HOTBAR_DEFAULT = ['area_scan', 'belt_scan', 'system_sweep', null, null];
   const [hotbarSlots, setHotbarSlots] = useState(() => {
     try {
       const v = JSON.parse(localStorage.getItem(HOTBAR_KEY) || 'null');
-      if (Array.isArray(v) && v.length === HOTBAR_SIZE) return v;
+      // 'target_nearest' was a tile briefly; T is a plain hotkey now.
+      if (Array.isArray(v) && v.length === HOTBAR_SIZE) return v.map(id => id === 'target_nearest' ? null : id);
     } catch {}
     return HOTBAR_DEFAULT;
   });
@@ -5762,11 +5763,12 @@ export const SystemView = () => {
             );
           })()}
 
-          {/* Hotbar (2026-09-26): replaces the bottom-right scan-ability
-              tray. Every ability is listed whether or not its module is
-              fitted (locked tiles say what to fit), keys 1..5 activate,
-              T targets the nearest hostile. Consumables from the base
-              industry tree will slot in here later. */}
+          {/* Hotbar (2026-09-26): 38px tiles beside the System Map toggle
+              (bottom-right). Every ability is listed whether or not its
+              module is fitted (locked tiles say what to fit); keys 1..5
+              activate. T (target nearest hostile) is a plain hotkey, not a
+              tile. Consumables from the base industry tree will slot in
+              here later. */}
           {(() => {
             const now = Date.now();
             const sweepActive = sweepActiveUntilRef.current > now;
@@ -5774,7 +5776,6 @@ export const SystemView = () => {
             const sweepRemain = Math.max(0, Math.ceil((sweepCooldownUntilRef.current - now) / 1000));
             const beltRemain = Math.max(0, Math.ceil((bulkBeltCooldownUntilRef.current - now) / 1000));
             const areaActive = countAreaScansActive();
-            const hostiles = enemiesRef.current.some(e => e.hull > 0);
             const abilities = {
               area_scan: {
                 id: 'area_scan', icon: '📡', color: areaActive ? '#fbbf24' : '#22d3ee',
@@ -5786,7 +5787,7 @@ export const SystemView = () => {
                 onActivate: handleAreaScan,
               },
               belt_scan: {
-                id: 'belt_scan', icon: '🪨', color: '#c084fc', label: 'Bulk Belt',
+                id: 'belt_scan', icon: '☄️', color: '#c084fc', label: 'Bulk Belt',
                 available: fleetHasBulkScan(), disabled: beltRemain > 0, remain: beltRemain, active: false,
                 title: !fleetHasBulkScan() ? 'Fit an Elite Survey Grid to bulk-scan a belt'
                   : beltRemain > 0 ? `Bulk-belt scan cooling down (${beltRemain}s)` : 'Scan every asteroid in the nearest belt (90s cooldown)',
@@ -5802,12 +5803,6 @@ export const SystemView = () => {
                   : sweepRemain > 0 ? `System sweep cooling down (${sweepRemain}s)`
                   : 'Three sonar pings, then every enemy in the system for 30s. 120s cooldown.',
                 onActivate: handleSystemSweep,
-              },
-              target_nearest: {
-                id: 'target_nearest', icon: '🎯', color: '#f87171', label: 'Target (T)',
-                available: true, disabled: !hostiles, remain: 0, active: !!designatedEnemyIdRef.current,
-                title: hostiles ? 'Designate the nearest hostile in sensor range. Press again to cycle to the next.' : 'No hostiles in this system',
-                onActivate: targetNearestEnemy,
               },
             };
             hotbarActionsRef.current = {

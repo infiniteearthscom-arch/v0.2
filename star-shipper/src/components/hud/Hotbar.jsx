@@ -21,7 +21,7 @@ export const Hotbar = ({ slots, onActivate, onReorder }) => {
   const [dragFrom, setDragFrom] = useState(null);
   const [over, setOver] = useState(null);
   return (
-    <div className="fixed flex items-end gap-1" style={{ zIndex: 40, bottom: 40, left: '50%', transform: 'translateX(-50%)' }}
+    <div className="fixed flex items-end gap-1" style={{ zIndex: 40, bottom: 40, right: 8 + 38 + 8 }}
          title="Hotbar — press 1–5 or click. Drag tiles to reorder.">
       {Array.from({ length: HOTBAR_SIZE }, (_, i) => {
         const a = slots[i] || null;
@@ -40,7 +40,7 @@ export const Hotbar = ({ slots, onActivate, onReorder }) => {
                onClick={() => onActivate?.(i)}
                title={a ? a.title : 'Empty slot'}
                style={{
-                 position: 'relative', width: 58, height: 58, borderRadius: 4, cursor: a ? 'pointer' : 'default',
+                 position: 'relative', width: 38, height: 38, borderRadius: 4, cursor: a ? 'pointer' : 'default',
                  background: a
                    ? (a.active ? `linear-gradient(180deg, ${color}44, ${color}12)` : `linear-gradient(180deg, ${color}22, rgba(4,8,16,0.75))`)
                    : 'rgba(4,8,16,0.55)',
@@ -51,16 +51,15 @@ export const Hotbar = ({ slots, onActivate, onReorder }) => {
                  fontFamily: F, userSelect: 'none', transition: 'opacity 0.12s, box-shadow 0.12s',
                }}>
             {/* key badge */}
-            <span style={{ position: 'absolute', top: 2, left: 4, fontFamily: FM, fontSize: '0.62rem', color: a ? color : '#33475e', letterSpacing: 0.5 }}>{i + 1}</span>
+            <span style={{ position: 'absolute', top: 1, left: 3, fontFamily: FM, fontSize: '0.55rem', color: a ? color : '#33475e', letterSpacing: 0.5, lineHeight: 1 }}>{i + 1}</span>
             {a ? (
               <>
-                <span style={{ fontSize: '1.25rem', lineHeight: 1, filter: cooling ? 'grayscale(1)' : 'none' }}>{a.icon}</span>
-                <span style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: cooling ? '#64748b' : color, lineHeight: 1, textAlign: 'center', maxWidth: 54, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.label}</span>
+                <span style={{ fontSize: '1.125rem', lineHeight: 1, filter: cooling ? 'grayscale(1)' : 'none' }}>{a.icon}</span>
                 {cooling && (
-                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,8,16,0.55)', fontFamily: FM, fontSize: '0.85rem', color: '#e2e8f0', borderRadius: 4 }}>{a.remain}s</span>
+                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,8,16,0.6)', fontFamily: FM, fontSize: '0.7rem', color: '#e2e8f0', borderRadius: 4 }}>{a.remain}s</span>
                 )}
                 {dim && (
-                  <span style={{ position: 'absolute', top: 2, right: 4, fontSize: '0.6rem' }}>🔒</span>
+                  <span style={{ position: 'absolute', top: 1, right: 2, fontSize: '0.55rem' }}>🔒</span>
                 )}
               </>
             ) : (
