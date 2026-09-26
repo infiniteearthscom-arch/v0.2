@@ -54,6 +54,7 @@ const WIRED_BONUS_TYPES = new Set([
   'fleet_damage_pct',           // Gunnery -> weapons.js fleet damage scalar
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
+  'mining_range_pct',           // Beam Focusing -> mining reach (utils/mining.js + /asteroids/mine, 087)
   'crafted_quality_flat',       // /craft endpoint output stat bonus
   // Anomalies (api/anomalies.js, 2026-09-23)
   'probe_cycle_time_pct', 'probe_scan_time_pct', 'probe_scan_deviation_pct', 'probe_scan_strength_pct',

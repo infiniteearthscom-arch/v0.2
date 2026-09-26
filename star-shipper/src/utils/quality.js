@@ -47,6 +47,7 @@ export const STAT_META = {
   speed:            { label: 'Speed',           power: 1 },
   sensor_range:     { label: 'Sensor Range',    power: 1 },
   mine_yield:       { label: 'Mining Yield',    power: 1 },
+  mine_range:       { label: 'Mining Range',    power: 0.5 },
   ammo_capacity:    { label: 'Ammo Capacity',   power: 1, integer: true },
   harvest_rate:     { label: 'Harvest Rate',    power: 1, unit: '/hr' },
   storage_capacity: { label: 'Storage',         power: 1, integer: true },

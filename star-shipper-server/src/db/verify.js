@@ -147,6 +147,10 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 087 (beam focusing) ---
+  const bf = await pool.query(`SELECT bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'ind_beam_focusing'`);
+  report('ind_beam_focusing skill emits mining_range_pct (087)', bf.rows[0]?.t === 'mining_range_pct');
+
   // --- migration 086 (base refining) ---
   report('player_refine_jobs table (086)', await tableExists('player_refine_jobs'));
   const bref = await pool.query(`SELECT buy_price, requires_tech FROM module_types WHERE id = 'base_refinery'`);

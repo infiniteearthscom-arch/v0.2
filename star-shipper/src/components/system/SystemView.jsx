@@ -32,6 +32,7 @@ import { buildFleets, damageFleet, fleetFrontLayer } from '@/utils/fleetEntities
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI, basesAPI } from '@/utils/api';
+import { getFleetMineRange } from '@/utils/mining';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
@@ -1364,7 +1365,10 @@ export const SystemView = () => {
   const missileAmmoRef = useRef({});
   const missileLockRef = useRef({});
   const missileLastServerRef = useRef({});
-  const MINE_RANGE = 120;     // matches mining_basic.stats.mine_range
+  // Mining reach = best fitted laser's mine_range x sqrt(Q) x Beam
+  // Focusing skill (utils/mining.js; the server checks the same number).
+  // Read live so a re-fit or a finished skill level applies at once.
+  const fleetMineRange = () => getFleetMineRange(fleetShipsRef.current, activeBonusesRef.current);
   const MINE_CYCLE_MS = 2000; // fallback cycle when the fitted laser has no mine_cycle stat
 
   // Wingman world positions, lagged toward the formation slot so the
@@ -1878,8 +1882,9 @@ export const SystemView = () => {
         if (pushToast) pushToast({ kind: 'error', text: 'Cargo full — sell or jettison first.', duration: 3000 });
         return;
       }
-      if (dist > MINE_RANGE) {
-        if (pushToast) pushToast({ kind: 'error', text: 'Too far to mine — get closer.', duration: 3000 });
+      const mineRange = fleetMineRange();
+      if (dist > mineRange) {
+        if (pushToast) pushToast({ kind: 'error', text: `Too far to mine — get within ${mineRange} units (${Math.round(dist)} away).`, duration: 3000 });
         return;
       }
 
@@ -3820,12 +3825,13 @@ export const SystemView = () => {
           // Per-assignment release: laser gone OR asteroid gone OR primary out of range.
           // (Range stays primary-anchored for now; per-ship range is a Phase A5 polish.)
           const releases = []; // [{ key, reason }]
+          const mineRange = fleetMineRange();
           for (const [laserKey, assignment] of miningAssignmentsRef.current) {
             if (!validKeys.has(laserKey)) { releases.push({ key: laserKey, reason: 'laser unfitted' }); continue; }
             const t = asteroidsRef.current.find(a => a.id === assignment.asteroidId);
             if (!t) { releases.push({ key: laserKey, reason: 'asteroid gone' }); continue; }
             const dxr = t.x - playerPos.x, dyr = t.y - playerPos.y;
-            if (dxr * dxr + dyr * dyr > MINE_RANGE * MINE_RANGE) {
+            if (dxr * dxr + dyr * dyr > mineRange * mineRange) {
               releases.push({ key: laserKey, reason: 'out of range' });
             }
           }
@@ -3900,7 +3906,7 @@ export const SystemView = () => {
           ? laserCycle * 1000
           : MINE_CYCLE_MS;
         assignment.inFlight = true;
-        asteroidsAPI.mine(targetId, shipId, slotKey)
+        asteroidsAPI.mine(targetId, shipId, slotKey, { x: shipPosRef.current.x, y: shipPosRef.current.y })
           .then(({ mined, asteroid_remaining, asteroid_depleted, cargo_used, cargo_capacity }) => {
             // The assignment may have been released between fire + response.
             const stillAssigned = miningAssignmentsRef.current.get(laserKey);

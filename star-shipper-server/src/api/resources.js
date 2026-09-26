@@ -2714,10 +2714,18 @@ router.post('/asteroids/scan_belt', authMiddleware, async (req, res) => {
 // mining loop cleanly. Returns 410 if the asteroid is depleted /
 // missing (gone since last poll). Returns 200 with the mined
 // resource info + the asteroid's remaining contents on success.
+// Range slack on the server check: the client releases a laser the
+// frame the fleet drifts past its reach, so anything beyond this is a
+// stale or forged position, not honest play.
+const MINE_RANGE_SLACK = 1.15;
 router.post('/asteroids/mine', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { asteroid_id, ship_id, slot_key } = req.body;
+    // Fleet position at fire time (optional -- old clients omit it and
+    // skip the range rule until they refresh).
+    const firePos = (Number.isFinite(Number(req.body?.x)) && Number.isFinite(Number(req.body?.y)))
+      ? { x: Number(req.body.x), y: Number(req.body.y) } : null;
     if (!asteroid_id) return res.status(400).json({ error: 'asteroid_id required' });
     if (!ship_id || !slot_key) {
       return res.status(400).json({ error: 'ship_id and slot_key required (multi-laser per-tick model)' });
@@ -2769,13 +2777,21 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
       const bonuses = await getPlayerBonuses(userId);
       const skillMult = 1 + (bonuses.mining_yield_pct || 0) / 100;
       const totalYield = Math.max(1, Math.round(baseYield * qMult * skillMult));
+      // Reach: mine_range x sqrt(Q) x Beam Focusing (mining_range_pct).
+      // Mirrors client utils/mining.js. Checked against the asteroid
+      // below with MINE_RANGE_SLACK for orbit drift + latency.
+      const baseRange = (() => {
+        const r = statsRow.rows[0]?.stats?.mine_range;
+        return (typeof r === 'number' && r > 0) ? r : 120;
+      })();
+      const mineRange = Math.round(baseRange * qualityMultiplier(slot, { power: 0.5 }) * (1 + (bonuses.mining_range_pct || 0) / 100));
 
       // 2. Lock + load the asteroid. Includes the asteroid's per-rock
       // quality stats so the mined stack inherits them (replacing the
       // old hardcoded q50 baseline -- this is what makes mineral
       // variance actually visible to the player).
       const ast = await client.query(
-        `SELECT id, contents, system_id,
+        `SELECT id, contents, system_id, x, y,
                 stat_purity, stat_stability, stat_potency, stat_density
          FROM asteroids
          WHERE id = $1 AND depleted_at IS NULL FOR UPDATE`,
@@ -2783,6 +2799,12 @@ router.post('/asteroids/mine', authMiddleware, async (req, res) => {
       );
       if (!ast.rows[0]) {
         throw Object.assign(new Error('Asteroid depleted or missing'), { statusCode: 410 });
+      }
+      if (firePos && Number.isFinite(Number(ast.rows[0].x)) && Number.isFinite(Number(ast.rows[0].y))) {
+        const d = Math.hypot(firePos.x - Number(ast.rows[0].x), firePos.y - Number(ast.rows[0].y));
+        if (d > mineRange * MINE_RANGE_SLACK) {
+          throw Object.assign(new Error(`Out of mining range (${Math.round(d)} > ${mineRange})`), { statusCode: 400, code: 'out_of_range' });
+        }
       }
       const contents = ast.rows[0].contents || {};
 

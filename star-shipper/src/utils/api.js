@@ -245,9 +245,11 @@ export const asteroidsAPI = {
   // specific fitted laser firing this cycle (yield comes from just
   // that one laser, not the fleet sum). Each fitted mining laser
   // is independently click-assigned to its own asteroid client-side.
-  mine: (asteroidId, shipId, slotKey) => request('/resources/asteroids/mine', {
+  // pos = fleet position at fire time; the server checks it against the
+  // laser's reach (mining.js formula) so range is a real rule.
+  mine: (asteroidId, shipId, slotKey, pos) => request('/resources/asteroids/mine', {
     method: 'POST',
-    body: JSON.stringify({ asteroid_id: asteroidId, ship_id: shipId, slot_key: slotKey }),
+    body: JSON.stringify({ asteroid_id: asteroidId, ship_id: shipId, slot_key: slotKey, ...(pos ? { x: pos.x, y: pos.y } : {}) }),
   }),
   // Tier B area scan: scans every unscanned asteroid in `radius` of the
   // player's current position. Requires a fitted scanner module with
