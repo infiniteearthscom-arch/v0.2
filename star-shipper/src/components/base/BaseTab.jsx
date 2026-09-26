@@ -7,7 +7,6 @@ import React, { useEffect, useState } from 'react';
 import { basesAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { useGameStore } from '@/stores/gameStore';
-import { RefineryPanel } from '@/components/refinery/RefineryPanel';
 
 const F = "'Rajdhani', sans-serif";
 const FM = "'Share Tech Mono', monospace";
@@ -42,6 +41,7 @@ export const BaseTab = ({ body }) => {
   const pushToast = useGameStore(s => s.pushToast);
   const fetchCredits = useGameStore(s => s.fetchCredits);
   const fetchCargoInfo = useGameStore(s => s.fetchCargoInfo);
+  const openWindow = useGameStore(s => s.openWindow);
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
 
   const [data, setData] = useState(null);
@@ -102,7 +102,7 @@ export const BaseTab = ({ body }) => {
           </div>
           <input value={name} onChange={e => setName(e.target.value)} placeholder={`${kind === 'orbital' ? 'Orbital' : 'Surface'} Base name`}
             style={{ width: '100%', boxSizing: 'border-box', background: '#050a14', color: '#e2e8f0', border: `1px solid ${EDGE}`, borderRadius: 2, padding: '5px 8px', fontFamily: F, marginBottom: 8 }} />
-          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>Framework · 1 module slot</div>
+          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>Framework · {t1.slots} plots</div>
           <CostLine tier={t1} />
           {can_build && !can_build.ok && (
             <div style={{ color: '#f87171', fontSize: '0.8rem', marginTop: 6 }}>{can_build.reasons.map(r => <div key={r}>🔒 {r}</div>)}</div>
@@ -120,9 +120,9 @@ export const BaseTab = ({ body }) => {
     );
   }
 
-  // ---------- base here ----------
-  const slots = Array.from({ length: base.slots }, (_, i) => `b${i + 1}`);
-  const depotFitted = base.depot.capacity > 0;
+  // ---------- base here: summary + the console (BaseWindow) ----------
+  const fitted = Object.values(base.modules || {});
+  const stations = fitted.filter(m => m.stats?.foundry).length;
   return (
     <div style={{ fontFamily: F }}>
       <H right={`${base.kind === 'orbital' ? 'orbital' : 'surface'} · ${base.system_name} / ${base.body_name}`}>
@@ -131,98 +131,19 @@ export const BaseTab = ({ body }) => {
       {base.building && (
         <Card accent="#22d3ee"><div style={{ color: '#67e8f9', fontWeight: 700 }}>🏗️ Under construction · {minutesLeft(base.build_completes_at)} min remaining</div></Card>
       )}
-
-      {/* modules */}
-      <Card>
-        <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem', marginBottom: 6 }}>MODULE SLOTS ({slots.length})</div>
-        {slots.map(k => {
-          const m = base.modules[k];
-          return (
-            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: `1px solid ${EDGE}` }}>
-              <span style={{ fontFamily: FM, color: '#5a7080', width: 26 }}>{k.toUpperCase()}</span>
-              {m ? (
-                <>
-                  <span style={{ flex: 1, color: '#e2e8f0', fontWeight: 700 }}>{m.name} <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}>T{m.tier}</span></span>
-                  <Btn small accent="#f87171" disabled={busy || base.building} onClick={() => act(() => basesAPI.unfit(base.id, k), `${m.name} returned to cargo`)}>UNFIT</Btn>
-                </>
-              ) : fitPick === k ? (
-                <span style={{ flex: 1, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {cargo_modules.length === 0 && <span style={{ color: '#5a7080', fontSize: '0.78rem' }}>no base modules in cargo (buy or craft: Cargo Depot, Base Refinery, Research Lab)</span>}
-                  {cargo_modules.map(cm => (
-                    <Btn key={cm.inventory_id} small disabled={busy} onClick={() => { setFitPick(null); act(() => basesAPI.fit(base.id, k, cm.inventory_id), `${cm.name} fitted`); }}>{cm.name}</Btn>
-                  ))}
-                  <Btn small accent="#5a7080" onClick={() => setFitPick(null)}>CANCEL</Btn>
-                </span>
-              ) : (
-                <>
-                  <span style={{ flex: 1, color: '#4a6580', fontSize: '0.8rem' }}>empty</span>
-                  <Btn small disabled={busy || base.building} onClick={() => setFitPick(k)}>FIT…</Btn>
-                </>
-              )}
+      <Card accent={GOLD.pri}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>{fitted.length} / {base.slots} plots built · {stations} station{stations === 1 ? '' : 's'}</div>
+            <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: FM }}>
+              depot {base.depot.capacity > 0 ? `${fmt(Math.round(base.depot.used))} / ${fmt(base.depot.capacity)}` : 'none'}{base.next_tier ? ` · next: ${base.next_tier.name}` : ' · top tier'}
             </div>
-          );
-        })}
-      </Card>
-
-      {/* upgrade */}
-      {base.next_tier && (
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>Upgrade to {base.next_tier.name} · {base.next_tier.slots} slots</div>
-              <CostLine tier={base.next_tier} />
-              {!can_expand && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: 4 }}>🔒 Research Base Expansion (Industry)</div>}
-            </div>
-            <Btn disabled={busy || base.building || !can_expand} onClick={() => act(() => basesAPI.upgrade(base.id), `Upgrading to ${base.next_tier.name}`)}>UPGRADE</Btn>
           </div>
-        </Card>
-      )}
-
-      <OthersHere />
-
-      {/* base refinery: the refinery panel right here, fee-free */}
-      {!base.building && Object.values(base.modules).some(m => m.stats?.refinery) && (
-        <Card accent={GOLD.pri}>
-          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem', marginBottom: 8 }}>REFINERY</div>
-          <RefineryPanel />
-        </Card>
-      )}
-
-      {/* depot */}
-      <Card accent={depotFitted ? '#4ade80' : EDGE}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>CARGO DEPOT</div>
-          <div style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.75rem' }}>{depotFitted ? `${fmt(Math.round(base.depot.used))} / ${fmt(base.depot.capacity)} used` : 'no depot fitted'}</div>
+          <Btn disabled={base.building} onClick={() => { playSound('button_click'); openWindow('base'); }}>OPEN BASE CONSOLE</Btn>
         </div>
-        {depotFitted && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <div style={{ color: '#5a7080', fontSize: '0.75rem', fontFamily: FM, marginBottom: 4 }}>IN DEPOT</div>
-              {base.depot.stacks.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.78rem' }}>empty</div>}
-              {base.depot.stacks.map(s => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 3 }}>
-                  <span style={{ flex: 1 }}>{s.resource_name} <span style={{ color: '#5a7080', fontFamily: FM }}>×{fmt(s.quantity)} Q{s.avg_quality}</span></span>
-                  <input type="number" min={1} max={s.quantity} value={wdQty[s.id] ?? s.quantity} onChange={e => setWdQty({ ...wdQty, [s.id]: Math.max(1, Math.min(s.quantity, Number(e.target.value) || 1)) })}
-                    style={{ width: 60, background: '#050a14', color: '#e2e8f0', border: `1px solid ${EDGE}`, borderRadius: 2, fontFamily: FM, fontSize: '0.75rem' }} />
-                  <Btn small disabled={busy} onClick={() => act(() => basesAPI.withdraw(base.id, s.id, wdQty[s.id] ?? s.quantity), 'Withdrawn')}>TAKE</Btn>
-                </div>
-              ))}
-            </div>
-            <div>
-              <div style={{ color: '#5a7080', fontSize: '0.75rem', fontFamily: FM, marginBottom: 4 }}>IN CARGO</div>
-              {cargo_resources.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.78rem' }}>no resources</div>}
-              {cargo_resources.map(s => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 3 }}>
-                  <span style={{ flex: 1 }}>{s.resource_name} <span style={{ color: '#5a7080', fontFamily: FM }}>×{fmt(s.quantity)} Q{s.avg_quality}</span></span>
-                  <input type="number" min={1} max={s.quantity} value={depQty[s.id] ?? s.quantity} onChange={e => setDepQty({ ...depQty, [s.id]: Math.max(1, Math.min(s.quantity, Number(e.target.value) || 1)) })}
-                    style={{ width: 60, background: '#050a14', color: '#e2e8f0', border: `1px solid ${EDGE}`, borderRadius: 2, fontFamily: FM, fontSize: '0.75rem' }} />
-                  <Btn small accent="#4ade80" disabled={busy} onClick={() => act(() => basesAPI.deposit(base.id, s.id, depQty[s.id] ?? s.quantity), 'Deposited')}>STORE</Btn>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <div style={{ color: '#5a7080', fontSize: '0.74rem', marginTop: 6 }}>Plots, stations, the foundry queue, the depot and upgrades all live in the console.</div>
       </Card>
+      <OthersHere />
     </div>
   );
 };

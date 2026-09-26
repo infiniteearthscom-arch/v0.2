@@ -118,7 +118,7 @@ const RecipeCard = ({ recipe, isSelected, onClick }) => {
             color: COLORS.TEXT.dim,
             fontFamily: FONT.mono,
             letterSpacing: 0.3,
-          }}>{recipe.category}</div>
+          }}>{recipe.category}{recipe.station_required && <span style={{ color: recipe.station_available ? '#4ade80' : '#f59e0b', marginLeft: 6 }}>⚙ {recipe.station_required_name}</span>}</div>
         </div>
         {canCraft && (
           <div style={{
@@ -1286,6 +1286,16 @@ export const CraftingWindow = () => {
                   research node in the tree. Server enforces the gate
                   too -- this is purely a UX prompt to point the player
                   at the right action. */}
+              {/* Foundry (088): tier 2+ ship modules are assembled at a bench
+                  at the pilot's own base. Same treatment as the research lock. */}
+              {selectedRecipe.station_required && !selectedRecipe.station_available && (
+                <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 3, background: 'rgba(120,53,15,0.18)', border: '1px solid rgba(245,158,11,0.4)', borderLeft: '3px solid #f59e0b' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#f59e0b', fontFamily: FONT.ui, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>⚙ Craft at your base</div>
+                  <div style={{ fontSize: '0.6875rem', color: '#e2e8f0', fontFamily: FONT.ui }}>
+                    This needs a <span style={{ color: '#f59e0b', fontWeight: 700 }}>{selectedRecipe.station_required_name}</span> fitted at a base you own. Dock there and craft from this window.
+                  </div>
+                </div>
+              )}
               {(() => {
                 const techId = selectedRecipe.requires_tech;
                 if (!techId) return null;
@@ -1334,7 +1344,7 @@ export const CraftingWindow = () => {
               {/* Craft button -- hidden when research-locked since the
                   lock panel above takes its slot. Server will reject
                   anyway, so showing a disabled button would be redundant. */}
-              {!(selectedRecipe.requires_tech && techs.find(t => t.id === selectedRecipe.requires_tech)?.status !== 'unlocked') && (
+              {!(selectedRecipe.requires_tech && techs.find(t => t.id === selectedRecipe.requires_tech)?.status !== 'unlocked') && !(selectedRecipe.station_required && !selectedRecipe.station_available) && (
                 <button
                   onClick={handleCraft}
                   disabled={!canCraftNow || crafting}

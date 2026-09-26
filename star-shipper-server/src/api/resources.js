@@ -585,9 +585,26 @@ router.post('/inventory/merge', authMiddleware, async (req, res) => {
 // ============================================
 
 // Get all crafting recipes with player's available resources
+// Foundry (088): which stations does the pilot have at the base they are
+// docked at right now? Empty set when not docked at an own, built base.
+async function dockedBaseStationIds(req, userId) {
+  try {
+    const presence = req.app.get('io')?.presence;
+    const raw = presence?.getUserDockedBody?.(userId) || null;
+    if (!raw) return new Set();
+    const bodyId = await resolveBodyId(String(raw));
+    if (!bodyId) return new Set();
+    const b = await queryOne(`SELECT fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
+    if (!b || new Date(b.build_completes_at).getTime() > Date.now()) return new Set();
+    return new Set(Object.values(b.fitted_modules || {}).map(m => m?.module_type_id).filter(Boolean));
+  } catch { return new Set(); }
+}
+
 router.get('/recipes', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const stationsHere = await dockedBaseStationIds(req, userId);
+    const stationNames = Object.fromEntries((await queryAll(`SELECT id, name FROM module_types WHERE slot_type = 'base'`)).map(r => [r.id, r.name]));
     
     // Pull item_definitions.description (item-level, e.g. "Standard
     // propulsion system.") alongside the recipe so the crafting
@@ -630,7 +647,9 @@ router.get('/recipes', authMiddleware, async (req, res) => {
       );
       return {
         ...r,
-        can_craft: canCraft,
+        can_craft: canCraft && (!r.station_required || stationsHere.has(r.station_required)),
+        station_required_name: r.station_required ? (stationNames[r.station_required] || r.station_required) : null,
+        station_available: !r.station_required || stationsHere.has(r.station_required),
         resource_counts: resourceCounts,
       };
     });
@@ -680,6 +699,17 @@ router.post('/craft', authMiddleware, async (req, res) => {
             new Error(`Requires research: ${techName}`),
             { statusCode: 403, requires_tech: recipe.requires_tech }
           );
+        }
+      }
+
+      // Foundry (088): tier 2+ ship modules are assembled at a bench at the
+      // pilot's own base. Same shape as the research lock so the client can
+      // point at the fix.
+      if (recipe.station_required) {
+        const here = await dockedBaseStationIds(req, userId);
+        if (!here.has(recipe.station_required)) {
+          const st = await client.query(`SELECT name FROM module_types WHERE id = $1`, [recipe.station_required]);
+          throw Object.assign(new Error(`Craft this at your base: it needs a ${st.rows[0]?.name || recipe.station_required} fitted there`), { statusCode: 403, station_required: recipe.station_required });
         }
       }
 
@@ -875,7 +905,7 @@ router.post('/craft', authMiddleware, async (req, res) => {
 
     res.json({ success: true, crafted: result });
   } catch (error) {
-    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message, requires_tech: error.requires_tech, station_required: error.station_required });
     console.error('Error crafting:', error);
     res.status(500).json({ error: 'Failed to craft item' });
   }

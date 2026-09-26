@@ -539,8 +539,8 @@ export const InventoryWindow = () => {
                     const iconInfo = RESOURCE_ICONS[stack.resource_type_id];
                     borderColor = TIER_BORDER[tier.name] || '#444';
                     iconContent = iconInfo?.abbr;
-                    iconBg = iconInfo?.color + '33';
-                    iconColor = iconInfo?.color;
+                    iconBg = (iconInfo?.color || '#94a3b8') + '33';
+                    iconColor = iconInfo?.color || '#94a3b8';
                     qualityDot = tier.color;
                   }
 

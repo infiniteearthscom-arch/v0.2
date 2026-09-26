@@ -102,6 +102,9 @@ const initialState = {
   // Signature sites for the current system (AnomaliesWindow -> SystemView markers)
   // and a raider fleet handed back by an investigation for SystemView to spawn.
   anomalySites: [],
+  // Foundry catalog (088): processed materials with made-at / used-for,
+  // stations, recipes. Loaded once on login (GameFrame FoundryCatalogLoader).
+  foundryCatalog: null,
   pendingAmbush: null,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   fitGates: null,              // { module_gates, hull_gates, fleet } from GET /skills (Phase 3 capability gating)
@@ -143,6 +146,7 @@ const initialState = {
     corp: { open: false, x: 240, y: 120, minimized: false },
     bounties: { open: false, x: 260, y: 130, minimized: false },
     anomalies: { open: false, x: 240, y: 120, minimized: false },
+    base: { open: false, x: 0, y: 0, minimized: false },
     mail: { open: false, x: 280, y: 140, minimized: false },
   },
   windowZIndex: {},
@@ -391,6 +395,7 @@ export const useGameStore = create(
         catch (e) { flip(!pinned); get().pushToast({ kind: 'error', text: e?.message || 'Failed to update pin', duration: 3000 }); }
       },
       setAnomalySites: (list) => set(state => { state.anomalySites = Array.isArray(list) ? list : []; }),
+      setFoundryCatalog: (cat) => set(state => { state.foundryCatalog = cat || null; }),
       setPendingAmbush: (a) => set(state => { state.pendingAmbush = a || null; }),
       clearPendingAmbush: () => set(state => { state.pendingAmbush = null; }),
       bumpContracts: () => set(state => { state.contractsVersion = (state.contractsVersion || 0) + 1; }),

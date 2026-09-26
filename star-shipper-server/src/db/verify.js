@@ -147,6 +147,18 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 088 (foundry tree) ---
+  report('foundry_recipes table (088)', await tableExists('foundry_recipes'));
+  report('player_foundry_jobs table (088)', await tableExists('player_foundry_jobs'));
+  const fm = await pool.query(`SELECT COUNT(*)::int AS n FROM resource_types WHERE category = 'processed'`);
+  report('36 processed materials (088)', fm.rows[0]?.n === 36, `found ${fm.rows[0]?.n}`);
+  const fs2 = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE slot_type = 'base' AND stats ? 'foundry' AND stats->'foundry' <> 'null'::jsonb`);
+  report('23 foundry stations (088)', fs2.rows[0]?.n === 23, `found ${fs2.rows[0]?.n}`);
+  const bench = await pool.query(`SELECT COUNT(*)::int AS n FROM crafting_recipes cr JOIN module_types mt ON mt.id = cr.output_item_id WHERE mt.tier >= 2 AND mt.slot_type <> 'base' AND cr.station_required IS NULL`);
+  report('every T2+ ship-module recipe names a bench (088)', bench.rows[0]?.n === 0, `${bench.rows[0]?.n} without`);
+  const orphanJobs = await pool.query(`SELECT COUNT(*)::int AS n FROM foundry_recipes fr LEFT JOIN module_types mt ON mt.id = fr.station_module_id WHERE mt.id IS NULL`);
+  report('foundry recipes all point at a station (088)', orphanJobs.rows[0]?.n === 0);
+
   // --- migration 087 (beam focusing) ---
   const bf = await pool.query(`SELECT bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'ind_beam_focusing'`);
   report('ind_beam_focusing skill emits mining_range_pct (087)', bf.rows[0]?.t === 'mining_range_pct');

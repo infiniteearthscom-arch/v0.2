@@ -17,6 +17,9 @@ import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
 import { CorpWindow } from '@/components/corp/CorpWindow';
 import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
 import { AnomaliesWindow } from '@/components/anomalies/AnomaliesWindow';
+import { BaseWindow } from '@/components/base/BaseWindow';
+import { foundryAPI } from '@/utils/api';
+import { registerResourceTypes } from '@/components/pixel/PixelArt';
 import { InboxWindow } from '@/components/mail/InboxWindow';
 import { CargoTooltipLayer } from '@/components/items/CargoTooltipLayer';
 import { mailAPI } from '@/utils/api';
@@ -639,6 +642,23 @@ const TradeBootstrap = () => {
 // Keeps store.activeContracts fresh for the HUD tiles + galaxy markers:
 // on mount, every 60s, and whenever contractsVersion bumps (accept /
 // deliver / abandon in the Contracts tab).
+// Foundry (088): fetch the public tree once so tooltips can say where a
+// processed material is made and what it is for, and so icons know the
+// category / family of resources that are not in the static catalogue.
+const FoundryCatalogLoader = () => {
+  const setFoundryCatalog = useGameStore(s => s.setFoundryCatalog);
+  useEffect(() => {
+    let cancelled = false;
+    foundryAPI.catalog().then(cat => {
+      if (cancelled) return;
+      registerResourceTypes(cat?.materials || []);
+      setFoundryCatalog?.(cat);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return null;
+};
+
 const ContractsPoller = () => {
   const setActiveContracts = useGameStore(s => s.setActiveContracts);
   const setAllContracts = useGameStore(s => s.setAllContracts);
@@ -691,6 +711,7 @@ export const GameFrame = ({ children }) => {
       <TradeBootstrap />
       <MailUnreadPoller />
       <ContractsPoller />
+      <FoundryCatalogLoader />
       <TopBar />
       <LeftToolbar />
       {systemMapOpen && <SystemMapWindow />}
@@ -740,6 +761,7 @@ export const GameFrame = ({ children }) => {
 
       {/* Signals -- cosmic signature sites in the current system (083). */}
       <AnomaliesWindow />
+      <BaseWindow />
 
       {/* Inbox / Mail — same pattern. */}
       <InboxWindow />

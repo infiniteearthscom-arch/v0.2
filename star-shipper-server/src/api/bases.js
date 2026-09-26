@@ -14,6 +14,8 @@ import { addResourceStack } from '../lib/wrecks.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
 import { generateGalaxy, generateSystemContent } from '../game/galaxyGenerator.js';
+import { BASE_TIERS, PLOTS_PER_AREA } from '../game/foundryTree.js';
+import { consumeMaterials } from '../lib/materials.js';
 
 // ---- public visibility (2026-09-25) ----
 // Planets that already have a station in orbit can't take an ORBITAL
@@ -41,12 +43,10 @@ const publicBase = (b) => ({
   modules: Object.values(b.fitted_modules || {}).map(m => m.name).filter(Boolean),
 });
 
-export const TIERS = {
-  1: { name: 'Framework', slots: 1, build_minutes: 10,  credits: 5000,  resources: { Iron: 200, Titanium: 100, Copper: 50 }, tech: 'tech_base_construction' },
-  2: { name: 'Outpost',   slots: 2, build_minutes: 45,  credits: 20000, resources: { Titanium: 400, Crystite: 200 },        tech: 'tech_base_expansion' },
-  3: { name: 'Station',   slots: 3, build_minutes: 180, credits: 80000, resources: { Crystite: 300, Uranium: 100, Plasma: 50 }, tech: 'tech_base_expansion' },
-};
-export const MAX_TIER = 3;
+// Base tiers (Foundry, 2026-09-26): 4 plots per tier, upgrades paid in the
+// previous tier's assembly parts. Table lives in game/foundryTree.js.
+export const TIERS = BASE_TIERS;
+export const MAX_TIER = 5;
 export const BUILD_SKILL = 'pln_cc_upgrades';       // level >= 1 to build
 export const EXTRA_BASE_SKILL = 'pln_interplanetary'; // +1 base per level
 export const BASE_SLOT_TYPE = 'base';
@@ -121,6 +121,8 @@ async function shapeBase(b, q = query) {
     `SELECT name FROM star_systems WHERE procedural_id = $1`, [b.system_procedural_id]);
   return {
     id: b.id, kind: b.kind, name: b.name, tier: b.tier, tier_name: t.name, slots: t.slots,
+    plots_per_area: PLOTS_PER_AREA, max_tier: MAX_TIER,
+    areas: Object.entries(TIERS).map(([tier, def]) => ({ tier: Number(tier), name: def.name, unlocked: Number(tier) <= b.tier, first_slot: (Number(tier) - 1) * PLOTS_PER_AREA + 1 })),
     building, build_completes_at: b.build_completes_at,
     system_procedural_id: b.system_procedural_id, system_name: sys?.name || b.system_procedural_id,
     body_name: b.body_name, celestial_body_id: b.celestial_body_id,
@@ -130,8 +132,12 @@ async function shapeBase(b, q = query) {
   };
 }
 
-// Consume `resources` ({ Name: qty }) from cargo, lowest quality first. Throws if short.
-async function consumeResources(client, userId, resources) {
+// Consume `resources` ({ Name: qty }) from the base depot (if any) then
+// cargo, lowest quality first. Throws if short. (lib/materials.js)
+async function consumeResources(client, userId, resources, baseId = null) {
+  await consumeMaterials(client, userId, baseId, resources);
+}
+async function consumeResourcesLegacy(client, userId, resources) {
   for (const [name, need] of Object.entries(resources)) {
     const rt = await client.query(`SELECT id FROM resource_types WHERE name = $1`, [name]);
     const rid = rt.rows[0]?.id;
@@ -213,7 +219,13 @@ router.get('/here', async (req, res) => {
         FROM player_resource_inventory pri JOIN resource_types rt ON rt.id = pri.resource_type_id
        WHERE pri.user_id = $1 AND pri.item_type = 'resource' AND pri.quantity > 0 ORDER BY rt.name`, [userId]);
     const othersHere = await queryAll(`SELECT b.*, u.username AS owner_name FROM player_bases b JOIN users u ON u.id = b.user_id WHERE b.celestial_body_id = $1 AND b.user_id <> $2 ORDER BY b.created_at`, [body.id, userId]);
+    // Everything that can stand on a plot, with the pilot's research state and cargo count.
+    const allBase = await queryAll(`SELECT id, name, tier, description, stats, requires_tech, buy_price FROM module_types WHERE slot_type = $1 ORDER BY tier, name`, [BASE_SLOT_TYPE]);
+    const inCargo = {};
+    for (const m of cargoMods) inCargo[m.item_id] = (inCargo[m.item_id] || 0) + 1;
+    const buildables = allBase.map(m => ({ id: m.id, name: m.name, tier: m.tier, description: m.description, stats: m.stats, requires_tech: m.requires_tech, unlocked: !m.requires_tech || techs.has(m.requires_tech), buy_price: m.buy_price, in_cargo: inCargo[m.id] || 0, foundry: m.stats?.foundry || null }));
     res.json({
+      buildables,
       body: { id: body.id, name: body.name, body_type: body.body_type, planet_type: body.planet_type, system_procedural_id: body.procedural_id, system_name: body.system_name },
       others: othersHere.map(publicBase),
       base: mine ? await shapeBase(mine) : null,
@@ -283,10 +295,10 @@ router.post('/:id/upgrade', async (req, res) => {
       if (b.tier >= MAX_TIER) throw Object.assign(new Error('Already at the top tier'), { statusCode: 400 });
       const t = TIERS[b.tier + 1];
       const techs = await techSet(userId, client.query.bind(client));
-      if (!techs.has(t.tech)) throw Object.assign(new Error('Research Base Expansion (Industry) first'), { statusCode: 403 });
+      if (!techs.has(t.tech)) throw Object.assign(new Error(t.tech === 'tech_base_citadel' ? 'Research Citadel Engineering (Industry) first' : 'Research Base Expansion (Industry) first'), { statusCode: 403 });
       const u = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
       if (parseInt(u.rows[0]?.credits || 0) < t.credits) throw Object.assign(new Error(`Needs ${t.credits.toLocaleString()} CR`), { statusCode: 400 });
-      await consumeResources(client, userId, t.resources);
+      await consumeResources(client, userId, t.resources, b.id);
       await client.query(`UPDATE users SET credits = credits - $1 WHERE id = $2`, [t.credits, userId]);
       const up = await client.query(`
         UPDATE player_bases SET tier = tier + 1, build_completes_at = NOW() + ($2 || ' minutes')::interval, updated_at = NOW()
@@ -322,6 +334,10 @@ router.post('/:id/fit', async (req, res) => {
       const it = item.rows[0];
       if (!it) throw Object.assign(new Error('Module not in cargo'), { statusCode: 404 });
       if (it.slot_type !== BASE_SLOT_TYPE) throw Object.assign(new Error('That module does not fit a base'), { statusCode: 400 });
+      // Foundry stations need a base of their tier (T2 stations at an Outpost, ...). Service
+      // buildings (depot, refinery, lab, repair shop) fit any tier so onboarding is untouched.
+      const ft = Number(it.stats?.foundry?.tier) || 0;
+      if (ft > b.tier) throw Object.assign(new Error(`${it.name} needs a ${TIERS[ft]?.name || 'higher-tier'} base (this one is a ${TIERS[b.tier].name})`), { statusCode: 403 });
       if (Number(it.quantity) > 1) await client.query(`UPDATE player_resource_inventory SET quantity = quantity - 1 WHERE id = $1`, [it.id]);
       else await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [it.id]);
       fitted[key] = { module_type_id: it.item_id, name: it.name, stats: it.stats || {}, tier: it.tier, quality: it.item_data?.quality || null, source: it.item_data?.source || null };

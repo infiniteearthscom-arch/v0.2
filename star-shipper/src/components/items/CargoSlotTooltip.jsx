@@ -16,10 +16,29 @@
 // doesn't intercept hover).
 
 import React from 'react';
+
+// Foundry (088): a processed material says where it is made and what it
+// is for; a raw resource says which stations consume it. The catalog is
+// loaded once at login (gameStore.foundryCatalog); nothing shows until then.
+const FoundryLines = ({ name }) => {
+  const cat = useGameStore(s => s.foundryCatalog);
+  if (!cat || !name) return null;
+  const m = (cat.materials || []).find(x => x.name === name);
+  const uses = m ? m.used_for : (cat.used_for_raw || {})[name];
+  if (!m && !(uses && uses.length)) return null;
+  const useText = (uses || []).slice(0, 4).map(u => u.kind === 'job' ? `${u.name} (${u.station})` : u.kind === 'base_tier' ? u.name : u.station ? `${u.name} @ ${u.station}` : u.name).join(' · ');
+  return (
+    <div className="mt-2 pt-2 text-xs" style={{ borderTop: '1px solid rgba(100,116,139,0.3)' }}>
+      {m?.made_at && <div><span className="text-slate-400">Made at </span><span style={{ color: '#f5c542' }}>{m.made_at.station_name}</span>{m.is_part && <span className="text-slate-500"> · station part, craft-only</span>}</div>}
+      {useText && <div className="mt-0.5"><span className="text-slate-400">Used for </span><span className="text-slate-200">{useText}</span></div>}
+    </div>
+  );
+};
 import { getQualityTier, RARITY_INFO } from '@/data/resources';
 import { normalizeItem } from '@/utils/itemShape';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 import { PixelItemIcon, resourceIconSpec } from '@/components/pixel/PixelArt';
+import { useGameStore } from '@/stores/gameStore';
 
 export const CargoSlotTooltip = ({ stack, screenX, screenY, slotSize = 44, resourceIcons }) => {
   if (!stack) return null;
@@ -137,6 +156,7 @@ export const CargoSlotTooltip = ({ stack, screenX, screenY, slotSize = 44, resou
           <span className="text-slate-400">Base value</span>
           <span className="text-yellow-400">{stack.base_price || '—'} cr/unit</span>
         </div>
+        <FoundryLines name={stack.resource_name} />
       </div>
     </div>
   );

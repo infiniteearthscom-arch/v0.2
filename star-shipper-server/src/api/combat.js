@@ -13,11 +13,28 @@
 // A server restart wipes the maps -- worst case a player can re-claim one
 // spawn's wrecks, which is noise at these stakes.
 
+// Foundry drop table (088): chance per qualifying wreck by ITEM tier; an
+// item qualifies when its tier <= wreck tier + 1. Parts never drop.
+const FOUNDRY_DROP_CHANCE = { 1: 0.04, 2: 0.02, 3: 0.01, 4: 0.004, 5: 0.0015 };
+let _foundryMats = null, _foundryMatsAt = 0;
+async function rollFoundryDrop(wreckTier) {
+  if (!_foundryMats || Date.now() - _foundryMatsAt > 300000) {
+    _foundryMats = await queryAll(`SELECT id, name, tier FROM resource_types WHERE category = 'processed' AND is_part = FALSE`);
+    _foundryMatsAt = Date.now();
+  }
+  const pool = _foundryMats.filter(m => Number(m.tier) <= wreckTier + 1);
+  if (!pool.length) return null;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  if (Math.random() > (FOUNDRY_DROP_CHANCE[pick.tier] || 0.01)) return null;
+  const quantity = pick.tier >= 5 ? 1 : pick.tier >= 4 ? 1 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 5);
+  return { ...pick, quantity };
+}
+
 import express from 'express';
 import { authMiddleware, isDevAccount } from '../auth/index.js';
 import { query, queryOne } from '../db/index.js';
 import { getSystemManifest, invalidateManifests, getCatalog, buildAmbushFleet } from '../game/enemyManifest.js';
-import { insertModuleItem } from '../lib/wrecks.js';
+import { insertModuleItem, addResourceStack } from '../lib/wrecks.js';
 import { queryAll } from '../db/index.js';
 import { offerByKey, pathBetween } from '../game/contracts.js';
 import { progressBounties } from './contracts.js';
@@ -224,6 +241,17 @@ router.post('/claim-loot', async (req, res) => {
           if (name) items.push({ name, quality: q });
         }
       }
+      // Foundry (088): any non-part processed material may ride in a wreck,
+      // rarer the higher its tier, only from wrecks near or above that tier.
+      // A pilot who has never built a base learns the tree one drop at a time.
+      try {
+        const drop = await rollFoundryDrop(Number(entry.tier) || 1);
+        if (drop) {
+          const q = 45 + Math.floor(Math.random() * 26);
+          await addResourceStack({ query }, req.user.id, drop.id, drop.quantity, { stat_purity: q, stat_stability: q, stat_potency: q, stat_density: q });
+          items.push({ name: `${drop.quantity}× ${drop.name}`, quality: q, material: true });
+        }
+      } catch (e) { console.warn('foundry drop failed:', e.message); }
       user = await queryOne(`SELECT credits FROM users WHERE id = $1`, [req.user.id]);
     } catch (e) {
       claimed.delete(enemy_id);

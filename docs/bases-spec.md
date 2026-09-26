@@ -31,3 +31,7 @@ Everything happens while docked at the planet: the planet window gets a **Base**
 ## Phase 2 (not built)
 
 Defense slot + turrets / shield; pirate raids (server cron, damaged modules go offline until repaired); Med Bay respawn override; automated haulers; local market / trade post; manufacturing queue; sensor array; influence radius / system claim (first-priority harvester slots). Surface vs orbital should diverge here (surface: harvester bonuses; orbital: acts as a contract port).
+
+## Foundry (2026-09-26, migration 088)
+
+Bases are now industrial: 4 plots per tier (Framework 4 → Citadel 20), the base console window (`BaseWindow`) with a plot grid and a pixel-art portrait, and the station tree in **docs/foundry-spec.md**. Upgrade costs are paid in assembly parts from the depot or cargo. A Repair Shop service building repairs the fleet at 25% off.

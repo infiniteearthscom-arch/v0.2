@@ -503,6 +503,15 @@ export const anomaliesAPI = {
 };
 
 // Player bases (2026-09-22) -- docs/bases-spec.md
+// Foundry (088): base industry stations + timed jobs.
+export const foundryAPI = {
+  catalog: () => request('/foundry/catalog'),
+  status: () => request('/foundry/status'),
+  queue: (slot, recipeId, runs) => request('/foundry/queue', { method: 'POST', body: JSON.stringify({ slot, recipe_id: recipeId, runs }) }),
+  cancel: (jobId) => request(`/foundry/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
+  collect: (jobId, to) => request(`/foundry/jobs/${encodeURIComponent(jobId)}/collect`, { method: 'POST', body: JSON.stringify({ to }) }),
+};
+
 export const basesAPI = {
   mine: () => request('/bases/mine'),
   here: () => request('/bases/here'),

@@ -25,9 +25,17 @@ export const RARITY_COLORS = { common: '#d8dee6', rare: '#4488ff', exotic: '#aa4
 const QUALITY_COLORS = [[20, '#666e78'], [40, '#b0bcc8'], [60, '#44ff44'], [80, '#4488ff'], [101, '#aa44ff']];
 const qualityColor = (q) => { for (const [max, c] of QUALITY_COLORS) if (q <= max) return c; return '#aa44ff'; };
 
-export function classify({ kind, slotType, damageType, itemId = '', category, rarity }) {
+const FAMILY_TINT = { smelting: '#f0883e', gas: '#38bdf8', bio: '#4ade80', electronics: '#a78bfa', assembly: '#f5c542', service: '#94a3b8' };
+const BASE_BUILDING_GLYPH = [
+  [/smelter|forge|foundry/, 'furnace', 'smelting'], [/condenser|separator|isotope|containment|condenser/, 'tank', 'gas'],
+  [/bioreactor|kiln|incubator|resin/, 'vat', 'bio'], [/printer|etcher|lathe|capacitor/, 'chip', 'electronics'],
+  [/workbench|machine_shop|fabricator|assembler|quantum_forge/, 'bench', 'assembly'], [/repair_shop/, 'wrench', 'service'],
+];
+export function classify({ kind, slotType, damageType, itemId = '', category, rarity, family, isPart }) {
   const id = String(itemId);
+  if (kind === 'resource' && category === 'processed') return { glyph: isPart ? 'part' : 'ingot', tint: FAMILY_TINT[family] || '#94a3b8' };
   if (kind === 'resource') return { glyph: category || 'ore', tint: RARITY_COLORS[rarity] || RARITY_COLORS.common };
+  if (/^base_/.test(id)) { for (const [re, glyph, fam] of BASE_BUILDING_GLYPH) if (re.test(id)) return { glyph, tint: FAMILY_TINT[fam] }; }
   if (/sealed_cargo/.test(id)) return { glyph: 'crate_locked', tint: '#4ade80' };
   if (/fuel_cell/.test(id)) return { glyph: 'battery', tint: '#ffaa00' };
   if (/probe/.test(id) && !/launcher/.test(id)) return { glyph: 'capsule', tint: /advanced/.test(id) ? '#8b5cf6' : '#60a5fa' };
@@ -79,6 +87,24 @@ function drawGlyph(R, glyph, tint, variant, tier) {
     case 'biological': { line(16, 27, 16, 8, k.d, 1); line(15, 27, 15, 9, k.dd); for (let i = 0; i < 4; i++) { const y = 10 + i * 4; poly([[16, y], [9 - i, y + 2], [15, y + 5]], i % 2 ? k.c : k.l); poly([[16, y + 2], [23 + i, y + 4], [17, y + 7]], i % 2 ? k.l : k.c); } if (v) disc(16, 7, 2, k.h); break; }
     case 'energy': { poly([[18, 4], [10, 17], [15, 17], [12, 28], [22, 14], [17, 14]], k.c); poly([[18, 4], [10, 17], [14, 17]], k.l); poly([[15, 17], [12, 28], [16, 20]], k.d); if (v) { ring(16, 16, 12, k.h); } break; }
     case 'exotic': { poly([[16, 3], [19, 13], [29, 16], [19, 19], [16, 29], [13, 19], [3, 16], [13, 13]], k.c); poly([[16, 3], [19, 13], [16, 16], [13, 13]], k.l); poly([[16, 16], [19, 19], [16, 29], [13, 19]], k.d); disc(16, 16, 2, k.h); if (v) { P(6, 6, k.h); P(26, 7, k.h); P(25, 26, k.h); } break; }
+    // ---------------- processed materials + base buildings (088) ----------------
+    case 'ingot': { // a stacked pair of bars, family-tinted
+      poly([[4, 20], [10, 13], [26, 13], [22, 20]], k.c); poly([[4, 20], [10, 13], [12, 13], [6, 20]], k.l); rect(4, 20, 22, 23, k.d); rect(22, 13, 26, 23, k.dd);
+      poly([[7, 27], [13, 21], [29, 21], [25, 27]], k.c); poly([[7, 27], [13, 21], [15, 21], [9, 27]], k.l); rect(7, 27, 25, 29, k.d); rect(25, 21, 29, 29, k.dd);
+      if (v) { rect(13, 15, 19, 16, k.h); } if (tier >= 4) { P(9, 11, k.h); P(24, 9, k.h); }
+      break;
+    }
+    case 'part': { // a cog with a bright hub -- the craft-only station parts
+      ring(16, 16, 9, k.c, 3); for (let a = 0; a < 8; a++) { const x = 16 + Math.round(Math.cos(a * Math.PI / 4) * 11), y = 16 + Math.round(Math.sin(a * Math.PI / 4) * 11); rect(x - 1, y - 1, x + 1, y + 1, k.c); }
+      ring(16, 16, 9, k.l, 1); disc(16, 16, 4, k.d); disc(16, 16, 2, k.h); if (v === 2) { ring(16, 16, 6, k.dd, 1); }
+      break;
+    }
+    case 'furnace': { rect(5, 12, 26, 27, k.m); rect(5, 12, 26, 13, k.mL); rect(8, 16, 23, 24, k.dd); rect(10, 18, 21, 23, k.c); rect(12, 19, 19, 21, k.h); rect(10, 4, 13, 12, k.mD); rect(18, 6, 21, 12, k.mD); if (v) { P(11, 2, k.mL); P(19, 4, k.mL); } rect(5, 27, 26, 29, k.mD); break; }
+    case 'tank': { rect(9, 6, 22, 26, k.m); rect(9, 6, 22, 7, k.mL); rect(11, 9, 20, 23, k.dd); rect(12, 10, 19, 22, k.c); rect(13, 11, 14, 21, k.l); rect(7, 26, 24, 28, k.mD); rect(13, 3, 18, 6, k.mL); if (v) { rect(4, 14, 9, 16, k.mD); } for (let y = 12; y <= 20; y += 4) rect(11, y, 20, y, k.d); break; }
+    case 'vat': { rect(7, 10, 24, 26, k.m); rect(7, 10, 24, 11, k.mL); rect(9, 13, 22, 24, k.dd); rect(10, 15, 21, 23, k.c); for (let i = 0; i < 5; i++) P(11 + i * 2, 14 - (i % 2), k.h); rect(5, 26, 26, 28, k.mD); rect(14, 5, 17, 10, k.mL); if (v) { disc(15, 19, 2, k.l); } break; }
+    case 'chip': { rect(8, 8, 23, 23, k.m); rect(8, 8, 23, 9, k.mL); rect(11, 11, 20, 20, k.c); rect(12, 12, 19, 13, k.l); rect(13, 14, 18, 18, k.d); for (let i = 0; i < 6; i++) { P(4 + (i < 3 ? 0 : 0), 10 + i * 2, k.mL); P(27, 10 + i * 2, k.mL); P(10 + i * 2, 4, k.mL); P(10 + i * 2, 27, k.mL); } if (v) { P(15, 16, k.h); } break; }
+    case 'bench': { rect(4, 14, 27, 17, k.m); rect(4, 14, 27, 14, k.mL); rect(6, 17, 8, 27, k.mD); rect(23, 17, 25, 27, k.mD); rect(10, 8, 15, 14, k.c); rect(10, 8, 15, 9, k.l); rect(18, 10, 22, 14, k.d); rect(19, 5, 21, 10, k.mL); if (v) { P(12, 6, k.h); } break; }
+    case 'wrench': { line(8, 24, 20, 12, k.m, 3); rect(18, 6, 26, 14, k.m); rect(21, 9, 26, 12, k.dd); rect(18, 6, 26, 7, k.mL); disc(8, 24, 3, k.mL); if (v) { rect(4, 26, 7, 29, k.c); } break; }
     // ---------------- weapons ----------------
     case 'weapon_laser': {
       const bl = 11 + v * 3; // barrel length varies per item

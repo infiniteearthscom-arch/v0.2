@@ -1338,15 +1338,23 @@ router.post('/repair', authMiddleware, async (req, res) => {
       if (!bodyId) throw Object.assign(new Error('Body not found'), { statusCode: 404 });
       const body = await client.query(`SELECT body_type, has_city, name FROM celestial_bodies WHERE id = $1`, [bodyId]);
       const b = body.rows[0];
+      // Foundry (088): a base of yours with a Repair Shop fitted repairs too, at a discount.
+      let discountPct = 0, where = b?.name;
       if (!b || !(b.body_type === 'station' || b.has_city)) {
-        throw Object.assign(new Error('Repairs are only available at stations and cities'), { statusCode: 400 });
+        const pb = await client.query(`SELECT name, fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
+        const base = pb.rows[0];
+        const shop = base && new Date(base.build_completes_at).getTime() <= Date.now()
+          ? Object.values(base.fitted_modules || {}).find(m => m?.stats?.repair_shop) : null;
+        if (!shop) throw Object.assign(new Error('Repairs are only available at stations, cities, or a base of yours with a Repair Shop'), { statusCode: 400 });
+        discountPct = Number(shop.stats.repair_discount_pct) || 0;
+        where = base.name;
       }
 
       const { maxHull, maxArmor } = await getFleetMaxPools(client, userId);
       const hp = clampPct(hull_pct ?? 1), ap = clampPct(armor_pct ?? 1);
       const missingHull = Math.round(maxHull * (1 - hp));
       const missingArmor = Math.round(maxArmor * (1 - ap));
-      const cost = missingHull * HULL_REPAIR_PER_HP + missingArmor * ARMOR_REPAIR_PER_HP;
+      const cost = Math.round((missingHull * HULL_REPAIR_PER_HP + missingArmor * ARMOR_REPAIR_PER_HP) * (1 - discountPct / 100));
 
       const user = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
       const credits = parseInt(user.rows[0]?.credits || 0);
@@ -1357,7 +1365,7 @@ router.post('/repair', authMiddleware, async (req, res) => {
         `UPDATE users SET credits = credits - $1, fleet_hull_pct = 1.0, fleet_armor_pct = 1.0 WHERE id = $2`,
         [cost, userId]
       );
-      return { cost, repaired_hull: missingHull, repaired_armor: missingArmor, credits: credits - cost, station: b.name };
+      return { cost, repaired_hull: missingHull, repaired_armor: missingArmor, credits: credits - cost, station: where, discount_pct: discountPct };
     });
 
     res.json({ success: true, ...result });
@@ -1663,6 +1671,8 @@ router.post('/reset-account', authMiddleware, async (req, res) => {
       await client.query(`DELETE FROM player_anomaly_progress WHERE user_id = $1`, [userId]);
       // 15. Refinery jobs (086) -- cascade from bases too, explicit for clarity.
       await client.query(`DELETE FROM player_refine_jobs WHERE user_id = $1`, [userId]);
+      // 16. Foundry jobs (088).
+      await client.query(`DELETE FROM player_foundry_jobs WHERE user_id = $1`, [userId]);
     });
 
     // 9. Re-grant the Starter Scout so RESET produces the same
