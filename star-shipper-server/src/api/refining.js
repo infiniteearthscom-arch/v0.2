@@ -18,6 +18,7 @@ import { resolveBodyId, getPlayerCargoInfo } from './resources.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { addResourceStack } from '../lib/wrecks.js';
 import { completeQuestInTx } from './quests.js';
+import { loadResourceStackAny, debitStackAny, depotAdd, depotCapacityOf, depotStacks } from '../lib/materials.js';
 
 export const REFINE_GAIN = 8;          // quality per job
 export const DEEP_GAIN_BONUS = 4;      // with tech_deep_refining
@@ -86,6 +87,19 @@ export function computeQuote(stack, quantity, bonuses, tech, lane) {
   return { units_in: n, units_out: outQty, yield_pct: Math.round(yieldFrac * 100), fee: 0, fuel_cells: fuel, seconds, quality_in: Math.round(qIn), quality_out: Math.round(Math.min(cap, qIn + delta)), cap, gain, out_stats: stats, reason, module_quality: mq };
 }
 
+// 089: a stack may live in the base depot (source 'depot').
+async function loadStackAny(userId, baseId, id, source, client = null) {
+  if (source !== 'depot') return loadStack(userId, id, client);
+  if (!client) {
+    const r = await query(`
+      SELECT bi.id, bi.quantity, bi.resource_type_id, bi.stat_purity, bi.stat_stability, bi.stat_potency, bi.stat_density,
+             rt.name AS resource_name, rt.category, rt.rarity, rt.base_price
+        FROM player_base_inventory bi JOIN resource_types rt ON rt.id = bi.resource_type_id
+       WHERE bi.id = $1 AND bi.base_id = $2 AND bi.item_type = 'resource'`, [id, baseId]);
+    return (r.rows || r)[0] ? { ...(r.rows || r)[0], source: 'depot' } : null;
+  }
+  return loadResourceStackAny(client, userId, baseId, { id, source: 'depot' });
+}
 async function loadStack(userId, inventoryId, client = null) {
   const q = client ? client.query.bind(client) : query;
   const r = await q(`
@@ -152,6 +166,7 @@ router.get('/status', async (req, res) => {
       base: { id: ctx.base.id, name: ctx.base.name },
       lanes: ctx.lanes.map(l => ({ ...l, jobs: jobs.filter(j => j.lane === l.slot) })),
       fuel_cells: await fuelCellsInCargo(userId),
+      depot_stacks: (await depotStacks({ query: (sql, p) => query(sql, p).then(r => ({ rows: r.rows || r })) }, ctx.base.id)).filter(s => s.item_type === 'resource'),
       max_queue_per_lane: MAX_QUEUE_PER_LANE,
     });
   } catch (e) { console.error('refining/status:', e); res.status(500).json({ error: 'Failed to load refinery' }); }
@@ -165,7 +180,7 @@ router.get('/quote', async (req, res) => {
     if (!tech.unlocked) return res.json({ unlocked: false, requires_tech: 'tech_refining', tech_name: 'Ore Refining' });
     const ctx = await dockedBaseLanes(req, userId);
     if (ctx.error) return res.status(400).json({ error: ctx.error });
-    const stack = await loadStack(userId, String(req.query.inventory_id || ''));
+    const stack = await loadStackAny(userId, ctx.base.id, String(req.query.inventory_id || ''), req.query.source);
     if (!stack) return res.status(404).json({ error: 'Resource stack not found' });
     const lane = ctx.lanes.find(l => l.slot === req.query.lane) || ctx.lanes[0];
     const bonuses = await getPlayerBonuses(userId);
@@ -177,7 +192,7 @@ router.get('/quote', async (req, res) => {
 router.post('/queue', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { inventory_id, quantity, lane: laneReq } = req.body || {};
+    const { inventory_id, quantity, lane: laneReq, source } = req.body || {};
     if (!inventory_id || !Number.isInteger(quantity) || quantity <= 0) return res.status(400).json({ error: 'inventory_id and a positive integer quantity are required' });
     const tech = await techState(userId);
     if (!tech.unlocked) return res.status(403).json({ error: 'Research Ore Refining first', requires_tech: 'tech_refining' });
@@ -185,7 +200,7 @@ router.post('/queue', async (req, res) => {
     const result = await transaction(async (client) => {
       const ctx = await dockedBaseLanes(req, userId, client);
       if (ctx.error) throw Object.assign(new Error(ctx.error), { statusCode: 400 });
-      const stack = await loadStack(userId, String(inventory_id), client);
+      const stack = await loadStackAny(userId, ctx.base.id, String(inventory_id), source, client);
       if (!stack) throw Object.assign(new Error('Resource stack not found'), { statusCode: 404 });
       const jobs = await jobsForBase(ctx.base.id, (sql, p) => client.query(sql, p).then(r => r.rows));
       // lane: requested, else the one that frees up soonest
@@ -196,8 +211,7 @@ router.post('/queue', async (req, res) => {
       const quote = computeQuote(stack, quantity, bonuses, tech, lane);
       if (quote.reason) throw Object.assign(new Error(quote.reason), { statusCode: 400 });
       await consumeFuel(client, userId, quote.fuel_cells);
-      if (quote.units_in >= Number(stack.quantity)) await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [stack.id]);
-      else await client.query(`UPDATE player_resource_inventory SET quantity = quantity - $1 WHERE id = $2`, [quote.units_in, stack.id]);
+      await debitStackAny(client, stack, quote.units_in);
       const startsAt = new Date(laneEnd(lane.slot));
       const completesAt = new Date(startsAt.getTime() + quote.seconds * 1000);
       const ins = await client.query(`
@@ -254,16 +268,10 @@ router.post('/jobs/:id/collect', async (req, res) => {
       if (ctx.error || ctx.base.id !== j.base_id) throw Object.assign(new Error('Dock at that base to collect'), { statusCode: 400 });
       const stats = { stat_purity: j.out_purity, stat_stability: j.out_stability, stat_potency: j.out_potency, stat_density: j.out_density };
       if (to === 'depot') {
-        const cap = Object.values(ctx.base.fitted_modules || {}).reduce((a, m) => a + (Number(m.stats?.depot_capacity) || 0), 0);
-        const used = await client.query(`SELECT COALESCE(SUM(quantity * GREATEST(COALESCE(stat_density,50),1) / 100.0),0) AS v FROM player_base_inventory WHERE base_id = $1`, [j.base_id]);
-        const vol = j.units_out * Math.max(1, Number(j.out_density ?? 50)) / 100;
+        const cap = depotCapacityOf(ctx.base);
         if (cap <= 0) throw Object.assign(new Error('No depot fitted'), { statusCode: 400 });
-        if (Number(used.rows[0].v) + vol > cap) throw Object.assign(new Error('Depot full'), { statusCode: 400 });
-        const ex = await client.query(`SELECT id FROM player_base_inventory WHERE base_id = $1 AND resource_type_id = $2 AND stat_purity IS NOT DISTINCT FROM $3 AND stat_stability IS NOT DISTINCT FROM $4 AND stat_potency IS NOT DISTINCT FROM $5 AND stat_density IS NOT DISTINCT FROM $6`,
-          [j.base_id, j.resource_type_id, stats.stat_purity, stats.stat_stability, stats.stat_potency, stats.stat_density]);
-        if (ex.rows[0]) await client.query(`UPDATE player_base_inventory SET quantity = quantity + $1 WHERE id = $2`, [j.units_out, ex.rows[0].id]);
-        else await client.query(`INSERT INTO player_base_inventory (base_id, resource_type_id, quantity, stat_purity, stat_stability, stat_potency, stat_density) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [j.base_id, j.resource_type_id, j.units_out, stats.stat_purity, stats.stat_stability, stats.stat_potency, stats.stat_density]);
+        const ok = await depotAdd(client, j.base_id, j.resource_type_id, j.units_out, stats, cap);
+        if (!ok) throw Object.assign(new Error('Depot full'), { statusCode: 400 });
       } else {
         const cargo = await getPlayerCargoInfo(userId, client);
         const vol = j.units_out * Math.max(1, Number(j.out_density ?? 50)) / 100;

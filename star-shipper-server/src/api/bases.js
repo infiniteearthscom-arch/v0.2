@@ -15,7 +15,7 @@ import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
 import { generateGalaxy, generateSystemContent } from '../game/galaxyGenerator.js';
 import { BASE_TIERS, PLOTS_PER_AREA } from '../game/foundryTree.js';
-import { consumeMaterials } from '../lib/materials.js';
+import { consumeMaterials, depotStacks, depotUsed, depotCapacityOf, depotAdd, depotAddItem, depotNextSlot, addItemStack } from '../lib/materials.js';
 
 // ---- public visibility (2026-09-25) ----
 // Planets that already have a station in orbit can't take an ORBITAL
@@ -99,19 +99,13 @@ export async function baseAtBody(userId, bodyId) {
   return { ...b, refinery: refinery ? { yield_pct: Number(refinery.stats.refine_yield_pct) || 0 } : null };
 }
 
+// The depot as a cargo hold (089): resource + item stacks with slot positions.
 async function depotFor(base, q = query) {
-  const capacity = Object.values(base.fitted_modules || {}).reduce((a, m) => a + (Number(m.stats?.depot_capacity) || 0), 0);
-  const r = await q(`
-    SELECT bi.*, rt.name AS resource_name, rt.category, rt.rarity
-      FROM player_base_inventory bi JOIN resource_types rt ON rt.id = bi.resource_type_id
-     WHERE bi.base_id = $1 ORDER BY rt.name`, [base.id]);
-  const rows = r.rows || r;
-  const used = rows.reduce((a, s) => a + Number(s.quantity) * Math.max(1, Number(s.stat_density ?? 50)) / 100, 0);
-  return {
-    capacity, used: Math.round(used * 10) / 10,
-    stacks: rows.map(s => ({ id: s.id, resource_type_id: s.resource_type_id, resource_name: s.resource_name, quantity: Number(s.quantity),
-      stats: { purity: s.stat_purity, stability: s.stat_stability, potency: s.stat_potency, density: s.stat_density }, avg_quality: Math.round(AVG(s)) })),
-  };
+  const client = q === query ? { query: (sql, p) => query(sql, p).then(r => ({ rows: r.rows || r })) } : { query: (sql, p) => q(sql, p) };
+  const capacity = depotCapacityOf(base);
+  const stacks = await depotStacks(client, base.id);
+  const used = await depotUsed(client, base.id);
+  return { capacity, used: Math.round(used * 10) / 10, stacks };
 }
 
 async function shapeBase(b, q = query) {
@@ -316,7 +310,7 @@ router.post('/:id/upgrade', async (req, res) => {
 router.post('/:id/fit', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { slot, inventory_id } = req.body || {};
+    const { slot, inventory_id, depot_stack_id } = req.body || {};
     const result = await transaction(async (client) => {
       const b = await loadOwnBase(client, userId, String(req.params.id));
       await mustBeDockedAt(req, userId, b);
@@ -327,19 +321,26 @@ router.post('/:id/fit', async (req, res) => {
       const key = slotKey(idx);
       const fitted = b.fitted_modules || {};
       if (fitted[key]) throw Object.assign(new Error('Slot occupied -- unfit it first'), { statusCode: 409 });
-      const item = await client.query(`
-        SELECT pri.id, pri.item_id, pri.quantity, pri.item_data, mt.name, mt.stats, mt.slot_type, mt.tier
+      // From cargo, or (089) straight out of the depot.
+      const item = depot_stack_id
+        ? await client.query(`
+        SELECT bi.id, bi.item_id, bi.quantity, bi.item_data, mt.name, mt.stats, mt.slot_type, mt.tier, 'depot' AS src
+          FROM player_base_inventory bi JOIN module_types mt ON mt.id = bi.item_id
+         WHERE bi.id = $1 AND bi.base_id = $2 AND bi.item_type = 'item' FOR UPDATE OF bi`, [depot_stack_id, b.id])
+        : await client.query(`
+        SELECT pri.id, pri.item_id, pri.quantity, pri.item_data, mt.name, mt.stats, mt.slot_type, mt.tier, 'cargo' AS src
           FROM player_resource_inventory pri JOIN module_types mt ON mt.id = pri.item_id
          WHERE pri.id = $1 AND pri.user_id = $2 AND pri.item_type = 'item' FOR UPDATE OF pri`, [inventory_id, userId]);
       const it = item.rows[0];
-      if (!it) throw Object.assign(new Error('Module not in cargo'), { statusCode: 404 });
+      if (!it) throw Object.assign(new Error(depot_stack_id ? 'Building not in the depot' : 'Module not in cargo'), { statusCode: 404 });
       if (it.slot_type !== BASE_SLOT_TYPE) throw Object.assign(new Error('That module does not fit a base'), { statusCode: 400 });
       // Foundry stations need a base of their tier (T2 stations at an Outpost, ...). Service
       // buildings (depot, refinery, lab, repair shop) fit any tier so onboarding is untouched.
       const ft = Number(it.stats?.foundry?.tier) || 0;
       if (ft > b.tier) throw Object.assign(new Error(`${it.name} needs a ${TIERS[ft]?.name || 'higher-tier'} base (this one is a ${TIERS[b.tier].name})`), { statusCode: 403 });
-      if (Number(it.quantity) > 1) await client.query(`UPDATE player_resource_inventory SET quantity = quantity - 1 WHERE id = $1`, [it.id]);
-      else await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [it.id]);
+      const srcTable = it.src === 'depot' ? 'player_base_inventory' : 'player_resource_inventory';
+      if (Number(it.quantity) > 1) await client.query(`UPDATE ${srcTable} SET quantity = quantity - 1 WHERE id = $1`, [it.id]);
+      else await client.query(`DELETE FROM ${srcTable} WHERE id = $1`, [it.id]);
       fitted[key] = { module_type_id: it.item_id, name: it.name, stats: it.stats || {}, tier: it.tier, quality: it.item_data?.quality || null, source: it.item_data?.source || null };
       const up = await client.query(`UPDATE player_bases SET fitted_modules = $2, updated_at = NOW() WHERE id = $1 RETURNING *`, [b.id, JSON.stringify(fitted)]);
       return up.rows[0];
@@ -383,34 +384,28 @@ router.post('/:id/unfit', async (req, res) => {
   }
 });
 
-// POST /bases/:id/depot/deposit { inventory_id, quantity }
+// POST /bases/:id/depot/deposit { inventory_id, quantity? }  -- cargo -> depot (resource or item stack)
 router.post('/:id/depot/deposit', async (req, res) => {
   try {
     const userId = req.user.id;
     const { inventory_id, quantity } = req.body || {};
-    if (!inventory_id || !Number.isInteger(quantity) || quantity <= 0) return res.status(400).json({ error: 'inventory_id and a positive integer quantity are required' });
+    if (!inventory_id) return res.status(400).json({ error: 'inventory_id is required' });
     const result = await transaction(async (client) => {
       const b = await loadOwnBase(client, userId, String(req.params.id));
       await mustBeDockedAt(req, userId, b);
-      const d = await depotFor(b, client.query.bind(client));
-      if (d.capacity <= 0) throw Object.assign(new Error('Fit a Cargo Depot first'), { statusCode: 400 });
-      const st = await client.query(`SELECT * FROM player_resource_inventory WHERE id = $1 AND user_id = $2 AND item_type = 'resource' FOR UPDATE`, [inventory_id, userId]);
+      const cap = depotCapacityOf(b);
+      if (cap <= 0) throw Object.assign(new Error('Fit a Cargo Depot first'), { statusCode: 400 });
+      const st = await client.query(`SELECT * FROM player_resource_inventory WHERE id = $1 AND user_id = $2 FOR UPDATE`, [inventory_id, userId]);
       const s = st.rows[0];
-      if (!s) throw Object.assign(new Error('Resource stack not found'), { statusCode: 404 });
-      const take = Math.min(quantity, Number(s.quantity));
-      const vol = take * Math.max(1, Number(s.stat_density ?? 50)) / 100;
-      if (d.used + vol > d.capacity) throw Object.assign(new Error(`Depot full (${Math.floor(d.capacity - d.used)} units of room)`), { statusCode: 400 });
+      if (!s) throw Object.assign(new Error('Stack not found in cargo'), { statusCode: 404 });
+      if (s.item_id === 'sealed_cargo') throw Object.assign(new Error('Contract freight stays aboard'), { statusCode: 400 });
+      const take = Number.isInteger(quantity) && quantity > 0 ? Math.min(quantity, Number(s.quantity)) : Number(s.quantity);
+      const ok = s.item_type === 'item'
+        ? await depotAddItem(client, b.id, s.item_id, take, s.item_data || {}, cap)
+        : await depotAdd(client, b.id, s.resource_type_id, take, { stat_purity: s.stat_purity, stat_stability: s.stat_stability, stat_potency: s.stat_potency, stat_density: s.stat_density }, cap);
+      if (!ok) throw Object.assign(new Error(`Depot full (${Math.floor(cap - await depotUsed(client, b.id))} units of room)`), { statusCode: 400 });
       if (take >= Number(s.quantity)) await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [s.id]);
       else await client.query(`UPDATE player_resource_inventory SET quantity = quantity - $1 WHERE id = $2`, [take, s.id]);
-      const ex = await client.query(`
-        SELECT id FROM player_base_inventory WHERE base_id = $1 AND resource_type_id = $2
-           AND stat_purity IS NOT DISTINCT FROM $3 AND stat_stability IS NOT DISTINCT FROM $4
-           AND stat_potency IS NOT DISTINCT FROM $5 AND stat_density IS NOT DISTINCT FROM $6`,
-        [b.id, s.resource_type_id, s.stat_purity, s.stat_stability, s.stat_potency, s.stat_density]);
-      if (ex.rows[0]) await client.query(`UPDATE player_base_inventory SET quantity = quantity + $1 WHERE id = $2`, [take, ex.rows[0].id]);
-      else await client.query(`
-        INSERT INTO player_base_inventory (base_id, resource_type_id, quantity, stat_purity, stat_stability, stat_potency, stat_density)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)`, [b.id, s.resource_type_id, take, s.stat_purity, s.stat_stability, s.stat_potency, s.stat_density]);
       return { base: await shapeBase(b, client.query.bind(client)), deposited: take };
     });
     res.json({ success: true, ...result });
@@ -420,31 +415,68 @@ router.post('/:id/depot/deposit', async (req, res) => {
   }
 });
 
-// POST /bases/:id/depot/withdraw { stack_id, quantity }
+// POST /bases/:id/depot/withdraw { stack_id, quantity? }  -- depot -> cargo
 router.post('/:id/depot/withdraw', async (req, res) => {
   try {
     const userId = req.user.id;
     const { stack_id, quantity } = req.body || {};
-    if (!stack_id || !Number.isInteger(quantity) || quantity <= 0) return res.status(400).json({ error: 'stack_id and a positive integer quantity are required' });
+    if (!stack_id) return res.status(400).json({ error: 'stack_id is required' });
     const result = await transaction(async (client) => {
       const b = await loadOwnBase(client, userId, String(req.params.id));
       await mustBeDockedAt(req, userId, b);
       const st = await client.query(`SELECT * FROM player_base_inventory WHERE id = $1 AND base_id = $2 FOR UPDATE`, [stack_id, b.id]);
       const s = st.rows[0];
       if (!s) throw Object.assign(new Error('Depot stack not found'), { statusCode: 404 });
-      const take = Math.min(quantity, Number(s.quantity));
+      const take = Number.isInteger(quantity) && quantity > 0 ? Math.min(quantity, Number(s.quantity)) : Number(s.quantity);
       const cargo = await getPlayerCargoInfo(userId, client);
-      const vol = take * Math.max(1, Number(s.stat_density ?? 50)) / 100;
+      const vol = s.item_type === 'item' ? take : take * Math.max(1, Number(s.stat_density ?? 50)) / 100;
       if (vol > cargo.remaining) throw Object.assign(new Error(`Not enough cargo room (${Math.floor(cargo.remaining)} free)`), { statusCode: 400 });
       if (take >= Number(s.quantity)) await client.query(`DELETE FROM player_base_inventory WHERE id = $1`, [s.id]);
       else await client.query(`UPDATE player_base_inventory SET quantity = quantity - $1 WHERE id = $2`, [take, s.id]);
-      await addResourceStack(client, userId, s.resource_type_id, take, { stat_purity: s.stat_purity, stat_stability: s.stat_stability, stat_potency: s.stat_potency, stat_density: s.stat_density });
+      if (s.item_type === 'item') await addItemStack(client, userId, s.item_id, take, s.item_data || {});
+      else await addResourceStack(client, userId, s.resource_type_id, take, { stat_purity: s.stat_purity, stat_stability: s.stat_stability, stat_potency: s.stat_potency, stat_density: s.stat_density });
       return { base: await shapeBase(b, client.query.bind(client)), withdrawn: take };
     });
     res.json({ success: true, ...result });
   } catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
     console.error('bases/withdraw:', e); res.status(500).json({ error: 'Failed to withdraw' });
+  }
+});
+
+// POST /bases/:id/depot/move { stack_id, slot_index }  -- arrange within the depot
+// (drop on an identical stack merges; drop on another stack swaps positions)
+router.post('/:id/depot/move', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { stack_id, slot_index } = req.body || {};
+    if (!stack_id || !Number.isInteger(slot_index) || slot_index < 0) return res.status(400).json({ error: 'stack_id and slot_index are required' });
+    const result = await transaction(async (client) => {
+      const b = await loadOwnBase(client, userId, String(req.params.id));
+      await mustBeDockedAt(req, userId, b);
+      const st = await client.query(`SELECT * FROM player_base_inventory WHERE id = $1 AND base_id = $2 FOR UPDATE`, [stack_id, b.id]);
+      const s = st.rows[0];
+      if (!s) throw Object.assign(new Error('Depot stack not found'), { statusCode: 404 });
+      const tgt = await client.query(`SELECT * FROM player_base_inventory WHERE base_id = $1 AND slot_index = $2 AND id <> $3 FOR UPDATE`, [b.id, slot_index, s.id]);
+      const t = tgt.rows[0];
+      if (t) {
+        const same = t.item_type === s.item_type && (s.item_type === 'item'
+          ? (t.item_id === s.item_id && JSON.stringify(t.item_data || {}) === JSON.stringify(s.item_data || {}))
+          : (t.resource_type_id === s.resource_type_id && ['stat_purity','stat_stability','stat_potency','stat_density'].every(k => (t[k] ?? null) === (s[k] ?? null))));
+        if (same) {
+          await client.query(`UPDATE player_base_inventory SET quantity = quantity + $1, updated_at = NOW() WHERE id = $2`, [Number(s.quantity), t.id]);
+          await client.query(`DELETE FROM player_base_inventory WHERE id = $1`, [s.id]);
+          return { merged: true };
+        }
+        await client.query(`UPDATE player_base_inventory SET slot_index = $1 WHERE id = $2`, [s.slot_index, t.id]);
+      }
+      await client.query(`UPDATE player_base_inventory SET slot_index = $1 WHERE id = $2`, [slot_index, s.id]);
+      return { moved: true };
+    });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
+    console.error('bases/depot-move:', e); res.status(500).json({ error: 'Failed to move' });
   }
 });
 

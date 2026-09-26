@@ -24,6 +24,10 @@ Job time = `recipe.seconds × runs ÷ (Q/50)^0.6 × (1 + smelting_time_pct)`; qu
 
 Full-screen: base portrait (`utils/pixelArt/baseArt.js`, grows with tier and fitted buildings), upgrade card, depot meter, materials on hand · the plot grid (one 2×2 area per tier, locked areas dimmed) · the selected plot (empty: cargo buildings + the catalogue with research / craft deep-links; station: recipes, runs slider, queue with progress, COLLECT / CANCEL; depot: store / take; grade refinery: RefineryPanel; lab; repair shop). The planet Base tab is now the build card + a summary with OPEN BASE CONSOLE.
 
+## The depot is a cargo hold (089)
+
+`player_base_inventory` mirrors cargo: resource OR item stacks with a slot position (items take 1 depot unit). The console's depot panel shows the fleet hold and the base hold side by side as grids (`components/items/CargoGrid.jsx`); a drag moves the whole stack across, arranges within a hold, or merges onto a matching stack (`/bases/:id/depot/move`). Everything at the base draws from the depot: foundry jobs and base upgrades (depot first), buildings fit straight from the depot (`/fit {depot_stack_id}`), the grade refinery lists depot stacks (`source: 'depot'`), and the Crafting window shows depot resource stacks with a BASE badge while docked at your base (`/craft` ingredients carry `source`).
+
 ## Not built yet
 
 Consumables with no use-slot (hull repair kit, afterburner, shield battery…), blueprints for T4/T5 stations, drone bays and vendor posts (need their systems), surface-vs-orbital family bonuses, per-family speed skills, item inputs to jobs.

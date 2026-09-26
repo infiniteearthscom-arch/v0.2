@@ -7,7 +7,7 @@ import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { RESOURCE_TYPES, getQualityTier, QUALITY_TIER_COLORS } from '@/data/resources';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
-import { resourcesAPI } from '@/utils/api';
+import { resourcesAPI, basesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
 import { cargoTooltip } from '@/components/items/CargoTooltipLayer';
 import { PixelItemIcon, resourceIconSpec } from '@/components/pixel/PixelArt';
@@ -607,6 +607,7 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLe
         // drop handler accepts it byte-for-byte.
         e.dataTransfer.setData('application/json', JSON.stringify({
           stack_id: stack.id,
+          source: stack.source || 'cargo',
           item_type: 'resource',
           resource_type_id: stack.resource_type_id,
           resource_name: stack.resource_name,
@@ -634,6 +635,9 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLe
       <div className="absolute inset-1 rounded flex items-center justify-center" style={{ backgroundColor: iconBg }}>
         <PixelItemIcon size={28} spec={resourceIconSpec(stack.resource_type_id, ((stack.stats?.purity ?? 50) + (stack.stats?.stability ?? 50) + (stack.stats?.potency ?? 50) + (stack.stats?.density ?? 50)) / 4)} />
       </div>
+      {stack.source === 'depot' && (
+        <div className="absolute -top-0.5 -left-0.5 text-[0.55rem] font-bold px-1 rounded-sm leading-tight" style={{ backgroundColor: '#14532dcc', color: '#4ade80' }} title="From your base depot">BASE</div>
+      )}
       {stack.quantity > 1 && (
         <div
           className="absolute -bottom-0.5 -right-0.5 text-[0.8rem] font-bold px-1 rounded-sm leading-tight"
@@ -683,12 +687,23 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
         for (const stack of resource.stacks) {
           out.push({
             ...stack,
+            source: 'cargo',
             resource_type_id: resource.resource_type_id,
             resource_name: resource.resource_name,
             category: resource.category,
           });
         }
       }
+      // 089: docked at a base you own -> its depot's resource stacks craft too
+      try {
+        const here = await basesAPI.here();
+        if (here?.base && !here.base.building) {
+          for (const d of (here.base.depot?.stacks || [])) {
+            if (d.item_type !== 'resource') continue;
+            out.push({ id: d.id, source: 'depot', quantity: d.quantity, stats: d.stats, resource_type_id: d.resource_type_id, resource_name: d.resource_name, category: d.category });
+          }
+        }
+      } catch {}
       setStacks(out);
     } catch (err) {
       console.error('Cargo panel load error:', err);
@@ -900,6 +915,7 @@ export const CraftingWindow = () => {
       } else {
         newStacks = [...existing.stacks, {
           stack_id: dropData.stack_id,
+          source: dropData.source || 'cargo',
           quantity: toAssign,
           resource_name: dropData.resource_name,
           stats: dropData.stats,
@@ -951,7 +967,7 @@ export const CraftingWindow = () => {
       const ingredients = [];
       for (const ing of Object.values(assignedIngredients)) {
         for (const stack of ing.stacks) {
-          ingredients.push({ stack_id: stack.stack_id, quantity: stack.quantity });
+          ingredients.push({ stack_id: stack.stack_id, quantity: stack.quantity, source: stack.source || 'cargo' });
         }
       }
       
@@ -1428,6 +1444,7 @@ export const CraftingWindow = () => {
             if (!ing) return;
             handleIngredientDrop(ing.resource_name, ing.quantity, {
               stack_id: stack.id,
+              source: stack.source || 'cargo',
               item_type: 'resource',
               resource_type_id: stack.resource_type_id,
               resource_name: stack.resource_name,

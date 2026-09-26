@@ -21,7 +21,7 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { resolveBodyId, getPlayerCargoInfo } from './resources.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { addResourceStack } from '../lib/wrecks.js';
-import { availableMaterials, consumeMaterials, depotAdd, addItemStack } from '../lib/materials.js';
+import { availableMaterials, consumeMaterials, depotAdd, depotAddItem, addItemStack } from '../lib/materials.js';
 import { BASE_TIERS } from '../game/foundryTree.js';
 
 export const MAX_RUNS = 20;
@@ -125,10 +125,11 @@ router.get('/status', async (req, res) => {
     const recipes = await queryAll(`SELECT * FROM foundry_recipes ORDER BY sort_order`);
     const jobs = (await jobsForBase(base.id)).map(j => shapeJob(j));
     const materials = await transaction(async (client) => availableMaterials(client, userId, base.id));
+    const depotCap = depotCapacity(base);
     const bonuses = await getPlayerBonuses(userId);
     res.json({
       available: true,
-      base: { id: base.id, name: base.name, tier: base.tier, depot_capacity: depotCapacity(base) },
+      base: { id: base.id, name: base.name, tier: base.tier, depot_capacity: depotCap },
       stations: stations.map(s => ({
         ...s,
         recipes: recipes.filter(r => r.station_module_id === s.module_type_id).map(r => ({
@@ -235,10 +236,22 @@ router.post('/jobs/:id/collect', async (req, res) => {
       const cap = depotCapacity(base);
       const stats = { stat_purity: j.out_purity, stat_stability: j.out_stability, stat_potency: j.out_potency, stat_density: j.out_density };
       const qty = Number(j.output_quantity);
-      let to = toReq === 'cargo' ? 'cargo' : toReq === 'depot' ? 'depot' : (cap > 0 && !j.output_item_id ? 'depot' : 'cargo');
-      if (j.output_item_id) to = 'cargo'; // depot holds resources only
+      const to = toReq === 'cargo' ? 'cargo' : toReq === 'depot' ? 'depot' : (cap > 0 ? 'depot' : 'cargo');
+      const itemDataFor = async () => {
+        if (!j.output_item_id) return {};
+        const idef = await client.query(`SELECT item_data_defaults FROM item_definitions WHERE id = $1`, [j.output_item_id]);
+        const defaults = idef.rows[0]?.item_data_defaults || {};
+        if (j.output_item_id !== 'basic_harvester') return {};
+        const qm = Math.max(0.5, ((Number(j.out_purity) + Number(j.out_stability) + Number(j.out_potency) + Number(j.out_density)) / 4) / 50);
+        const d = { ...defaults, quality: { purity: j.out_purity, stability: j.out_stability, potency: j.out_potency, density: j.out_density }, source: 'crafted' };
+        if (d.harvest_rate) d.harvest_rate = Math.round(d.harvest_rate * qm);
+        if (d.storage_capacity) d.storage_capacity = Math.round(d.storage_capacity * qm);
+        return d;
+      };
       if (to === 'depot') {
-        const ok = await depotAdd(client, base.id, j.output_resource_type_id, qty, stats, cap);
+        const ok = j.output_item_id
+          ? await depotAddItem(client, base.id, j.output_item_id, qty, await itemDataFor(), cap)
+          : await depotAdd(client, base.id, j.output_resource_type_id, qty, stats, cap);
         if (!ok) throw Object.assign(new Error(cap > 0 ? 'Depot full -- collect to cargo instead' : 'No depot fitted -- collect to cargo'), { statusCode: 400 });
       } else if (j.output_resource_type_id) {
         const cargo = await getPlayerCargoInfo(userId, client);
@@ -248,16 +261,7 @@ router.post('/jobs/:id/collect', async (req, res) => {
       } else {
         const cargo = await getPlayerCargoInfo(userId, client);
         if (qty > cargo.remaining) throw Object.assign(new Error(`Not enough cargo room (${Math.floor(cargo.remaining)} free)`), { statusCode: 400 });
-        const idef = await client.query(`SELECT item_data_defaults FROM item_definitions WHERE id = $1`, [j.output_item_id]);
-        const defaults = idef.rows[0]?.item_data_defaults || {};
-        let itemData = {};
-        if (j.output_item_id === 'basic_harvester') {
-          const qm = Math.max(0.5, ((Number(j.out_purity) + Number(j.out_stability) + Number(j.out_potency) + Number(j.out_density)) / 4) / 50);
-          itemData = { ...defaults, quality: { purity: j.out_purity, stability: j.out_stability, potency: j.out_potency, density: j.out_density }, source: 'crafted' };
-          if (itemData.harvest_rate) itemData.harvest_rate = Math.round(itemData.harvest_rate * qm);
-          if (itemData.storage_capacity) itemData.storage_capacity = Math.round(itemData.storage_capacity * qm);
-        }
-        await addItemStack(client, userId, j.output_item_id, qty, itemData);
+        await addItemStack(client, userId, j.output_item_id, qty, await itemDataFor());
       }
       await client.query(`UPDATE player_foundry_jobs SET status = 'collected', collected_at = NOW() WHERE id = $1`, [j.id]);
       return { collected: qty, to };

@@ -147,6 +147,10 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 089 (depot items) ---
+  const depCols = await pool.query(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name = 'player_base_inventory' AND column_name IN ('item_type','item_id','item_data','slot_index')`);
+  report('player_base_inventory holds items with slot positions (089)', depCols.rows[0]?.n === 4, `${depCols.rows[0]?.n}/4 columns`);
+
   // --- migration 088 (foundry tree) ---
   report('foundry_recipes table (088)', await tableExists('foundry_recipes'));
   report('player_foundry_jobs table (088)', await tableExists('player_foundry_jobs'));

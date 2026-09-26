@@ -45,10 +45,13 @@ export const RefineryPanel = () => {
   const [, tick] = useState(0);
 
   const load = async () => {
-    try { setStatus(await refiningAPI.status()); } catch (e) { setErr(e.message || 'Refinery unavailable'); }
+    let st = null;
+    try { st = await refiningAPI.status(); setStatus(st); } catch (e) { setErr(e.message || 'Refinery unavailable'); }
     try {
       const data = await resourcesAPI.getInventory();
-      const list = (data.inventory || []).flatMap(r => r.stacks.map(s => ({ id: s.id, quantity: s.quantity, stats: s.stats, resource_name: r.resource_name })));
+      const list = (data.inventory || []).flatMap(r => r.stacks.map(s => ({ id: s.id, quantity: s.quantity, stats: s.stats, resource_name: r.resource_name, source: 'cargo' })));
+      // 089: the base depot's resource stacks refine too
+      for (const s of (st?.depot_stacks || [])) list.push({ id: s.id, quantity: s.quantity, stats: s.stats, resource_name: s.resource_name, source: 'depot' });
       list.sort((a, b) => a.resource_name.localeCompare(b.resource_name) || avgQ(b.stats) - avgQ(a.stats));
       setStacks(list);
       if (selected && !list.find(s => s.id === selected.id)) { setSelected(null); setQuote(null); }
@@ -61,7 +64,7 @@ export const RefineryPanel = () => {
     if (!selected) { setQuote(null); return; }
     let cancelled = false;
     const t = setTimeout(async () => {
-      try { const r = await refiningAPI.quote(selected.id, qty, lane); if (!cancelled) { setQuote(r.quote || null); setErr(null); } }
+      try { const r = await refiningAPI.quote(selected.id, qty, lane, selected.source); if (!cancelled) { setQuote(r.quote || null); setErr(null); } }
       catch (e) { if (!cancelled) { setQuote(null); setErr(e.message || 'Quote failed'); } }
     }, 150);
     return () => { cancelled = true; clearTimeout(t); };
@@ -125,7 +128,7 @@ export const RefineryPanel = () => {
       <div style={{ color: GOLD.light, fontWeight: 800, letterSpacing: 1, fontSize: '0.85rem', margin: '10px 0 6px' }}>QUEUE A JOB</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-          {stacks.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.8rem' }}>No resources in cargo.</div>}
+          {stacks.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.8rem' }}>No resources in cargo or the depot.</div>}
           {stacks.map(s => {
             const tier = getQualityTier(s.stats?.purity ?? 50, s.stats?.stability ?? 50, s.stats?.potency ?? 50, s.stats?.density ?? 50);
             const active = selected?.id === s.id;
@@ -134,7 +137,7 @@ export const RefineryPanel = () => {
                 width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', padding: '5px 8px', marginBottom: 3, borderRadius: 3, cursor: 'pointer',
                 background: active ? `${GOLD.pri}1a` : 'rgba(4,8,16,0.55)', border: `1px solid ${active ? GOLD.pri + '88' : EDGE}`, borderLeft: `3px solid ${tier.color}`, color: '#e2e8f0', fontFamily: F,
               }}>
-                <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{s.resource_name}</span>
+                <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{s.source === 'depot' ? '🏠 ' : ''}{s.resource_name}</span>
                 <span style={{ fontFamily: FM, fontSize: '0.72rem', color: '#8fa3b8' }}>×{fmt(s.quantity)} · <span style={{ color: tier.color }}>Q{avgQ(s.stats)}</span></span>
               </button>
             );
@@ -167,7 +170,7 @@ export const RefineryPanel = () => {
               {quote?.reason && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: 4 }}>{quote.reason}</div>}
               {err && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: 4 }}>{err}</div>}
               <div style={{ marginTop: 8 }}>
-                <Btn disabled={busy || !quote || !!quote.reason || quote.fuel_cells > status.fuel_cells} onClick={() => act(() => refiningAPI.queue(selected.id, qty, lane), r => `Queued: ${r.job.units_in} → ${r.job.units_out} in ${fmtSecs(r.quote.seconds)}`)}>⚗ QUEUE JOB</Btn>
+                <Btn disabled={busy || !quote || !!quote.reason || quote.fuel_cells > status.fuel_cells} onClick={() => act(() => refiningAPI.queue(selected.id, qty, lane, selected.source), r => `Queued: ${r.job.units_in} → ${r.job.units_out} in ${fmtSecs(r.quote.seconds)}`)}>⚗ QUEUE JOB</Btn>
               </div>
             </>
           )}

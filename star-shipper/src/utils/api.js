@@ -521,15 +521,18 @@ export const basesAPI = {
   upgrade: (id) => request(`/bases/${encodeURIComponent(id)}/upgrade`, { method: 'POST' }),
   fit: (id, slot, inventoryId) => request(`/bases/${encodeURIComponent(id)}/fit`, { method: 'POST', body: JSON.stringify({ slot, inventory_id: inventoryId }) }),
   unfit: (id, slot) => request(`/bases/${encodeURIComponent(id)}/unfit`, { method: 'POST', body: JSON.stringify({ slot }) }),
-  deposit: (id, inventoryId, quantity) => request(`/bases/${encodeURIComponent(id)}/depot/deposit`, { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity }) }),
-  withdraw: (id, stackId, quantity) => request(`/bases/${encodeURIComponent(id)}/depot/withdraw`, { method: 'POST', body: JSON.stringify({ stack_id: stackId, quantity }) }),
+  // 089: quantity optional (whole stack when omitted); resource OR item stacks
+  deposit: (id, inventoryId, quantity) => request(`/bases/${encodeURIComponent(id)}/depot/deposit`, { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, ...(quantity ? { quantity } : {}) }) }),
+  withdraw: (id, stackId, quantity) => request(`/bases/${encodeURIComponent(id)}/depot/withdraw`, { method: 'POST', body: JSON.stringify({ stack_id: stackId, ...(quantity ? { quantity } : {}) }) }),
+  moveDepot: (id, stackId, slotIndex) => request(`/bases/${encodeURIComponent(id)}/depot/move`, { method: 'POST', body: JSON.stringify({ stack_id: stackId, slot_index: slotIndex }) }),
+  fitFromDepot: (id, slot, depotStackId) => request(`/bases/${encodeURIComponent(id)}/fit`, { method: 'POST', body: JSON.stringify({ slot, depot_stack_id: depotStackId }) }),
 };
 
 // Refinery (2026-09-22) -- docs/refining-spec.md
 export const refiningAPI = {
   status: () => request('/refining/status'),
-  quote: (inventoryId, quantity, lane) => request(`/refining/quote?inventory_id=${encodeURIComponent(inventoryId)}&quantity=${encodeURIComponent(quantity)}${lane ? `&lane=${encodeURIComponent(lane)}` : ''}`),
-  queue: (inventoryId, quantity, lane) => request('/refining/queue', { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity, ...(lane ? { lane } : {}) }) }),
+  quote: (inventoryId, quantity, lane, source) => request(`/refining/quote?inventory_id=${encodeURIComponent(inventoryId)}&quantity=${encodeURIComponent(quantity)}${lane ? `&lane=${encodeURIComponent(lane)}` : ''}${source ? `&source=${encodeURIComponent(source)}` : ''}`),
+  queue: (inventoryId, quantity, lane, source) => request('/refining/queue', { method: 'POST', body: JSON.stringify({ inventory_id: inventoryId, quantity, ...(lane ? { lane } : {}), ...(source ? { source } : {}) }) }),
   cancel: (jobId) => request(`/refining/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
   collect: (jobId, to) => request(`/refining/jobs/${encodeURIComponent(jobId)}/collect`, { method: 'POST', body: JSON.stringify({ to }) }),
 };

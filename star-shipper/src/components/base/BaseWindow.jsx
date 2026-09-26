@@ -15,7 +15,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useGameStore } from '@/stores/gameStore';
-import { basesAPI, foundryAPI, fittingAPI } from '@/utils/api';
+import { basesAPI, foundryAPI, fittingAPI, resourcesAPI } from '@/utils/api';
+import { CargoGrid } from '@/components/items/CargoGrid';
 import { playSound } from '@/utils/audio';
 import { PixelItemIcon, moduleIconSpec, resourceIconSpecByName } from '@/components/pixel/PixelArt';
 import { RefineryPanel } from '@/components/refinery/RefineryPanel';
@@ -154,7 +155,11 @@ const StationPanel = ({ base, slot, module, foundry, reload, busy, act }) => {
 };
 
 // ---------------- empty plot: build picker ----------------
-const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, setResearchTargetTech, setCraftingTargetRecipe }) => {
+const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, setResearchTargetTech, setCraftingTargetRecipe }) => {
+  // The console is a full-screen modal; the Research modal and the Crafting
+  // panel open BEHIND it. Close the console before deep-linking.
+  const goResearch = (techId) => { closeWindow('base'); setResearchTargetTech(techId); openWindow('research'); };
+  const goCraft = (recipeId) => { closeWindow('base'); setCraftingTargetRecipe(recipeId); openWindow('crafting'); };
   const areaTier = Math.floor((Number(slot.replace('b', '')) - 1) / (base.plots_per_area || 4)) + 1;
   const inCargo = (data.cargo_modules || []);
   const cat = (data.buildables || []);
@@ -164,6 +169,21 @@ const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, setResearchTa
       <Card accent={GOLD.pri} title={`PLOT ${slot.toUpperCase()} · ${(base.areas || []).find(a => a.tier === areaTier)?.name || ''} AREA`}>
         <div style={{ color: '#8fa3b8', fontSize: '0.78rem' }}>Empty. Fit a building from cargo, or see what could stand here.</div>
       </Card>
+      {(base.depot?.stacks || []).some(d => d.item_type === 'item' && d.item_data?.slot_type === 'base') && (
+        <Card title="IN THE DEPOT" accent="#4ade80">
+          {(base.depot.stacks || []).filter(d => d.item_type === 'item' && d.item_data?.slot_type === 'base').map(d => {
+            const ft = d.item_data?.base_stats?.foundry?.tier || 0;
+            const blocked = ft > base.tier;
+            return (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderTop: `1px solid ${EDGE}55` }}>
+                <PixelItemIcon size={24} spec={moduleIconSpec({ itemId: d.item_id, slotType: 'base', tier: d.item_data?.tier })} />
+                <span style={{ flex: 1, color: '#e2e8f0', fontSize: '0.8rem', fontWeight: 700 }}>{d.item_name} <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.7rem' }}>×{d.quantity}</span></span>
+                <Btn small disabled={busy || blocked} title={blocked ? `Needs a tier ${ft} base` : ''} onClick={() => act(() => basesAPI.fitFromDepot(base.id, slot, d.id), `${d.item_name} built on ${slot.toUpperCase()}`)}>BUILD HERE</Btn>
+              </div>
+            );
+          })}
+        </Card>
+      )}
       <Card title={`IN CARGO · ${inCargo.length}`}>
         {inCargo.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.78rem' }}>no base buildings in cargo</div>}
         {inCargo.map(cm => {
@@ -191,9 +211,9 @@ const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, setResearchTa
                   <div style={{ color: color, fontSize: '0.8rem', fontWeight: 700 }}>{b.name} <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.7rem' }}>T{b.tier}{b.in_cargo ? ` · ${b.in_cargo} in cargo` : ''}</span></div>
                   <div style={{ color: '#8fa3b8', fontSize: '0.72rem', lineHeight: 1.3 }}>{b.description}</div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                    {!b.unlocked && <Btn small accent="#fbbf24" onClick={() => { setResearchTargetTech(b.requires_tech); openWindow('research'); }}>🔒 RESEARCH</Btn>}
+                    {!b.unlocked && <Btn small accent="#fbbf24" onClick={() => goResearch(b.requires_tech)}>🔒 RESEARCH</Btn>}
                     {b.unlocked && !tierOk && <span style={{ color: '#f87171', fontSize: '0.7rem', fontFamily: FM }}>needs a tier {ft} base</span>}
-                    {b.unlocked && <Btn small accent="#c084fc" onClick={() => { setCraftingTargetRecipe(`craft_${b.id}`); openWindow('crafting'); }}>⚒ CRAFT</Btn>}
+                    {b.unlocked && <Btn small accent="#c084fc" onClick={() => goCraft(`craft_${b.id}`)}>⚒ CRAFT</Btn>}
                     {b.buy_price && <span style={{ color: '#5a7080', fontSize: '0.7rem', fontFamily: FM }}>vendor {fmt(b.buy_price)} cr</span>}
                   </div>
                 </div>
@@ -206,39 +226,53 @@ const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, setResearchTa
   );
 };
 
-// ---------------- depot panel ----------------
-const DepotPanel = ({ base, data, busy, act }) => {
-  const [depQty, setDepQty] = useState({});
-  const [wdQty, setWdQty] = useState({});
-  const num = (v, max) => Math.max(1, Math.min(max, Number(v) || 1));
+// ---------------- depot panel: fleet cargo | base cargo, drag between ----------------
+const DepotPanel = ({ base, busy, act, reloadKey }) => {
+  const [cargo, setCargo] = useState([]);
+  const [cargoInfo, setCargoInfo] = useState(null);
+  const loadCargo = async () => {
+    try {
+      const d = await resourcesAPI.getInventory();
+      const out = [];
+      for (const r of (d.inventory || [])) for (const st of r.stacks) out.push({ ...st, source: 'cargo', item_type: 'resource', resource_type_id: r.resource_type_id, resource_name: r.resource_name, category: r.category, rarity: r.rarity, base_price: r.base_price });
+      for (const it of (d.items || [])) out.push({ ...it, source: 'cargo', item_type: 'item' });
+      setCargo(out); setCargoInfo(d.cargo || null);
+    } catch {}
+  };
+  useEffect(() => { loadCargo(); }, [reloadKey]);
+  const same = (x, y) => x && y && x.item_type === y.item_type && (x.item_type === 'item'
+    ? x.item_id === y.item_id
+    : (x.resource_type_id === y.resource_type_id && ['purity', 'stability', 'potency', 'density'].every(k => (x.stats?.[k] ?? null) === (y.stats?.[k] ?? null))));
+  const dropOnDepot = (payload, { slotIndex, targetStack }) => {
+    if (payload.source === 'cargo') return act(async () => { const r = await basesAPI.deposit(base.id, payload.stack_id); await loadCargo(); return r; }, (r) => `Stored ${r.deposited}`);
+    if (slotIndex == null) return;
+    return act(() => basesAPI.moveDepot(base.id, payload.stack_id, slotIndex));
+  };
+  const dropOnCargo = (payload, { slotIndex, targetStack }) => {
+    if (payload.source === 'depot') return act(async () => { const r = await basesAPI.withdraw(base.id, payload.stack_id); await loadCargo(); return r; }, (r) => `Took ${r.withdrawn}`);
+    if (slotIndex == null) return;
+    const src = cargo.find(c => c.id === payload.stack_id);
+    if (targetStack && same(src, targetStack)) return act(async () => { const r = await resourcesAPI.mergeStacks(payload.stack_id, targetStack.id); await loadCargo(); return r; });
+    return act(async () => { const r = await resourcesAPI.moveItem(payload.stack_id, slotIndex); await loadCargo(); return r; });
+  };
+  const depotStacks = (base.depot?.stacks || []).map(st => ({ ...st, source: 'depot' }));
   return (
     <div>
       <Card accent="#4ade80" title="CARGO DEPOT">
-        <Label right={`${fmt(Math.round(base.depot.used))} / ${fmt(base.depot.capacity)} units`}>storage</Label>
-        <Meter value={base.depot.used} max={base.depot.capacity} color="#4ade80" />
-        <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>Stations pull inputs from here first and drop outputs here. Fit another depot for more room.</div>
-      </Card>
-      <Card title="IN DEPOT">
-        {base.depot.stacks.length === 0 && <div style={{ color: '#4a6580', fontSize: '0.78rem' }}>empty</div>}
-        {base.depot.stacks.map(s => (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 3 }}>
-            <PixelItemIcon size={20} spec={resourceIconSpecByName(s.resource_name, s.avg_quality)} />
-            <span style={{ flex: 1 }}>{s.resource_name} <span style={{ color: '#5a7080', fontFamily: FM }}>×{fmt(s.quantity)} Q{s.avg_quality}</span></span>
-            <input type="number" min={1} max={s.quantity} value={wdQty[s.id] ?? s.quantity} onChange={e => setWdQty({ ...wdQty, [s.id]: num(e.target.value, s.quantity) })} style={{ width: 60, background: '#050a14', color: '#e2e8f0', border: `1px solid ${EDGE}`, borderRadius: 2, fontFamily: FM, fontSize: '0.75rem' }} />
-            <Btn small disabled={busy} onClick={() => act(() => basesAPI.withdraw(base.id, s.id, wdQty[s.id] ?? s.quantity), 'Withdrawn')}>TAKE</Btn>
+        <div style={{ color: '#8fa3b8', fontSize: '0.74rem', marginBottom: 6 }}>Drag stacks between the fleet hold and the base hold. Stations, benches, the refinery and base upgrades all draw from the base hold; buildings stored here can be built straight onto a plot.</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <Label right={cargoInfo ? `${fmt(Math.round(cargoInfo.used))} / ${fmt(cargoInfo.capacity)}` : ''}>fleet cargo</Label>
+            <Meter value={cargoInfo?.used || 0} max={cargoInfo?.capacity || 1} color="#f59e0b" />
+            <div style={{ marginTop: 6 }}><CargoGrid stacks={cargo} source="cargo" cols={5} slotSize={40} minSlots={20} onDropStack={dropOnCargo} busy={busy} /></div>
           </div>
-        ))}
-      </Card>
-      <Card title="IN CARGO">
-        {(data.cargo_resources || []).length === 0 && <div style={{ color: '#4a6580', fontSize: '0.78rem' }}>no resources</div>}
-        {(data.cargo_resources || []).map(s => (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 3 }}>
-            <PixelItemIcon size={20} spec={resourceIconSpecByName(s.resource_name, s.avg_quality)} />
-            <span style={{ flex: 1 }}>{s.resource_name} <span style={{ color: '#5a7080', fontFamily: FM }}>×{fmt(s.quantity)} Q{s.avg_quality}</span></span>
-            <input type="number" min={1} max={s.quantity} value={depQty[s.id] ?? s.quantity} onChange={e => setDepQty({ ...depQty, [s.id]: num(e.target.value, s.quantity) })} style={{ width: 60, background: '#050a14', color: '#e2e8f0', border: `1px solid ${EDGE}`, borderRadius: 2, fontFamily: FM, fontSize: '0.75rem' }} />
-            <Btn small accent="#4ade80" disabled={busy || base.depot.capacity <= 0} onClick={() => act(() => basesAPI.deposit(base.id, s.id, depQty[s.id] ?? s.quantity), 'Deposited')}>STORE</Btn>
+          <div>
+            <Label right={`${fmt(Math.round(base.depot.used))} / ${fmt(base.depot.capacity)}`}>base cargo</Label>
+            <Meter value={base.depot.used} max={base.depot.capacity} color="#4ade80" />
+            <div style={{ marginTop: 6 }}><CargoGrid stacks={depotStacks} source="depot" cols={5} slotSize={40} minSlots={20} onDropStack={dropOnDepot} busy={busy} /></div>
           </div>
-        ))}
+        </div>
+        <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>A drag moves the whole stack. Drop onto a matching stack to merge. Fit another depot for more room; items take one unit each.</div>
       </Card>
     </div>
   );
@@ -416,7 +450,7 @@ export const BaseWindow = () => {
             </div>
 
             {/* RIGHT: selection */}
-            <div style={{ width: 360, flexShrink: 0, overflowY: 'auto', minHeight: 0 }}>
+            <div style={{ width: selKind === 'depot' ? 520 : 360, flexShrink: 0, overflowY: 'auto', minHeight: 0, transition: 'width 0.15s' }}>
               {!selected && (
                 <Card accent={GOLD.pri} title="SELECT A PLOT">
                   <div style={{ color: '#8fa3b8', fontSize: '0.78rem', lineHeight: 1.45 }}>
@@ -426,10 +460,10 @@ export const BaseWindow = () => {
                 </Card>
               )}
               {selected && !selModule && (
-                <EmptyPlotPanel base={base} slot={selected} data={data} busy={busy} act={act} openWindow={openWindow} setResearchTargetTech={setResearchTargetTech} setCraftingTargetRecipe={setCraftingTargetRecipe} />
+                <EmptyPlotPanel base={base} slot={selected} data={data} busy={busy} act={act} openWindow={openWindow} closeWindow={closeWindow} setResearchTargetTech={setResearchTargetTech} setCraftingTargetRecipe={setCraftingTargetRecipe} />
               )}
               {selected && selModule && selKind === 'station' && <StationPanel base={base} slot={selected} module={selModule} foundry={foundry} reload={load} busy={busy} act={act} />}
-              {selected && selModule && selKind === 'depot' && <DepotPanel base={base} data={data} busy={busy} act={act} />}
+              {selected && selModule && selKind === 'depot' && <DepotPanel base={base} busy={busy} act={act} reloadKey={data} />}
               {selected && selModule && selKind === 'refinery' && <Card accent={GOLD.pri} title="GRADE REFINERY"><div style={{ color: '#8fa3b8', fontSize: '0.74rem', marginBottom: 6 }}>Raises quality, never changes what a thing is.</div><RefineryPanel /></Card>}
               {selected && selModule && selKind === 'lab' && <Card accent="#22d3ee" title="RESEARCH LAB"><div style={{ color: '#8fa3b8', fontSize: '0.78rem' }}>+{selModule.stats?.rp_per_min} research points per minute while fitted. Stacks with more labs.</div></Card>}
               {selected && selModule && selKind === 'repair' && <RepairPanel base={base} module={selModule} />}

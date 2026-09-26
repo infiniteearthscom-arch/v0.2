@@ -585,19 +585,23 @@ router.post('/inventory/merge', authMiddleware, async (req, res) => {
 // ============================================
 
 // Get all crafting recipes with player's available resources
-// Foundry (088): which stations does the pilot have at the base they are
-// docked at right now? Empty set when not docked at an own, built base.
-async function dockedBaseStationIds(req, userId) {
+// Foundry (088): the pilot's own BUILT base at the body they are docked at
+// right now (null when not docked at one), and the station ids fitted there.
+async function dockedOwnBase(req, userId) {
   try {
     const presence = req.app.get('io')?.presence;
     const raw = presence?.getUserDockedBody?.(userId) || null;
-    if (!raw) return new Set();
+    if (!raw) return null;
     const bodyId = await resolveBodyId(String(raw));
-    if (!bodyId) return new Set();
-    const b = await queryOne(`SELECT fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
-    if (!b || new Date(b.build_completes_at).getTime() > Date.now()) return new Set();
-    return new Set(Object.values(b.fitted_modules || {}).map(m => m?.module_type_id).filter(Boolean));
-  } catch { return new Set(); }
+    if (!bodyId) return null;
+    const b = await queryOne(`SELECT id, fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
+    if (!b || new Date(b.build_completes_at).getTime() > Date.now()) return null;
+    return b;
+  } catch { return null; }
+}
+async function dockedBaseStationIds(req, userId) {
+  const b = await dockedOwnBase(req, userId);
+  return new Set(Object.values(b?.fitted_modules || {}).map(m => m?.module_type_id).filter(Boolean));
 }
 
 router.get('/recipes', authMiddleware, async (req, res) => {
@@ -713,6 +717,13 @@ router.post('/craft', authMiddleware, async (req, res) => {
         }
       }
 
+      // 089: ingredients may come from the base depot (source 'depot') while
+      // docked at an own base.
+      const depotBase = ingredients.some(i => i?.source === 'depot') ? await dockedOwnBase(req, userId) : null;
+      if (ingredients.some(i => i?.source === 'depot') && !depotBase) {
+        throw Object.assign(new Error('Dock at your base to craft from its depot'), { statusCode: 400 });
+      }
+
       const requiredIngredients = recipe.ingredients; // [{resource_name, quantity}]
       
       // Build a map of what resources are needed
@@ -744,15 +755,23 @@ router.post('/craft', authMiddleware, async (req, res) => {
         if (!Number.isInteger(ing.quantity) || ing.quantity <= 0) {
           throw Object.assign(new Error('Ingredient quantities must be positive integers'), { statusCode: 400 });
         }
-        // Lock and fetch the stack
-        const stackResult = await client.query(
-          `SELECT pri.*, rt.name as resource_name
-           FROM player_resource_inventory pri
-           JOIN resource_types rt ON pri.resource_type_id = rt.id
-           WHERE pri.id = $1 AND pri.user_id = $2 AND pri.item_type = 'resource'
-           FOR UPDATE`,
-          [ing.stack_id, userId]
-        );
+        // Lock and fetch the stack (cargo, or the base depot)
+        const fromDepot = ing.source === 'depot';
+        const stackResult = fromDepot
+          ? await client.query(
+            `SELECT bi.*, rt.name as resource_name
+               FROM player_base_inventory bi
+               JOIN resource_types rt ON bi.resource_type_id = rt.id
+              WHERE bi.id = $1 AND bi.base_id = $2 AND bi.item_type = 'resource'
+              FOR UPDATE OF bi`,
+            [ing.stack_id, depotBase.id])
+          : await client.query(
+            `SELECT pri.*, rt.name as resource_name
+               FROM player_resource_inventory pri
+               JOIN resource_types rt ON pri.resource_type_id = rt.id
+              WHERE pri.id = $1 AND pri.user_id = $2 AND pri.item_type = 'resource'
+              FOR UPDATE`,
+            [ing.stack_id, userId]);
         const stack = stackResult.rows[0];
         if (!stack) throw Object.assign(new Error(`Stack ${ing.stack_id} not found`), { statusCode: 400 });
         
@@ -772,6 +791,7 @@ router.post('/craft', authMiddleware, async (req, res) => {
           consumeQty: ing.quantity,
           currentQty: stack.quantity,
           resourceName: stack.resource_name,
+          table: fromDepot ? 'player_base_inventory' : 'player_resource_inventory',
         });
         
         // Weight stats by quantity consumed
@@ -793,13 +813,14 @@ router.post('/craft', authMiddleware, async (req, res) => {
         }
       }
       
-      // Consume resources
+      // Consume resources (from cargo or the depot)
       for (const s of stacksToConsume) {
+        const table = s.table || 'player_resource_inventory';
         if (s.consumeQty >= s.currentQty) {
-          await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [s.id]);
+          await client.query(`DELETE FROM ${table} WHERE id = $1`, [s.id]);
         } else {
           await client.query(
-            `UPDATE player_resource_inventory SET quantity = quantity - $1, updated_at = NOW() WHERE id = $2`,
+            `UPDATE ${table} SET quantity = quantity - $1, updated_at = NOW() WHERE id = $2`,
             [s.consumeQty, s.id]
           );
         }
