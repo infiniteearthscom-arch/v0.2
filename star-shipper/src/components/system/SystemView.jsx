@@ -34,6 +34,7 @@ import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/uti
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI, basesAPI } from '@/utils/api';
 import { getFleetMineRange } from '@/utils/mining';
+import { Hotbar, HOTBAR_SIZE } from '@/components/hud/Hotbar';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
 import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
@@ -1366,6 +1367,31 @@ export const SystemView = () => {
   const missileAmmoRef = useRef({});
   const missileLockRef = useRef({});
   const missileLastServerRef = useRef({});
+  // Hotbar (2026-09-26): five slots, keys 1..5. Layout persists per
+  // browser; abilities are resolved each render in the JSX below and
+  // the key handler reaches them through hotbarActionsRef so its
+  // effect (re-bound only on zoom change) never holds a stale closure.
+  const HOTBAR_KEY = 'hotbar.v1';
+  const HOTBAR_DEFAULT = ['area_scan', 'belt_scan', 'system_sweep', 'target_nearest', null];
+  const [hotbarSlots, setHotbarSlots] = useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(HOTBAR_KEY) || 'null');
+      if (Array.isArray(v) && v.length === HOTBAR_SIZE) return v;
+    } catch {}
+    return HOTBAR_DEFAULT;
+  });
+  const hotbarSlotsRef = useRef(hotbarSlots);
+  hotbarSlotsRef.current = hotbarSlots;
+  const hotbarActionsRef = useRef({});
+  const reorderHotbar = (from, to) => {
+    setHotbarSlots(prev => {
+      const next = [...prev];
+      [next[from], next[to]] = [next[to], next[from]];
+      try { localStorage.setItem(HOTBAR_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   // Mining reach = best fitted laser's mine_range x sqrt(Q) x Beam
   // Focusing skill (utils/mining.js; the server checks the same number).
   // Read live so a re-fit or a finished skill level applies at once.
@@ -1995,6 +2021,40 @@ export const SystemView = () => {
     let n = 0;
     for (const v of activeScansRef.current.values()) if (v.viaArea) n++;
     return n;
+  };
+
+  // T key / hotbar: designate the nearest hostile the fleet can see.
+  // Pressing again while the nearest is already designated cycles to
+  // the next-nearest, so a pilot can walk the list without clicking
+  // a moving sprite. Uses the store's toggle setter, so a single
+  // visible enemy that is already designated is left alone (a toggle
+  // would clear it).
+  const targetNearestEnemy = () => {
+    const px = shipPosRef.current.x, py = shipPosRef.current.y;
+    const sensorR = fleetSensorRange();
+    const sensorR2 = sensorR * sensorR;
+    const seen = enemiesRef.current
+      .filter(e => e.hull > 0 && ((e.x - px) ** 2 + (e.y - py) ** 2) <= sensorR2)
+      .map(e => ({ e, d2: (e.x - px) ** 2 + (e.y - py) ** 2 }))
+      .sort((a, b) => a.d2 - b.d2);
+    if (seen.length === 0) {
+      if (pushToast) pushToast({ kind: 'info', text: 'No hostiles in sensor range', duration: 2000 });
+      return;
+    }
+    const cur = designatedEnemyIdRef.current;
+    const idx = seen.findIndex(x => x.e.id === cur);
+    if (idx >= 0 && seen.length === 1) {
+      if (pushToast) pushToast({ kind: 'info', text: `Already targeting ${seen[0].e.name}`, duration: 1500 });
+      return;
+    }
+    const pick = seen[(idx + 1) % seen.length].e;
+    playSound('button_click');
+    useGameStore.getState().setDesignatedEnemy(pick.id);
+    if (pushToast) pushToast({
+      kind: 'info',
+      text: `Targeting ${pick.name} (${Math.round(Math.sqrt(seen[(idx + 1) % seen.length].d2))} units)${seen.length > 1 ? ' — T again for the next' : ''}`,
+      duration: 2200,
+    });
   };
 
   const handleAreaScan = () => {
@@ -4414,6 +4474,18 @@ export const SystemView = () => {
       if (key === 'f') {
         setFollowMode(f => !f);
       }
+
+      // Target nearest hostile (T) + hotbar (1..5). Skipped while the
+      // player is typing in chat or any input.
+      const tag = e.target?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
+      if (!typing && key === 't') {
+        hotbarActionsRef.current.targetNearest?.();
+      }
+      if (!typing && key >= '1' && key <= String(HOTBAR_SIZE) && key.length === 1) {
+        e.preventDefault();
+        hotbarActionsRef.current.activateSlot?.(Number(key) - 1);
+      }
       
       // Manual camera controls when not following
       if (!followModeRef.current) {
@@ -5690,104 +5762,66 @@ export const SystemView = () => {
             );
           })()}
 
-          {/* Tier B scan-ability tray. Each button only renders when
-              the matching module is fitted. Empty fleet -> nothing
-              shows -- no clutter for a Starter Scout. Uses `fixed`
-              positioning to share the viewport reference with the
-              System Map toggle (which is fixed at right:8 bottom:40).
-              `absolute` made it land 32px higher because SystemView's
-              container stops above the bottom bar. right:56 = 8 (map
-              gutter) + 38 (map button width) + 10 (visual gap). */}
-          {(fleetHasAreaScan() || fleetHasBulkScan() || fleetHasSystemSweep()) && (() => {
+          {/* Hotbar (2026-09-26): replaces the bottom-right scan-ability
+              tray. Every ability is listed whether or not its module is
+              fitted (locked tiles say what to fit), keys 1..5 activate,
+              T targets the nearest hostile. Consumables from the base
+              industry tree will slot in here later. */}
+          {(() => {
             const now = Date.now();
             const sweepActive = sweepActiveUntilRef.current > now;
-            // True while waves are still propagating + nothing's
-            // revealed yet (first 12s of the active window).
-            const sweepPinging = sweepActive
-              && sweepStartedAtRef.current > 0
-              && now < sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS;
-            const sweepCooldownRemain = Math.max(0, Math.ceil((sweepCooldownUntilRef.current - now) / 1000));
+            const sweepPinging = sweepActive && sweepStartedAtRef.current > 0 && now < sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS;
+            const sweepRemain = Math.max(0, Math.ceil((sweepCooldownUntilRef.current - now) / 1000));
+            const beltRemain = Math.max(0, Math.ceil((bulkBeltCooldownUntilRef.current - now) / 1000));
             const areaActive = countAreaScansActive();
-            return (
-              <div className="fixed flex gap-2 items-center" style={{ zIndex: 40, bottom: 40, right: 56, height: 38 }}>
-                {fleetHasAreaScan() && (
-                  <button
-                    onClick={handleAreaScan}
-                    title={areaActive
-                      ? `Click to cancel the area scan (${areaActive} in flight)`
-                      : 'Scan every unscanned asteroid in your scan range simultaneously. Each scan takes the normal scan time -- click again to cancel.'}
-                    style={{
-                      padding: '6px 12px',
-                      background: areaActive
-                        ? 'linear-gradient(180deg, #fbbf2433, #fbbf240a)'
-                        : 'linear-gradient(180deg, #22d3ee22, #22d3ee08)',
-                      border: `1px solid ${areaActive ? '#fbbf24aa' : '#22d3ee55'}`,
-                      color: areaActive ? '#fbbf24' : '#22d3ee',
-                      fontSize: '0.8rem', fontWeight: 800, letterSpacing: 1,
-                      textTransform: 'uppercase', cursor: 'pointer',
-                      borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
-                    }}
-                  >{areaActive ? `✕ Cancel (${areaActive})` : '📡 Area Scan'}</button>
-                )}
-                {fleetHasBulkScan() && (() => {
-                  const remain = Math.max(0, Math.ceil((bulkBeltCooldownUntilRef.current - now) / 1000));
-                  const disabled = remain > 0;
-                  return (
-                    <button
-                      onClick={handleBeltScan}
-                      disabled={disabled}
-                      title={disabled
-                        ? `Bulk-belt scan cooling down (${remain}s)`
-                        : 'Scan every asteroid in the nearest belt (90s cooldown)'}
-                      style={{
-                        padding: '6px 12px',
-                        background: disabled
-                          ? 'rgba(30,41,59,0.5)'
-                          : 'linear-gradient(180deg, #a855f722, #a855f708)',
-                        border: `1px solid ${disabled ? '#1e293b' : '#a855f755'}`,
-                        color: disabled ? '#475569' : '#c084fc',
-                        fontSize: '0.8rem', fontWeight: 800, letterSpacing: 1,
-                        textTransform: 'uppercase',
-                        cursor: disabled ? 'not-allowed' : 'pointer',
-                        borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
-                      }}
-                    >📡 Bulk Belt{disabled && ` ${remain}s`}</button>
-                  );
-                })()}
-                {fleetHasSystemSweep() && (
-                  <button
-                    onClick={handleSystemSweep}
-                    disabled={sweepCooldownRemain > 0 && !sweepActive}
-                    title={sweepPinging
-                      ? `Pinging... reveal in ${Math.ceil((sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS - now) / 1000)}s`
-                      : sweepActive
-                        ? `System sweep active -- all enemies visible (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`
-                        : sweepCooldownRemain > 0
-                          ? `System sweep cooling down (${sweepCooldownRemain}s)`
-                          : 'Deploy 3 sonar pings (12s) then reveal every enemy in the system for 30s. 120s cooldown.'}
-                    style={{
-                      padding: '6px 12px',
-                      background: sweepActive
-                        ? 'linear-gradient(180deg, #f59e0b44, #f59e0b14)'
-                        : (sweepCooldownRemain > 0
-                          ? 'rgba(30,41,59,0.5)'
-                          : 'linear-gradient(180deg, #f59e0b22, #f59e0b08)'),
-                      border: `1px solid ${sweepActive ? '#fbbf24' : (sweepCooldownRemain > 0 ? '#1e293b' : '#f59e0b55')}`,
-                      color: sweepActive ? '#fde68a' : (sweepCooldownRemain > 0 ? '#475569' : '#f59e0b'),
-                      fontSize: '0.8rem', fontWeight: 800, letterSpacing: 1,
-                      textTransform: 'uppercase',
-                      cursor: sweepCooldownRemain > 0 && !sweepActive ? 'not-allowed' : 'pointer',
-                      borderRadius: 3, fontFamily: "'Rajdhani', sans-serif",
-                    }}
-                  >
-                    {sweepPinging ? '📡 Pinging' : '🛰️ Sweep'}
-                    {sweepPinging && ` ${Math.ceil((sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS - now) / 1000)}s`}
-                    {sweepActive && !sweepPinging && ` (${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s)`}
-                    {!sweepActive && sweepCooldownRemain > 0 && ` ${sweepCooldownRemain}s`}
-                  </button>
-                )}
-              </div>
-            );
+            const hostiles = enemiesRef.current.some(e => e.hull > 0);
+            const abilities = {
+              area_scan: {
+                id: 'area_scan', icon: '📡', color: areaActive ? '#fbbf24' : '#22d3ee',
+                label: areaActive ? `Cancel ${areaActive}` : 'Area Scan',
+                available: fleetHasAreaScan(), disabled: false, remain: 0, active: areaActive > 0,
+                title: !fleetHasAreaScan() ? 'Fit a Wide-Field Sensor Array (or higher) to area-scan'
+                  : areaActive ? `Click to cancel the area scan (${areaActive} in flight)`
+                  : 'Scan every unscanned asteroid in scan range at once. Press again to cancel.',
+                onActivate: handleAreaScan,
+              },
+              belt_scan: {
+                id: 'belt_scan', icon: '🪨', color: '#c084fc', label: 'Bulk Belt',
+                available: fleetHasBulkScan(), disabled: beltRemain > 0, remain: beltRemain, active: false,
+                title: !fleetHasBulkScan() ? 'Fit an Elite Survey Grid to bulk-scan a belt'
+                  : beltRemain > 0 ? `Bulk-belt scan cooling down (${beltRemain}s)` : 'Scan every asteroid in the nearest belt (90s cooldown)',
+                onActivate: handleBeltScan,
+              },
+              system_sweep: {
+                id: 'system_sweep', icon: '🛰️', color: sweepActive ? '#fbbf24' : '#38bdf8',
+                label: sweepPinging ? `Ping ${Math.ceil((sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS - now) / 1000)}s` : sweepActive ? `Sweep ${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s` : 'Sweep',
+                available: fleetHasSystemSweep(), disabled: sweepRemain > 0 && !sweepActive, remain: sweepActive ? 0 : sweepRemain, active: sweepActive,
+                title: !fleetHasSystemSweep() ? 'Fit a System Telemetry Array to sweep the system'
+                  : sweepPinging ? 'Pinging... reveal follows the third ping'
+                  : sweepActive ? 'System sweep active -- every enemy visible'
+                  : sweepRemain > 0 ? `System sweep cooling down (${sweepRemain}s)`
+                  : 'Three sonar pings, then every enemy in the system for 30s. 120s cooldown.',
+                onActivate: handleSystemSweep,
+              },
+              target_nearest: {
+                id: 'target_nearest', icon: '🎯', color: '#f87171', label: 'Target (T)',
+                available: true, disabled: !hostiles, remain: 0, active: !!designatedEnemyIdRef.current,
+                title: hostiles ? 'Designate the nearest hostile in sensor range. Press again to cycle to the next.' : 'No hostiles in this system',
+                onActivate: targetNearestEnemy,
+              },
+            };
+            hotbarActionsRef.current = {
+              targetNearest: targetNearestEnemy,
+              activateSlot: (i) => {
+                const id = hotbarSlotsRef.current[i];
+                const a = id ? abilities[id] : null;
+                if (!a) { if (pushToast) pushToast({ kind: 'info', text: `Hotbar ${i + 1} is empty`, duration: 1500 }); return; }
+                if (!a.available) { if (pushToast) pushToast({ kind: 'error', text: a.title, duration: 3000 }); return; }
+                a.onActivate();
+              },
+            };
+            const slots = hotbarSlots.map(id => (id && abilities[id]) ? abilities[id] : null);
+            return <Hotbar slots={slots} onActivate={(i) => hotbarActionsRef.current.activateSlot(i)} onReorder={reorderHotbar} />;
           })()}
       </div>
     </div>
