@@ -262,6 +262,19 @@ export const STATIONS = [
     ] },
 ];
 
+// AUTOMATIC stations (090): a hopper the pilot feeds; product settles into
+// the depot lazily. Recipes carry auto = TRUE. Authored in 090 by hand.
+export const AUTOMATIC = [
+  { id: 'base_fuel_refinery', name: 'Fuel Refinery', family: 'gas', tier: 1, tech: 'tech_foundry_1', hopper_capacity: 400,
+    build: [R('Iron Ingot', 8), R('Copper Ingot', 4), R('Hydrogen Cell', 6), R('Polymer', 4)],
+    jobs: [
+      { id: 'fj_fuel_from_hydrogen', name: 'Fuel Cell from Hydrogen', inputs: [R('Hydrogen', 3)], output: I('fuel_cell', 1), seconds: 12 },
+      { id: 'fj_fuel_from_hydrogen_cell', name: 'Fuel Cell from Hydrogen Cell', inputs: [R('Hydrogen Cell', 2)], output: I('fuel_cell', 1), seconds: 8 },
+      { id: 'fj_fuel_from_xenon', name: 'Fuel Cells from Xenon', inputs: [R('Xenon', 2)], output: I('fuel_cell', 2), seconds: 14 },
+      { id: 'fj_fuel_from_helium3', name: 'Fuel Cells from Helium-3', inputs: [R('Helium-3', 1)], output: I('fuel_cell', 4), seconds: 20 },
+    ] },
+];
+
 // Service buildings that share the grid (not foundry stations).
 export const SERVICES = [
   { id: 'base_repair_shop', name: 'Repair Shop', family: 'service', tier: 2, tech: 'tech_foundry_1',

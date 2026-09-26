@@ -27,7 +27,7 @@ const qualityColor = (q) => { for (const [max, c] of QUALITY_COLORS) if (q <= ma
 
 const FAMILY_TINT = { smelting: '#f0883e', gas: '#38bdf8', bio: '#4ade80', electronics: '#a78bfa', assembly: '#f5c542', service: '#94a3b8' };
 const BASE_BUILDING_GLYPH = [
-  [/smelter|forge|foundry/, 'furnace', 'smelting'], [/condenser|separator|isotope|containment|condenser/, 'tank', 'gas'],
+  [/smelter|forge|foundry/, 'furnace', 'smelting'], [/condenser|separator|isotope|containment|fuel_refinery/, 'tank', 'gas'],
   [/bioreactor|kiln|incubator|resin/, 'vat', 'bio'], [/printer|etcher|lathe|capacitor/, 'chip', 'electronics'],
   [/workbench|machine_shop|fabricator|assembler|quantum_forge/, 'bench', 'assembly'], [/repair_shop/, 'wrench', 'service'],
 ];

@@ -110,21 +110,30 @@ async function loadStack(userId, inventoryId, client = null) {
      ${client ? 'FOR UPDATE OF pri' : ''}`, [inventoryId, userId]);
   return (r.rows || r)[0] || null;
 }
-async function fuelCellsInCargo(userId, q = query) {
+// Fuel Cells on hand: the base depot first (090 -- a stocked Fuel Refinery
+// keeps the depot topped up), then cargo.
+async function fuelCellsInCargo(userId, q = query, baseId = null) {
   const r = await q(`SELECT COALESCE(SUM(quantity),0)::int AS n FROM player_resource_inventory WHERE user_id = $1 AND item_type = 'item' AND item_id = 'fuel_cell'`, [userId]);
-  return (r.rows || r)[0]?.n || 0;
+  let n = (r.rows || r)[0]?.n || 0;
+  if (baseId) {
+    const d = await q(`SELECT COALESCE(SUM(quantity),0)::int AS n FROM player_base_inventory WHERE base_id = $1 AND item_type = 'item' AND item_id = 'fuel_cell'`, [baseId]);
+    n += (d.rows || d)[0]?.n || 0;
+  }
+  return n;
 }
-async function consumeFuel(client, userId, n) {
+async function consumeFuel(client, userId, n, baseId = null) {
   let left = n;
-  const st = await client.query(`SELECT id, quantity FROM player_resource_inventory WHERE user_id = $1 AND item_type = 'item' AND item_id = 'fuel_cell' ORDER BY quantity DESC FOR UPDATE`, [userId]);
-  for (const s of st.rows) {
+  const rows = [];
+  if (baseId) for (const s of (await client.query(`SELECT id, quantity, 'player_base_inventory' AS t FROM player_base_inventory WHERE base_id = $1 AND item_type = 'item' AND item_id = 'fuel_cell' ORDER BY quantity DESC FOR UPDATE`, [baseId])).rows) rows.push(s);
+  for (const s of (await client.query(`SELECT id, quantity, 'player_resource_inventory' AS t FROM player_resource_inventory WHERE user_id = $1 AND item_type = 'item' AND item_id = 'fuel_cell' ORDER BY quantity DESC FOR UPDATE`, [userId])).rows) rows.push(s);
+  for (const s of rows) {
     if (left <= 0) break;
     const take = Math.min(left, Number(s.quantity));
-    if (take >= Number(s.quantity)) await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [s.id]);
-    else await client.query(`UPDATE player_resource_inventory SET quantity = quantity - $1 WHERE id = $2`, [take, s.id]);
+    if (take >= Number(s.quantity)) await client.query(`DELETE FROM ${s.t} WHERE id = $1`, [s.id]);
+    else await client.query(`UPDATE ${s.t} SET quantity = quantity - $1 WHERE id = $2`, [take, s.id]);
     left -= take;
   }
-  if (left > 0) throw Object.assign(new Error(`Needs ${n} Fuel Cell${n === 1 ? '' : 's'} in cargo`), { statusCode: 400 });
+  if (left > 0) throw Object.assign(new Error(`Needs ${n} Fuel Cell${n === 1 ? '' : 's'} in the depot or cargo`), { statusCode: 400 });
 }
 async function refundFuel(client, userId, n) {
   if (n <= 0) return;
@@ -165,7 +174,7 @@ router.get('/status', async (req, res) => {
       available: true, unlocked: tech.unlocked, deep: tech.deep, requires_tech: tech.unlocked ? null : 'tech_refining',
       base: { id: ctx.base.id, name: ctx.base.name },
       lanes: ctx.lanes.map(l => ({ ...l, jobs: jobs.filter(j => j.lane === l.slot) })),
-      fuel_cells: await fuelCellsInCargo(userId),
+      fuel_cells: await fuelCellsInCargo(userId, query, ctx.base.id),
       depot_stacks: (await depotStacks({ query: (sql, p) => query(sql, p).then(r => ({ rows: r.rows || r })) }, ctx.base.id)).filter(s => s.item_type === 'resource'),
       max_queue_per_lane: MAX_QUEUE_PER_LANE,
     });
@@ -210,7 +219,7 @@ router.post('/queue', async (req, res) => {
       if (jobs.filter(j => j.lane === lane.slot).length >= MAX_QUEUE_PER_LANE) throw Object.assign(new Error(`That lane's queue is full (${MAX_QUEUE_PER_LANE})`), { statusCode: 409 });
       const quote = computeQuote(stack, quantity, bonuses, tech, lane);
       if (quote.reason) throw Object.assign(new Error(quote.reason), { statusCode: 400 });
-      await consumeFuel(client, userId, quote.fuel_cells);
+      await consumeFuel(client, userId, quote.fuel_cells, ctx.base.id);
       await debitStackAny(client, stack, quote.units_in);
       const startsAt = new Date(laneEnd(lane.slot));
       const completesAt = new Date(startsAt.getTime() + quote.seconds * 1000);

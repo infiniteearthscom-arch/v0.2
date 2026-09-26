@@ -28,6 +28,10 @@ Full-screen: base portrait (`utils/pixelArt/baseArt.js`, grows with tier and fit
 
 `player_base_inventory` mirrors cargo: resource OR item stacks with a slot position (items take 1 depot unit). The console's depot panel shows the fleet hold and the base hold side by side as grids (`components/items/CargoGrid.jsx`); a drag moves the whole stack across, arranges within a hold, or merges onto a matching stack (`/bases/:id/depot/move`). Everything at the base draws from the depot: foundry jobs and base upgrades (depot first), buildings fit straight from the depot (`/fit {depot_stack_id}`), the grade refinery lists depot stacks (`source: 'depot'`), and the Crafting window shows depot resource stacks with a BASE badge while docked at your base (`/craft` ingredients carry `source`).
 
+## Automatic stations: the Fuel Refinery (090)
+
+`base_fuel_refinery` (Gas Works T1, `stats.foundry.hopper = true`, `hopper_capacity 400`) has a HOPPER (`player_base_hoppers`, a small cargo grid per plot). The pilot drags Hydrogen, Hydrogen Cells, Xenon or Helium-3 in from either hold; the station turns them into Fuel Cells on its own (`foundry_recipes.auto = TRUE`, in sort order: hydrogen 3→1 in 12 s, hydrogen cell 2→1 in 8 s, xenon 2→2 in 14 s, helium-3 1→4 in 20 s; station quality and Smelting speed it up) and drops them into the base depot. Production SETTLES lazily on every base read (`settleHopperStation`, `player_base_station_state`: last tick, banked fraction of a unit, produced total, stall reason). Stalls: hopper empty, no usable ingredients, no depot, depot full; a stalled station banks no idle time. Fuel consumers at the base pull from the depot first: the grade refinery's jobs (`consumeFuel` depot → cargo). Console: hopper grid + a feed grid (fleet or base hold) with non-accepted stacks dimmed; drag in to feed, drag out to take back.
+
 ## Not built yet
 
 Consumables with no use-slot (hull repair kit, afterburner, shield battery…), blueprints for T4/T5 stations, drone bays and vendor posts (need their systems), surface-vs-orbital family bonuses, per-family speed skills, item inputs to jobs.

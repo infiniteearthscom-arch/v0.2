@@ -510,6 +510,9 @@ export const foundryAPI = {
   queue: (slot, recipeId, runs) => request('/foundry/queue', { method: 'POST', body: JSON.stringify({ slot, recipe_id: recipeId, runs }) }),
   cancel: (jobId) => request(`/foundry/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
   collect: (jobId, to) => request(`/foundry/jobs/${encodeURIComponent(jobId)}/collect`, { method: 'POST', body: JSON.stringify({ to }) }),
+  // 090: automatic stations with a hopper
+  hopperPut: (slot, source, stackId, quantity) => request('/foundry/hopper/put', { method: 'POST', body: JSON.stringify({ slot, source, stack_id: stackId, ...(quantity ? { quantity } : {}) }) }),
+  hopperTake: (slot, hopperStackId, to) => request('/foundry/hopper/take', { method: 'POST', body: JSON.stringify({ slot, hopper_stack_id: hopperStackId, to }) }),
 };
 
 export const basesAPI = {

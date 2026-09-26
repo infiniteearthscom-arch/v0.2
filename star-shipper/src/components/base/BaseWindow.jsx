@@ -154,6 +154,74 @@ const StationPanel = ({ base, slot, module, foundry, reload, busy, act }) => {
   );
 };
 
+// ---------------- automatic station: the hopper (Fuel Refinery, 090) ----------------
+const HopperPanel = ({ base, slot, module, foundry, busy, act, reloadKey }) => {
+  const st = foundry?.stations?.find(s => s.slot === slot);
+  const h = st?.hopper_state;
+  const [src, setSrc] = useState('cargo');
+  const [cargo, setCargo] = useState([]);
+  const loadCargo = async () => {
+    try {
+      const d = await resourcesAPI.getInventory();
+      const out = [];
+      for (const r of (d.inventory || [])) for (const stk of r.stacks) out.push({ ...stk, source: 'cargo', item_type: 'resource', resource_type_id: r.resource_type_id, resource_name: r.resource_name, category: r.category, rarity: r.rarity, base_price: r.base_price });
+      setCargo(out);
+    } catch {}
+  };
+  useEffect(() => { loadCargo(); }, [reloadKey]);
+  if (!st || !h) return <div style={{ color: '#4a6580', fontSize: '0.8rem' }}>Loading station…</div>;
+  const color = familyColor(st.family);
+  const accepts = new Set(h.accepts || []);
+  const feedable = (src === 'cargo' ? cargo : (base.depot?.stacks || []).map(x => ({ ...x, source: 'depot' })))
+    .filter(x => x.item_type === 'resource');
+  const hopperStacks = (h.stacks || []).map(x => ({ ...x, source: 'hopper' }));
+  const dropOnHopper = (payload) => {
+    if (payload.source === 'hopper') return;
+    return act(async () => { const r = await foundryAPI.hopperPut(slot, payload.source, payload.stack_id); await loadCargo(); return r; }, (r) => `Fed ${r.fed} into the hopper`);
+  };
+  const dropOnSource = (payload) => {
+    if (payload.source !== 'hopper') return;
+    return act(async () => { const r = await foundryAPI.hopperTake(slot, payload.stack_id, src); await loadCargo(); return r; }, (r) => `Took ${r.took} back`);
+  };
+  return (
+    <div>
+      <Card accent={color}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <PixelItemIcon size={40} spec={moduleIconSpec({ itemId: module.module_type_id, slotType: 'base', tier: module.tier, avgQuality: st.quality })} />
+          <div style={{ flex: 1 }}>
+            <div style={{ color, fontWeight: 800, fontSize: '1rem', letterSpacing: 0.5 }}>{st.name} <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.72rem' }}>T{st.tier} · Q{st.quality}</span></div>
+            <div style={{ color: '#8fa3b8', fontSize: '0.75rem' }}>Runs on its own. Fuel Cells land in the base hold; base refineries burn them from there first.</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 14, marginTop: 8, fontFamily: FM, fontSize: '0.74rem' }}>
+          <span style={{ color: h.stalled ? '#f87171' : '#4ade80' }}>{h.stalled ? `⏸ ${h.stalled}` : '▶ producing'}</span>
+          <span style={{ color: '#8fa3b8' }}>~{h.rate_per_min} cells / min at best</span>
+          <span style={{ color: '#8fa3b8' }}>{fmt(h.produced_total)} made</span>
+        </div>
+      </Card>
+      <Card title={`HOPPER · ${fmt(h.used)} / ${fmt(h.capacity)} units`}>
+        <Meter value={h.used} max={h.capacity} color={color} />
+        <div style={{ marginTop: 6 }}>
+          <CargoGrid stacks={hopperStacks} source="hopper" cols={5} slotSize={40} minSlots={10} onDropStack={dropOnHopper} busy={busy} />
+        </div>
+        <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>
+          Takes: {(h.accepts || []).join(', ')}. Recipes in priority order:
+          {(h.recipes || []).map(r => <span key={r.id} style={{ display: 'block', color: '#8fa3b8' }}>{r.inputs.map(i => `${i.quantity} ${i.resource_name}`).join(' + ')} → {r.output.quantity} Fuel Cell{r.output.quantity > 1 ? 's' : ''} · {r.seconds_here}s</span>)}
+        </div>
+      </Card>
+      <Card title="FEED FROM">
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          {['cargo', 'depot'].map(k => <Btn key={k} small accent={src === k ? GOLD.light : '#5a7080'} onClick={() => setSrc(k)}>{k === 'cargo' ? 'FLEET CARGO' : 'BASE CARGO'}</Btn>)}
+          <span style={{ flex: 1 }} />
+          <span style={{ color: '#5a7080', fontSize: '0.7rem', fontFamily: FM, alignSelf: 'center' }}>drag into the hopper · drag back out here</span>
+        </div>
+        <CargoGrid stacks={feedable.map(x => ({ ...x, _dim: !accepts.has(x.resource_name) }))} source={src} cols={5} slotSize={40} minSlots={10} onDropStack={dropOnSource} busy={busy} />
+        <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>Only {(h.accepts || []).join(' / ')} are accepted; anything else bounces with a message.</div>
+      </Card>
+    </div>
+  );
+};
+
 // ---------------- empty plot: build picker ----------------
 const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, setResearchTargetTech, setCraftingTargetRecipe }) => {
   // The console is a full-screen modal; the Research modal and the Crafting
@@ -417,7 +485,7 @@ export const BaseWindow = () => {
                         const m = base.modules[slot];
                         const k = kindOf(m);
                         const st = foundry?.stations?.find(s => s.slot === slot);
-                        const running = st?.jobs?.some(j => j.status === 'running'), ready = st?.jobs?.some(j => j.status === 'done');
+                        const running = st?.jobs?.some(j => j.status === 'running') || (st?.hopper_state && !st.hopper_state.stalled), ready = st?.jobs?.some(j => j.status === 'done');
                         const color = m ? (m.stats?.foundry ? familyColor(m.stats.foundry.family) : '#94a3b8') : '#1e293b';
                         const on = selected === slot;
                         return (
@@ -450,7 +518,7 @@ export const BaseWindow = () => {
             </div>
 
             {/* RIGHT: selection */}
-            <div style={{ width: selKind === 'depot' ? 520 : 360, flexShrink: 0, overflowY: 'auto', minHeight: 0, transition: 'width 0.15s' }}>
+            <div style={{ width: (selKind === 'depot' || selModule?.stats?.foundry?.hopper) ? 520 : 360, flexShrink: 0, overflowY: 'auto', minHeight: 0, transition: 'width 0.15s' }}>
               {!selected && (
                 <Card accent={GOLD.pri} title="SELECT A PLOT">
                   <div style={{ color: '#8fa3b8', fontSize: '0.78rem', lineHeight: 1.45 }}>
@@ -462,7 +530,8 @@ export const BaseWindow = () => {
               {selected && !selModule && (
                 <EmptyPlotPanel base={base} slot={selected} data={data} busy={busy} act={act} openWindow={openWindow} closeWindow={closeWindow} setResearchTargetTech={setResearchTargetTech} setCraftingTargetRecipe={setCraftingTargetRecipe} />
               )}
-              {selected && selModule && selKind === 'station' && <StationPanel base={base} slot={selected} module={selModule} foundry={foundry} reload={load} busy={busy} act={act} />}
+              {selected && selModule && selKind === 'station' && !selModule.stats?.foundry?.hopper && <StationPanel base={base} slot={selected} module={selModule} foundry={foundry} reload={load} busy={busy} act={act} />}
+              {selected && selModule && selKind === 'station' && selModule.stats?.foundry?.hopper && <HopperPanel base={base} slot={selected} module={selModule} foundry={foundry} busy={busy} act={act} reloadKey={data} />}
               {selected && selModule && selKind === 'depot' && <DepotPanel base={base} busy={busy} act={act} reloadKey={data} />}
               {selected && selModule && selKind === 'refinery' && <Card accent={GOLD.pri} title="GRADE REFINERY"><div style={{ color: '#8fa3b8', fontSize: '0.74rem', marginBottom: 6 }}>Raises quality, never changes what a thing is.</div><RefineryPanel /></Card>}
               {selected && selModule && selKind === 'lab' && <Card accent="#22d3ee" title="RESEARCH LAB"><div style={{ color: '#8fa3b8', fontSize: '0.78rem' }}>+{selModule.stats?.rp_per_min} research points per minute while fitted. Stacks with more labs.</div></Card>}

@@ -147,6 +147,12 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 090 (fuel refinery) ---
+  report('player_base_hoppers table (090)', await tableExists('player_base_hoppers'));
+  report('player_base_station_state table (090)', await tableExists('player_base_station_state'));
+  const fr = await pool.query(`SELECT COUNT(*)::int AS n FROM foundry_recipes WHERE station_module_id = 'base_fuel_refinery' AND auto = TRUE`);
+  report('Fuel Refinery has 4 automatic recipes (090)', fr.rows[0]?.n === 4, `found ${fr.rows[0]?.n}`);
+
   // --- migration 089 (depot items) ---
   const depCols = await pool.query(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name = 'player_base_inventory' AND column_name IN ('item_type','item_id','item_data','slot_index')`);
   report('player_base_inventory holds items with slot positions (089)', depCols.rows[0]?.n === 4, `${depCols.rows[0]?.n}/4 columns`);

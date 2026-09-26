@@ -68,7 +68,7 @@ export const CargoGrid = ({ stacks, source, cols = 5, slotSize = 40, minSlots = 
            onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); cargoTooltip.show({ stack, x: r.left, y: r.top, slotSize, resourceIcons: {} }); }}
            onMouseLeave={() => cargoTooltip.hide()}
            title={`${isItem ? (stack.item_name || stack.item_id) : stack.resource_name} ×${stack.quantity} — drag to move`}
-           style={{ position: 'relative', width: slotSize, height: slotSize, boxSizing: 'border-box', cursor: 'grab', borderRadius: 4,
+           style={{ position: 'relative', width: slotSize, height: slotSize, boxSizing: 'border-box', cursor: 'grab', borderRadius: 4, opacity: stack._dim ? 0.35 : 1,
                     border: over === index ? '2px solid #00ccff' : `2px solid ${border}`,
                     background: `linear-gradient(135deg, ${tint}15 0%, ${tint}08 100%)`, boxShadow: `inset 0 0 8px ${tint}11` }}>
         <div style={{ position: 'absolute', inset: 4, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isItem ? 'rgba(4,8,16,0.35)' : `${tint}22` }}>
