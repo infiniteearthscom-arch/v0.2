@@ -623,11 +623,13 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLe
       style={{
         width: CARGO_SLOT_SIZE,
         height: CARGO_SLOT_SIZE,
-        border: `2px solid ${borderColor}`,
+        // Usable-for-this-recipe: a solid white outline (the old tinted
+        // glow was too faint against the dark panel).
+        border: `2px solid ${matchesRecipe ? '#ffffff' : borderColor}`,
         borderRadius: 4,
         background: `linear-gradient(135deg, ${iconColor}15 0%, ${iconColor}08 100%)`,
         boxShadow: matchesRecipe
-          ? `0 0 8px ${iconColor}aa, inset 0 0 8px ${iconColor}33`
+          ? '0 0 0 1px #ffffff, 0 0 6px rgba(255,255,255,0.45)'
           : `inset 0 0 8px ${iconColor}11`,
         opacity: matchesRecipe || !onClick ? 1 : 0.55,
       }}
