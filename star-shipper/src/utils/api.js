@@ -488,6 +488,7 @@ export const skillsAPI = {
 // (1/min), unlock spends RP instantly when prereqs are met.
 export const researchAPI = {
   list: () => request('/research'),
+  cheatRp: () => request('/research/cheat-rp', { method: 'POST' }),
   unlock: (techId) => request('/research/unlock', {
     method: 'POST',
     body: JSON.stringify({ tech_id: techId }),

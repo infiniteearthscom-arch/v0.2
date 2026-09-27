@@ -213,6 +213,17 @@ export function attachPresence(io) {
     if (!currentBody) return;
     const occ = bodyOccupants.get(currentBody);
     if (occ) {
+      // Only the socket that DOCKED may undock (2026-09-27). A network
+      // blip reconnects the client on a new socket, which re-docks; the
+      // old socket's disconnect arrives seconds later (ping timeout) and
+      // used to delete the user's roster entry -- the live client was
+      // suddenly "not docked" mid-base-management.
+      const entry = occ.get(userId);
+      if (entry && entry.socketId && entry.socketId !== socket.id) {
+        socket.data.presence.bodyId = null;
+        socket.leave(bodyRoomFor(currentBody));
+        return;
+      }
       occ.delete(userId);
       if (occ.size === 0) bodyOccupants.delete(currentBody);
     }
@@ -385,7 +396,7 @@ export function attachPresence(io) {
         removeFromBody(user.id, socket);
       }
       if (!bodyOccupants.has(body_id)) bodyOccupants.set(body_id, new Map());
-      bodyOccupants.get(body_id).set(user.id, { name: user.username });
+      bodyOccupants.get(body_id).set(user.id, { name: user.username, socketId: socket.id });
       socket.join(bodyRoomFor(body_id));
       socket.data.presence.bodyId = body_id;
       broadcastBody(body_id);

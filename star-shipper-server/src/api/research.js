@@ -18,7 +18,7 @@
 // Strict prereqs are encoded in tech_definitions.prerequisites JSONB.
 
 import express from 'express';
-import { authMiddleware } from '../auth/index.js';
+import { authMiddleware, isDevAccount } from '../auth/index.js';
 import { query, queryAll, queryOne, transaction } from '../db/index.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { baseRpPerMin } from './bases.js';
@@ -68,6 +68,18 @@ async function commitRp(client, userId, now, rpPerMin = RP_PER_MIN) {
 // ============================================
 // GET /api/research  -- full snapshot
 // ============================================
+// DEV ONLY: +10,000 RP per click for the dev accounts (DEV_ACCOUNT_EMAILS),
+// to test research chains on the live deploy. Adds to the stored pool;
+// the trickle since the last checkpoint is untouched.
+router.post('/cheat-rp', authMiddleware, async (req, res) => {
+  try {
+    if (!isDevAccount(req.user)) return res.status(403).json({ error: 'Dev account only' });
+    const amount = 10000;
+    const r = await queryOne(`UPDATE users SET research_points = COALESCE(research_points, 0) + $1 WHERE id = $2 RETURNING research_points`, [amount, req.user.id]);
+    res.json({ success: true, added: amount, research_points: Number(r?.research_points || 0) });
+  } catch (e) { console.error('research/cheat-rp:', e); res.status(500).json({ error: 'Failed' }); }
+});
+
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;

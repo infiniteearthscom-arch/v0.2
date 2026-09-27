@@ -18,7 +18,7 @@ import { CorpWindow } from '@/components/corp/CorpWindow';
 import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
 import { AnomaliesWindow } from '@/components/anomalies/AnomaliesWindow';
 import { BaseWindow } from '@/components/base/BaseWindow';
-import { foundryAPI } from '@/utils/api';
+import { foundryAPI, researchAPI } from '@/utils/api';
 import { registerResourceTypes } from '@/components/pixel/PixelArt';
 import { InboxWindow } from '@/components/mail/InboxWindow';
 import { CargoTooltipLayer } from '@/components/items/CargoTooltipLayer';
@@ -189,6 +189,7 @@ const TopBar = () => {
     return () => clearInterval(interval);
   }, [fetchCargoInfo, credits]);
 
+  const isDevUser = useAuthStore(s => !!s.user?.is_dev);
   const handleReset = async () => {
     if (!window.confirm('DEV: Wipe all ships, cargo, credits, and scan data? This cannot be undone.')) return;
     setResetting(true);
@@ -390,6 +391,22 @@ const TopBar = () => {
 
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
 
+        {/* DEV: +10k RP (dev accounts only -- server enforces; button hidden otherwise) */}
+        {isDevUser && (
+          <button
+            onClick={async () => {
+              playSound('button_click');
+              try {
+                const r = await researchAPI.cheatRp();
+                useGameStore.getState().fetchSkillsAndResearch?.();
+                useGameStore.getState().pushToast?.({ kind: 'success', text: `+${r.added.toLocaleString()} RP (pool ${r.research_points.toLocaleString()})`, duration: 2500 });
+              } catch (e) { useGameStore.getState().pushToast?.({ kind: 'error', text: e.message || 'Cheat refused' }); }
+            }}
+            className="text-[0.5rem] font-bold px-1.5 py-0.5 rounded hover:bg-emerald-900/50 transition-colors mr-1"
+            style={{ color: '#22c55e', border: '1px solid #22c55e33' }}
+            title="DEV: +10,000 research points"
+          >+10k RP</button>
+        )}
         {/* DEV Reset */}
         <button
           onClick={() => { playSound('button_click'); handleReset(); }}

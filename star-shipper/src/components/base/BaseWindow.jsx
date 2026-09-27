@@ -452,11 +452,21 @@ export const BaseWindow = () => {
   const setBaseFocus = useGameStore(s => s.setBaseFocus);
   const [, tick] = useState(0);
 
-  const load = async () => {
+  const dockedBodyDbId = useGameStore(s => s.dockedBodyDbId);
+  const load = async (retried = false) => {
     try {
       const d = await basesAPI.here(); setData(d); setErr(null);
       try { setFoundry(await foundryAPI.status()); } catch { setFoundry(null); }
-    } catch (e) { setErr(e.message || 'Base unavailable'); }
+    } catch (e) {
+      // Server lost our dock (socket blip) while we are still docked here:
+      // re-announce it and try once more before showing the error.
+      if (!retried && /dock at/i.test(e.message || '') && dockedBodyDbId) {
+        try { const mod = await import('@/utils/presence'); (mod.default || mod).dockAtBody(dockedBodyDbId); } catch {}
+        setTimeout(() => load(true), 500);
+        return;
+      }
+      setErr(e.message || 'Base unavailable');
+    }
   };
   useEffect(() => { if (isOpen) load(); }, [isOpen, dockedBody?.id]);
   useEffect(() => { if (!isOpen) return undefined; const t = setInterval(() => { tick(n => n + 1); }, 1000); const p = setInterval(load, 8000); return () => { clearInterval(t); clearInterval(p); }; }, [isOpen]);
