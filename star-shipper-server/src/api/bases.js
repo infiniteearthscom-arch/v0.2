@@ -156,13 +156,19 @@ async function consumeResourcesLegacy(client, userId, resources) {
 
 async function buildEligibility(userId, body, existingCount) {
   const reasons = [];
+  // Structured requirements so the client can offer a "learn it" button
+  // per line: { kind: 'tech'|'skill'|'note', id, name, level, met }.
+  const requirements = [];
   const techs = await techSet(userId);
+  const buildLevel = await skillLevel(userId, BUILD_SKILL);
   if (!techs.has(TIERS[1].tech)) reasons.push('Research Base Construction (Industry)');
-  if ((await skillLevel(userId, BUILD_SKILL)) < 1) reasons.push('Train Command Center Upgrades I');
+  requirements.push({ kind: 'tech', id: TIERS[1].tech, name: 'Base Construction', met: techs.has(TIERS[1].tech) });
+  if (buildLevel < 1) reasons.push('Train Command Center Upgrades I');
+  requirements.push({ kind: 'skill', id: BUILD_SKILL, name: 'Command Center Upgrades', level: 1, met: buildLevel >= 1 });
   const cap = 1 + (await skillLevel(userId, EXTRA_BASE_SKILL));
-  if (existingCount >= cap) reasons.push(`Base limit ${cap} (train Interplanetary Consolidation)`);
-  if (body.body_type === 'station') reasons.push('Bases anchor to planets, not stations');
-  return { ok: reasons.length === 0, reasons, base_cap: cap, base_count: existingCount,
+  if (existingCount >= cap) { reasons.push(`Base limit ${cap} (train Interplanetary Consolidation)`); requirements.push({ kind: 'skill', id: EXTRA_BASE_SKILL, name: 'Interplanetary Consolidation', level: cap, met: false, note: `base limit ${cap}` }); }
+  if (body.body_type === 'station') { reasons.push('Bases anchor to planets, not stations'); requirements.push({ kind: 'note', name: 'Bases anchor to planets, not stations', met: false }); }
+  return { ok: reasons.length === 0, reasons, requirements, base_cap: cap, base_count: existingCount,
     orbital_blocked: body.body_type !== 'station' && planetHasStation(body.procedural_id || 'sol', body.name) ? 'This planet already has a station in orbit -- build a surface base instead' : null };
 }
 
@@ -225,6 +231,7 @@ router.get('/here', async (req, res) => {
       base: mine ? await shapeBase(mine) : null,
       can_build: mine ? null : await buildEligibility(userId, body, count),
       can_expand: techs.has('tech_base_expansion'),
+      research_unlocked: [...techs],
       tiers: TIERS,
       cargo_modules: cargoMods.map(m => ({ inventory_id: m.id, module_type_id: m.item_id, name: m.name, tier: m.tier, stats: m.stats, quality: m.item_data?.quality || null })),
       cargo_resources: cargoRes.map(s => ({ id: s.id, resource_name: s.resource_name, quantity: Number(s.quantity), avg_quality: Math.round(AVG(s)) })),

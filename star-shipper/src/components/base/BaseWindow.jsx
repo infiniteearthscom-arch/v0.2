@@ -397,6 +397,9 @@ export const BaseWindow = () => {
   const fetchCredits = useGameStore(s => s.fetchCredits);
   const fetchCargoInfo = useGameStore(s => s.fetchCargoInfo);
   const dockedBody = useGameStore(s => s.dockedBody);
+  const techCatalog = useGameStore(s => s.techs);
+  const techName = (id) => techCatalog?.find(t => t.id === id)?.name || String(id || '').replace(/^tech_/, '').replace(/_/g, ' ');
+  const goResearchFromConsole = (techId) => { closeWindow('base'); setResearchTargetTech(techId); openWindow('research'); };
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
 
   const [data, setData] = useState(null);
@@ -455,8 +458,21 @@ export const BaseWindow = () => {
                     {fmt(base.next_tier.credits)} cr<br />
                     {Object.entries(base.next_tier.resources).map(([n, q]) => { const have = foundry?.materials?.[n]?.quantity || 0; return <span key={n} style={{ color: have >= q ? '#a8b4c5' : '#f87171', display: 'block' }}>{q} {n} <span style={{ opacity: 0.6 }}>({fmt(have)})</span></span>; })}
                   </div>
-                  {!(data.can_expand || base.next_tier.tech === 'tech_base_citadel') && base.next_tier.tech === 'tech_base_expansion' && <div style={{ color: '#f87171', fontSize: '0.74rem', marginTop: 4 }}>🔒 Research Base Expansion</div>}
-                  <div style={{ marginTop: 8 }}><Btn disabled={busy || base.building} onClick={() => act(() => basesAPI.upgrade(base.id), `Upgrading to ${base.next_tier.name}`)}>UPGRADE</Btn></div>
+                  {(() => {
+                    const unlocked = new Set(data.research_unlocked || (data.can_expand ? ['tech_base_expansion'] : []));
+                    const locked = base.next_tier.tech && !unlocked.has(base.next_tier.tech);
+                    return (
+                      <>
+                        {locked && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, color: '#f87171', fontSize: '0.76rem' }}>
+                            <span style={{ flex: 1 }}>🔒 Research {techName(base.next_tier.tech)}</span>
+                            <Btn small accent="#fbbf24" onClick={() => goResearchFromConsole(base.next_tier.tech)}>RESEARCH</Btn>
+                          </div>
+                        )}
+                        <div style={{ marginTop: 8 }}><Btn disabled={busy || base.building || locked} title={locked ? `Research ${techName(base.next_tier.tech)} first` : ''} onClick={() => act(() => basesAPI.upgrade(base.id), `Upgrading to ${base.next_tier.name}`)}>UPGRADE</Btn></div>
+                      </>
+                    );
+                  })()}
                 </Card>
               )}
               <Card accent="#4ade80">

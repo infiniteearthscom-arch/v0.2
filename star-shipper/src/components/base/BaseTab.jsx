@@ -42,6 +42,9 @@ export const BaseTab = ({ body }) => {
   const fetchCredits = useGameStore(s => s.fetchCredits);
   const fetchCargoInfo = useGameStore(s => s.fetchCargoInfo);
   const openWindow = useGameStore(s => s.openWindow);
+  const setResearchTargetTech = useGameStore(s => s.setResearchTargetTech);
+  const goResearch = (techId) => { playSound('button_click'); setResearchTargetTech(techId); openWindow('research'); };
+  const goSkills = () => { playSound('button_click'); openWindow('research'); };
   const dockedBodyDbId = useGameStore(s => s.dockedBodyDbId);
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
 
@@ -107,7 +110,15 @@ export const BaseTab = ({ body }) => {
           <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>Framework · {t1.slots} plots</div>
           <CostLine tier={t1} />
           {can_build && !can_build.ok && (
-            <div style={{ color: '#f87171', fontSize: '0.8rem', marginTop: 6 }}>{can_build.reasons.map(r => <div key={r}>🔒 {r}</div>)}</div>
+            <div style={{ fontSize: '0.8rem', marginTop: 6 }}>
+              {(can_build.requirements || can_build.reasons.map(r => ({ kind: 'note', name: r, met: false }))).filter(r => !r.met).map((r, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', color: '#f87171' }}>
+                  <span style={{ flex: 1 }}>🔒 {r.kind === 'tech' ? `Research ${r.name}` : r.kind === 'skill' ? `Train ${r.name} ${['', 'I', 'II', 'III', 'IV', 'V'][r.level] || r.level}${r.note ? ` (${r.note})` : ''}` : r.name}</span>
+                  {r.kind === 'tech' && <Btn small accent="#fbbf24" onClick={() => goResearch(r.id)}>RESEARCH</Btn>}
+                  {r.kind === 'skill' && <Btn small accent="#60a5fa" onClick={goSkills}>TRAIN</Btn>}
+                </div>
+              ))}
+            </div>
           )}
           {kind === 'orbital' && can_build?.orbital_blocked && (
             <div style={{ color: '#f87171', fontSize: '0.8rem', marginTop: 6 }}>🔒 {can_build.orbital_blocked}</div>
