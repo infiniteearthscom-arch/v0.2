@@ -3598,7 +3598,9 @@ export const PlanetInteractionWindow = ({ body }) => {
   // For Sol, use the body.id directly (resolved by alias on server).
   // For procedural systems, register the body in DB first and use the returned UUID.
   useEffect(() => {
-    if (!body?.id || !isOpen) { setResolvedBodyId(null); setHasCity(false); return; }
+    // Resolve whenever we are DOCKED, open or not: presence's dock state
+    // (and every "you must be docked" endpoint) keys off this id.
+    if (!body?.id) { setResolvedBodyId(null); setHasCity(false); return; }
     // Starbases are player structures, not celestial bodies -- never
     // register them server-side.
     if (body.isStarbase) { setResolvedBodyId(null); setHasCity(false); return; }
@@ -3660,12 +3662,13 @@ export const PlanetInteractionWindow = ({ body }) => {
   // Mirror to the global store so the Fleet window (and any future
   // out-of-this-component caller) can reference "the body the player
   // is currently docked at" by DB identifier (UUID for procedural, Sol
-  // alias for hand-seeded). Cleared on unmount / when not open.
+  // alias for hand-seeded). Cleared on unmount / undock -- NOT when the
+  // window is merely closed (the ship is still docked).
   const setDockedBodyDbId = useGameStore(state => state.setDockedBodyDbId);
   useEffect(() => {
-    if (setDockedBodyDbId) setDockedBodyDbId(isOpen ? resolvedBodyId : null);
+    if (setDockedBodyDbId) setDockedBodyDbId(resolvedBodyId);
     return () => { if (setDockedBodyDbId) setDockedBodyDbId(null); };
-  }, [resolvedBodyId, isOpen, setDockedBodyDbId]);
+  }, [resolvedBodyId, setDockedBodyDbId]);
   
   useEffect(() => {
     if (effectiveBodyId && isOpen) {

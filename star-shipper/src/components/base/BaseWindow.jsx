@@ -185,6 +185,10 @@ const HopperPanel = ({ base, slot, module, foundry, busy, act, reloadKey }) => {
   };
   return (
     <div>
+      {/* Sticky: the station header + hopper stay in view while the feed
+          grid below scrolls, so a stack at the bottom of a big hold can
+          still be dragged up into the hopper. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#0a1322', paddingBottom: 2, marginBottom: 6, boxShadow: '0 6px 10px -6px rgba(0,0,0,0.8)' }}>
       <Card accent={color}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <PixelItemIcon size={40} spec={moduleIconSpec({ itemId: module.module_type_id, slotType: 'base', tier: module.tier, avgQuality: st.quality })} />
@@ -199,23 +203,23 @@ const HopperPanel = ({ base, slot, module, foundry, busy, act, reloadKey }) => {
           <span style={{ color: '#8fa3b8' }}>{fmt(h.produced_total)} made</span>
         </div>
       </Card>
-      <Card title={`HOPPER · ${fmt(h.used)} / ${fmt(h.capacity)} units`}>
+      <Card title={`HOPPER · ${fmt(h.used)} / ${fmt(h.capacity)} units`} style={{ marginBottom: 0 }}>
         <Meter value={h.used} max={h.capacity} color={color} />
         <div style={{ marginTop: 6 }}>
-          <CargoGrid stacks={hopperStacks} source="hopper" cols={5} slotSize={40} minSlots={10} onDropStack={dropOnHopper} busy={busy} />
+          <CargoGrid stacks={hopperStacks} source="hopper" cols={10} slotSize={40} minSlots={10} onDropStack={dropOnHopper} busy={busy} />
         </div>
         <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>
-          Takes: {(h.accepts || []).join(', ')}. Recipes in priority order:
-          {(h.recipes || []).map(r => <span key={r.id} style={{ display: 'block', color: '#8fa3b8' }}>{r.inputs.map(i => `${i.quantity} ${i.resource_name}`).join(' + ')} → {r.output.quantity} Fuel Cell{r.output.quantity > 1 ? 's' : ''} · {r.seconds_here}s</span>)}
+          Takes {(h.accepts || []).join(', ')} · {(h.recipes || []).map(r => `${r.inputs.map(i => `${i.quantity} ${i.resource_name}`).join(' + ')} → ${r.output.quantity} (${r.seconds_here}s)`).join(' · ')}
         </div>
       </Card>
+      </div>
       <Card title="FEED FROM">
         <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
           {['cargo', 'depot'].map(k => <Btn key={k} small accent={src === k ? GOLD.light : '#5a7080'} onClick={() => setSrc(k)}>{k === 'cargo' ? 'FLEET CARGO' : 'BASE CARGO'}</Btn>)}
           <span style={{ flex: 1 }} />
           <span style={{ color: '#5a7080', fontSize: '0.7rem', fontFamily: FM, alignSelf: 'center' }}>drag into the hopper · drag back out here</span>
         </div>
-        <CargoGrid stacks={feedable.map(x => ({ ...x, _dim: !accepts.has(x.resource_name) }))} source={src} cols={5} slotSize={40} minSlots={10} onDropStack={dropOnSource} busy={busy} />
+        <CargoGrid stacks={feedable.map(x => ({ ...x, _dim: !accepts.has(x.resource_name) }))} source={src} cols={10} slotSize={40} minSlots={20} onDropStack={dropOnSource} busy={busy} />
         <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>Only {(h.accepts || []).join(' / ')} are accepted; anything else bounces with a message.</div>
       </Card>
     </div>

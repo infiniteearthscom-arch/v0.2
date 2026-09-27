@@ -42,6 +42,7 @@ export const BaseTab = ({ body }) => {
   const fetchCredits = useGameStore(s => s.fetchCredits);
   const fetchCargoInfo = useGameStore(s => s.fetchCargoInfo);
   const openWindow = useGameStore(s => s.openWindow);
+  const dockedBodyDbId = useGameStore(s => s.dockedBodyDbId);
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
 
   const [data, setData] = useState(null);
@@ -58,7 +59,7 @@ export const BaseTab = ({ body }) => {
     try { setData(await basesAPI.here()); setErr(null); }
     catch (e) { setErr(e.message || 'Base data unavailable'); }
   };
-  useEffect(() => { load(); }, [body?.id]);
+  useEffect(() => { load(); }, [body?.id, dockedBodyDbId]);
   useEffect(() => { const t = setInterval(() => tick(n => n + 1), 30000); return () => clearInterval(t); }, []);
 
   const act = async (fn, okText) => {
@@ -69,6 +70,7 @@ export const BaseTab = ({ body }) => {
     finally { setBusy(false); }
   };
 
+  if (err && !dockedBodyDbId) return <div style={{ color: '#4a6580', fontFamily: F, fontSize: '0.85rem' }}>Connecting to the docking registry…</div>;
   if (err) return <div style={{ color: '#f87171', fontFamily: F, fontSize: '0.85rem' }}>{err}</div>;
   if (!data) return <div style={{ color: '#4a6580', fontFamily: F, fontSize: '0.85rem' }}>Loading…</div>;
 
