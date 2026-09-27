@@ -32,6 +32,16 @@ const secsLeft = (iso) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.
 const fmtSecs = (s) => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 const kindOf = (m) => !m ? null : m.stats?.foundry ? 'station' : m.stats?.depot_capacity ? 'depot' : m.stats?.refinery ? 'refinery' : m.stats?.rp_per_min ? 'lab' : m.stats?.repair_shop ? 'repair' : 'other';
 const KIND_ICON = { station: '🏭', depot: '📦', refinery: '⚗️', lab: '🔬', repair: '🔧', other: '🏗️' };
+// Where a material comes from (foundry catalog, loaded at login) and whether
+// this base has that station built -- so a shortfall says what to build.
+const madeAt = (catalog, name) => catalog?.materials?.find(m => m.name === name)?.made_at || null;
+const baseHasStation = (base, stationId) => Object.values(base?.modules || {}).some(m => m.module_type_id === stationId);
+const SourceHint = ({ catalog, base, name }) => {
+  const m = madeAt(catalog, name);
+  if (!m) return <span style={{ color: '#5a7080' }}> · raw, mine it</span>;
+  const built = baseHasStation(base, m.station);
+  return <span style={{ color: built ? '#5a7080' : '#fbbf24' }}> · made at {m.station_name}{built ? '' : ' (not built here)'}</span>;
+};
 
 const Btn = ({ children, onClick, disabled, accent = GOLD.pri, title, small, style }) => (
   <button onClick={onClick} disabled={disabled} title={title} style={{
@@ -74,6 +84,7 @@ const BaseArt = ({ base }) => {
 
 // ---------------- station panel ----------------
 const StationPanel = ({ base, slot, module, foundry, reload, busy, act }) => {
+  const catalog = useGameStore(s => s.foundryCatalog);
   const st = foundry?.stations?.find(s => s.slot === slot);
   const [recipeId, setRecipeId] = useState(null);
   const [runs, setRuns] = useState(1);
@@ -126,6 +137,18 @@ const StationPanel = ({ base, slot, module, foundry, reload, busy, act }) => {
                  onClick={() => act(() => foundryAPI.queue(slot, recipe.id, runsNow), (r) => `Queued ${recipe.name} ×${runsNow} · ${fmtSecs(r.seconds)}`)}>
               QUEUE {maxRuns > 0 ? `· ${fmtSecs(Math.round(recipe.seconds_here * runsNow))}` : ''}
             </Btn>
+          </div>
+        )}
+        {recipe && maxRuns === 0 && (
+          <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 3, background: 'rgba(120,30,30,0.18)', border: '1px solid #f8717155', fontSize: '0.76rem' }}>
+            <div style={{ color: '#f87171', fontWeight: 700, marginBottom: 2 }}>Cannot run {recipe.name} yet. Missing:</div>
+            {recipe.inputs.filter(i => (mats[i.resource_name]?.quantity || 0) < i.quantity).map(i => (
+              <div key={i.resource_name} style={{ color: '#e2e8f0' }}>
+                {i.quantity - (mats[i.resource_name]?.quantity || 0)} more {i.resource_name}
+                <SourceHint catalog={catalog} base={base} name={i.resource_name} />
+              </div>
+            ))}
+            <div style={{ color: '#8fa3b8', marginTop: 3 }}>Materials count from the base hold and the fleet hold together.</div>
           </div>
         )}
         <div style={{ color: '#5a7080', fontSize: '0.7rem', marginTop: 6 }}>Inputs come from the depot first, then cargo. Outputs land in the depot when one is fitted.</div>
@@ -398,6 +421,7 @@ export const BaseWindow = () => {
   const fetchCargoInfo = useGameStore(s => s.fetchCargoInfo);
   const dockedBody = useGameStore(s => s.dockedBody);
   const techCatalog = useGameStore(s => s.techs);
+  const foundryCatalogForCard = useGameStore(s => s.foundryCatalog);
   const techName = (id) => techCatalog?.find(t => t.id === id)?.name || String(id || '').replace(/^tech_/, '').replace(/_/g, ' ');
   const goResearchFromConsole = (techId) => { closeWindow('base'); setResearchTargetTech(techId); openWindow('research'); };
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
@@ -456,7 +480,7 @@ export const BaseWindow = () => {
                   <div style={{ color: '#8fa3b8', fontSize: '0.74rem', fontFamily: FM, lineHeight: 1.5 }}>
                     +{(base.next_tier.slots - base.slots)} plots · {base.next_tier.build_minutes} min<br />
                     {fmt(base.next_tier.credits)} cr<br />
-                    {Object.entries(base.next_tier.resources).map(([n, q]) => { const have = foundry?.materials?.[n]?.quantity || 0; return <span key={n} style={{ color: have >= q ? '#a8b4c5' : '#f87171', display: 'block' }}>{q} {n} <span style={{ opacity: 0.6 }}>({fmt(have)})</span></span>; })}
+                    {Object.entries(base.next_tier.resources).map(([n, q]) => { const have = foundry?.materials?.[n]?.quantity || 0; return <span key={n} style={{ color: have >= q ? '#a8b4c5' : '#f87171', display: 'block' }}>{q} {n} <span style={{ opacity: 0.6 }}>({fmt(have)})</span>{have < q && <SourceHint catalog={foundryCatalogForCard} base={base} name={n} />}</span>; })}
                   </div>
                   {(() => {
                     const unlocked = new Set(data.research_unlocked || (data.can_expand ? ['tech_base_expansion'] : []));
