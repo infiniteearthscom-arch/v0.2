@@ -35,7 +35,7 @@ export function paintBaseArt(ctx, { id, kind = 'surface', tier = 1, buildings = 
   const P = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   const areas = Math.max(1, Math.min(5, tier));
   const byArea = Array.from({ length: 5 }, () => []);
-  for (const b of buildings) { const a = Math.floor((Number(String(b.slot || 'b1').replace('b', '')) - 1) / 4); if (a >= 0 && a < 5) byArea[a].push(b); }
+  for (const b of buildings) { const a = Number.isInteger(b.area) ? b.area : Math.floor((Number(String(b.slot || 'b1').replace('b', '')) - 1) / 8); if (a >= 0 && a < 5) byArea[a].push(b); }
 
   if (kind === 'surface') {
     // planet body: a big arc at the bottom in the planet colour
@@ -56,12 +56,13 @@ export function paintBaseArt(ctx, { id, kind = 'surface', tier = 1, buildings = 
       P(x0 + 4, 74, 3, 2, '#ffe28a'); P(x0 + w - 8, 72, 3, 2, (frame + a) % 2 ? '#ffe28a' : '#7a6a30');
       // buildings on this area's plots
       byArea[a].forEach((b, i) => {
-        const bx = x0 + 2 + i * 7, c = FAMILY_COLOR[b.family] || FAMILY_COLOR.none;
-        const h = b.kind === 'station' ? 9 + (b.tier || 1) * 2 : 8;
-        P(bx, 78 - 12 - h, 6, h, shade(c, 0.75)); P(bx, 78 - 12 - h, 6, 1, shade(c, 1.3)); P(bx + 5, 78 - 12 - h, 1, h, shade(c, 0.45));
-        if (b.kind === 'station') { P(bx + 2, 78 - 12 - h - 4, 2, 4, '#556'); if ((frame + i) % 2) P(bx + 2, 78 - 12 - h - 6, 2, 2, '#c8ccd0'); }
-        if (b.kind === 'depot') { P(bx + 1, 78 - 12 - h + 2, 4, 2, shade(c, 0.4)); }
-        if (b.kind === 'lab') { P(bx + 2, 78 - 12 - h - 2, 2, 2, (frame % 2) ? '#67e8f9' : '#155e75'); }
+        const col = i % 7, row = Math.floor(i / 7);
+        const bx = x0 + 1 + col * 4, c = FAMILY_COLOR[b.family] || FAMILY_COLOR.none;
+        const h = (b.kind === 'station' ? 9 + (b.tier || 1) * 2 : 8) - row * 4;
+        P(bx, 78 - 12 - h, 3, h, shade(c, 0.75)); P(bx, 78 - 12 - h, 3, 1, shade(c, 1.3)); P(bx + 2, 78 - 12 - h, 1, h, shade(c, 0.45));
+        if (b.kind === 'station') { P(bx + 1, 78 - 12 - h - 3, 1, 3, '#556'); if ((frame + i) % 2) P(bx + 1, 78 - 12 - h - 5, 1, 2, '#c8ccd0'); }
+        if (b.kind === 'depot') { P(bx, 78 - 12 - h + 2, 3, 1, shade(c, 0.4)); }
+        if (b.kind === 'lab') { P(bx + 1, 78 - 12 - h - 2, 1, 2, (frame % 2) ? '#67e8f9' : '#155e75'); }
       });
     }
     // ground lights along the front
@@ -80,10 +81,10 @@ export function paintBaseArt(ctx, { id, kind = 'surface', tier = 1, buildings = 
       P(sx, sy, 6, 44, '#4e6688'); P(sx, sy, 6, 1, '#8aa0c0'); P(sx + 5, sy, 1, 44, '#2a3a55');
       byArea[a].forEach((b, i) => {
         const c = FAMILY_COLOR[b.family] || FAMILY_COLOR.none;
-        const px = sx + (i % 2 ? 8 : -10), py = sy + 4 + Math.floor(i / 2) * 20;
-        P(px, py, 8, 12, shade(c, 0.75)); P(px, py, 8, 1, shade(c, 1.3)); P(px + 7, py, 1, 12, shade(c, 0.45));
-        P(px + 3, py + 5, 2, 2, ((i + frame) % 2) ? '#ffffff' : shade(c, 0.4));
-        if (b.kind === 'station') P(px + 2, py + 12, 4, 2, '#556');
+        const px = sx + (i % 2 ? 8 : -10), py = sy + 2 + Math.floor(i / 2) * 6;
+        P(px, py, 8, 5, shade(c, 0.75)); P(px, py, 8, 1, shade(c, 1.3)); P(px + 7, py, 1, 5, shade(c, 0.45));
+        P(px + 3, py + 2, 2, 1, ((i + frame) % 2) ? '#ffffff' : shade(c, 0.4));
+        if (b.kind === 'station') P(px + 2, py + 5, 4, 1, '#556');
       });
       P(sx + 2, sy - 3, 2, 2, ((a + frame) % 2) ? '#ff3b3b' : '#5a1010');
     }

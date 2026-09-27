@@ -76,7 +76,8 @@ const BaseArt = ({ base }) => {
   useEffect(() => {
     const c = ref.current; if (!c) return;
     const ctx = c.getContext('2d');
-    const buildings = Object.entries(base.modules || {}).map(([slot, m]) => ({ slot, family: m.stats?.foundry?.family || (kindOf(m) === 'station' ? 'none' : 'service'), tier: m.stats?.foundry?.tier || m.tier || 1, kind: kindOf(m) }));
+    const areaOf = (slot) => Math.max(0, (base.areas || []).findIndex(a => (a.slots || []).includes(slot)));
+    const buildings = Object.entries(base.modules || {}).map(([slot, m]) => ({ slot, area: areaOf(slot), family: m.stats?.foundry?.family || (kindOf(m) === 'station' ? 'none' : 'service'), tier: m.stats?.foundry?.tier || m.tier || 1, kind: kindOf(m) }));
     paintBaseArt(ctx, { id: base.id, kind: base.kind, tier: base.tier, buildings, frame });
   }, [base, frame]);
   return <canvas ref={ref} width={BASE_ART_W} height={BASE_ART_H} style={{ width: '100%', imageRendering: 'pixelated', display: 'block', border: `1px solid ${EDGE}`, borderRadius: 3, background: '#05070f' }} />;
@@ -255,7 +256,7 @@ const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, 
   // panel open BEHIND it. Close the console before deep-linking.
   const goResearch = (techId) => { closeWindow('base'); setResearchTargetTech(techId); openWindow('research'); };
   const goCraft = (recipeId) => { closeWindow('base'); setCraftingTargetRecipe(recipeId); openWindow('crafting'); };
-  const areaTier = Math.floor((Number(slot.replace('b', '')) - 1) / (base.plots_per_area || 4)) + 1;
+  const areaTier = ((base.areas || []).find(a => (a.slots || []).includes(slot))?.tier) || 1;
   const inCargo = (data.cargo_modules || []);
   const cat = (data.buildables || []);
   const groups = [['Foundry stations', cat.filter(b => b.foundry)], ['Services', cat.filter(b => !b.foundry)]];
@@ -452,9 +453,10 @@ export const BaseWindow = () => {
   const base = data?.base;
   const plots = useMemo(() => {
     if (!base) return [];
-    const per = base.plots_per_area || 4;
-    return (base.areas || []).map(a => ({ ...a, slots: Array.from({ length: per }, (_, i) => `b${a.first_slot + i}`) }));
+    // Server sends each area's slot keys (8 base + Command Center Upgrades bonus).
+    return (base.areas || []).map(a => ({ ...a, slots: a.slots || Array.from({ length: base.plots_per_area || 8 }, (_, i) => `b${(a.tier - 1) * (base.plots_per_area || 8) + i + 1}`) }));
   }, [base]);
+  const areaOfSlot = (slot) => Math.max(0, plots.findIndex(a => a.slots.includes(slot)));
   const totalMats = useMemo(() => Object.entries(foundry?.materials || {}).sort((a, b) => a[0].localeCompare(b[0])), [foundry]);
   const selModule = base && selected ? base.modules[selected] : null;
   const selKind = kindOf(selModule);
@@ -522,7 +524,9 @@ export const BaseWindow = () => {
                   <div key={area.tier} style={{ border: `1px solid ${area.unlocked ? EDGE : '#101a2c'}`, borderRadius: 4, padding: 8, background: area.unlocked ? 'rgba(4,8,16,0.5)' : 'rgba(4,8,16,0.25)', opacity: area.unlocked ? 1 : 0.55 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                       <span style={{ color: area.unlocked ? GOLD.light : '#5a7080', fontWeight: 800, fontSize: '0.78rem', letterSpacing: 1 }}>{area.name.toUpperCase()} AREA</span>
-                      <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.68rem' }}>{area.unlocked ? `tier ${area.tier}` : `🔒 tier ${area.tier}`}</span>
+                      <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.68rem' }} title={area.bonus_plots ? `${area.base_plots} plots + ${area.bonus_plots} from Command Center Upgrades` : 'Train Command Center Upgrades for +1 plot per area per level'}>
+                        {area.unlocked ? `tier ${area.tier} · ${area.slots.length} plots` : `🔒 tier ${area.tier}`}
+                      </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                       {area.slots.map(slot => {

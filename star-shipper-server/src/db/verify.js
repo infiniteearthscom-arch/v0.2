@@ -147,6 +147,10 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 091 (base plots text) ---
+  const bp = await pool.query(`SELECT description FROM tech_definitions WHERE id = 'tech_base_expansion'`);
+  report('tech_base_expansion text says 16 and 24 plots (091)', /16 and 24/.test(bp.rows[0]?.description || ''));
+
   // --- migration 090 (fuel refinery) ---
   report('player_base_hoppers table (090)', await tableExists('player_base_hoppers'));
   report('player_base_station_state table (090)', await tableExists('player_base_station_state'));

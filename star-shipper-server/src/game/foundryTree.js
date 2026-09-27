@@ -295,12 +295,17 @@ export const RAW_TO_PROCESSED = {
   'Void Essence': 'Void-Tempered Alloy', 'Ancient Alloy': 'Precursor Plate', 'Quantum Dust': 'Stable Quantum Matrix',
 };
 
-// Base tiers: plots (4 per area, one area per tier) and upgrade costs in parts.
+// Base tiers: plots (8 per area, one area per tier; Command Center
+// Upgrades adds +1 plot per area per level -- see plotLayout in
+// api/bases.js) and upgrade costs in parts. `slots` = base plots at level 0.
 export const BASE_TIERS = {
-  1: { name: 'Framework', slots: 4,  build_minutes: 10,  credits: 5000,   resources: { Iron: 200, Titanium: 100, Copper: 50 }, tech: 'tech_base_construction' },
-  2: { name: 'Outpost',   slots: 8,  build_minutes: 45,  credits: 20000,  resources: { 'Structural Frame': 6, 'Control Unit': 4, Polymer: 20 }, tech: 'tech_base_expansion' },
-  3: { name: 'Station',   slots: 12, build_minutes: 180, credits: 80000,  resources: { 'Titanium Frame': 6, 'Servo Assembly': 4, 'Steel Plate': 20 }, tech: 'tech_base_expansion' },
-  4: { name: 'Hub',       slots: 16, build_minutes: 360, credits: 250000, resources: { 'Reinforced Hull Section': 6, 'Smart Actuator': 4, 'Energy Cell': 20 }, tech: 'tech_base_citadel' },
-  5: { name: 'Citadel',   slots: 20, build_minutes: 720, credits: 800000, resources: { 'Precursor Frame': 6, 'Field Core': 4, 'Dense Alloy': 20 }, tech: 'tech_base_citadel' },
+  1: { name: 'Framework', slots: 8,  build_minutes: 10,  credits: 5000,   resources: { Iron: 200, Titanium: 100, Copper: 50 }, tech: 'tech_base_construction' },
+  2: { name: 'Outpost',   slots: 16, build_minutes: 45,  credits: 20000,  resources: { 'Structural Frame': 6, 'Control Unit': 4, Polymer: 20 }, tech: 'tech_base_expansion' },
+  3: { name: 'Station',   slots: 24, build_minutes: 180, credits: 80000,  resources: { 'Titanium Frame': 6, 'Servo Assembly': 4, 'Steel Plate': 20 }, tech: 'tech_base_expansion' },
+  4: { name: 'Hub',       slots: 32, build_minutes: 360, credits: 250000, resources: { 'Reinforced Hull Section': 6, 'Smart Actuator': 4, 'Energy Cell': 20 }, tech: 'tech_base_citadel' },
+  5: { name: 'Citadel',   slots: 40, build_minutes: 720, credits: 800000, resources: { 'Precursor Frame': 6, 'Field Core': 4, 'Dense Alloy': 20 }, tech: 'tech_base_citadel' },
 };
-export const PLOTS_PER_AREA = 4;
+export const PLOTS_PER_AREA = 8;
+export const MAX_AREAS = 5;
+export const BONUS_PLOTS_PER_LEVEL = 1;   // Command Center Upgrades: +1 plot per area per level
+export const MAX_BONUS_PLOTS = 5;         // key space reserved per area for bonus plots

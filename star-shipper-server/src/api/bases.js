@@ -14,7 +14,7 @@ import { addResourceStack } from '../lib/wrecks.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
 import { generateGalaxy, generateSystemContent } from '../game/galaxyGenerator.js';
-import { BASE_TIERS, PLOTS_PER_AREA } from '../game/foundryTree.js';
+import { BASE_TIERS, PLOTS_PER_AREA, MAX_AREAS, BONUS_PLOTS_PER_LEVEL, MAX_BONUS_PLOTS } from '../game/foundryTree.js';
 import { consumeMaterials, depotStacks, depotUsed, depotCapacityOf, depotAdd, depotAddItem, depotNextSlot, addItemStack } from '../lib/materials.js';
 
 // ---- public visibility (2026-09-25) ----
@@ -56,6 +56,26 @@ router.use(authMiddleware);
 
 const AVG = (s) => ((Number(s.stat_purity ?? 50) + Number(s.stat_stability ?? 50) + Number(s.stat_potency ?? 50) + Number(s.stat_density ?? 50)) / 4);
 const slotKey = (i) => `b${i + 1}`;
+
+// Plot layout (2026-09-27). Keys never move once assigned:
+//   area a (1..5) base plots  : b((a-1)*8+1) .. b(a*8)              -> b1..b40
+//   area a bonus plot j (1..5): b(40 + (a-1)*5 + j)                  -> b41..b65
+// Bonus plots come from Command Center Upgrades (+1 per area per level).
+// A base of tier T has areas 1..T unlocked.
+const BASE_KEY_SPACE = PLOTS_PER_AREA * MAX_AREAS; // 40
+export function plotLayout(tier, ccLevel) {
+  const bonus = Math.min(MAX_BONUS_PLOTS, Math.max(0, Math.floor(ccLevel || 0)) * BONUS_PLOTS_PER_LEVEL);
+  const areas = [];
+  for (let a = 1; a <= MAX_AREAS; a++) {
+    const def = TIERS[a];
+    const slots = [];
+    for (let i = 1; i <= PLOTS_PER_AREA; i++) slots.push(`b${(a - 1) * PLOTS_PER_AREA + i}`);
+    for (let j = 1; j <= bonus; j++) slots.push(`b${BASE_KEY_SPACE + (a - 1) * MAX_BONUS_PLOTS + j}`);
+    areas.push({ tier: a, name: def.name, unlocked: a <= tier, slots, base_plots: PLOTS_PER_AREA, bonus_plots: bonus });
+  }
+  const allowed = new Set(areas.filter(x => x.unlocked).flatMap(x => x.slots));
+  return { areas, allowed, total: allowed.size, bonus_per_area: bonus };
+}
 
 async function dockedBody(req, userId) {
   const presence = req.app.get('io')?.presence;
@@ -111,12 +131,14 @@ async function depotFor(base, q = query) {
 async function shapeBase(b, q = query) {
   const t = TIERS[b.tier] || TIERS[1];
   const building = new Date(b.build_completes_at).getTime() > Date.now();
+  const cc = await skillLevel(b.user_id, BUILD_SKILL, q);
+  const layout = plotLayout(b.tier, cc);
   const sys = await (q === query ? queryOne : (sql, p) => q(sql, p).then(r => (r.rows || r)[0]))(
     `SELECT name FROM star_systems WHERE procedural_id = $1`, [b.system_procedural_id]);
   return {
-    id: b.id, kind: b.kind, name: b.name, tier: b.tier, tier_name: t.name, slots: t.slots,
-    plots_per_area: PLOTS_PER_AREA, max_tier: MAX_TIER,
-    areas: Object.entries(TIERS).map(([tier, def]) => ({ tier: Number(tier), name: def.name, unlocked: Number(tier) <= b.tier, first_slot: (Number(tier) - 1) * PLOTS_PER_AREA + 1 })),
+    id: b.id, kind: b.kind, name: b.name, tier: b.tier, tier_name: t.name, slots: layout.total,
+    plots_per_area: PLOTS_PER_AREA + layout.bonus_per_area, bonus_per_area: layout.bonus_per_area, cc_level: cc, max_tier: MAX_TIER,
+    areas: layout.areas,
     building, build_completes_at: b.build_completes_at,
     system_procedural_id: b.system_procedural_id, system_name: sys?.name || b.system_procedural_id,
     body_name: b.body_name, celestial_body_id: b.celestial_body_id,
@@ -322,10 +344,9 @@ router.post('/:id/fit', async (req, res) => {
       const b = await loadOwnBase(client, userId, String(req.params.id));
       await mustBeDockedAt(req, userId, b);
       if (new Date(b.build_completes_at).getTime() > Date.now()) throw Object.assign(new Error('Still under construction'), { statusCode: 409 });
-      const t = TIERS[b.tier];
-      const idx = Number(String(slot || '').replace(/^b/, '')) - 1;
-      if (!(idx >= 0 && idx < t.slots)) throw Object.assign(new Error('No such slot'), { statusCode: 400 });
-      const key = slotKey(idx);
+      const layout = plotLayout(b.tier, await skillLevel(userId, BUILD_SKILL, client.query.bind(client)));
+      const key = String(slot || '');
+      if (!layout.allowed.has(key)) throw Object.assign(new Error('No such plot on this base'), { statusCode: 400 });
       const fitted = b.fitted_modules || {};
       if (fitted[key]) throw Object.assign(new Error('Slot occupied -- unfit it first'), { statusCode: 409 });
       // From cargo, or (089) straight out of the depot.
