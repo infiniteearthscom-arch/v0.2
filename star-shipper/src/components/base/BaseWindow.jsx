@@ -476,8 +476,8 @@ export const BaseWindow = () => {
             </div>
 
             {/* CENTRE: plot grid */}
-            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', minHeight: 0 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
+            <div style={{ width: 420, flexShrink: 0, overflowY: 'auto', minHeight: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                 {plots.map(area => (
                   <div key={area.tier} style={{ border: `1px solid ${area.unlocked ? EDGE : '#101a2c'}`, borderRadius: 4, padding: 8, background: area.unlocked ? 'rgba(4,8,16,0.5)' : 'rgba(4,8,16,0.25)', opacity: area.unlocked ? 1 : 0.55 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
@@ -522,7 +522,7 @@ export const BaseWindow = () => {
             </div>
 
             {/* RIGHT: selection */}
-            <div style={{ width: (selKind === 'depot' || selModule?.stats?.foundry?.hopper) ? 520 : 360, flexShrink: 0, overflowY: 'auto', minHeight: 0, transition: 'width 0.15s' }}>
+            <div style={{ flex: 1, minWidth: 360, overflowY: 'auto', minHeight: 0 }}>
               {!selected && (
                 <Card accent={GOLD.pri} title="SELECT A PLOT">
                   <div style={{ color: '#8fa3b8', fontSize: '0.78rem', lineHeight: 1.45 }}>

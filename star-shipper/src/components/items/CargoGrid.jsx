@@ -35,6 +35,7 @@ export const CargoGrid = ({ stacks, source, cols = 5, slotSize = 40, minSlots = 
   let next = 0;
   for (const s of stacks) { if (s.slot_index != null && slotMap[s.slot_index] === s) continue; while (slotMap[next] != null) next++; slotMap[next] = s; s._tempSlot = next; next++; }
   const maxIdx = Object.keys(slotMap).reduce((m, k) => Math.max(m, Number(k)), -1);
+  // rows wrap to the container width (auto-fill); `cols` only shapes the empty-slot padding
   const total = Math.max(minSlots, Math.ceil((maxIdx + 2) / cols) * cols);
   const parse = (e) => { try { return JSON.parse(e.dataTransfer.getData('application/json') || 'null'); } catch { return null; } };
 
@@ -83,7 +84,7 @@ export const CargoGrid = ({ stacks, source, cols = 5, slotSize = 40, minSlots = 
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, ${slotSize}px)`, gap: 4, padding: 4, borderRadius: 4, background: '#0a0f1a', border: '1px solid #1e293b', opacity: busy ? 0.7 : 1 }}
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, ${slotSize}px)`, gap: 4, padding: 4, borderRadius: 4, background: '#0a0f1a', border: '1px solid #1e293b', opacity: busy ? 0.7 : 1 }}
          onDragOver={(e) => e.preventDefault()}
          onDrop={(e) => { // drop on the grid's padding = append
            if (e.target !== e.currentTarget) return; e.preventDefault(); const p = parse(e); if (p && onDropStack) onDropStack(p, { slotIndex: null, targetStack: null }); }}>
