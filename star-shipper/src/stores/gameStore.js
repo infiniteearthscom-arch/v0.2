@@ -105,6 +105,9 @@ const initialState = {
   // Foundry catalog (088): processed materials with made-at / used-for,
   // stations, recipes. Loaded once on login (GameFrame FoundryCatalogLoader).
   foundryCatalog: null,
+  // "Make X at the base": the console opens on the station that makes it
+  // (or on an empty plot with the buildables list if it isn't built yet).
+  baseFocus: null, // { station, material } | null
   pendingAmbush: null,
   skills: [],                  // [{ id, category, name, description, rank_multiplier, bonus_per_level, level, sp, sp_at_current_level, sp_for_next_level }]
   fitGates: null,              // { module_gates, hull_gates, fleet } from GET /skills (Phase 3 capability gating)
@@ -396,6 +399,7 @@ export const useGameStore = create(
       },
       setAnomalySites: (list) => set(state => { state.anomalySites = Array.isArray(list) ? list : []; }),
       setFoundryCatalog: (cat) => set(state => { state.foundryCatalog = cat || null; }),
+      setBaseFocus: (f) => set(state => { state.baseFocus = f || null; }),
       setPendingAmbush: (a) => set(state => { state.pendingAmbush = a || null; }),
       clearPendingAmbush: () => set(state => { state.pendingAmbush = null; }),
       bumpContracts: () => set(state => { state.contractsVersion = (state.contractsVersion || 0) + 1; }),

@@ -139,6 +139,29 @@ const RecipeCard = ({ recipe, isSelected, onClick }) => {
 // INGREDIENT SLOT (drop target)
 // ============================================
 
+// Where an ingredient comes from (Foundry catalog) + a jump to the base
+// console focused on the station that makes it. Raw resources just say so.
+const MadeAtLine = ({ name }) => {
+  const catalog = useGameStore(s => s.foundryCatalog);
+  const setBaseFocus = useGameStore(s => s.setBaseFocus);
+  const openWindow = useGameStore(s => s.openWindow);
+  const closeWindow = useGameStore(s => s.closeWindow);
+  const m = catalog?.materials?.find(x => x.name === name);
+  if (!catalog) return null;
+  if (!m) return <div style={{ fontSize: '0.62rem', color: COLORS.TEXT.dim, fontFamily: FONT.mono, marginTop: 4 }}>raw resource: mine it or buy it</div>;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+      <span style={{ fontSize: '0.62rem', color: '#f5c542', fontFamily: FONT.mono }}>made at {m.made_at?.station_name || '?'}{m.is_part ? ' (part)' : ''}</span>
+      <span style={{ flex: 1 }} />
+      <button onClick={() => { setBaseFocus({ station: m.made_at?.station, material: name }); closeWindow('crafting'); openWindow('base'); }}
+        title="Open your base console on the station that makes this (dock at your base first)"
+        style={{ padding: '1px 6px', borderRadius: 2, cursor: 'pointer', background: 'rgba(245,197,66,0.12)', border: '1px solid #f5c54277', color: '#f5c542', fontFamily: FONT.ui, fontWeight: 700, fontSize: '0.62rem', letterSpacing: 0.5 }}>
+        MAKE AT BASE
+      </button>
+    </div>
+  );
+};
+
 const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts }) => {
   const [dragOver, setDragOver] = useState(false);
   const needed = ingredient.quantity;
@@ -272,6 +295,7 @@ const IngredientSlot = ({ ingredient, assigned, onDrop, onRemove, resourceCounts
           {assigned?.quantity || 0}/{needed}
         </span>
       </div>
+      <MadeAtLine name={ingredient.resource_name} />
 
       {/* Assigned stacks */}
       {assigned && assigned.stacks.length > 0 && (

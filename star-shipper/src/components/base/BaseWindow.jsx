@@ -36,11 +36,22 @@ const KIND_ICON = { station: '🏭', depot: '📦', refinery: '⚗️', lab: '�
 // this base has that station built -- so a shortfall says what to build.
 const madeAt = (catalog, name) => catalog?.materials?.find(m => m.name === name)?.made_at || null;
 const baseHasStation = (base, stationId) => Object.values(base?.modules || {}).some(m => m.module_type_id === stationId);
-const SourceHint = ({ catalog, base, name }) => {
+// onGo(stationId, material, built): built -> jump to that plot with the
+// recipe preselected; not built -> craft the station.
+const SourceHint = ({ catalog, base, name, onGo }) => {
   const m = madeAt(catalog, name);
   if (!m) return <span style={{ color: '#5a7080' }}> · raw, mine it</span>;
   const built = baseHasStation(base, m.station);
-  return <span style={{ color: built ? '#5a7080' : '#fbbf24' }}> · made at {m.station_name}{built ? '' : ' (not built here)'}</span>;
+  return (
+    <span style={{ color: built ? '#5a7080' : '#fbbf24' }}> · made at {m.station_name}{built ? '' : ' (not built here)'}
+      {onGo && (
+        <button onClick={(e) => { e.stopPropagation(); onGo(m.station, name, built); }}
+          style={{ marginLeft: 6, padding: '0 6px', borderRadius: 2, cursor: 'pointer', background: built ? 'rgba(74,222,128,0.12)' : 'rgba(192,132,252,0.12)', border: `1px solid ${built ? '#4ade8077' : '#c084fc77'}`, color: built ? '#4ade80' : '#c084fc', fontFamily: F, fontWeight: 700, fontSize: '0.66rem', letterSpacing: 0.5 }}>
+          {built ? 'MAKE NOW' : 'CRAFT STATION'}
+        </button>
+      )}
+    </span>
+  );
 };
 
 const Btn = ({ children, onClick, disabled, accent = GOLD.pri, title, small, style }) => (
@@ -84,14 +95,17 @@ const BaseArt = ({ base }) => {
 };
 
 // ---------------- station panel ----------------
-const StationPanel = ({ base, slot, module, foundry, reload, busy, act }) => {
+const StationPanel = ({ base, slot, module, foundry, reload, busy, act, focusMaterial, onGo }) => {
   const catalog = useGameStore(s => s.foundryCatalog);
   const st = foundry?.stations?.find(s => s.slot === slot);
   const [recipeId, setRecipeId] = useState(null);
   const [runs, setRuns] = useState(1);
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t); }, []);
-  useEffect(() => { setRecipeId(st?.recipes?.[0]?.id || null); setRuns(1); }, [slot]);
+  useEffect(() => {
+    const want = focusMaterial ? st?.recipes?.find(r => r.output?.resource_name === focusMaterial || r.output?.item_id === focusMaterial) : null;
+    setRecipeId(want?.id || st?.recipes?.[0]?.id || null); setRuns(1);
+  }, [slot, focusMaterial, st?.recipes?.length]);
   if (!foundry?.available) return <div style={{ color: '#f87171', fontSize: '0.8rem' }}>{foundry?.reason || 'Foundry unavailable'}</div>;
   if (!st) return <div style={{ color: '#4a6580', fontSize: '0.8rem' }}>Loading station…</div>;
   const recipe = st.recipes.find(r => r.id === recipeId) || st.recipes[0];
@@ -146,7 +160,7 @@ const StationPanel = ({ base, slot, module, foundry, reload, busy, act }) => {
             {recipe.inputs.filter(i => (mats[i.resource_name]?.quantity || 0) < i.quantity).map(i => (
               <div key={i.resource_name} style={{ color: '#e2e8f0' }}>
                 {i.quantity - (mats[i.resource_name]?.quantity || 0)} more {i.resource_name}
-                <SourceHint catalog={catalog} base={base} name={i.resource_name} />
+                <SourceHint catalog={catalog} base={base} name={i.resource_name} onGo={onGo} />
               </div>
             ))}
             <div style={{ color: '#8fa3b8', marginTop: 3 }}>Materials count from the base hold and the fleet hold together.</div>
@@ -425,6 +439,7 @@ export const BaseWindow = () => {
   const foundryCatalogForCard = useGameStore(s => s.foundryCatalog);
   const techName = (id) => techCatalog?.find(t => t.id === id)?.name || String(id || '').replace(/^tech_/, '').replace(/_/g, ' ');
   const goResearchFromConsole = (techId) => { closeWindow('base'); setResearchTargetTech(techId); openWindow('research'); };
+  const goCraft = (recipeId) => { closeWindow('base'); setCraftingTargetRecipe(recipeId); openWindow('crafting'); };
   const flash = (kind, text) => pushToast && pushToast({ kind, text });
 
   const [data, setData] = useState(null);
@@ -432,6 +447,9 @@ export const BaseWindow = () => {
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [focusMaterial, setFocusMaterial] = useState(null);
+  const baseFocus = useGameStore(s => s.baseFocus);
+  const setBaseFocus = useGameStore(s => s.setBaseFocus);
   const [, tick] = useState(0);
 
   const load = async () => {
@@ -451,6 +469,22 @@ export const BaseWindow = () => {
   };
 
   const base = data?.base;
+  // Jump to the station that makes a material: from a MAKE NOW button here,
+  // or a MAKE AT BASE button in the Crafting window (store.baseFocus).
+  const goToStation = (stationId, material) => {
+    if (!base) return;
+    const entry = Object.entries(base.modules || {}).find(([, m]) => m.module_type_id === stationId);
+    if (entry) { setSelected(entry[0]); setFocusMaterial(material || null); return; }
+    const empty = (base.areas || []).filter(a => a.unlocked).flatMap(a => a.slots || []).find(k => !base.modules?.[k]);
+    const name = data?.buildables?.find(b => b.id === stationId)?.name || stationId;
+    if (empty) setSelected(empty);
+    flash('info', `Build a ${name} on an empty plot first. It makes ${material || 'that'}.`);
+  };
+  useEffect(() => {
+    if (!isOpen || !base || !baseFocus) return;
+    goToStation(baseFocus.station, baseFocus.material);
+    setBaseFocus(null);
+  }, [isOpen, base?.id, baseFocus]);
   const plots = useMemo(() => {
     if (!base) return [];
     // Server sends each area's slot keys (8 base + Command Center Upgrades bonus).
@@ -466,7 +500,7 @@ export const BaseWindow = () => {
       <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, fontFamily: F, color: '#e2e8f0' }}>
         {err && <div style={{ color: '#f87171' }}>{err}</div>}
         {!err && !data && <div style={{ color: '#4a6580' }}>Loading base…</div>}
-        {!err && data && !base && <div style={{ color: '#8fa3b8' }}>No base of yours here. Build one from the planet's Base tab.</div>}
+        {!err && data && !base && <div style={{ color: '#8fa3b8' }}>No base of yours here. Dock at a planet where you own a base, or build one from the planet's Base tab.</div>}
         {base && (
           <>
             {/* LEFT */}
@@ -482,7 +516,7 @@ export const BaseWindow = () => {
                   <div style={{ color: '#8fa3b8', fontSize: '0.74rem', fontFamily: FM, lineHeight: 1.5 }}>
                     +{(base.next_tier.slots - base.slots)} plots · {base.next_tier.build_minutes} min<br />
                     {fmt(base.next_tier.credits)} cr<br />
-                    {Object.entries(base.next_tier.resources).map(([n, q]) => { const have = foundry?.materials?.[n]?.quantity || 0; return <span key={n} style={{ color: have >= q ? '#a8b4c5' : '#f87171', display: 'block' }}>{q} {n} <span style={{ opacity: 0.6 }}>({fmt(have)})</span>{have < q && <SourceHint catalog={foundryCatalogForCard} base={base} name={n} />}</span>; })}
+                    {Object.entries(base.next_tier.resources).map(([n, q]) => { const have = foundry?.materials?.[n]?.quantity || 0; return <span key={n} style={{ color: have >= q ? '#a8b4c5' : '#f87171', display: 'block' }}>{q} {n} <span style={{ opacity: 0.6 }}>({fmt(have)})</span>{have < q && <SourceHint catalog={foundryCatalogForCard} base={base} name={n} onGo={(stationId, material, built) => built ? goToStation(stationId, material) : goCraft(`craft_${stationId}`)} />}</span>; })}
                   </div>
                   {(() => {
                     const unlocked = new Set(data.research_unlocked || (data.can_expand ? ['tech_base_expansion'] : []));
@@ -537,7 +571,7 @@ export const BaseWindow = () => {
                         const color = m ? (m.stats?.foundry ? familyColor(m.stats.foundry.family) : '#94a3b8') : '#1e293b';
                         const on = selected === slot;
                         return (
-                          <div key={slot} onClick={() => area.unlocked && setSelected(slot)} title={m ? `${m.name} (${slot.toUpperCase()})` : area.unlocked ? `Empty plot ${slot.toUpperCase()}` : `Unlocks at ${area.name}`}
+                          <div key={slot} onClick={() => { if (!area.unlocked) return; setSelected(slot); setFocusMaterial(null); }} title={m ? `${m.name} (${slot.toUpperCase()})` : area.unlocked ? `Empty plot ${slot.toUpperCase()}` : `Unlocks at ${area.name}`}
                                style={{ height: 78, borderRadius: 3, cursor: area.unlocked ? 'pointer' : 'not-allowed', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
                                         background: m ? `linear-gradient(180deg, ${color}22, rgba(4,8,16,0.6))` : 'rgba(4,8,16,0.35)',
                                         border: `1px solid ${on ? '#67e8f9' : m ? color + '88' : '#1e293b'}`, boxShadow: on ? '0 0 8px #67e8f955' : ready ? `0 0 8px #4ade8066` : 'none' }}>
@@ -578,7 +612,7 @@ export const BaseWindow = () => {
               {selected && !selModule && (
                 <EmptyPlotPanel base={base} slot={selected} data={data} busy={busy} act={act} openWindow={openWindow} closeWindow={closeWindow} setResearchTargetTech={setResearchTargetTech} setCraftingTargetRecipe={setCraftingTargetRecipe} />
               )}
-              {selected && selModule && selKind === 'station' && !selModule.stats?.foundry?.hopper && <StationPanel base={base} slot={selected} module={selModule} foundry={foundry} reload={load} busy={busy} act={act} />}
+              {selected && selModule && selKind === 'station' && !selModule.stats?.foundry?.hopper && <StationPanel base={base} slot={selected} module={selModule} foundry={foundry} reload={load} busy={busy} act={act} focusMaterial={focusMaterial} onGo={(stationId, material, built) => built ? goToStation(stationId, material) : goCraft(`craft_${stationId}`)} />}
               {selected && selModule && selKind === 'station' && selModule.stats?.foundry?.hopper && <HopperPanel base={base} slot={selected} module={selModule} foundry={foundry} busy={busy} act={act} reloadKey={data} />}
               {selected && selModule && selKind === 'depot' && <DepotPanel base={base} busy={busy} act={act} reloadKey={data} />}
               {selected && selModule && selKind === 'refinery' && <Card accent={GOLD.pri} title="GRADE REFINERY"><div style={{ color: '#8fa3b8', fontSize: '0.74rem', marginBottom: 6 }}>Raises quality, never changes what a thing is.</div><RefineryPanel /></Card>}
