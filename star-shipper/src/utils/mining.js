@@ -11,7 +11,7 @@
 import { qualityMultiplier } from '@/utils/quality';
 
 export const MINE_RANGE_DEFAULT = 120;
-const RANGE_BY_ID = { mining_basic: 120, mining_laser_2: 150, mining_laser_3: 170 };
+const RANGE_BY_ID = { mining_basic: 120, mining_laser_2: 150, mining_laser_3: 170, mining_auto_5: 220 };
 
 export const isMiningLaserId = (id) => !!id && (id === 'mining_basic' || String(id).startsWith('mining_'));
 

@@ -45,8 +45,8 @@ export function classify({ kind, slotType, damageType, itemId = '', category, ra
   if (/repair_nanites/.test(id)) return { glyph: 'cross', tint: '#22ccaa' };
   if (/telemetry/.test(id)) return { glyph: 'antenna', tint: '#22ccaa' };
   if (/probe_launcher/.test(id)) return { glyph: 'tube', tint: '#22d3ee' };
-  if (/scanner|systemscan|sensor/.test(id)) return { glyph: 'dish', tint: '#22ccaa' };
-  if (/autopilot/.test(id)) return { glyph: 'compass', tint: '#22ccaa' };
+  if (/scanner|systemscan|sensor|survey/.test(id)) return { glyph: 'dish', tint: '#22ccaa' };
+  if (/autopilot|orbit_lock/.test(id)) return { glyph: 'compass', tint: '#22ccaa' };
   if (/base_cargo_depot/.test(id)) return { glyph: 'depot', tint: '#4ade80' };
   if (/base_refinery/.test(id)) return { glyph: 'flask', tint: '#4ade80' };
   if (/base_research_lab/.test(id)) return { glyph: 'beaker', tint: '#4ade80' };

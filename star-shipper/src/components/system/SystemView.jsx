@@ -1239,6 +1239,7 @@ export const SystemView = () => {
     if (currentSystemId === 'sol') return { x: 900, y: 0 };
     // Find the arrival body (warp point or jump gate)
     const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
+    orbitLockRef.current = null; setOrbitLocked(false); // new system, new orbit
     const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
               || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
               || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
@@ -1372,7 +1373,14 @@ export const SystemView = () => {
   // the key handler reaches them through hotbarActionsRef so its
   // effect (re-bound only on zoom change) never holds a stale closure.
   const HOTBAR_KEY = 'hotbar.v1';
-  const HOTBAR_DEFAULT = ['area_scan', 'belt_scan', 'system_sweep', null, null];
+  const HOTBAR_DEFAULT = ['area_scan', 'belt_scan', 'system_sweep', 'orbit_lock', null];
+  // Automation (092): orbit lock + auto-scan + auto-mine. The loop calls
+  // automationRef.current.tick(gameTime) once a second; the function is
+  // rebuilt every render so it never holds stale closures.
+  const orbitLockRef = useRef(null);      // { bodyId, name, dx, dy } | null
+  const [orbitLocked, setOrbitLocked] = useState(false);
+  const automationRef = useRef({ tick: () => {} });
+  const lastAutomationRef = useRef(0);
   const [hotbarSlots, setHotbarSlots] = useState(() => {
     try {
       const v = JSON.parse(localStorage.getItem(HOTBAR_KEY) || 'null');
@@ -1797,12 +1805,15 @@ export const SystemView = () => {
     }
     return false;
   };
+  // Fitted slots snapshot module_types.stats (062), so newer modules can
+  // be found by a stat flag rather than an id list.
+  const fleetHasStat = (key) => (fleetShipsRef.current || []).some(s => Object.values(s?.fitted_modules || {}).some(m => m?.stats?.[key]));
   // Area scan: utility_scanner_area OR utility_scanner_elite both
   // carry `area_scan: true`. Bulk scan: only utility_scanner_elite.
   // Sweep: only utility_systemscan. Module-type checks are by id
   // since fitted slots don't carry the type's stats payload.
   const fleetHasAreaScan = () =>
-    fleetHasModuleId('utility_scanner_area') || fleetHasModuleId('utility_scanner_elite');
+    fleetHasModuleId('utility_scanner_area') || fleetHasModuleId('utility_scanner_elite') || fleetHasModuleId('utility_auto_survey') || fleetHasStat('area_scan');
   const fleetHasBulkScan = () => fleetHasModuleId('utility_scanner_elite');
   const fleetHasSystemSweep = () => fleetHasModuleId('utility_systemscan');
 
@@ -2058,14 +2069,16 @@ export const SystemView = () => {
     });
   };
 
-  const handleAreaScan = () => {
+  const handleAreaScan = (opts = {}) => {
+    const quiet = opts?.quiet === true; // automation: no toasts, no cancel toggle
     if (!fleetHasAreaScan()) {
-      if (pushToast) pushToast({ kind: 'error', text: 'No Wide-Field Sensor Array (or higher) fitted', duration: 3000 });
+      if (!quiet && pushToast) pushToast({ kind: 'error', text: 'No Wide-Field Sensor Array (or higher) fitted', duration: 3000 });
       return;
     }
     // Cancel toggle: second click while any area scans are in flight
     // drains all of them (single-click scans untouched).
     const inFlight = countAreaScansActive();
+    if (inFlight > 0 && quiet) return;
     if (inFlight > 0) {
       for (const [id, v] of [...activeScansRef.current.entries()]) {
         if (v.viaArea) activeScansRef.current.delete(id);
@@ -2074,7 +2087,7 @@ export const SystemView = () => {
       if (pushToast) pushToast({ kind: 'info', text: `Area scan cancelled (${inFlight} in flight)`, duration: 2500 });
       return;
     }
-    playSound('button_click');
+    if (!quiet) playSound('button_click');
     // Radius = fleet scan_range (NOT sensor range) so the parallel
     // scans only cover rocks the scanner can actually reach. Tier C
     // `ast_area_scanning` (+10%/level) widens it.
@@ -2086,7 +2099,7 @@ export const SystemView = () => {
       .filter(a => !a.scanned && !activeScansRef.current.has(a.id))
       .filter(a => (a.x - px) ** 2 + (a.y - py) ** 2 <= r2);
     if (candidates.length === 0) {
-      if (pushToast) pushToast({ kind: 'info', text: 'Area scan: no unscanned asteroids in scan range', duration: 3000 });
+      if (!quiet && pushToast) pushToast({ kind: 'info', text: 'Area scan: no unscanned asteroids in scan range', duration: 3000 });
       return;
     }
     // Snapshot duration once so every parallel timer uses the same
@@ -2097,12 +2110,84 @@ export const SystemView = () => {
       activeScansRef.current.set(a.id, { startMs, durationMs, viaArea: true });
     }
     areaScanExpectedRef.current = candidates.length;
-    if (pushToast) pushToast({
+    if (!quiet && pushToast) pushToast({
       kind: 'success',
       text: `Area scan started -- ${candidates.length} asteroid${candidates.length === 1 ? '' : 's'} in parallel (${(durationMs / 1000).toFixed(1)}s)`,
       duration: 3500,
     });
   };
+
+  // ---------------- automation (092) ----------------
+  // Orbit lock: hold the fleet at a fixed offset from the nearest body.
+  const toggleOrbitLock = () => {
+    if (orbitLockRef.current) {
+      orbitLockRef.current = null; setOrbitLocked(false);
+      if (pushToast) pushToast({ kind: 'info', text: 'Orbit lock released', duration: 2000 });
+      return;
+    }
+    if (!fleetHasStat('orbit_lock') && !fleetHasModuleId('utility_orbit_lock')) {
+      if (pushToast) pushToast({ kind: 'error', text: 'Fit a Station-Keeping Array to lock orbit', duration: 3000 });
+      return;
+    }
+    const range = 400;
+    const now = gameTimeRef.current;
+    const px = shipPosRef.current.x, py = shipPosRef.current.y;
+    let best = null, bestD = Infinity;
+    for (const b of (currentSystemRef.current?.bodies || [])) {
+      if (!['planet', 'moon', 'station', 'dwarf_planet', 'gas_giant'].includes(b.type) && !(b.orbitRadius && b.type !== 'asteroid_belt' && b.type !== 'warp_point' && b.type !== 'jump_gate')) continue;
+      const p = getBodyPositionAtTime(b.id, now);
+      const d = Math.hypot(p.x - px, p.y - py);
+      if (d < bestD) { bestD = d; best = { b, p }; }
+    }
+    if (!best || bestD > range) {
+      if (pushToast) pushToast({ kind: 'error', text: `No body within ${range} units to lock onto`, duration: 3000 });
+      return;
+    }
+    cancelAutopilot?.();
+    orbitLockRef.current = { bodyId: best.b.id, name: best.b.name, dx: px - best.p.x, dy: py - best.p.y };
+    shipVelRef.current = { x: 0, y: 0 };
+    setOrbitLocked(true);
+    playSound('button_click');
+    if (pushToast) pushToast({ kind: 'success', text: `Orbit locked: holding station with ${best.b.name} (${Math.round(bestD)} units). Thrust to release.`, duration: 3500 });
+  };
+  const releaseOrbitLock = (why) => {
+    if (!orbitLockRef.current) return;
+    orbitLockRef.current = null; setOrbitLocked(false);
+    if (why && pushToast) pushToast({ kind: 'info', text: `Orbit lock released (${why})`, duration: 2000 });
+  };
+  // Runs once a second from the game loop. Auto-scan: fire a quiet area
+  // scan whenever unscanned rocks sit in scan range and nothing is in
+  // flight. Auto-mine: every idle laser in the fleet locks the nearest
+  // scanned rock in reach that has the fewest lasers on it.
+  const automationTick = () => {
+    if (fleetHasStat('auto_scan') && countAreaScansActive() === 0) {
+      const radius = Math.round(fleetScanRange() * (1 + (activeBonusesRef.current?.area_scan_radius_pct || 0) / 100));
+      const px = shipPosRef.current.x, py = shipPosRef.current.y, r2 = radius * radius;
+      const any = (asteroidsRef.current || []).some(a => !a.scanned && !activeScansRef.current.has(a.id) && (a.x - px) ** 2 + (a.y - py) ** 2 <= r2);
+      if (any) handleAreaScan({ quiet: true });
+    }
+    if (fleetHasStat('auto_mine') && !cargoFullRef.current && !dockedBodyRef.current) {
+      const lasers = enumerateFleetLasers();
+      const idle = lasers.filter(l => !miningAssignmentsRef.current.has(l.laserKey));
+      if (idle.length === 0) return;
+      const range = fleetMineRange(), r2 = range * range;
+      const px = shipPosRef.current.x, py = shipPosRef.current.y;
+      const load = {};
+      for (const a of miningAssignmentsRef.current.values()) load[a.asteroidId] = (load[a.asteroidId] || 0) + 1;
+      const rocks = (asteroidsRef.current || [])
+        .filter(a => a.scanned && a.contents && Object.values(a.contents).some(c => (c?.remaining || 0) > 0))
+        .map(a => ({ a, d2: (a.x - px) ** 2 + (a.y - py) ** 2 }))
+        .filter(x => x.d2 <= r2);
+      if (rocks.length === 0) return;
+      for (const l of idle) {
+        rocks.sort((p, q) => ((load[p.a.id] || 0) - (load[q.a.id] || 0)) || (p.d2 - q.d2));
+        const pick = rocks[0];
+        miningAssignmentsRef.current.set(l.laserKey, { asteroidId: pick.a.id, cooldownMs: 0, inFlight: false, auto: true });
+        load[pick.a.id] = (load[pick.a.id] || 0) + 1;
+      }
+    }
+  };
+  automationRef.current = { tick: automationTick, releaseOrbitLock };
 
   // Bulk-belt scan = system-wide sweep. Elite Survey Grid scans EVERY
   // unscanned asteroid in the system in parallel, regardless of how
@@ -2581,6 +2666,16 @@ export const SystemView = () => {
       // Check if manual input should cancel autopilot
       const hasManualInput = keys.has('w') || keys.has('a') || keys.has('s') || keys.has('d') ||
                              keys.has('arrowup') || keys.has('arrowleft') || keys.has('arrowdown') || keys.has('arrowright');
+
+      // Automation (092): once a second, auto-scan / auto-mine housekeeping.
+      if (gameTime - lastAutomationRef.current >= 1.0) {
+        lastAutomationRef.current = gameTime;
+        try { automationRef.current.tick(gameTime); } catch (e) { console.warn('automation tick', e); }
+      }
+      // Orbit lock releases on any thrust input or a new autopilot target.
+      if (orbitLockRef.current && (hasManualInput || autopilotTargetRef.current)) {
+        automationRef.current.releaseOrbitLock(hasManualInput ? 'manual thrust' : 'autopilot');
+      }
       
       // Get autopilot target
       const target = autopilotTargetRef.current;
@@ -2906,6 +3001,13 @@ export const SystemView = () => {
         x: shipPosRef.current.x + newVx * delta,
         y: shipPosRef.current.y + newVy * delta,
       };
+      // Orbit lock (092): ride along with the body at a fixed offset.
+      if (orbitLockRef.current) {
+        const lock = orbitLockRef.current;
+        const bp = getBodyPositionAtTime(lock.bodyId, gameTime);
+        shipPosRef.current = { x: bp.x + lock.dx, y: bp.y + lock.dy };
+        shipVelRef.current = { x: 0, y: 0 };
+      }
       
       // Update camera if following (same frame, no lag)
       if (followModeRef.current) {
@@ -5793,6 +5895,14 @@ export const SystemView = () => {
                   : beltRemain > 0 ? `Bulk-belt scan cooling down (${beltRemain}s)` : 'Scan every asteroid in the nearest belt (90s cooldown)',
                 onActivate: handleBeltScan,
               },
+              orbit_lock: {
+                id: 'orbit_lock', icon: '⚓', color: orbitLocked ? '#fbbf24' : '#60a5fa', label: orbitLocked ? 'Release' : 'Orbit Lock',
+                available: fleetHasStat('orbit_lock') || fleetHasModuleId('utility_orbit_lock'), disabled: false, remain: 0, active: orbitLocked,
+                title: !(fleetHasStat('orbit_lock') || fleetHasModuleId('utility_orbit_lock')) ? 'Fit a Station-Keeping Array to hold the fleet in orbit'
+                  : orbitLocked ? 'Holding station -- press again (or thrust) to release'
+                  : 'Lock the fleet in orbit around the nearest body within 400 units. Thrust releases it.',
+                onActivate: toggleOrbitLock,
+              },
               system_sweep: {
                 id: 'system_sweep', icon: '🛰️', color: sweepActive ? '#fbbf24' : '#38bdf8',
                 label: sweepPinging ? `Ping ${Math.ceil((sweepStartedAtRef.current + SWEEP_PING_TOTAL_MS - now) / 1000)}s` : sweepActive ? `Sweep ${Math.ceil((sweepActiveUntilRef.current - now) / 1000)}s` : 'Sweep',
@@ -5815,6 +5925,14 @@ export const SystemView = () => {
                 a.onActivate();
               },
             };
+            // Any ability not on the bar takes the first empty slot (persisted), so
+            // a newly fitted module shows up without a manual drag.
+            const unplaced = Object.keys(abilities).filter(id => !hotbarSlots.includes(id));
+            if (unplaced.length && hotbarSlots.some(x => !x)) {
+              const next = [...hotbarSlots];
+              for (const id of unplaced) { const e = next.indexOf(null); if (e < 0) break; next[e] = id; }
+              setTimeout(() => { setHotbarSlots(next); try { localStorage.setItem(HOTBAR_KEY, JSON.stringify(next)); } catch {} }, 0);
+            }
             const slots = hotbarSlots.map(id => (id && abilities[id]) ? abilities[id] : null);
             return <Hotbar slots={slots} onActivate={(i) => hotbarActionsRef.current.activateSlot(i)} onReorder={reorderHotbar} />;
           })()}

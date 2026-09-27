@@ -147,6 +147,10 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 092 (automation modules) ---
+  const am = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('utility_orbit_lock','utility_auto_survey','mining_auto_5')`);
+  report('3 automation modules present (092)', am.rows[0]?.n === 3, `found ${am.rows[0]?.n}`);
+
   // --- migration 091 (base plots text) ---
   const bp = await pool.query(`SELECT description FROM tech_definitions WHERE id = 'tech_base_expansion'`);
   report('tech_base_expansion text says 16 and 24 plots (091)', /16 and 24/.test(bp.rows[0]?.description || ''));
