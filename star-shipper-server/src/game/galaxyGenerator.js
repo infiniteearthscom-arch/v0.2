@@ -720,10 +720,126 @@ export const generateSystemContent = (system) => {
     size: 10,
   });
 
+  // ---- Orbital variance + extra bodies (2026-09-27) ----
+  // A second RNG stream, salted from the seed, so nothing above changes:
+  // every existing planet keeps its type, size, radius, offset, station
+  // and name (bases, harvesters and contracts reference those). Speeds
+  // are the one existing field we touch -- positions are time-derived
+  // and never stored, so changing a speed loses nothing.
+  const vr = new SRng(((system.seed | 0) ^ 0x5EED0) || 7);
+  const starMass = STAR_MASS[system.starType] ?? 1;
+  const massFactor = Math.sqrt(starMass);
+  const planets = bodies.filter(b => b.type === 'planet');
+  const outerPlanet = planets.length ? planets[planets.length - 1].orbitRadius : 600;
+  const warp = bodies.find(b => b.type === 'warp_point');
+  const exitRadius = warp ? warp.orbitRadius : outerPlanet + 400;
+
+  for (let i = 0; i < planets.length; i++) {
+    const p = planets[i];
+    p.orbitSpeed *= massFactor;
+    p.eccentricity = vr.chance(0.6) ? Math.round(vr.range(0.02, 0.32) * 1000) / 1000 : 0;
+    p.periapsis = vr.range(0, Math.PI * 2);
+    p.inclination = vr.chance(0.5) ? vr.range(0.05, 0.55) : 0;   // radians; the orbit ellipse is squashed by cos(i)
+    p.node = vr.range(0, Math.PI * 2);
+    if (vr.chance(0.18)) p.orbitSpeed = -p.orbitSpeed;          // retrograde
+    // Spin: fast rocky inner worlds, slow giants; tidally locked inner
+    // worlds show one face to the star (spin = orbit rate).
+    p.spinRate = Math.max(0.03, Math.min(0.25, (p.planetType === 'gas_giant' ? 0.06 : 0.14) * vr.range(0.6, 1.6)));
+    p.tidallyLocked = p.orbitRadius < 550 && vr.chance(0.5);
+    if (p.tidallyLocked) p.spinRate = Math.abs(p.orbitSpeed) / (Math.PI * 2);
+    // Rings on more than gas giants.
+    if (!p.hasRings && p.size >= 30 && ['ice', 'rocky', 'terran', 'ocean'].includes(p.planetType) && vr.chance(0.15)) p.hasRings = true;
+    // Resonance with the planet inside: 2:1, 3:2 or 5:3 period ratio.
+    if (i > 0 && vr.chance(0.25)) {
+      const inner = planets[i - 1];
+      const ratio = vr.pick([0.5, 2 / 3, 0.6]);
+      p.orbitSpeed = Math.sign(p.orbitSpeed || 1) * Math.abs(inner.orbitSpeed) * ratio;
+      p.resonance = ratio === 0.5 ? '2:1' : ratio === 0.6 ? '5:3' : '3:2';
+    }
+  }
+
+  // Moons: gas giants almost always, big rocky/ice worlds sometimes.
+  const moonLetters = ['a', 'b', 'c', 'd', 'e'];
+  for (const p of planets) {
+    const n = p.planetType === 'gas_giant' ? (vr.chance(0.9) ? vr.int(1, 4) : 0) : (p.size >= 30 && vr.chance(0.4) ? vr.int(1, 2) : 0);
+    for (let k = 0; k < n; k++) {
+      bodies.push({
+        id: `moon_${p.id}_${k}`,
+        name: `${p.name} ${moonLetters[k]}`,
+        type: 'moon',
+        parentBody: p.id,
+        planetType: vr.pick(['rocky', 'barren', 'ice', 'ice']),
+        orbitRadius: p.size + 34 + k * 24 + vr.range(0, 12),
+        orbitSpeed: (0.05 + vr.range(0, 0.1)) * (vr.chance(0.1) ? -1 : 1),
+        orbitOffset: vr.range(0, Math.PI * 2),
+        size: Math.max(4, Math.min(12, Math.round(vr.range(4, p.size / 4)))),
+        spinRate: 0.08 + vr.range(0, 0.1),
+        color: null,
+        hasAtmosphere: false,
+        hasRings: false,
+      });
+    }
+  }
+
+  // Wide binary: a companion star beyond the planets, inside the exits.
+  if (vr.chance(0.15) && planets.length > 0) {
+    bodies.push({
+      id: 'companion_star',
+      name: `${system.name} B`,
+      type: 'companion_star',
+      starType: vr.pick(['red_dwarf', 'red_dwarf', 'orange_star', 'white_dwarf']),
+      orbitRadius: Math.min(exitRadius - 150, outerPlanet + 280 + vr.range(0, 200)),
+      orbitSpeed: 0.0006 * massFactor,
+      orbitOffset: vr.range(0, Math.PI * 2),
+      eccentricity: vr.range(0, 0.2),
+      periapsis: vr.range(0, Math.PI * 2),
+      size: vr.int(22, 36),
+    });
+  }
+
+  // Kuiper belt: icy rocks between the last planet and the exits.
+  if (vr.chance(0.4) && exitRadius - outerPlanet > 350) {
+    bodies.push({
+      id: 'belt_kuiper', name: 'Kuiper Belt', type: 'asteroid_belt', composition: 'icy',
+      orbitRadius: outerPlanet + 160 + vr.range(0, Math.max(40, exitRadius - outerPlanet - 320)),
+      width: 220 + vr.range(0, 120), density: 160 + vr.int(0, 120),
+    });
+  }
+  // Debris field: a dense, narrow ring where a world came apart.
+  if (vr.chance(0.15) && planets.length > 1) {
+    const gapIdx = vr.int(0, planets.length - 2);
+    const r0 = planets[gapIdx].orbitRadius, r1 = planets[gapIdx + 1].orbitRadius;
+    bodies.push({
+      id: 'belt_debris', name: 'Debris Field', type: 'asteroid_belt', composition: 'debris',
+      orbitRadius: (r0 + r1) / 2 + vr.range(-40, 40), width: 50 + vr.range(0, 30), density: 380 + vr.int(0, 200),
+    });
+  }
+  // Comets: long eccentric orbits that sweep the inner system.
+  const cometCount = vr.chance(0.5) ? (vr.chance(0.3) ? 2 : 1) : 0;
+  for (let k = 0; k < cometCount; k++) {
+    bodies.push({
+      id: `comet_${k}`,
+      name: `Comet ${system.name.slice(0, 3).toUpperCase()}-${k + 1}`,
+      type: 'comet',
+      planetType: 'ice',
+      orbitRadius: Math.min(exitRadius - 200, outerPlanet * (0.75 + vr.range(0, 0.35))),   // semi-major axis
+      eccentricity: vr.range(0.6, 0.85),
+      periapsis: vr.range(0, Math.PI * 2),
+      inclination: vr.range(0, 0.4), node: vr.range(0, Math.PI * 2),
+      orbitSpeed: 0.0016 * massFactor * (vr.chance(0.3) ? -1 : 1),
+      orbitOffset: vr.range(0, Math.PI * 2),
+      size: vr.int(4, 7),
+      spinRate: 0.2,
+      color: null, hasAtmosphere: false, hasRings: false,
+    });
+  }
+
   return {
     id: system.id,
     name: system.name,
     starType: system.starType,
+    starVariable: vr.chance(0.15),   // slow brightness pulse
+    starFlare: vr.chance(0.10),      // periodic flash
     bodies,
     faction: system.faction,
     dangerLevel: system.dangerLevel,
@@ -732,6 +848,64 @@ export const generateSystemContent = (system) => {
     regionTier: system.regionTier,
   };
 };
+
+// Relative stellar mass -> orbital speed scales with sqrt(mass).
+export const STAR_MASS = {
+  red_dwarf: 0.45, orange_star: 0.75, yellow_star: 1.0, white_dwarf: 0.9,
+  blue_giant: 2.2, neutron_star: 1.6, black_hole: 3.0,
+};
+
+// ---- Orbital position (2026-09-27) ----
+// Position of a body around its focus at time t (game seconds). Handles
+// eccentric orbits (second-order equation of the centre: faster near
+// periapsis), retrograde (negative orbitSpeed) and inclination (the
+// ellipse squashed by cos(i) about its line of nodes -- a top-down view
+// of a tilted orbit). Satellites (parentBody) use a plain circle around
+// their parent. The client renderers, the autopilot, the orbit lock and
+// the server all call this so nobody disagrees about where a body is.
+export function orbitPositionAt(body, t) {
+  const a = Number(body.orbitRadius) || 0;
+  const e = Math.min(0.95, Math.max(0, Number(body.eccentricity) || 0));
+  const M = t * (Number(body.orbitSpeed) || 0) + (Number(body.orbitOffset) || 0);
+  let x, y;
+  if (e > 0) {
+    const th = M + 2 * e * Math.sin(M) + 1.25 * e * e * Math.sin(2 * M);
+    const r = a * (1 - e * e) / (1 + e * Math.cos(th));
+    const ang = th + (Number(body.periapsis) || 0);
+    x = Math.cos(ang) * r; y = Math.sin(ang) * r;
+  } else {
+    x = Math.cos(M) * a; y = Math.sin(M) * a;
+  }
+  const inc = Number(body.inclination) || 0;
+  if (inc) {
+    const node = Number(body.node) || 0, c = Math.cos(node), sn = Math.sin(node);
+    const rx = x * c + y * sn, ry = (-x * sn + y * c) * Math.cos(inc);
+    x = rx * c - ry * sn; y = rx * sn + ry * c;
+  }
+  return { x, y };
+}
+export function bodyPositionAt(body, t, bodies) {
+  if (!body) return { x: 0, y: 0 };
+  if (body.parentBody) {
+    const parent = (bodies || []).find(b => b.id === body.parentBody);
+    const pp = parent ? bodyPositionAt(parent, t, bodies) : { x: 0, y: 0 };
+    const M = t * (Number(body.orbitSpeed) || 0) + (Number(body.orbitOffset) || 0);
+    return { x: pp.x + Math.cos(M) * (Number(body.orbitRadius) || 0), y: pp.y + Math.sin(M) * (Number(body.orbitRadius) || 0) };
+  }
+  return orbitPositionAt(body, t);
+}
+// SVG transform + radii for drawing the orbit path of `body` as an ellipse
+// (focus at the origin). Matches orbitPositionAt exactly.
+export function orbitPathFor(body) {
+  const a = Number(body.orbitRadius) || 0, e = Math.min(0.95, Math.max(0, Number(body.eccentricity) || 0));
+  const b = a * Math.sqrt(1 - e * e);
+  const deg = (r) => (r * 180) / Math.PI;
+  const inc = Number(body.inclination) || 0, node = Number(body.node) || 0, peri = Number(body.periapsis) || 0;
+  const parts = [];
+  if (inc) parts.push(`rotate(${deg(node)}) scale(1 ${Math.cos(inc)}) rotate(${-deg(node)})`);
+  parts.push(`rotate(${deg(peri)}) translate(${-a * e} 0)`);
+  return { rx: a, ry: b, transform: parts.join(' ') };
+}
 
 // Cheap presence check used by generateGalaxy to decorate each system
 // with `hasStation`. Runs the full content generation under the hood

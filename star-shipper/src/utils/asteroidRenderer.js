@@ -23,7 +23,9 @@ const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 const ROCK_PALETTES = ['#8a7f72', '#7a6e62', '#6f6a66', '#8d7a63', '#5f5a55', '#7d746a', '#9a8c7a'];
 const TIER_VEIN = { Impure: '#666e78', Standard: '#b0bcc8', Fine: '#44ff44', Superior: '#4488ff', Pristine: '#aa44ff' };
 
-export const asteroidPixels = (size) => Math.max(14, Math.min(44, Math.round(size * 2.6)));
+// Cap admits the "monolith" (14-22) and "colossus" (30-45) rocks from 2026-09-27:
+// a size-45 rock is ~117 world units across, planet-sized on screen.
+export const asteroidPixels = (size) => Math.max(14, Math.min(128, Math.round(size * 2.6)));
 // rev/s: small rocks tumble faster
 export const asteroidSpin = (id, size) => 0.02 + (hash2(hashStr(String(id)), 3, 3) * 0.05) * (12 / Math.max(6, size));
 

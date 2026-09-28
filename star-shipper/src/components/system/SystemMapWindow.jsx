@@ -12,7 +12,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { generateGalaxy, generateSystemContent } from '@/utils/galaxyGenerator';
+import { generateGalaxy, generateSystemContent, bodyPositionAt } from '@/utils/galaxyGenerator';
 import { QUALITY_TIERS } from '@/data/resources';
 
 // Same tier bands + colors as the asteroid tooltip (data/resources.js
@@ -88,13 +88,17 @@ const BODY_TYPE_LABEL = {
   station:    'Station',
   warp_point: 'Warp Pt',
   jump_gate:  'Gate',
+  moon: 'Moon',
+  comet: 'Comet',
+  companion_star: 'Star',
 };
 
 // ============================================
 // HELPERS
 // ============================================
 
-const getBodyPos = (body, time, bodies) => {
+const getBodyPos = (body, time, bodies) => bodyPositionAt(body, time, bodies);
+const _legacyGetBodyPos = (body, time, bodies) => {
   if (body.parentBody) {
     const parent = bodies.find(b => b.id === body.parentBody);
     if (!parent) return { x: 0, y: 0 };

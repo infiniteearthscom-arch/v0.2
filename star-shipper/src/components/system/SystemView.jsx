@@ -36,7 +36,7 @@ import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI, basesAPI 
 import { getFleetMineRange } from '@/utils/mining';
 import { Hotbar, HOTBAR_SIZE } from '@/components/hud/Hotbar';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
-import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS } from '@/utils/galaxyGenerator';
+import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS, bodyPositionAt, orbitPositionAt, orbitPathFor } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 import presence from '@/utils/presence';
@@ -347,11 +347,15 @@ const PARALLAX = {
 // STAR COMPONENT (Multiple Types)
 // ============================================
 
-const Star = ({ starType, x, y, time }) => {
+const Star = ({ starType, x, y, time, scale = 1, variable = false, flare = false }) => {
   const config = STAR_TYPES[starType];
   if (!config) return null;
   const { colors, size, pulsar, hasAccretionDisk } = config;
-  const pulsarPhase = pulsar ? Math.sin(time * 5) * 0.2 + 0.8 : 1;
+  // Variable stars breathe (~9 s), flare stars flash for 1.2 s every 45 s.
+  const vary = variable ? 0.82 + 0.18 * Math.sin(time * 0.7) : 1;
+  const ft = flare ? (time % 45) : 99;
+  const flash = ft < 1.2 ? 1 + 0.9 * Math.sin((ft / 1.2) * Math.PI) : 1;
+  const pulsarPhase = (pulsar ? Math.sin(time * 5) * 0.2 + 0.8 : 1) * vary;
   // Pixel-art star (structureRenderer.js): 80-frame sheet at 30 fps --
   // convection cells churn, spots drift, ejecta ride out; black holes
   // rotate a pixel accretion ring. Baked progressively (16 frames first). The soft SVG blur glow stays behind the sprite so
@@ -360,7 +364,7 @@ const Star = ({ starType, x, y, time }) => {
   const frame = Math.floor(((time / 2.7) % 1) * sheet.frames); // 2.7s loop; frame count grows when the full 30 fps sheet lands
   const world = (size * 2) * (sheet.fw / sheet.px); // disc = size*2, sheet has padding
   return (
-    <g transform={`translate(${x}, ${y})`}>
+    <g transform={`translate(${x}, ${y}) scale(${scale})`}>
       {!hasAccretionDisk && (
         <>
           <defs>
@@ -368,7 +372,7 @@ const Star = ({ starType, x, y, time }) => {
               <feGaussianBlur stdDeviation={size * 0.3} />
             </filter>
           </defs>
-          <circle r={size * 3} fill={colors.glow} filter={`url(#starBlur-${starType})`} opacity={0.5 * pulsarPhase} />
+          <circle r={size * 3 * flash} fill={colors.glow} filter={`url(#starBlur-${starType})`} opacity={Math.min(0.9, 0.5 * pulsarPhase * flash)} />
         </>
       )}
       {hasAccretionDisk && <circle r={size * 3.2} fill={colors.glow} opacity={0.35} />}
@@ -388,27 +392,34 @@ const Star = ({ starType, x, y, time }) => {
 // PLANET COMPONENT
 // ============================================
 
-const Planet = ({ body, time, onClick, isTarget }) => {
-  // Calculate orbital position
-  const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
-  const x = Math.cos(angle) * body.orbitRadius;
-  const y = Math.sin(angle) * body.orbitRadius;
+const Planet = ({ body, time, onClick, isTarget, parentPosition }) => {
+  // Orbital position (2026-09-27): eccentric / inclined / retrograde orbits
+  // via the shared generator math; moons circle their parent.
+  let x, y;
+  if (body.parentBody && parentPosition) {
+    const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
+    x = parentPosition.x + Math.cos(angle) * body.orbitRadius;
+    y = parentPosition.y + Math.sin(angle) * body.orbitRadius;
+  } else {
+    const p = orbitPositionAt(body, time); x = p.x; y = p.y;
+  }
+  const isComet = body.type === 'comet';
+  const isMoon = body.type === 'moon';
 
   const planetConfig = PLANET_TYPES[body.planetType] || {};
   const planetColor = body.color || (planetConfig.colors ? planetConfig.colors[0] : '#888888');
 
   return (
     <g>
-      {/* Orbit path */}
-      <circle
-        cx={0}
-        cy={0}
-        r={body.orbitRadius}
-        fill="none"
-        stroke="#4488aa"
-        strokeWidth="1"
-        opacity="0.25"
-      />
+      {/* Orbit path: an ellipse with the star at a focus (matches orbitPositionAt).
+          Moons draw a small circle around their parent instead. */}
+      {!body.parentBody ? (() => {
+        const op = orbitPathFor(body);
+        return <ellipse cx={0} cy={0} rx={op.rx} ry={op.ry} transform={op.transform} fill="none"
+          stroke={isComet ? '#88ccff' : '#4488aa'} strokeWidth="1" strokeDasharray={isComet ? '6 8' : undefined} opacity={isComet ? 0.18 : 0.25} />;
+      })() : (parentPosition && isMoon && (
+        <circle cx={parentPosition.x} cy={parentPosition.y} r={body.orbitRadius} fill="none" stroke="#4488aa" strokeWidth="0.6" opacity="0.18" />
+      ))}
 
       {/* Planet */}
       <g 
@@ -444,6 +455,17 @@ const Planet = ({ body, time, onClick, isTarget }) => {
         {planetConfig.hasGlow && (
           <circle r={body.size * 1.3} fill={planetColor} opacity="0.3" filter="url(#planetGlow)" />
         )}
+        {/* Comet tail: points away from the star, longer the closer it is */}
+        {isComet && (() => {
+          const d = Math.hypot(x, y) || 1; const ux = x / d, uy = y / d;
+          const len = Math.max(30, Math.min(160, 220000 / d));
+          return (
+            <>
+              <line x1={0} y1={0} x2={ux * len} y2={uy * len} stroke="#bfe3ff" strokeWidth={body.size * 1.6} strokeLinecap="round" opacity="0.18" />
+              <line x1={0} y1={0} x2={ux * len * 0.7} y2={uy * len * 0.7} stroke="#e8f6ff" strokeWidth={body.size * 0.7} strokeLinecap="round" opacity="0.35" />
+            </>
+          );
+        })()}
 
         {/* Pixel-art planet sprite (utils/planetRenderer.js, 2026-09-21).
             One sheet per (planet, light direction) generated on first
@@ -458,7 +480,7 @@ const Planet = ({ body, time, onClick, isTarget }) => {
           // composited with multiply. No re-bake when the light moves.
           const sheet = getPlanetSheet(body, planetColor);
           const mask = getShadeMask(body.size, body.hasRings, lightIndexFor(x, y));
-          const frame = Math.floor(((time * spinRate(body.size)) % 1) * sheet.frames); // spin fraction -> frame, so the quick->full sheet swap is seamless
+          const frame = Math.floor(((time * (body.spinRate || spinRate(body.size))) % 1) * sheet.frames); // per-body spin (tidally locked worlds crawl), fallback by size
           // World size: the disc spans body.size*2; the sheet frame is
           // wider when rings/atmosphere padding exist -- scale uniformly.
           const scale = (body.size * 2) / sheet.px;
@@ -754,7 +776,8 @@ const Minimap = ({ system, camera, zoom, viewportSize, shipPos, time, onClickBod
   const starConfig = STAR_TYPES[system.starType];
   
   // Calculate body position at current time
-  const getBodyPos = (body) => {
+  const getBodyPos = (body) => bodyPositionAt(body, time, system.bodies);
+  const _legacyGetBodyPos = (body) => {
     if (body.parentBody) {
       const parent = system.bodies.find(b => b.id === body.parentBody);
       const parentAngle = time * parent.orbitSpeed + (parent.orbitOffset || 0);
@@ -783,18 +806,13 @@ const Minimap = ({ system, camera, zoom, viewportSize, shipPos, time, onClickBod
         
         {/* Orbit lines */}
         {system.bodies.map(body => {
-          if (body.type === 'planet') {
+          if (body.type === 'planet' || body.type === 'comet') {
+            const op = orbitPathFor(body);
             return (
-              <circle
-                key={`orbit-${body.id}`}
-                cx={0}
-                cy={0}
-                r={body.orbitRadius * mapScale}
-                fill="none"
-                stroke="#335566"
-                strokeWidth="0.5"
-                opacity="0.6"
-              />
+              <g key={`orbit-${body.id}`} transform={`scale(${mapScale})`}>
+                <ellipse cx={0} cy={0} rx={op.rx} ry={op.ry} transform={op.transform} fill="none"
+                  stroke={body.type === 'comet' ? '#557799' : '#335566'} strokeWidth={0.5 / mapScale} strokeDasharray={body.type === 'comet' ? `${3 / mapScale} ${4 / mapScale}` : undefined} opacity="0.6" />
+              </g>
             );
           }
           if (body.type === 'asteroid_belt') {
@@ -835,9 +853,9 @@ const Minimap = ({ system, camera, zoom, viewportSize, shipPos, time, onClickBod
         {/* Star */}
         <circle cx={0} cy={0} r={4} fill={starConfig?.colors.mid || '#ffdd44'} />
         
-        {/* Planets - live positions, clickable */}
+        {/* Planets + comets - live positions, clickable */}
         {system.bodies
-          .filter(b => b.type === 'planet')
+          .filter(b => b.type === 'planet' || b.type === 'comet')
           .map(body => {
             const pos = getBodyPos(body);
             const isTarget = autopilotTarget?.id === body.id;
@@ -1129,6 +1147,7 @@ export const SystemView = () => {
             body_client_id: belt.id,
             body_name: belt.name,
             body_type: 'asteroid_belt',
+            planet_type: belt.composition || null, // 'icy' (Kuiper) / 'debris' -> asteroid spawner bias
             size: belt.width || 100,
             orbit_radius: belt.orbitRadius || 1000,
             danger_level: galaxySys?.dangerLevel || 0,
@@ -2598,24 +2617,10 @@ export const SystemView = () => {
   
   // Calculate body position at current time
   const getBodyPositionAtTime = useCallback((bodyId, time) => {
-    const body = currentSystemRef.current.bodies.find(b => b.id === bodyId);
+    const bodies = currentSystemRef.current.bodies;
+    const body = bodies.find(b => b.id === bodyId);
     if (!body) return { x: 0, y: 0 };
-    
-    // Handle stations orbiting planets
-    if (body.parentBody) {
-      const parentPos = getBodyPositionAtTime(body.parentBody, time);
-      const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
-      return {
-        x: parentPos.x + Math.cos(angle) * body.orbitRadius,
-        y: parentPos.y + Math.sin(angle) * body.orbitRadius,
-      };
-    }
-    
-    const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
-    return {
-      x: Math.cos(angle) * body.orbitRadius,
-      y: Math.sin(angle) * body.orbitRadius,
-    };
+    return bodyPositionAt(body, time, bodies); // shared orbital math (eccentric / inclined / retrograde)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- bodies via ref
   
   // Set autopilot destination
@@ -4661,28 +4666,7 @@ export const SystemView = () => {
   const getBodyPosition = useCallback((bodyId) => {
     const body = currentSystem.bodies.find(b => b.id === bodyId);
     if (!body) return { x: 0, y: 0 };
-    
-    if (body.parentBody) {
-      const parent = currentSystem.bodies.find(pb => pb.id === body.parentBody);
-      if (parent) {
-        const parentAngle = time * parent.orbitSpeed + (parent.orbitOffset || 0);
-        const parentPos = {
-          x: Math.cos(parentAngle) * parent.orbitRadius,
-          y: Math.sin(parentAngle) * parent.orbitRadius,
-        };
-        const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
-        return {
-          x: parentPos.x + Math.cos(angle) * body.orbitRadius,
-          y: parentPos.y + Math.sin(angle) * body.orbitRadius,
-        };
-      }
-    }
-    
-    const angle = time * body.orbitSpeed + (body.orbitOffset || 0);
-    return {
-      x: Math.cos(angle) * body.orbitRadius,
-      y: Math.sin(angle) * body.orbitRadius,
-    };
+    return bodyPositionAt(body, time, currentSystem.bodies); // shared orbital math (eccentric / inclined / retrograde)
   }, [currentSystem.bodies, time]);
 
   // Mouse handlers
@@ -4767,17 +4751,30 @@ export const SystemView = () => {
                 <AsteroidBelt key={body.id} body={body} />
               ))}
 
-            {/* Star */}
-            <Star starType={currentSystem.starType} x={0} y={0} time={time} />
+            {/* Star (variable / flare flags from the generator, 2026-09-27) */}
+            <Star starType={currentSystem.starType} x={0} y={0} time={time} variable={!!currentSystem.starVariable} flare={!!currentSystem.starFlare} />
+            {/* Wide-binary companion: a second star beyond the planets. Not dockable. */}
+            {currentSystem.bodies.filter(b => b.type === 'companion_star').map(b => {
+              const p = orbitPositionAt(b, time);
+              const op = orbitPathFor(b);
+              return (
+                <g key={b.id}>
+                  <ellipse rx={op.rx} ry={op.ry} transform={op.transform} fill="none" stroke="#ffcc88" strokeWidth="1" strokeDasharray="10 14" opacity="0.15" />
+                  <Star starType={b.starType} x={p.x} y={p.y} time={time + 7} scale={(b.size || 28) / ((STAR_TYPES[b.starType]?.size) || 40)} />
+                  <text x={p.x} y={p.y + (b.size || 28) + 18} textAnchor="middle" fill="#ffcc88" fontSize="10" fontFamily="sans-serif">{b.name}</text>
+                </g>
+              );
+            })}
 
-            {/* Planets */}
+            {/* Planets, moons, comets */}
             {currentSystem.bodies
-              .filter(b => b.type === 'planet')
+              .filter(b => b.type === 'planet' || b.type === 'moon' || b.type === 'comet')
               .map(body => (
-                <Planet 
-                  key={body.id} 
-                  body={body} 
-                  time={time} 
+                <Planet
+                  key={body.id}
+                  body={body}
+                  time={time}
+                  parentPosition={body.parentBody ? getBodyPosition(body.parentBody) : null}
                   onClick={() => setDestination(body)}
                   isTarget={autopilotTarget?.id === body.id}
                 />

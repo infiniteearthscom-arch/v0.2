@@ -2222,8 +2222,11 @@ function dangerAsteroidWeights(dangerLevel) {
 // (deterministic via shared SRng) and by lazy respawn (uses Math.random
 // since respawn is a stochastic world event, not seed-derived).
 // `rng` is { next, range, int } -- accepts SRng OR a Math.random adapter.
-function rollAsteroidContents(rng, resByRarity, size, dangerLevel = 0) {
+// composition (2026-09-27): 'icy' belts (Kuiper) lean to gases, 'debris'
+// fields roll an extra resource and skew rarer.
+function rollAsteroidContents(rng, resByRarity, size, dangerLevel = 0, composition = null) {
   const weights = dangerAsteroidWeights(dangerLevel);
+  if (composition === 'debris') { const shift = Math.min(0.15, weights.common * 0.3); weights.common -= shift; weights.rare += shift; }
   const pickRarity = () => {
     const r = rng.next();
     if (r < weights.common) return 'common';
@@ -2234,11 +2237,12 @@ function rollAsteroidContents(rng, resByRarity, size, dangerLevel = 0) {
     const base = { common: 200, rare: 80, exotic: 25 }[rarity] || 100;
     return Math.round(base * (sz / 4) * (0.7 + rng.next() * 0.6));
   };
-  const numResources = rng.int(1, 3);
+  const numResources = rng.int(1, 3) + (composition === 'debris' ? 1 : 0);
   const contents = {};
   for (let r = 0; r < numResources; r++) {
     const rarity = pickRarity();
-    const pool = resByRarity[rarity];
+    let pool = resByRarity[rarity];
+    if (composition === 'icy' && rng.next() < 0.7 && resByRarity.gasByRarity?.[rarity]?.length) pool = resByRarity.gasByRarity[rarity];
     if (!pool || pool.length === 0) continue;
     const resId = pool[rng.int(0, pool.length - 1)];
     const qty = qtyFor(rarity, size);
@@ -2292,7 +2296,9 @@ async function buildAsteroidsForBelt(client, belt, systemSeed, dangerLevel = 0) 
 
   const beltSize = belt.size || 50;
   const beltRadius = belt.orbit_radius || 1000;
-  const count = rng.int(ASTEROIDS_PER_BELT_MIN, ASTEROIDS_PER_BELT_MAX);
+  // composition rides in planet_type for belt rows: 'icy' | 'debris' | null
+  const composition = belt.planet_type || null;
+  const count = Math.round(rng.int(ASTEROIDS_PER_BELT_MIN, ASTEROIDS_PER_BELT_MAX) * (composition === 'debris' ? 1.6 : 1));
   const rows = [];
 
   for (let i = 0; i < count; i++) {
@@ -2300,7 +2306,14 @@ async function buildAsteroidsForBelt(client, belt, systemSeed, dangerLevel = 0) 
     // Radial jitter: stay within +/- 40% of belt size so asteroids
     // cluster in the visible belt zone.
     const radius = beltRadius + rng.range(-beltSize * 0.4, beltSize * 0.4);
-    const size = rng.int(2, 6);
+    // Big rocks (2026-09-27). Normal 2-6. "Monolith" 14-22 (5% of a belt,
+    // 12% in a debris field). "Colossus" 30-45 (1% / 3%) -- a mountain
+    // in space, up to a small moon across; contents scale with size so
+    // one of these is a whole mining session.
+    const roll = rng.next();
+    const colossalChance = composition === 'debris' ? 0.03 : 0.01;
+    const bigChance = composition === 'debris' ? 0.12 : 0.05;
+    const size = roll < colossalChance ? rng.int(30, 45) : roll < colossalChance + bigChance ? rng.int(14, 22) : rng.int(2, 6);
 
     const quality = rollAsteroidQuality(rng, dangerLevel);
     rows.push({
@@ -2310,7 +2323,7 @@ async function buildAsteroidsForBelt(client, belt, systemSeed, dangerLevel = 0) 
       y: Math.sin(angle) * radius,
       size,
       rotation: rng.range(0, Math.PI * 2),
-      contents: rollAsteroidContents(rng, resByRarity, size, dangerLevel),
+      contents: rollAsteroidContents(rng, resByRarity, size, dangerLevel, composition),
       stat_purity:    quality.purity,
       stat_stability: quality.stability,
       stat_potency:   quality.potency,
@@ -2323,10 +2336,12 @@ async function buildAsteroidsForBelt(client, belt, systemSeed, dangerLevel = 0) 
 // Cache resource-by-rarity within a request to avoid repeating the
 // SELECT for every roll. Resolves once and reuses.
 async function loadResByRarity(client) {
-  const resByRarity = { common: [], rare: [], exotic: [] };
-  const allRes = await client.query(`SELECT id, rarity FROM resource_types`);
+  const resByRarity = { common: [], rare: [], exotic: [], gasByRarity: { common: [], rare: [], exotic: [] } };
+  // Raw resources only -- processed materials (category 'processed', 088) never spawn in rock.
+  const allRes = await client.query(`SELECT id, rarity, category FROM resource_types WHERE category <> 'processed'`);
   for (const r of allRes.rows) {
     if (resByRarity[r.rarity]) resByRarity[r.rarity].push(r.id);
+    if (r.category === 'gas' && resByRarity.gasByRarity[r.rarity]) resByRarity.gasByRarity[r.rarity].push(r.id);
   }
   return resByRarity;
 }
@@ -2376,7 +2391,7 @@ router.get('/asteroids', authMiddleware, async (req, res) => {
 
       // Find belt bodies in this system.
       const belts = await client.query(
-        `SELECT id, system_id, orbit_radius, size FROM celestial_bodies
+        `SELECT id, system_id, orbit_radius, size, planet_type FROM celestial_bodies
          WHERE system_id = $1 AND body_type = 'asteroid_belt'`,
         [systemId]
       );
