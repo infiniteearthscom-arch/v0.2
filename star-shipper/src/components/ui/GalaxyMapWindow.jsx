@@ -591,6 +591,24 @@ export const GalaxyMapWindow = () => {
   const selectedFree = selectedSys && selectedSys.id !== currentSystemId
     ? freeWarpCheck(galaxy.systemMap[currentSystemId], selectedSys, warpProfile) : null;
   const canJump = isConnected && selectedCheck?.ok;
+  // In GALAXY flight the fleet has already left through the warp point, so the
+  // gate lane is not usable from here -- but it IS usable from the system we
+  // just left. Offer to turn around and take it (2026-09-27: "the map says
+  // reachable by jump gate but Fly is greyed out").
+  const gateFromDeparted = viewMode === 'galaxy' && selectedSys && selectedSys.id !== currentSystemId
+    && currentSys?.hasJumpGate && selectedSys.hasJumpGate && currentSys.jumpConnections?.includes(selectedSys.id)
+    && (selectedSys.regionTier ?? 1) <= warpProfile.maxGateTier;
+  const takeGateFromDeparted = () => {
+    const st = useGameStore.getState();
+    st.enterSystem(currentSystemId, 'warp');           // back at the departed system's warp point
+    setTimeout(() => {                                  // after SystemView mounts + spawns
+      const s2 = useGameStore.getState();
+      s2.setPendingJump(selectedSys.id);
+      s2.setAutopilotTarget({ id: 'jump_gate', name: 'Jump Gate', type: 'jump_gate' });
+      s2.pushToast?.({ kind: 'info', text: `Heading to the jump gate for ${selectedSys.name}`, duration: 3500 });
+    }, 400);
+    closeWindow('galaxyMap');
+  };
 
   // Galaxy map v2: multi-hop route to the selected system (BFS over gate
   // + free-warp edges under the current drive). Active route lives in
@@ -973,6 +991,15 @@ export const GalaxyMapWindow = () => {
                   >
                     🚀 Fly to {selectedSys.name}
                   </button>
+                )}
+                {gateFromDeparted && !selectedFree?.ok && (
+                  <>
+                    <div className="text-[0.75rem] text-slate-500 text-center">Outside your free-warp ring, but {currentSys.name}'s gate has a lane there.</div>
+                    <button onClick={takeGateFromDeparted}
+                      className="w-full px-3 py-2 rounded text-xs font-medium bg-green-700/30 text-green-300 border border-green-600/40 hover:bg-green-700/50 transition-colors">
+                      ⚡ Return to {currentSys.name} and take its gate
+                    </button>
+                  </>
                 )}
                 {viewMode === 'system' && canJump && (
                   <button
