@@ -952,10 +952,26 @@ export const GalaxyMapWindow = () => {
                     <button
                       onClick={() => {
                         setPlannedRoute(selectedSys.id, selectedSys.name, selectedRoute.hops);
+                        // Plotted from GALAXY flight (2026-09-27): start the first hop
+                        // right away instead of waiting for the player to enter a system.
+                        // Warp hop -> galaxy autopilot to it (arrival advances the route).
+                        // Gate hop -> back into the departed system; SystemView's route
+                        // effect then autopilots to its gate (re-entering the origin keeps
+                        // the route).
+                        if (viewMode === 'galaxy') {
+                          const first = selectedRoute.hops[0];
+                          const firstSys = first ? galaxy.systemMap[first.id] : null;
+                          if (first?.via === 'warp' && firstSys) {
+                            setGalaxyAutopilotTarget({ id: firstSys.id, name: firstSys.name });
+                          } else if (first) {
+                            useGameStore.getState().enterSystem(currentSystemId, 'warp');
+                          }
+                          useGameStore.getState().pushToast?.({ kind: 'info', text: `Course plotted: ${selectedRoute.hops.length} hops to ${selectedSys.name}${first?.via === 'gate' ? ' — returning to ' + (currentSys?.name || 'the system') + ' for its gate' : ''}`, duration: 4000 });
+                        }
                         closeWindow('galaxyMap');
                       }}
                       className="mt-1 w-full px-3 py-1.5 rounded text-xs font-medium bg-emerald-700/30 text-emerald-300 border border-emerald-600/40 hover:bg-emerald-700/50 transition-colors"
-                      title={viewMode === 'galaxy' ? 'Autopilot starts once you enter a system' : 'Autopilot flies every hop; press Escape in a system to cancel'}
+                      title="Autopilot flies every hop; press Escape in a system to cancel"
                     >
                       🧭 Plot course ({selectedRoute.hops.length} hops)
                     </button>
