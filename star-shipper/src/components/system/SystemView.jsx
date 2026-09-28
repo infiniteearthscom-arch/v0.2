@@ -1106,6 +1106,10 @@ export const SystemView = () => {
       planetType: b.planetType,
       color: b.color,
       parentBody: b.parentBody,
+      // orbital fields so any consumer that positions bodies (system map,
+      // outliner distances) lands on the same spot as the scene
+      orbitRadius: b.orbitRadius, orbitSpeed: b.orbitSpeed, orbitOffset: b.orbitOffset,
+      eccentricity: b.eccentricity, periapsis: b.periapsis, inclination: b.inclination, node: b.node, size: b.size,
     }));
     setSystemBodies(bodies);
     return () => setSystemBodies([]);
@@ -2721,27 +2725,10 @@ export const SystemView = () => {
           }
         }
         if (targetBody) {
-          // First, get current target position for distance check
-          let currentTargetPos;
-          if (targetBody.parentBody) {
-            const parentBody = currentSystemRef.current.bodies.find(b => b.id === targetBody.parentBody);
-            const parentAngle = gameTime * parentBody.orbitSpeed + (parentBody.orbitOffset || 0);
-            const parentPos = {
-              x: Math.cos(parentAngle) * parentBody.orbitRadius,
-              y: Math.sin(parentAngle) * parentBody.orbitRadius,
-            };
-            const stationAngle = gameTime * targetBody.orbitSpeed + (targetBody.orbitOffset || 0);
-            currentTargetPos = {
-              x: parentPos.x + Math.cos(stationAngle) * targetBody.orbitRadius,
-              y: parentPos.y + Math.sin(stationAngle) * targetBody.orbitRadius,
-            };
-          } else {
-            const angle = gameTime * targetBody.orbitSpeed + (targetBody.orbitOffset || 0);
-            currentTargetPos = {
-              x: Math.cos(angle) * targetBody.orbitRadius,
-              y: Math.sin(angle) * targetBody.orbitRadius,
-            };
-          }
+          // Current target position -- the SAME orbital math the renderer
+          // uses (eccentric / inclined / retrograde, satellites around
+          // their parent), so the autopilot aims where the sprite is.
+          const currentTargetPos = bodyPositionAt(targetBody, gameTime, currentSystemRef.current.bodies);
           
           // Calculate current distance for arrival check
           const currentDx = currentTargetPos.x - shipPosRef.current.x;
@@ -2759,27 +2746,8 @@ export const SystemView = () => {
           const estimatedFramesToArrival = estimatedSecondsToArrival * 60; // Convert to frames
           
           // Predict future position (use frame-based time like rendering does)
-          let targetPos;
           const futureTime = (frameNum + estimatedFramesToArrival * 0.7) / 60; // 70% prediction
-          if (targetBody.parentBody) {
-            const parentBody = currentSystemRef.current.bodies.find(b => b.id === targetBody.parentBody);
-            const parentAngle = futureTime * parentBody.orbitSpeed + (parentBody.orbitOffset || 0);
-            const parentPos = {
-              x: Math.cos(parentAngle) * parentBody.orbitRadius,
-              y: Math.sin(parentAngle) * parentBody.orbitRadius,
-            };
-            const stationAngle = futureTime * targetBody.orbitSpeed + (targetBody.orbitOffset || 0);
-            targetPos = {
-              x: parentPos.x + Math.cos(stationAngle) * targetBody.orbitRadius,
-              y: parentPos.y + Math.sin(stationAngle) * targetBody.orbitRadius,
-            };
-          } else {
-            const angle = futureTime * targetBody.orbitSpeed + (targetBody.orbitOffset || 0);
-            targetPos = {
-              x: Math.cos(angle) * targetBody.orbitRadius,
-              y: Math.sin(angle) * targetBody.orbitRadius,
-            };
-          }
+          let targetPos = bodyPositionAt(targetBody, futureTime, currentSystemRef.current.bodies);
           
           // When close, switch to tracking current position (not predicted)
           if (currentDistance < 200) {

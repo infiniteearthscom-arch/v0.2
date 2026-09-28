@@ -109,14 +109,16 @@ export const freeWarpCheck = (origin, target, profile) => {
 };
 
 // Player-facing explanation for a failed check.
+// Names the ship holding the fleet's drive class down (the weakest engine sets it).
+const limitedBy = (profile) => profile?.limitingShip?.name ? `, held down by ${profile.limitingShip.name}` : '';
 export const warpBlockText = (check, target, profile) => {
   if (!check || check.ok) return null;
   const t = target?.regionTier ?? 1;
   if (check.reason === 'tier' && check.via === 'gate') {
-    return `T${t} space needs drive class ${Math.max(1, t - 2)}+ to gate into (fleet is class ${profile.driveClass})`;
+    return `T${t} space needs drive class ${Math.max(1, t - 2)}+ to gate into (fleet is class ${profile.driveClass}${limitedBy(profile)})`;
   }
   if (check.reason === 'tier') {
-    return `T${t} space needs drive class ${Math.max(1, t - 1)}+ to warp into (fleet is class ${profile.driveClass}) — or reach it by jump gate`;
+    return `T${t} space needs drive class ${Math.max(1, t - 1)}+ to warp into (fleet is class ${profile.driveClass}${limitedBy(profile)}) — or reach it by jump gate`;
   }
   return `Out of warp range (${Math.round(check.distance)} / ${profile.range}) — fit a better drive or use jump gates`;
 };
