@@ -1258,7 +1258,6 @@ export const SystemView = () => {
     if (currentSystemId === 'sol') return { x: 900, y: 0 };
     // Find the arrival body (warp point or jump gate)
     const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
-    orbitLockRef.current = null; setOrbitLocked(false); // new system, new orbit
     const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
               || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
               || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
@@ -2487,6 +2486,10 @@ export const SystemView = () => {
     // Reset ship position when changing systems (not on first load)
     if (prevSystemIdRef.current !== currentSystemId) {
       prevSystemIdRef.current = currentSystemId;
+      // New system, new orbit: drop any orbit lock (092). Lives here, in the
+      // effect, NOT in the spawn-position memo -- that runs during render.
+      orbitLockRef.current = null;
+      setOrbitLocked(false);
       // Spawn at arrival body based on how we got here
       const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
       const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
