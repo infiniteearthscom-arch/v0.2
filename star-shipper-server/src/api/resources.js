@@ -594,8 +594,9 @@ async function dockedOwnBase(req, userId) {
     if (!raw) return null;
     const bodyId = await resolveBodyId(String(raw));
     if (!bodyId) return null;
-    const b = await queryOne(`SELECT id, fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
-    if (!b || new Date(b.build_completes_at).getTime() > Date.now()) return null;
+    const b = await queryOne(`SELECT id, tier, fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
+    // operational = Framework finished; a tier upgrade in progress does not block (2026-09-30)
+    if (!b || (Number(b.tier) <= 1 && new Date(b.build_completes_at).getTime() > Date.now())) return null;
     return b;
   } catch { return null; }
 }

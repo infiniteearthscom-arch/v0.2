@@ -654,6 +654,7 @@ export const fittingAPI = {
     method: 'POST',
     body: JSON.stringify({ inventory_id: inventoryId, quantity }),
   }),
+  sellResources: (stackIds) => request('/fitting/sell-resources', { method: 'POST', body: JSON.stringify({ stack_ids: stackIds }) }),
   sellItem: (inventoryId, quantity) => request('/fitting/sell-item', {
     method: 'POST',
     body: JSON.stringify({ inventory_id: inventoryId, quantity: quantity || 1 }),

@@ -19,6 +19,7 @@ import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { addResourceStack } from '../lib/wrecks.js';
 import { completeQuestInTx } from './quests.js';
 import { loadResourceStackAny, debitStackAny, depotAdd, depotCapacityOf, depotStacks } from '../lib/materials.js';
+import { isOperational } from './bases.js';
 
 export const REFINE_GAIN = 8;          // quality per job
 export const DEEP_GAIN_BONUS = 4;      // with tech_deep_refining
@@ -48,7 +49,7 @@ async function dockedBaseLanes(req, userId, client = null) {
   const rows = await q(`SELECT * FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
   const base = rows[0];
   if (!base) return { error: 'No base of yours here -- refining happens at your base' };
-  if (new Date(base.build_completes_at).getTime() > Date.now()) return { error: 'Your base is still under construction' };
+  if (!isOperational(base)) return { error: 'Your base is still under construction' };
   const lanes = Object.entries(base.fitted_modules || {})
     .filter(([, m]) => m?.stats?.refinery)
     .map(([slot, m]) => ({ slot, name: m.name, quality: Math.round(avgQ(m.quality)), speed: Number(m.stats.refine_speed) || 1 }));

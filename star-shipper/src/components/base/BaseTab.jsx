@@ -142,7 +142,7 @@ export const BaseTab = ({ body }) => {
         {base.kind === 'orbital' ? '🛰️' : '🏠'} {base.name.toUpperCase()} · {base.tier_name.toUpperCase()}
       </H>
       {base.building && (
-        <Card accent="#22d3ee"><div style={{ color: '#67e8f9', fontWeight: 700 }}>🏗️ Under construction · {minutesLeft(base.build_completes_at)} min remaining</div></Card>
+        <Card accent="#22d3ee"><div style={{ color: '#67e8f9', fontWeight: 700 }}>🏗️ {base.upgrading ? `Upgrading to ${base.tier_name} · ${minutesLeft(base.build_completes_at)} min · everything keeps running` : `Under construction · ${minutesLeft(base.build_completes_at)} min remaining`}</div></Card>
       )}
       <Card accent={GOLD.pri}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -152,7 +152,7 @@ export const BaseTab = ({ body }) => {
               depot {base.depot.capacity > 0 ? `${fmt(Math.round(base.depot.used))} / ${fmt(base.depot.capacity)}` : 'none'}{base.next_tier ? ` · next: ${base.next_tier.name}` : ' · top tier'}
             </div>
           </div>
-          <Btn disabled={base.building} onClick={() => { playSound('button_click'); openWindow('base'); }}>OPEN BASE CONSOLE</Btn>
+          <Btn disabled={base.operational === false} onClick={() => { playSound('button_click'); openWindow('base'); }}>OPEN BASE CONSOLE</Btn>
         </div>
         <div style={{ color: '#5a7080', fontSize: '0.74rem', marginTop: 6 }}>Plots, stations, the foundry queue, the depot and upgrades all live in the console.</div>
       </Card>

@@ -684,6 +684,10 @@ const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLe
 
 const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
   const [stacks, setStacks] = useState([]);
+  // Filter toggle (2026-09-30): show only stacks the selected recipe uses.
+  // Persisted so a crafter who wants it on keeps it on.
+  const [onlyRecipe, setOnlyRecipe] = useState(() => { try { return localStorage.getItem('crafting.onlyRecipe') === '1'; } catch { return false; } });
+  const toggleOnlyRecipe = () => setOnlyRecipe(v => { const n = !v; try { localStorage.setItem('crafting.onlyRecipe', n ? '1' : '0'); } catch {} return n; });
   const [loading, setLoading] = useState(false);
   // Tooltip goes through the singleton CargoTooltipLayer (mounted in
   // GameFrame) — plain function calls, no hover state on this panel,
@@ -723,7 +727,7 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
       // 089: docked at a base you own -> its depot's resource stacks craft too
       try {
         const here = await basesAPI.here();
-        if (here?.base && !here.base.building) {
+        if (here?.base && here.base.operational !== false) {
           for (const d of (here.base.depot?.stacks || [])) {
             if (d.item_type !== 'resource') continue;
             out.push({ id: d.id, source: 'depot', quantity: d.quantity, stats: d.stats, resource_type_id: d.resource_type_id, resource_name: d.resource_name, category: d.category });
@@ -756,6 +760,9 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
   );
 
   const hasAny = stacks.length > 0;
+  const filterActive = onlyRecipe && !!selectedRecipe;
+  const shownStacks = filterActive ? stacks.filter(st => wantedNames.has(st.resource_name)) : stacks;
+  const hiddenCount = stacks.length - shownStacks.length;
 
   return (
     <div
@@ -774,13 +781,29 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
           <span style={{ fontSize: '0.75rem' }}>📦</span>
           <span className="text-[0.8rem] font-bold uppercase tracking-wider text-slate-300">Cargo</span>
         </div>
-        <button
-          onClick={fetchInventory}
-          title="Refresh from cargo"
-          className="text-[0.8rem] text-slate-500 hover:text-cyan-300 transition-colors px-1"
-        >
-          ↻
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={toggleOnlyRecipe}
+            disabled={!selectedRecipe}
+            title={!selectedRecipe ? 'Select a recipe to filter by its ingredients' : onlyRecipe ? 'Showing recipe ingredients only — click to show all cargo' : 'Show only cargo this recipe uses'}
+            className="text-[0.7rem] font-bold px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
+            style={{
+              color: filterActive ? '#ffffff' : '#7a8ea0',
+              background: filterActive ? 'rgba(170,102,255,0.28)' : 'transparent',
+              border: `1px solid ${filterActive ? '#aa66ff' : '#1e293b'}`,
+              letterSpacing: 0.5,
+            }}
+          >
+            {filterActive ? '⚗ RECIPE ONLY' : '⚗ FILTER'}
+          </button>
+          <button
+            onClick={fetchInventory}
+            title="Refresh from cargo"
+            className="text-[0.8rem] text-slate-500 hover:text-cyan-300 transition-colors px-1"
+          >
+            ↻
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -795,8 +818,14 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
           </div>
         )}
 
+        {filterActive && hasAny && shownStacks.length === 0 && (
+          <div className="text-[0.8rem] text-slate-500 text-center mt-3 px-2 leading-snug">
+            Nothing in cargo for this recipe.
+            <div className="text-slate-600 mt-1">Check the ingredient rows for where each material is made.</div>
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5 px-0.5">
-          {stacks.map(stack => {
+          {shownStacks.map(stack => {
             const matches = wantedNames.has(stack.resource_name);
             return (
               <CargoStackTile
@@ -821,7 +850,7 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
       {/* Footer hint */}
       <div className="px-2 py-1 border-t border-slate-700/40 text-[0.8rem] text-slate-500 text-center leading-tight">
         {selectedRecipe
-          ? 'Click a glowing tile to add it · X on a slot to remove'
+          ? (filterActive && hiddenCount > 0 ? `${hiddenCount} other stack${hiddenCount === 1 ? '' : 's'} hidden · click a tile to add it` : 'Click a glowing tile to add it · X on a slot to remove')
           : 'Select a recipe first, then click cargo tiles to add'}
       </div>
 

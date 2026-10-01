@@ -429,6 +429,7 @@ export const GalaxyFlightView = () => {
       
       if (e.key === 'Escape' && autopilotRef.current) {
         setGalaxyAutopilotTarget(null);
+        setRangeBlockMsg('Autopilot cancelled. Fly with WASD and press Enter near a system to enter it, or use ↩ Return (bottom-left) to go back.');
       }
       
       // Enter key to dock at nearby system
@@ -807,6 +808,19 @@ export const GalaxyFlightView = () => {
               </div>
             </div>
           )}
+
+          {/* Always-available exit from galaxy flight: back into the departed
+              system at its warp point. Sits above the bottom bar, left side. */}
+          <div className="absolute pointer-events-auto" style={{ left: 12, bottom: 48, zIndex: 5 }}>
+            <button
+              onClick={() => enterSystem(currentSystemId, 'warp')}
+              title="Re-enter the system you departed (arrive at its warp point)"
+              className="px-3 py-1.5 rounded text-xs font-medium bg-slate-900/85 text-slate-200 border border-slate-600/60 hover:bg-slate-800 transition-colors"
+            >
+              ↩ Return to {galaxy.systemMap[currentSystemId]?.name || 'system'}
+            </button>
+            <div className="mt-1 text-[0.7rem] text-slate-500 font-mono">WASD fly · Enter: enter nearest system · Esc: cancel autopilot</div>
+          </div>
 
           {/* Hovered system info */}
           {hoveredSystem && (

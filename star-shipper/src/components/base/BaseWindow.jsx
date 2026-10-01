@@ -520,7 +520,7 @@ export const BaseWindow = () => {
                 <div style={{ color: GOLD.light, fontWeight: 800, fontSize: '1.05rem', letterSpacing: 0.5 }}>{base.name.toUpperCase()}</div>
                 <div style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.72rem' }}>{base.kind} · {base.system_name} / {base.body_name} · tier {base.tier} {base.tier_name}</div>
               </div>
-              {base.building && <Card accent="#22d3ee"><div style={{ color: '#67e8f9', fontWeight: 700, fontSize: '0.8rem' }}>🏗️ Under construction · {minutesLeft(base.build_completes_at)} min</div></Card>}
+              {base.building && <Card accent="#22d3ee"><div style={{ color: '#67e8f9', fontWeight: 700, fontSize: '0.8rem' }}>🏗️ {base.upgrading ? `Upgrading to ${base.tier_name} · ${minutesLeft(base.build_completes_at)} min · production continues` : `Under construction · ${minutesLeft(base.build_completes_at)} min`}</div></Card>}
               {base.next_tier && (
                 <Card accent={GOLD.pri} title={`UPGRADE → ${base.next_tier.name.toUpperCase()}`}>
                   <div style={{ color: '#8fa3b8', fontSize: '0.74rem', fontFamily: FM, lineHeight: 1.5 }}>
@@ -569,7 +569,7 @@ export const BaseWindow = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                       <span style={{ color: area.unlocked ? GOLD.light : '#5a7080', fontWeight: 800, fontSize: '0.78rem', letterSpacing: 1 }}>{area.name.toUpperCase()} AREA</span>
                       <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.68rem' }} title={area.bonus_plots ? `${area.base_plots} plots + ${area.bonus_plots} from Command Center Upgrades` : 'Train Command Center Upgrades for +1 plot per area per level'}>
-                        {area.unlocked ? `tier ${area.tier} · ${area.slots.length} plots` : `🔒 tier ${area.tier}`}
+                        {area.unlocked ? `tier ${area.tier} · ${area.slots.length} plots` : area.constructing ? `🏗️ building · ${minutesLeft(base.build_completes_at)} min` : `🔒 tier ${area.tier}`}
                       </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
@@ -581,7 +581,7 @@ export const BaseWindow = () => {
                         const color = m ? (m.stats?.foundry ? familyColor(m.stats.foundry.family) : '#94a3b8') : '#1e293b';
                         const on = selected === slot;
                         return (
-                          <div key={slot} onClick={() => { if (!area.unlocked) return; setSelected(slot); setFocusMaterial(null); }} title={m ? `${m.name} (${slot.toUpperCase()})` : area.unlocked ? `Empty plot ${slot.toUpperCase()}` : `Unlocks at ${area.name}`}
+                          <div key={slot} onClick={() => { if (!area.unlocked) return; setSelected(slot); setFocusMaterial(null); }} title={m ? `${m.name} (${slot.toUpperCase()})` : area.unlocked ? `Empty plot ${slot.toUpperCase()}` : area.constructing ? 'Under construction' : `Unlocks at ${area.name}`}
                                style={{ height: 78, borderRadius: 3, cursor: area.unlocked ? 'pointer' : 'not-allowed', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
                                         background: m ? `linear-gradient(180deg, ${color}22, rgba(4,8,16,0.6))` : 'rgba(4,8,16,0.35)',
                                         border: `1px solid ${on ? '#67e8f9' : m ? color + '88' : '#1e293b'}`, boxShadow: on ? '0 0 8px #67e8f955' : ready ? `0 0 8px #4ade8066` : 'none' }}>
@@ -631,7 +631,7 @@ export const BaseWindow = () => {
               {selected && selModule && selKind === 'other' && <Card title={selModule.name}><div style={{ color: '#8fa3b8', fontSize: '0.78rem' }}>{selModule.description || 'Fitted.'}</div></Card>}
               {selected && selModule && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                  <Btn small accent="#f87171" disabled={busy || base.building} title="Return this building to cargo" onClick={() => act(() => basesAPI.unfit(base.id, selected), `${selModule.name} returned to cargo`)}>UNFIT {selected.toUpperCase()}</Btn>
+                  <Btn small accent="#f87171" disabled={busy || base.operational === false} title="Return this building to cargo" onClick={() => act(() => basesAPI.unfit(base.id, selected), `${selModule.name} returned to cargo`)}>UNFIT {selected.toUpperCase()}</Btn>
                 </div>
               )}
             </div>

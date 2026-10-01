@@ -97,12 +97,20 @@ async function techSet(userId, q = query) {
   return new Set((r.rows || r).map(x => x.tech_id));
 }
 
+// A base is OPERATIONAL once its Framework (tier 1) has finished. A tier
+// upgrade in progress never stops production (2026-09-30): the existing
+// areas keep working and only the NEW tier's plots stay locked until the
+// timer ends. `effectiveTier` is what the plot layout should use.
+export const isBuilding = (b) => new Date(b.build_completes_at).getTime() > Date.now();
+export const isOperational = (b) => !!b && (Number(b.tier) > 1 || !isBuilding(b));
+export const effectiveTier = (b) => isBuilding(b) ? Math.max(1, Number(b.tier) - 1) : Number(b.tier);
+
 // ---- shared with research.js / refining.js ----
 export async function baseModules(userId) {
-  const rows = await queryAll(`SELECT id, fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1`, [userId]);
+  const rows = await queryAll(`SELECT id, tier, fitted_modules, build_completes_at FROM player_bases WHERE user_id = $1`, [userId]);
   const out = [];
   for (const b of rows) {
-    if (new Date(b.build_completes_at).getTime() > Date.now()) continue;
+    if (!isOperational(b)) continue;
     for (const m of Object.values(b.fitted_modules || {})) out.push({ base_id: b.id, ...m });
   }
   return out;
@@ -114,7 +122,7 @@ export async function baseRpPerMin(userId) {
 // The pilot's own built base at this body, with its refinery bonus if any.
 export async function baseAtBody(userId, bodyId) {
   const b = await queryOne(`SELECT * FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2`, [userId, bodyId]);
-  if (!b || new Date(b.build_completes_at).getTime() > Date.now()) return null;
+  if (!isOperational(b)) return null;
   const refinery = Object.values(b.fitted_modules || {}).find(m => m.stats?.refinery);
   return { ...b, refinery: refinery ? { yield_pct: Number(refinery.stats.refine_yield_pct) || 0 } : null };
 }
@@ -130,16 +138,18 @@ async function depotFor(base, q = query) {
 
 async function shapeBase(b, q = query) {
   const t = TIERS[b.tier] || TIERS[1];
-  const building = new Date(b.build_completes_at).getTime() > Date.now();
+  const building = isBuilding(b);
   const cc = await skillLevel(b.user_id, BUILD_SKILL, q);
-  const layout = plotLayout(b.tier, cc);
+  // Plots: the tier under construction stays locked until it finishes.
+  const layout = plotLayout(effectiveTier(b), cc);
+  if (building && b.tier > 1) { const a = layout.areas.find(x => x.tier === b.tier); if (a) a.constructing = true; }
   const sys = await (q === query ? queryOne : (sql, p) => q(sql, p).then(r => (r.rows || r)[0]))(
     `SELECT name FROM star_systems WHERE procedural_id = $1`, [b.system_procedural_id]);
   return {
     id: b.id, kind: b.kind, name: b.name, tier: b.tier, tier_name: t.name, slots: layout.total,
     plots_per_area: PLOTS_PER_AREA + layout.bonus_per_area, bonus_per_area: layout.bonus_per_area, cc_level: cc, max_tier: MAX_TIER,
     areas: layout.areas,
-    building, build_completes_at: b.build_completes_at,
+    building, operational: isOperational(b), upgrading: building && b.tier > 1, build_completes_at: b.build_completes_at,
     system_procedural_id: b.system_procedural_id, system_name: sys?.name || b.system_procedural_id,
     body_name: b.body_name, celestial_body_id: b.celestial_body_id,
     modules: b.fitted_modules || {},
@@ -314,7 +324,7 @@ router.post('/:id/upgrade', async (req, res) => {
     const result = await transaction(async (client) => {
       const b = await loadOwnBase(client, userId, String(req.params.id));
       await mustBeDockedAt(req, userId, b);
-      if (new Date(b.build_completes_at).getTime() > Date.now()) throw Object.assign(new Error('Still under construction'), { statusCode: 409 });
+      if (isBuilding(b)) throw Object.assign(new Error(b.tier > 1 ? 'An upgrade is already in progress' : 'Still under construction'), { statusCode: 409 });
       if (b.tier >= MAX_TIER) throw Object.assign(new Error('Already at the top tier'), { statusCode: 400 });
       const t = TIERS[b.tier + 1];
       const techs = await techSet(userId, client.query.bind(client));
@@ -343,8 +353,8 @@ router.post('/:id/fit', async (req, res) => {
     const result = await transaction(async (client) => {
       const b = await loadOwnBase(client, userId, String(req.params.id));
       await mustBeDockedAt(req, userId, b);
-      if (new Date(b.build_completes_at).getTime() > Date.now()) throw Object.assign(new Error('Still under construction'), { statusCode: 409 });
-      const layout = plotLayout(b.tier, await skillLevel(userId, BUILD_SKILL, client.query.bind(client)));
+      if (!isOperational(b)) throw Object.assign(new Error('Still under construction'), { statusCode: 409 });
+      const layout = plotLayout(effectiveTier(b), await skillLevel(userId, BUILD_SKILL, client.query.bind(client)));
       const key = String(slot || '');
       if (!layout.allowed.has(key)) throw Object.assign(new Error('No such plot on this base'), { statusCode: 400 });
       const fitted = b.fitted_modules || {};
@@ -365,7 +375,7 @@ router.post('/:id/fit', async (req, res) => {
       // Foundry stations need a base of their tier (T2 stations at an Outpost, ...). Service
       // buildings (depot, refinery, lab, repair shop) fit any tier so onboarding is untouched.
       const ft = Number(it.stats?.foundry?.tier) || 0;
-      if (ft > b.tier) throw Object.assign(new Error(`${it.name} needs a ${TIERS[ft]?.name || 'higher-tier'} base (this one is a ${TIERS[b.tier].name})`), { statusCode: 403 });
+      if (ft > effectiveTier(b)) throw Object.assign(new Error(`${it.name} needs a ${TIERS[ft]?.name || 'higher-tier'} base (this one is a ${TIERS[b.tier].name})`), { statusCode: 403 });
       const srcTable = it.src === 'depot' ? 'player_base_inventory' : 'player_resource_inventory';
       if (Number(it.quantity) > 1) await client.query(`UPDATE ${srcTable} SET quantity = quantity - 1 WHERE id = $1`, [it.id]);
       else await client.query(`DELETE FROM ${srcTable} WHERE id = $1`, [it.id]);

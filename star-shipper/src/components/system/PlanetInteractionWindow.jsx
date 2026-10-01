@@ -2,7 +2,7 @@
 // Full custom frame with landscape banner header + vertical icon tabs
 // Opens when docked at a planet/station (not through the toolbar)
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO } from '@/data/resources';
@@ -2341,6 +2341,43 @@ const VendorTab = ({ body }) => {
     }
   };
 
+  // Bulk sell (2026-09-30): whole raw-resource stacks matching a filter.
+  // Each chip shows the stack count and the credits it would bring, so the
+  // player sees the deal before clicking. Processed materials are never
+  // included (they are crafting intermediates, not ore).
+  const bulkGroups = useMemo(() => {
+    const raw = (sellInventory.resources || []).filter(r => r.category !== 'processed');
+    const avg = (r) => ((r.stats?.purity ?? 50) + (r.stats?.stability ?? 50) + (r.stats?.potency ?? 50) + (r.stats?.density ?? 50)) / 4;
+    const tierOf = (r) => { const a = avg(r); return a <= 20 ? 'Impure' : a <= 40 ? 'Standard' : a <= 60 ? 'Fine' : a <= 80 ? 'Superior' : 'Pristine'; };
+    const group = (label, color, pred) => { const list = raw.filter(pred); return { label, color, stacks: list, total: list.reduce((a, r) => a + r.sell_price * r.quantity, 0) }; };
+    return [
+      group('ALL ORE', '#e2e8f0', () => true),
+      group('COMMON', '#d8dee6', r => r.rarity === 'common'),
+      group('RARE', '#4488ff', r => r.rarity === 'rare'),
+      group('EXOTIC', '#aa44ff', r => r.rarity === 'exotic'),
+      group('IMPURE', '#666e78', r => tierOf(r) === 'Impure'),
+      group('STANDARD', '#b0bcc8', r => tierOf(r) === 'Standard'),
+      group('FINE', '#44ff44', r => tierOf(r) === 'Fine'),
+      group('SUPERIOR+', '#4488ff', r => tierOf(r) === 'Superior' || tierOf(r) === 'Pristine'),
+    ].filter(g => g.stacks.length > 0);
+  }, [sellInventory]);
+  const sellBulk = async (g) => {
+    if (purchasing || !g.stacks.length) return;
+    if (g.total >= 50000 && !window.confirm(`Sell ${g.stacks.length} stacks (${g.label.toLowerCase()}) for ${g.total.toLocaleString()} cr?`)) return;
+    setPurchasing(true);
+    try {
+      const r = await fittingAPI.sellResources(g.stacks.map(s => s.id));
+      if (r.success) {
+        const top = Object.entries(r.lines || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, q]) => `${q} ${n}`).join(', ');
+        flash('success', `Sold ${r.stacks} stack${r.stacks === 1 ? '' : 's'} for ${r.total_earned.toLocaleString()} cr${top ? ` (${top}${Object.keys(r.lines).length > 3 ? ', …' : ''})` : ''}`);
+        setSellQuantities({});
+        loadSellInventory();
+        if (completeQuest) completeQuest('tutorial_sell_at_luna');
+      }
+    } catch (err) { flash('error', err.message || 'Failed to sell'); }
+    finally { setPurchasing(false); refreshCredits(); }
+  };
+
   const sellItem = async (inventoryId, quantity) => {
     if (purchasing) return;
     setPurchasing(true);
@@ -2817,6 +2854,25 @@ const VendorTab = ({ body }) => {
             }}>Nothing to sell — go mine some resources!</div>
           ) : (
             <>
+              {/* Quick sell: whole stacks by rarity or quality, one click */}
+              {bulkGroups.length > 0 && (
+                <div style={{ marginBottom: 10, padding: 8, background: 'rgba(4,8,16,0.5)', border: `1px solid ${EDGE}`, borderLeft: '3px solid #22c55e', borderRadius: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                    <span style={{ fontSize: '0.75rem', fontFamily: FM, letterSpacing: 1, color: '#4ade80', fontWeight: 800 }}>QUICK SELL</span>
+                    <span style={{ fontSize: '0.7rem', fontFamily: FM, color: '#5a7080' }}>whole stacks · raw ore only · each chip shows what it pays</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {bulkGroups.map(g => (
+                      <button key={g.label} disabled={purchasing} onClick={() => { playSound('button_click'); sellBulk(g); }}
+                        title={`Sell ${g.stacks.length} stack${g.stacks.length === 1 ? '' : 's'}: ${g.stacks.map(s => `${s.quantity} ${s.resource_name}`).join(', ')}`}
+                        style={{ padding: '4px 9px', borderRadius: 3, cursor: purchasing ? 'wait' : 'pointer', background: `${g.color}14`, border: `1px solid ${g.color}66`, color: g.color, fontFamily: F, fontWeight: 700, fontSize: '0.74rem', letterSpacing: 0.5, display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                        <span>{g.label}</span>
+                        <span style={{ fontFamily: FM, fontSize: '0.68rem', opacity: 0.85 }}>{g.stacks.length}× · {g.total.toLocaleString()} cr</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Resources */}
               {sellInventory.resources.length > 0 && (
                 <div style={{ marginBottom: 12 }}>

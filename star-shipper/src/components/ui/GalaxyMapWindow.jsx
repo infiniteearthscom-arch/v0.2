@@ -743,6 +743,18 @@ export const GalaxyMapWindow = () => {
 
         {/* Info panel */}
         <div className="w-[200px] border-l border-slate-700/50 bg-slate-900/50 p-3 overflow-y-auto flex-shrink-0">
+          {/* In galaxy flight you always have a way back: re-enter the system you
+              left at its warp point (2026-09-30: cancelling a flight left pilots
+              stranded in galaxy view with no visible exit). */}
+          {viewMode === 'galaxy' && currentSys && (
+            <button
+              onClick={() => { useGameStore.getState().enterSystem(currentSystemId, 'warp'); closeWindow('galaxyMap'); }}
+              className="w-full mb-2 px-3 py-1.5 rounded text-xs font-medium bg-slate-700/40 text-slate-200 border border-slate-600/50 hover:bg-slate-700/70 transition-colors"
+              title="Go back into the system you departed (arrive at its warp point)"
+            >
+              ↩ Return to {currentSys.name}
+            </button>
+          )}
           {selectedSys ? (() => {
             const isDiscovered = discoveredSet.has(selectedSys.id);
             const refPos = viewMode === 'galaxy' ? galaxyShipPosition : (currentSys || { x: 0, y: 0 });

@@ -33,6 +33,7 @@ import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { addResourceStack } from '../lib/wrecks.js';
 import { availableMaterials, consumeMaterials, depotAdd, depotAddItem, addItemStack, depotUsed, loadResourceStackAny, debitStackAny } from '../lib/materials.js';
 import { BASE_TIERS } from '../game/foundryTree.js';
+import { isOperational } from './bases.js';
 
 export const MAX_RUNS = 20;
 export const MAX_QUEUE_PER_STATION = 8;
@@ -90,7 +91,7 @@ async function dockedOwnBase(req, userId, client = null) {
   const rows = await q(`SELECT * FROM player_bases WHERE user_id = $1 AND celestial_body_id = $2 ${client ? 'FOR UPDATE' : ''}`, [userId, bodyId]);
   const base = rows[0];
   if (!base) return { error: 'No base of yours here' };
-  if (new Date(base.build_completes_at).getTime() > Date.now()) return { error: 'Your base is still under construction' };
+  if (!isOperational(base)) return { error: 'Your base is still under construction' };
   return { base };
 }
 const stationsOf = (base) => Object.entries(base.fitted_modules || {})

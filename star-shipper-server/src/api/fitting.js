@@ -1179,6 +1179,46 @@ router.post('/sell-resource', authMiddleware, async (req, res) => {
 });
 
 // ============================================
+// SELL RESOURCES IN BULK (2026-09-30: "it takes longer to sell than to mine")
+// POST /fitting/sell-resources { stack_ids: [...] }  -- whole stacks only.
+// Same price rule per stack as /sell-resource; one transaction, one toast.
+// Processed materials (the Foundry tree) are refused here on purpose: a
+// bulk sweep should never eat crafted intermediates by accident.
+// ============================================
+router.post('/sell-resources', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const ids = Array.isArray(req.body?.stack_ids) ? [...new Set(req.body.stack_ids.map(String))].slice(0, 200) : [];
+    if (ids.length === 0) return res.status(400).json({ error: 'stack_ids required' });
+    const result = await transaction(async (client) => {
+      const inv = await client.query(
+        `SELECT pri.*, rt.base_price, rt.name AS resource_name, rt.category
+           FROM player_resource_inventory pri JOIN resource_types rt ON rt.id = pri.resource_type_id
+          WHERE pri.user_id = $1 AND pri.item_type = 'resource' AND pri.id = ANY($2::uuid[])
+            AND rt.category <> 'processed'
+          FOR UPDATE OF pri`, [userId, ids]);
+      let total = 0, units = 0;
+      const lines = {};
+      for (const row of inv.rows) {
+        const qty = Number(row.quantity); if (qty <= 0) continue;
+        const ppu = resourceSellPrice(Number(row.base_price), avgResourceQuality(row));
+        total += ppu * qty; units += qty;
+        lines[row.resource_name] = (lines[row.resource_name] || 0) + qty;
+        await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [row.id]);
+      }
+      if (units === 0) throw new Error('Nothing sellable in that selection');
+      await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [total, userId]);
+      const user = await client.query(`SELECT credits FROM users WHERE id = $1`, [userId]);
+      return { stacks: inv.rows.length, units, total_earned: total, lines, credits: parseInt(user.rows[0].credits) };
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error bulk selling:', error);
+    res.status(400).json({ error: error.message || 'Failed to sell' });
+  }
+});
+
+// ============================================
 // SELL ITEM (modules, probes, fuel, harvesters from cargo)
 // Vendor-bought modules + supplies: 90% of vendor price. Crafted / looted
 // / craft-only modules: recipe materials x tier markup x quality.
