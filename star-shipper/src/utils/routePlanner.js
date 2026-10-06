@@ -40,6 +40,10 @@ export const findRoute = (galaxy, originId, targetId, profile, maxHops = 40) => 
   const target = galaxy.systemMap[targetId];
   if (!origin || !target) return { reachable: false, hops: [] };
   if (origin.id === target.id) return { reachable: true, hops: [], gateHops: 0, warpHops: 0 };
+  // Direct edge wins outright (2026-09-30): if the target is a gate lane or
+  // inside the free-warp ring at an allowed tier, that is the route.
+  const direct = edgeVia(origin, target, profile);
+  if (direct) return { reachable: true, hops: [{ id: target.id, via: direct }], gateHops: direct === 'gate' ? 1 : 0, warpHops: direct === 'warp' ? 1 : 0 };
 
   const prev = new Map([[origin.id, null]]);
   const queue = [origin];

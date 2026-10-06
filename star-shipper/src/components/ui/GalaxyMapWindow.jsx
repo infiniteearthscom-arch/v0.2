@@ -1042,16 +1042,30 @@ export const GalaxyMapWindow = () => {
                     ⚡ Jump to {selectedSys.name}
                   </button>
                 )}
-                {viewMode === 'system' && selectedSys.id !== currentSystemId && !canJump && (
+                {/* In warp range but no gate lane: fly it directly -- a one-hop route
+                    (autopilot to the warp point, then galaxy autopilot to the target). */}
+                {viewMode === 'system' && selectedSys.id !== currentSystemId && !canJump && selectedFree?.ok && (
+                  <button
+                    onClick={() => {
+                      setPlannedRoute(selectedSys.id, selectedSys.name, [{ id: selectedSys.id, via: 'warp' }]);
+                      closeWindow('galaxyMap');
+                    }}
+                    className="w-full px-3 py-2 rounded text-xs font-medium bg-cyan-700/30 text-cyan-300 border border-cyan-600/40 hover:bg-cyan-700/50 transition-colors"
+                    title="Autopilot to this system's warp point, then warp straight there"
+                  >
+                    🚀 Warp to {selectedSys.name} ({Math.round(selectedFree.distance)} / {warpProfile.range})
+                  </button>
+                )}
+                {viewMode === 'system' && selectedSys.id !== currentSystemId && !canJump && !selectedFree?.ok && (
                   <div className="text-[0.8rem] text-slate-600 text-center py-1">
                     {isConnected && selectedCheck && !selectedCheck.ok
                       ? `Gate locked — ${warpBlockText(selectedCheck, selectedSys, warpProfile)}`
-                      : !currentSys?.hasJumpGate
-                        ? 'No jump gate in current system'
-                        : !selectedSys.hasJumpGate
-                          ? 'No jump gate in target system'
-                          : selectedFree?.ok
-                            ? 'Not gate-connected — leave via the warp point and fly there'
+                      : selectedFree && selectedFree.reason === 'tier'
+                        ? `Inside your warp ring, but ${warpBlockText(selectedFree, selectedSys, warpProfile)}`
+                        : !currentSys?.hasJumpGate
+                          ? 'No jump gate in current system'
+                          : !selectedSys.hasJumpGate
+                            ? 'No jump gate in target system'
                             : 'Not directly connected'}
                   </div>
                 )}
