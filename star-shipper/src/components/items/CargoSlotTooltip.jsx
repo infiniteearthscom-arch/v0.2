@@ -94,14 +94,14 @@ export const CargoSlotTooltip = ({ stack, screenX, screenY, slotSize = 44, resou
         className="rounded-lg p-3 shadow-xl min-w-[190px]"
         style={{
           background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-          border: `2px solid ${tier.color}`,
-          boxShadow: `0 0 12px ${tier.color}33`,
+          border: `2px solid ${rarityInfo?.color || '#d8dee6'}`,
+          boxShadow: `0 0 12px ${rarityInfo?.color || '#d8dee6'}33`,
         }}
       >
         <div className="flex items-center gap-2 mb-2">
           <div
             className="rounded flex items-center justify-center"
-            style={{ width: 36, height: 36, backgroundColor: (iconInfo?.color || tier.color) + '33', border: `1px solid ${(iconInfo?.color || tier.color)}88` }}
+            style={{ width: 36, height: 36, backgroundColor: (rarityInfo?.color || '#d8dee6') + '22', border: `1px solid ${rarityInfo?.color || '#d8dee6'}88` }}
           >
             <PixelItemIcon size={32} spec={resourceIconSpec(stack.resource_type_id,
               (stack.stats.purity + stack.stats.stability + stack.stats.potency + stack.stats.density) / 4)} />

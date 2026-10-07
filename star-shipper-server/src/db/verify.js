@@ -147,6 +147,12 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 093 (fleet command text) ---
+  const fc = await pool.query(`SELECT description, bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'cmd_fleet_command'`);
+  report('cmd_fleet_command says +1 fleet ship per level (093)', /fleet ship per level/.test(fc.rows[0]?.description || '') && fc.rows[0]?.t === 'fleet_size_flat');
+  const fd = await pool.query(`SELECT description, bonus_per_level FROM skill_definitions WHERE id = 'cmd_fleet_disc'`);
+  report('cmd_fleet_disc grants the sixth ship at level V (093)', /sixth ship/.test(fd.rows[0]?.description || '') && fd.rows[0]?.bonus_per_level?.at_level === 5);
+
   // --- migration 092 (automation modules) ---
   const am = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('utility_orbit_lock','utility_auto_survey','mining_auto_5')`);
   report('3 automation modules present (092)', am.rows[0]?.n === 3, `found ${am.rows[0]?.n}`);
@@ -246,14 +252,17 @@ async function main() {
   // --- migration 071 (Fleet Command grandfather) ---
   const overCap = await pool.query(
     `SELECT COUNT(*)::int AS n FROM (
-       SELECT s.user_id, COUNT(*) AS active, COALESCE(MAX(ps.level), 0) AS lvl
+       SELECT s.user_id, COUNT(*) AS active,
+              COALESCE(MAX(pc.level), 0) AS lvl,
+              COALESCE(MAX(pd.level), 0) AS disc
          FROM ships s
-         LEFT JOIN player_skills ps ON ps.user_id = s.user_id AND ps.skill_id = 'cmd_fleet_command'
+         LEFT JOIN player_skills pc ON pc.user_id = s.user_id AND pc.skill_id = 'cmd_fleet_command'
+         LEFT JOIN player_skills pd ON pd.user_id = s.user_id AND pd.skill_id = 'cmd_fleet_disc'
         WHERE s.storage_body_id IS NULL AND s.hull_type_id <> 'pod'
         GROUP BY s.user_id
-     ) t WHERE t.active > LEAST(5, 2 + t.lvl)`
+     ) t WHERE t.active > LEAST(6, LEAST(5, 2 + t.lvl) + CASE WHEN t.disc >= 5 THEN 1 ELSE 0 END)`
   );
-  report('no player over their Fleet Command cap (071)', overCap.rows[0].n === 0, `${overCap.rows[0].n} over cap`);
+  report('no player over their fleet cap (071/093)', overCap.rows[0].n === 0, `${overCap.rows[0].n} over cap`);
 
   // --- the old wrecks 42P01 mystery (migrations 021/022) ---
   report('wrecks table exists (021 — known 42P01 mystery)', await tableExists('wrecks'));

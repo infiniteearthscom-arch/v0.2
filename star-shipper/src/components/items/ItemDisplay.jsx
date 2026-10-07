@@ -12,6 +12,8 @@
 // Both accept an already-normalized item (see utils/itemShape.js).
 // ============================================
 
+import { tierColor } from '@/utils/tiers';
+import { rarityColor, resourceRarityOf } from '@/utils/itemColors';
 import React from 'react';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 import { ItemTooltipContent } from '@/components/items/ItemTooltip';
@@ -38,6 +40,11 @@ export const ItemIcon = ({
   const {
     icon, color, stackQty, qColor, flags,
   } = item;
+  // Background = rarity: tier colour for modules, rarity colour for
+  // resources; border = slot colour (matches the Ship Builder slot).
+  const bg = item.kind === 'module' && item.tier ? tierColor(item.tier)
+    : item.kind === 'resource' ? rarityColor(item.raw?.rarity || resourceRarityOf(item.raw))
+    : color;
 
   return (
     <div
@@ -48,8 +55,8 @@ export const ItemIcon = ({
         flexShrink: 0,
         border: border ? `1.5px solid ${color}bb` : 'none',
         borderRadius: 3,
-        background: `linear-gradient(135deg, ${color}22 0%, ${color}0a 100%)`,
-        boxShadow: `inset 0 0 6px ${color}11`,
+        background: `linear-gradient(135deg, ${bg}33 0%, ${bg}11 100%)`,
+        boxShadow: `inset 0 0 6px ${bg}11`,
         opacity: dim ? 0.45 : 1,
         ...style,
       }}

@@ -67,6 +67,8 @@ const WIRED_BONUS_TYPES = new Set([
   'cargo_volume_pct',           // Logistics / Cargo Compression
   'remote_rep_pct',             // Logistics / Fleet Support -> Repair Nanite Hive rate (2026-09-20)
   'max_planets_flat',           // Planetary / Command Center Upgrades -> +1 harvester slot per planet (2026-09-20)
+  'contracts_flat',             // Trade / Contracting -> contract tier cap + active cap (api/contracts.js, 078)
+  'fleet_size_flat',            // Spaceship Command / Fleet Command -> active fleet cap 2 + level (fitGates.js, 071/093)
   // Sensors + scanning
   'sensor_range_pct',           // SystemView fleetSensorRange()
   'scan_time_pct',              // shipStats.js getFleetScanTimeMs()
@@ -347,8 +349,17 @@ const SkillsTab = () => {
             const bonusText = (() => {
               const b = selected.bonus_per_level;
               if (!b?.type) return null;
+              // _flat contracts are counts (ships, slots, tiers, quality points), not percentages.
+              const unit = /_flat$/.test(b.type) ? '' : '%';
+              const label = b.type.replace(/_flat$|_pct$/, '').replace(/_/g, ' ');
+              const sign = (n) => (n > 0 ? '+' : '');
+              // at_level = a threshold bonus granted once at that level (Fleet Discipline V), not per level.
+              if (b.at_level) {
+                const total = selected.level >= b.at_level ? (b.value || 0) : 0;
+                return `${sign(b.value)}${b.value}${unit} ${label} at level ${ROMAN[b.at_level] || b.at_level} (currently ${sign(total)}${total}${unit})`;
+              }
               const total = (b.value || 0) * selected.level;
-              return `${b.value > 0 ? '+' : ''}${b.value}% per level · ${b.type.replace(/_/g, ' ')} (currently ${total > 0 ? '+' : ''}${total}%)`;
+              return `${sign(b.value)}${b.value}${unit} per level · ${label} (currently ${sign(total)}${total}${unit})`;
             })();
             return (
               <>

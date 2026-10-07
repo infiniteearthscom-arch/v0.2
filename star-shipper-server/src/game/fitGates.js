@@ -8,8 +8,9 @@
 //   * Hull class gates: buying a Medium/Heavy/Industrial hull requires the
 //     matching Spaceship Command skill. Hulls already owned are
 //     grandfathered (only /buy-hull checks).
-//   * Fleet size: active fleet cap = 2 + Fleet Command level, max 5.
-//     Migration 071 granted the skill retroactively to anyone already
+//   * Fleet size: active fleet cap = 2 + Fleet Command level (max 5 from
+//     that ladder) + 1 at Fleet Discipline V, hard max 6 (2026-10-05).
+//     Migration 071 granted Fleet Command retroactively to anyone already
 //     flying more than 2 ships.
 //
 // The GATE_CONFIG object is sent to the client in GET /api/skills so
@@ -17,9 +18,22 @@
 // table the server enforces. Edit here, nowhere else.
 
 export const FLEET_COMMAND_SKILL = 'cmd_fleet_command';
+export const FLEET_DISCIPLINE_SKILL = 'cmd_fleet_disc';
+export const FLEET_DISCIPLINE_LEVEL = 5;          // the level that grants the sixth ship
 export const BASE_FLEET_CAP = 2;
-export const MAX_FLEET_CAP = 5;
-export const fleetCapForLevel = (level) => Math.min(MAX_FLEET_CAP, BASE_FLEET_CAP + (level || 0));
+export const COMMAND_FLEET_CAP = 5;               // ceiling of the Fleet Command ladder alone
+export const MAX_FLEET_CAP = 6;                   // mirrors client MAX_FLEET_SIZE (shipRenderer.js)
+export const fleetCapForLevel = (level, disciplineLevel = 0) => {
+  const fromCommand = Math.min(COMMAND_FLEET_CAP, BASE_FLEET_CAP + (level || 0));
+  const bonus = (disciplineLevel || 0) >= FLEET_DISCIPLINE_LEVEL ? 1 : 0;
+  return Math.min(MAX_FLEET_CAP, fromCommand + bonus);
+};
+// What to train next for a bigger fleet, or '' at the hard max.
+export const fleetCapHint = (level, disciplineLevel = 0) => {
+  if ((level || 0) < COMMAND_FLEET_CAP - BASE_FLEET_CAP) return 'train Fleet Command (Spaceship Command) for +1 ship per level';
+  if ((disciplineLevel || 0) < FLEET_DISCIPLINE_LEVEL) return 'train Fleet Discipline (Spaceship Command) to V for a sixth ship';
+  return '';
+};
 
 // Slot family → sub-family → gating skill id. Required level = tier - 1.
 export const MODULE_GATES = {
@@ -50,7 +64,10 @@ export const HULL_GATES = {
 export const GATE_CONFIG = {
   module_gates: MODULE_GATES,
   hull_gates: HULL_GATES,
-  fleet: { skill: FLEET_COMMAND_SKILL, base_cap: BASE_FLEET_CAP, max_cap: MAX_FLEET_CAP },
+  fleet: {
+    skill: FLEET_COMMAND_SKILL, base_cap: BASE_FLEET_CAP, command_cap: COMMAND_FLEET_CAP, max_cap: MAX_FLEET_CAP,
+    bonus_skill: FLEET_DISCIPLINE_SKILL, bonus_level: FLEET_DISCIPLINE_LEVEL,
+  },
 };
 
 const guessDamageType = (id) => {
@@ -114,7 +131,13 @@ export async function assertGate(db, userId, gate, what) {
   );
 }
 
+export async function getFleetCapInfo(db, userId) {
+  const { levels } = await getSkillLevels(db, userId, [FLEET_COMMAND_SKILL, FLEET_DISCIPLINE_SKILL]);
+  const cmd = levels[FLEET_COMMAND_SKILL] || 0;
+  const disc = levels[FLEET_DISCIPLINE_SKILL] || 0;
+  return { cap: fleetCapForLevel(cmd, disc), hint: fleetCapHint(cmd, disc) };
+}
+
 export async function getFleetCap(db, userId) {
-  const { levels } = await getSkillLevels(db, userId, [FLEET_COMMAND_SKILL]);
-  return fleetCapForLevel(levels[FLEET_COMMAND_SKILL] || 0);
+  return (await getFleetCapInfo(db, userId)).cap;
 }

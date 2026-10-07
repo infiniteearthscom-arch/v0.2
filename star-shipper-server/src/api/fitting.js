@@ -7,7 +7,7 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
-import { moduleGateFor, hullGateFor, assertGate, getFleetCap, MAX_FLEET_CAP } from '../game/fitGates.js';
+import { moduleGateFor, hullGateFor, assertGate, getFleetCap, getFleetCapInfo, MAX_FLEET_CAP } from '../game/fitGates.js';
 import { modulesFromFitted, ejectResources, ejectItems, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
 
@@ -218,14 +218,14 @@ router.post('/buy-hull', authMiddleware, async (req, res) => {
       );
       const activeCount = activeCountRow.rows[0]?.c || 0;
       // Phase 3: hull class gate (Spaceship Command skills) + skill-driven
-      // fleet cap (2 + Fleet Command level, max 5). Hulls already owned
-      // are grandfathered -- only purchase is checked.
+      // fleet cap (2 + Fleet Command level, +1 at Fleet Discipline V, max 6).
+      // Hulls already owned are grandfathered -- only purchase is checked.
       await assertGate(client, userId, hullGateFor(hull_type_id), hullType.name);
-      const fleetCap = await getFleetCap(client, userId);
+      const { cap: fleetCap, hint: capHint } = await getFleetCapInfo(client, userId);
       const willStore = activeCount >= fleetCap;
       if (willStore && !dock_body_id) {
         throw Object.assign(
-          new Error(`Fleet full (${activeCount}/${fleetCap}). Dock at a station to receive new ships${fleetCap < MAX_FLEET_CAP ? ', or train Fleet Command for a bigger fleet' : ''}.`),
+          new Error(`Fleet full (${activeCount}/${fleetCap}). Dock at a station to receive new ships${capHint ? ', or ' + capHint : ''}.`),
           { statusCode: 400 }
         );
       }
@@ -843,7 +843,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
 
     let activeShipId = ships.find(s => s.is_active)?.id || null;
     let activeFleetCount = ships.filter(s => s.storage_body_id == null).length;
-    const fleetCap = await getFleetCap({ query }, userId);
+    const { cap: fleetCap, hint: fleetCapHint } = await getFleetCapInfo({ query }, userId);
 
     // Self-heal (2026-09-21): the flagship must be in space. Accounts
     // from before /set-active-ship refused stored ships could have
@@ -873,7 +873,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
     // Repair panel shows the same cost the server will charge.
     const dmg = await queryOne(`SELECT fleet_hull_pct, fleet_armor_pct FROM users WHERE id = $1`, [userId]);
     res.json({
-      ships, activeShipId, activeFleetCount, fleetCap, fleetCapMax: MAX_FLEET_CAP,
+      ships, activeShipId, activeFleetCount, fleetCap, fleetCapMax: MAX_FLEET_CAP, fleetCapHint,
       fleetHullPct: dmg ? Number(dmg.fleet_hull_pct) : 1,
       fleetArmorPct: dmg ? Number(dmg.fleet_armor_pct) : 1,
       repairRates: REPAIR_RATES,
@@ -1024,10 +1024,10 @@ router.post('/activate-ship', authMiddleware, async (req, res) => {
         [userId]
       );
       const activeCount = countRow.rows[0]?.c || 0;
-      const fleetCap = await getFleetCap(client, userId);
+      const { cap: fleetCap, hint: capHint } = await getFleetCapInfo(client, userId);
       if (activeCount >= fleetCap) {
         throw Object.assign(
-          new Error(`Fleet full (${activeCount}/${fleetCap}). Store another ship first${fleetCap < MAX_FLEET_CAP ? ', or train Fleet Command for a bigger fleet' : ''}.`),
+          new Error(`Fleet full (${activeCount}/${fleetCap}). Store another ship first${capHint ? ', or ' + capHint : ''}.`),
           { statusCode: 400 }
         );
       }

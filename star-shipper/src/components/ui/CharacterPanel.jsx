@@ -4,6 +4,7 @@
 // still a placeholder pending the faction-standing system.
 
 import React, { useEffect, useState } from 'react';
+import { MAX_FLEET_SIZE } from '@/utils/shipRenderer';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -99,10 +100,8 @@ const TeaserRow = ({ icon, label, detail }) => (
   </div>
 );
 
-// Active flying fleet cap. Matches GameFrame's MAX_FLEET; if either
-// constant moves, update both. (Kept inline here rather than imported
-// because GameFrame doesn't currently export it.)
-const MAX_FLEET = 5;
+// Hard fleet max, shared with GameFrame + SystemView via shipRenderer.
+const MAX_FLEET = MAX_FLEET_SIZE;
 
 export const CharacterPanel = () => {
   const { user } = useAuthStore();

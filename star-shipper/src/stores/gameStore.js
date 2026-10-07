@@ -512,7 +512,10 @@ export const useGameStore = create(
               const bonuses = {};
               for (const s of (skillsData.skills || [])) {
                 if (!s.level || !s.bonus_per_level?.type || typeof s.bonus_per_level.value !== 'number') continue;
-                bonuses[s.bonus_per_level.type] = (bonuses[s.bonus_per_level.type] || 0) + s.bonus_per_level.value * s.level;
+                const b = s.bonus_per_level;
+                // at_level = threshold bonus granted once at that level (Fleet Discipline V), not per level.
+                const amount = b.at_level ? (s.level >= b.at_level ? b.value : 0) : b.value * s.level;
+                bonuses[b.type] = (bonuses[b.type] || 0) + amount;
               }
               state.activeBonuses = bonuses;
             }

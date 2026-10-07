@@ -469,6 +469,7 @@ export const FORMATION_OFFSETS = [
   { x: 25, y: 30 },      // Right wing
   { x: -50, y: 60 },     // Outer left -- extends the V back
   { x: 50, y: 60 },      // Outer right
+  { x: 0, y: 75 },       // Tail -- center of the V (sixth ship, Fleet Discipline V)
 ];
 
-export const MAX_FLEET_SIZE = 5;
+export const MAX_FLEET_SIZE = 6; // mirrors server MAX_FLEET_CAP (fitGates.js); the live cap is skill-driven

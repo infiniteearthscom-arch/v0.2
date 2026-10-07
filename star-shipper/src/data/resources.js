@@ -330,7 +330,7 @@ export const CATEGORY_INFO = {
 export const RARITY_INFO = {
   [RESOURCE_RARITY.COMMON]: {
     name: 'Common',
-    color: '#ffffff',
+    color: '#d8dee6',
     priceMultiplier: 1,
   },
   [RESOURCE_RARITY.RARE]: {

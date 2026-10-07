@@ -3,6 +3,7 @@
 // The game views (SystemView/GalaxyFlightView) render as children in the full-screen area
 
 import React, { useEffect, useState } from 'react';
+import { MAX_FLEET_SIZE } from '@/utils/shipRenderer';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI, contractsAPI } from '@/utils/api';
@@ -162,10 +163,10 @@ const TopBar = () => {
   const settingsOpen = useGameStore(state => state.windows.settings?.open);
   const toggleWindow = useGameStore(state => state.toggleWindow);
 
-  // Matches MAX_FLEET_SIZE in shipRenderer.js (the in-system formation
-  // cap). Was stuck at 3 here while SystemView already rendered 5 -- so
-  // the top-bar indicator under-counted the visible flying fleet.
-  const MAX_FLEET = 5;
+  // Hard fleet max (shipRenderer.js MAX_FLEET_SIZE, mirrors server
+  // MAX_FLEET_CAP). A local copy once drifted to 3 while SystemView
+  // rendered 5, so the top bar under-counted the flying fleet.
+  const MAX_FLEET = MAX_FLEET_SIZE;
   // Top-bar HUD shows the *active* (flying) fleet, not stored ships.
   const fleetSize = (ships || []).filter(s => s.storage_body_id == null).length;
 

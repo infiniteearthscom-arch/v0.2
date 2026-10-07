@@ -237,6 +237,7 @@ export const FleetWindow = () => {
   const [activeShipId, setActiveShipId] = useState(null);
   const [activeFleetCount, setActiveFleetCount] = useState(0);
   const [fleetCap, setFleetCap] = useState(MAX_FLEET_SIZE);
+  const [fleetCapHint, setFleetCapHint] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
@@ -256,6 +257,7 @@ export const FleetWindow = () => {
       setActiveShipId(data.activeShipId);
       setActiveFleetCount(data.activeFleetCount ?? (data.ships || []).filter(s => s.storage_body_id == null).length);
       setFleetCap(data.fleetCap ?? MAX_FLEET_SIZE);
+      setFleetCapHint(data.fleetCapHint || '');
     } catch (err) { console.error('Fleet load error:', err); }
     setLoading(false);
   };
@@ -397,7 +399,7 @@ export const FleetWindow = () => {
             lineHeight: 1.4,
             padding: '2px 10px',
           }}>
-            Fleet cap {fleetCap}/{MAX_FLEET_SIZE} — train <b>Fleet Command</b> (Spaceship Command) for +1 ship per level.
+            Fleet cap {fleetCap}/{MAX_FLEET_SIZE} — {fleetCapHint || 'train Fleet Command (Spaceship Command) for +1 ship per level'}.
           </div>
         )}
 

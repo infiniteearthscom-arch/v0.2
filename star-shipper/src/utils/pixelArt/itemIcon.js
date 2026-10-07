@@ -1,8 +1,10 @@
 // pixelArt/itemIcon.js -- procedural 32x32 item icons (v2, 2026-09-24).
 //
-// Composed, not drawn: a glyph for WHAT it is, tinted by rarity / slot,
-// shaded (light upper-left, dark lower-right, dither), outlined, framed
-// in the tier colour, with a quality gem. A per-item VARIANT (hash of
+// Composed, not drawn: a glyph for WHAT it is, tinted by the resource's
+// own swatch / the module's slot colour, shaded (light upper-left, dark
+// lower-right, dither), outlined, framed in the tier colour. Quality is
+// NOT on the icon (2026-10-06): the cargo tile's dot carries it, and the
+// tile's background / border carry rarity or tier (utils/itemColors.js). A per-item VARIANT (hash of
 // the item id) and the tier change the glyph's details, so two lasers
 // or two shields never look the same.
 
@@ -22,8 +24,6 @@ export const SLOT_COLORS = {
   reactor: '#00ddff', mining: '#aa66ff', base: '#4ade80', item: '#ffaa00',
 };
 export const RARITY_COLORS = { common: '#d8dee6', rare: '#4488ff', exotic: '#aa44ff' };
-const QUALITY_COLORS = [[20, '#666e78'], [40, '#b0bcc8'], [60, '#44ff44'], [80, '#4488ff'], [101, '#aa44ff']];
-const qualityColor = (q) => { for (const [max, c] of QUALITY_COLORS) if (q <= max) return c; return '#aa44ff'; };
 
 const FAMILY_TINT = { smelting: '#f0883e', gas: '#38bdf8', bio: '#4ade80', electronics: '#a78bfa', assembly: '#f5c542', service: '#94a3b8' };
 const BASE_BUILDING_GLYPH = [
@@ -31,10 +31,10 @@ const BASE_BUILDING_GLYPH = [
   [/bioreactor|kiln|incubator|resin/, 'vat', 'bio'], [/printer|etcher|lathe|capacitor/, 'chip', 'electronics'],
   [/workbench|machine_shop|fabricator|assembler|quantum_forge/, 'bench', 'assembly'], [/repair_shop/, 'wrench', 'service'],
 ];
-export function classify({ kind, slotType, damageType, itemId = '', category, rarity, family, isPart }) {
+export function classify({ kind, slotType, damageType, itemId = '', category, rarity, family, isPart, color }) {
   const id = String(itemId);
   if (kind === 'resource' && category === 'processed') return { glyph: isPart ? 'part' : 'ingot', tint: FAMILY_TINT[family] || '#94a3b8' };
-  if (kind === 'resource') return { glyph: category || 'ore', tint: RARITY_COLORS[rarity] || RARITY_COLORS.common };
+  if (kind === 'resource') return { glyph: category || 'ore', tint: color || RARITY_COLORS[rarity] || RARITY_COLORS.common };
   if (/^base_/.test(id)) { for (const [re, glyph, fam] of BASE_BUILDING_GLYPH) if (re.test(id)) return { glyph, tint: FAMILY_TINT[fam] }; }
   if (/sealed_cargo/.test(id)) return { glyph: 'crate_locked', tint: '#4ade80' };
   if (/fuel_cell/.test(id)) return { glyph: 'battery', tint: '#ffaa00' };
@@ -185,10 +185,10 @@ function drawGlyph(R, glyph, tint, variant, tier) {
 
 // { kind: 'module'|'item'|'resource', slotType, damageType, itemId, category, rarity, tier, quality }
 export function getItemIcon(spec) {
-  const { tier = null, quality = null, itemId = '' } = spec;
+  const { tier = null, itemId = '' } = spec;
   const { glyph, tint } = classify(spec);
   const variant = (hashStr(String(itemId || glyph)) + (Number(tier) || 0)) % 3; // tier folded in so a family's tiers differ too
-  const key = `v2|${glyph}|${tint}|${variant}|${tier}|${quality == null ? '' : Math.round(quality / 5) * 5}`;
+  const key = `v3|${glyph}|${tint}|${variant}|${tier}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const R = makeRaster();
@@ -210,7 +210,6 @@ export function getItemIcon(spec) {
         for (const [x, y] of [[0, 0], [PX - 1, 0], [0, PX - 1], [PX - 1, PX - 1]]) { const dx = x === 0 ? 1 : -1, dy = y === 0 ? 1 : -1; for (let i = 0; i < 4; i++) { put(0, x + dx * i, y, frame); put(0, x, y + dy * i, frame); } }
       }
       for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) if (out[y][x]) put(0, x, y, out[y][x]);
-      if (quality != null) { const q = hex(qualityColor(quality)); for (let y = 26; y <= 29; y++) for (let x = 26; x <= 29; x++) put(0, x, y, (x === 26 || y === 26) ? shade(q, 1.3) : (x === 29 || y === 29) ? shade(q, 0.6) : q); for (let i = 25; i <= 30; i++) { put(0, i, 25, [8, 12, 18]); put(0, 25, i, [8, 12, 18]); } }
     },
   });
   cache.set(key, sheet);

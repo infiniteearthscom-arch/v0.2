@@ -6,6 +6,7 @@ import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { RESOURCE_TYPES, getQualityTier, QUALITY_TIER_COLORS } from '@/data/resources';
+import { resourceTileColors } from '@/utils/itemColors';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { resourcesAPI, basesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar, glow } from '@/components/ui/panelStyles';
@@ -603,7 +604,6 @@ Object.values(RESOURCE_TYPES).forEach(r => {
   CARGO_RESOURCE_ICONS[r.id] = { abbr, color: r.color, name: r.name };
 });
 
-const CARGO_TIER_BORDER = QUALITY_TIER_COLORS; // shared palette (data/resources.js)
 
 // Single cargo tile -- visual code lifted from InventoryWindow's
 // stack render so the two views are pixel-identical. `matchesRecipe`
@@ -611,16 +611,12 @@ const CARGO_TIER_BORDER = QUALITY_TIER_COLORS; // shared palette (data/resources
 // selected recipe wants, so the player can scan their cargo and see
 // at a glance which stacks are useful right now.
 const CargoStackTile = ({ stack, matchesRecipe, onClick, onHoverEnter, onHoverLeave }) => {
-  const tier = getQualityTier(
-    stack.stats.purity, stack.stats.stability,
-    stack.stats.potency, stack.stats.density
-  );
-  const iconInfo = CARGO_RESOURCE_ICONS[stack.resource_type_id];
-  const borderColor = CARGO_TIER_BORDER[tier.name] || '#444';
-  const iconContent = iconInfo?.abbr;
-  const iconBg = (iconInfo?.color || '#888') + '33';
-  const iconColor = iconInfo?.color || '#888';
-  const qualityDot = tier.color;
+  // Rarity paints the tile, quality is the dot (utils/itemColors.js, 2026-10-06).
+  const tc = resourceTileColors(stack);
+  const borderColor = tc.border;
+  const iconBg = tc.accent + '22';
+  const iconColor = tc.accent;
+  const qualityDot = tc.dot;
 
   return (
     <div

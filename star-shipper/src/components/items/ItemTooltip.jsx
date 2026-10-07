@@ -25,6 +25,15 @@
 
 import React from 'react';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { rarityColor } from '@/utils/itemColors';
+
+// Name colour = "rarity" (owner rule 2026-10-06): tier colour for modules,
+// rarity colour for resources, default for ungraded items.
+const titleColorFor = (item) => {
+  if (item?.kind === 'module' && item.tier) return tierColor(item.tier);
+  if (item?.kind === 'resource') return rarityColor(item.raw?.rarity);
+  return '#e2e8f0';
+};
 import { useGameStore } from '@/stores/gameStore';
 import { moduleGateForModule, gateStatus } from '@/utils/fitGates';
 import { PixelItemIcon, resourceIconSpec, moduleIconSpec } from '@/components/pixel/PixelArt';
@@ -37,7 +46,7 @@ import { PixelItemIcon, resourceIconSpec, moduleIconSpec } from '@/components/pi
 //   title: main heading text
 //   subtitle: small text under the title (optional)
 //   children: body content
-export const TooltipShell = ({ accent = '#60a5fa', title, subtitle, children }) => (
+export const TooltipShell = ({ accent = '#60a5fa', titleColor = '#e2e8f0', title, subtitle, children }) => (
   <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
     {/* Header with accent bar */}
     {(title || subtitle) && (
@@ -45,7 +54,7 @@ export const TooltipShell = ({ accent = '#60a5fa', title, subtitle, children }) 
         <div style={{ width: 3, alignSelf: 'stretch', background: accent, borderRadius: 2, minHeight: 20, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           {title && (
-            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#e2e8f0', lineHeight: 1.2 }}>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: titleColor, lineHeight: 1.2 }}>
               {title}
             </div>
           )}
@@ -104,7 +113,7 @@ export const ItemTooltipContent = ({ item }) => {
   const hasQuality = quality && avgQ != null;
 
   return (
-    <TooltipShell accent={color} title={name} subtitle={subtitle}>
+    <TooltipShell accent={color} titleColor={titleColorFor(item)} title={name} subtitle={subtitle}>
       {/* Icon + quick chips row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{

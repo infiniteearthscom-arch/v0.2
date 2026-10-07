@@ -431,13 +431,13 @@ export function attachPresence(io) {
       peer.vy = typeof vy === 'number' ? vy : 0;
       peer.rot = typeof rot === 'number' ? rot : 0;
       peer.ts = now;
-      // Wingmen: denormalized fleet array. Cap at 4 (MAX_FLEET_SIZE-1)
+      // Wingmen: denormalized fleet array. Cap at 5 (MAX_FLEET_SIZE-1)
       // so a malicious client can't pump up the broadcast size. Each
       // entry validated independently -- bad entries skipped, valid
       // ones kept.
       if (Array.isArray(fleet)) {
         const cleaned = [];
-        for (const f of fleet.slice(0, 4)) {
+        for (const f of fleet.slice(0, 5)) {
           if (!f || typeof f.x !== 'number' || typeof f.y !== 'number') continue;
           cleaned.push({
             x: f.x, y: f.y,
@@ -450,7 +450,7 @@ export function attachPresence(io) {
       // Mining beams (2026-09-25): [{ i: -1 flagship | wingman index, a: asteroidId }], capped.
       if (Array.isArray(mining)) {
         peer.mining = mining.slice(0, 8)
-          .filter(m => m && typeof m.a === 'string' && Number.isInteger(m.i) && m.i >= -1 && m.i < 4)
+          .filter(m => m && typeof m.a === 'string' && Number.isInteger(m.i) && m.i >= -1 && m.i < 5)
           .map(m => ({ i: m.i, a: m.a.slice(0, 64) }));
       } else if (mining === null) peer.mining = [];
 

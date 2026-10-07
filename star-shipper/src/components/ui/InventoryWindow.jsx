@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { getQualityTier, CATEGORY_INFO, RARITY_INFO, RESOURCE_TYPES, QUALITY_TIER_COLORS } from '@/data/resources';
+import { stackTileColors } from '@/utils/itemColors';
 import { resourcesAPI } from '@/utils/api';
 import { COLORS, FONT, SectionHead, PanelButton, MessageBar } from '@/components/ui/panelStyles';
 import { normalizeItem } from '@/utils/itemShape';
@@ -82,10 +83,6 @@ Object.values(RESOURCE_TYPES).forEach(r => {
   RESOURCE_ICONS[r.id] = { abbr, color: r.color, name: r.name };
 });
 
-// One palette everywhere (data/resources.js QUALITY_TIERS) -- this used
-// to be a hand copy with different greys, so cargo tiles and scan cards
-// disagreed on Standard / Impure.
-const TIER_BORDER = QUALITY_TIER_COLORS;
 
 // Check if two stacks can merge
 const canMerge = (a, b) => {
@@ -502,47 +499,12 @@ export const InventoryWindow = () => {
                 if (stack) {
                   const isItem = stack.item_type === 'item';
                   
-                  let borderColor, iconContent, iconBg, iconColor, qualityDot;
-                  
-                  if (isItem) {
-                    borderColor = '#ffaa00';
-                    iconContent = stack.item_icon || '📦';
-                    iconBg = '#ffaa0022';
-                    iconColor = '#ffaa00';
-                    qualityDot = null;
-                    
-                    // Module items — use slot type color
-                    const SLOT_TYPE_COLORS = {
-                      engine: '#ff6622', weapon: '#ff2244', shield: '#8844ff',
-                      cargo: '#ddaa22', utility: '#22ccaa', reactor: '#00ddff', mining: '#aa66ff',
-                    };
-                    const slotType = stack.item_data?.slot_type;
-                    if (slotType && SLOT_TYPE_COLORS[slotType]) {
-                      borderColor = SLOT_TYPE_COLORS[slotType];
-                      iconBg = SLOT_TYPE_COLORS[slotType] + '22';
-                      iconColor = SLOT_TYPE_COLORS[slotType];
-                    }
-                    
-                    // Quality-based border brightness for crafted items with quality data
-                    if (stack.item_data?.quality) {
-                      const q = stack.item_data.quality;
-                      const avg = (q.purity + q.stability + q.potency + q.density) / 4;
-                      if (avg >= 80) qualityDot = '#aa44ff';
-                      else if (avg >= 60) qualityDot = '#4488ff';
-                      else if (avg >= 40) qualityDot = '#44ff44';
-                    }
-                  } else {
-                    const tier = getQualityTier(
-                      stack.stats.purity, stack.stats.stability,
-                      stack.stats.potency, stack.stats.density
-                    );
-                    const iconInfo = RESOURCE_ICONS[stack.resource_type_id];
-                    borderColor = TIER_BORDER[tier.name] || '#444';
-                    iconContent = iconInfo?.abbr;
-                    iconBg = (iconInfo?.color || '#94a3b8') + '33';
-                    iconColor = iconInfo?.color || '#94a3b8';
-                    qualityDot = tier.color;
-                  }
+                  // One colour rule for every tile (utils/itemColors.js, 2026-10-06):
+                  // background + border = rarity (resources) / tier + slot (modules);
+                  // the dot is quality; the glyph is what tells items apart.
+                  const tc = stackTileColors(stack);
+                  const borderColor = tc.border, iconColor = tc.accent, qualityDot = tc.dot;
+                  const iconBg = tc.accent + '22';
 
                   return (
                     <div
@@ -577,16 +539,14 @@ export const InventoryWindow = () => {
                         height: SLOT_SIZE,
                         border: `2px solid ${borderColor}`,
                         borderRadius: 4,
-                        background: isItem
-                          ? `linear-gradient(135deg, ${borderColor}15 0%, ${borderColor}08 100%)`
-                          : `linear-gradient(135deg, ${iconColor}15 0%, ${iconColor}08 100%)`,
-                        boxShadow: isItem ? `inset 0 0 8px ${borderColor}11` : `inset 0 0 8px ${iconColor}11`,
+                        background: `linear-gradient(135deg, ${iconColor}15 0%, ${iconColor}08 100%)`,
+                        boxShadow: `inset 0 0 8px ${iconColor}11`,
                         ...overrideStyle,
                       }}
                     >
                       {/* Procedural pixel icon (2026-09-24): every module /
-                          resource gets its own glyph, tier frame, quality gem. */}
-                      <div className="absolute inset-1 rounded flex items-center justify-center" style={{ backgroundColor: isItem ? 'rgba(4,8,16,0.35)' : iconBg }}>
+                          resource gets its own glyph + tier frame. */}
+                      <div className="absolute inset-1 rounded flex items-center justify-center" style={{ backgroundColor: iconBg }}>
                         <PixelItemIcon size={SLOT_SIZE - 12} spec={isItem
                           ? moduleIconSpec({ itemId: stack.item_id, slotType: stack.item_data?.slot_type, tier: stack.item_data?.tier, damageType: stack.item_data?.base_stats?.damage_type,
                               avgQuality: stack.item_data?.quality ? ((stack.item_data.quality.purity || 50) + (stack.item_data.quality.stability || 50) + (stack.item_data.quality.potency || 50) + (stack.item_data.quality.density || 50)) / 4 : null })

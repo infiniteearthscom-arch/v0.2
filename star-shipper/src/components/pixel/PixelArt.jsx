@@ -22,7 +22,7 @@ export const Portrait = ({ seed, role = 'vendor', size = 64, style, title }) => 
 const DYNAMIC_RESOURCES = new Map(); // id -> { id, name, category, rarity, family, is_part, tier }
 export const registerResourceTypes = (list) => { for (const r of list || []) if (r?.id != null) DYNAMIC_RESOURCES.set(Number(r.id), r); };
 const specOf = (r, avgQuality) => ({
-  kind: 'resource', category: r?.category || 'ore', rarity: r?.rarity || 'common', quality: avgQuality ?? null,
+  kind: 'resource', category: r?.category || 'ore', rarity: r?.rarity || 'common', quality: avgQuality ?? null, color: r?.color || null,
   family: r?.family || null, isPart: !!r?.is_part, tier: r?.category === 'processed' ? (r?.tier || null) : null, itemId: r?.name || '',
 });
 // Build a resource icon spec from a resource_type_id (category / rarity
