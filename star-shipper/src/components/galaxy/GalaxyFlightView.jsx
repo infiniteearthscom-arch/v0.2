@@ -9,6 +9,8 @@ import { useGameStore, useActiveShip } from '@/stores/gameStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
 import { generateGalaxy, FACTIONS as GALAXY_FACTIONS, STAR_DISPLAY } from '@/utils/galaxyGenerator';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { computeTerritory, FACTION_LABEL, NEST_LABEL } from '@/utils/factions';
+import { FACTIONS as SHIP_FACTIONS, factionKey } from '@/utils/shipRenderer';
 import { fleetWarpProfile, freeWarpCheck, warpBlockText } from '@/utils/warp';
 
 // ============================================
@@ -102,6 +104,7 @@ export const GalaxyFlightView = () => {
 
   // Galaxy data
   const galaxy = useMemo(() => getGalaxy(), []);
+  const territory = useMemo(() => computeTerritory(galaxy), [galaxy]);
   const systems = galaxy.systems;
 
   // Phase 3b warp-range gating. The free-warp ring is centred on the
@@ -835,6 +838,16 @@ export const GalaxyFlightView = () => {
                     {hoveredSystem.regionName} · Tier {tierLabel(hoveredSystem.regionTier)}
                   </div>
                 )}
+                {discoveredSystems.includes(hoveredSystem.id) && (() => {
+                  const fac = territory.systemFaction.get(hoveredSystem.id) || 'reavers';
+                  const sf = SHIP_FACTIONS[factionKey(fac)] || SHIP_FACTIONS.pirate;
+                  const nest = Object.entries(territory.nests).find(([, id]) => id === hoveredSystem.regionId)?.[0] || null;
+                  return (
+                    <div className="text-[0.8rem]" style={{ color: sf.color }}>
+                      Threat: {FACTION_LABEL[fac] || sf.name}{nest ? ` · ${NEST_LABEL[nest]}` : ''}{sf.weakTo ? <span className="text-slate-500"> · bring {sf.weakTo}</span> : null}
+                    </div>
+                  );
+                })()}
                 <div className="text-[0.8rem] text-slate-500">
                   Danger: {'★'.repeat(hoveredSystem.dangerLevel)}{'☆'.repeat(5 - hoveredSystem.dangerLevel)}
                 </div>

@@ -88,8 +88,11 @@ async function main() {
   report('weapons carry explicit damage_type (067)', dtCount.rows[0].n >= 8, `${dtCount.rows[0].n} modules typed`);
 
   // --- migration 068 effects (Phase 1 rebalance) ---
-  const t4 = await pool.query(`SELECT MIN(rp_cost)::int AS c FROM tech_definitions WHERE tier = 4`);
-  report('T4 tech costs 15000 RP (068)', t4.rows[0]?.c === 15000, `min=${t4.rows[0]?.c}`);
+  // 068 repriced every T4 node that existed then to 15000. Later T4 nodes
+  // (088 foundry tiers, citadel; 092 automation) are priced on their own
+  // ladders, so only the 068-era nodes are asserted.
+  const t4 = await pool.query(`SELECT MIN(rp_cost)::int AS c FROM tech_definitions WHERE tier = 4 AND id NOT IN ('tech_foundry_4','tech_foundry_5','tech_base_citadel','tech_auto_survey','tech_auto_mining')`);
+  report('068-era T4 tech costs 15000 RP (068)', t4.rows[0]?.c === 15000, `min=${t4.rows[0]?.c}`);
   // Column may not exist at all if 068 never ran (seen 2026-09-17) —
   // a missing column must be a ❌ row, not a verifier crash.
   if (await columnExists('tech_definitions', 'material_cost')) {
@@ -190,7 +193,8 @@ async function main() {
   const fm = await pool.query(`SELECT COUNT(*)::int AS n FROM resource_types WHERE category = 'processed'`);
   report('36 processed materials (088)', fm.rows[0]?.n === 36, `found ${fm.rows[0]?.n}`);
   const fs2 = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE slot_type = 'base' AND stats ? 'foundry' AND stats->'foundry' <> 'null'::jsonb`);
-  report('23 foundry stations (088)', fs2.rows[0]?.n === 23, `found ${fs2.rows[0]?.n}`);
+  // 23 from 088 + the Fuel Refinery (090) = 24; later station migrations add more.
+  report('foundry stations (088 + 090, ≥24)', fs2.rows[0]?.n >= 24, `found ${fs2.rows[0]?.n}`);
   const bench = await pool.query(`SELECT COUNT(*)::int AS n FROM crafting_recipes cr JOIN module_types mt ON mt.id = cr.output_item_id WHERE mt.tier >= 2 AND mt.slot_type <> 'base' AND cr.station_required IS NULL`);
   report('every T2+ ship-module recipe names a bench (088)', bench.rows[0]?.n === 0, `${bench.rows[0]?.n} without`);
   const orphanJobs = await pool.query(`SELECT COUNT(*)::int AS n FROM foundry_recipes fr LEFT JOIN module_types mt ON mt.id = fr.station_module_id WHERE mt.id IS NULL`);
@@ -222,7 +226,8 @@ async function main() {
   // --- migration 082 (player bases) ---
   report('player_bases table (082)', await tableExists('player_bases'));
   const baseMods = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types mt JOIN item_definitions i ON i.id = mt.id WHERE mt.slot_type = 'base'`);
-  report('base modules + item twins (082)', baseMods.rows[0].n === 3, `${baseMods.rows[0].n}/3`);
+  // 082 seeded 3; 088 (24 stations) and 090 (fuel refinery) added more, all with twins.
+  report('base modules + item twins (082, ≥3)', baseMods.rows[0].n >= 3, `${baseMods.rows[0].n}`);
 
   // --- migration 081 (refining) ---
   const refTech = await pool.query(`SELECT COUNT(*)::int AS n FROM tech_definitions WHERE id IN ('tech_refining','tech_deep_refining')`);

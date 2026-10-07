@@ -8,6 +8,8 @@ import { ModalOverlay } from '@/components/ui/ModalOverlay';
 import { useGameStore } from '@/stores/gameStore';
 import { generateGalaxy, FACTIONS } from '@/utils/galaxyGenerator';
 import { tierColor, tierLabel } from '@/utils/tiers';
+import { computeTerritory, FACTION_LABEL, NEST_LABEL } from '@/utils/factions';
+import { FACTIONS as SHIP_FACTIONS, factionKey } from '@/utils/shipRenderer';
 import { fleetWarpProfile, warpCheck, freeWarpCheck, warpBlockText } from '@/utils/warp';
 import { findRoute, routeSummary } from '@/utils/routePlanner';
 import presence from '@/utils/presence';
@@ -66,6 +68,10 @@ export const GalaxyMapWindow = () => {
   const closeWindow = useGameStore(state => state.closeWindow);
 
   const galaxy = useMemo(() => getGalaxy(), []);
+  // Enemy faction territory (docs/enemy-factions-spec.md §3) -- the same
+  // deterministic rule the server spawns from; fog-gated like region names.
+  const territory = useMemo(() => computeTerritory(galaxy), [galaxy]);
+  const nestOf = (regionId) => Object.entries(territory.nests).find(([, id]) => id === regionId)?.[0] || null;
   const systems = galaxy.systems;
 
   // Phase 3b warp-range gating: fleet profile (weakest drive + Jump
@@ -275,11 +281,14 @@ export const GalaxyMapWindow = () => {
           >
             {reg.name.toUpperCase()}
             <tspan fontSize={16 * uiScale} opacity={0.8}> · {tierLabel(reg.tier)}</tspan>
+            {nestOf(reg.id) && (
+              <tspan fontSize={14 * uiScale} opacity={0.9} fill={SHIP_FACTIONS[nestOf(reg.id)]?.color || '#fff'}> · {NEST_LABEL[nestOf(reg.id)].toUpperCase()}</tspan>
+            )}
           </text>
         );
       })}
     </g>
-  ), [galaxy.regions, discoveredSet, uiScale]);
+  ), [galaxy.regions, discoveredSet, uiScale, territory]);
 
   const connectionsLayer = useMemo(() => (
     <g>
@@ -794,6 +803,19 @@ export const GalaxyMapWindow = () => {
                         {selectedSys.regionName} · Tier {tierLabel(selectedSys.regionTier)}
                       </span>
                     </div>
+                    {(() => {
+                      const fac = territory.systemFaction.get(selectedSys.id) || 'reavers';
+                      const sf = SHIP_FACTIONS[factionKey(fac)] || SHIP_FACTIONS.pirate;
+                      const nest = nestOf(selectedSys.regionId);
+                      return (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Threat</span>
+                          <span style={{ color: sf.color }}>
+                            {FACTION_LABEL[fac] || sf.name}{nest ? ` · ${NEST_LABEL[nest]}` : ''}{sf.weakTo ? <span className="text-slate-500"> · bring {sf.weakTo}</span> : null}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <div className="flex justify-between">
                       <span className="text-slate-500">Danger</span>
                       <span className="text-yellow-400">
