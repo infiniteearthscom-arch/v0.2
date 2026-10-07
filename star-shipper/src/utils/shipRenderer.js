@@ -4,6 +4,20 @@
 //   'icon'   — clean silhouette for system view (renders at exact target pixel height)
 
 import { ALIEN_HULLS, getAlienShipIcon, getAlienShipImage } from './alienShipRenderer';
+import { getHumanShipIcon, getHumanShipImage, SHIP_VARIANTS } from './shipSprites';
+
+// Pixel sprites for player / Reaver hulls (2026-10-07). Set false to fall
+// back to the old canvas renderer for one deploy if a hull reads wrong.
+const PIXEL_SHIP_ART = true;
+// A ship's sprite variant: hashed from its own id, so it is random at
+// purchase and fixed for the hull's life (enemies: their manifest id;
+// peers: their user id). Same id -> same look everywhere.
+export const shipVariant = (id) => {
+  const s = String(id ?? '');
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % SHIP_VARIANTS;
+};
 
 const CELL = 20;
 const rgb = (r,g,b) => `rgb(${r},${g},${b})`;
@@ -441,10 +455,13 @@ const shipImageCache = new Map();
 const lookupHull = (hullId) => HULL_SHAPES[hullId] || PIRATE_HULLS[hullId] || ALIEN_HULLS[hullId] || null;
 
 /** Fleet window thumbnails */
-export const getShipImage = (hullId, scale = 0.3) => {
+export const getShipImage = (hullId, scale = 0.3, variant = 0) => {
   if (ALIEN_HULLS[hullId]) return getAlienShipImage(hullId, 2);
   const hull = lookupHull(hullId);
   if (!hull) return null;
+  // Pixel sprites: the old canvas was 20 px per cell x scale; the sprite is
+  // 5 px per cell, so an integer scale of round(4 x scale) matches the size.
+  if (PIXEL_SHIP_ART) return getHumanShipImage(hullId, hull, variant, Math.max(1, Math.round(4 * scale)));
   const cacheKey = `detail_${hullId}_${scale}`;
   if (shipImageCache.has(cacheKey)) return shipImageCache.get(cacheKey);
   const canvas = renderShipDetail(hull, scale);
@@ -454,10 +471,11 @@ export const getShipImage = (hullId, scale = 0.3) => {
 };
 
 /** System view tiny icons */
-export const getShipIcon = (hullId) => {
+export const getShipIcon = (hullId, variant = 0) => {
   if (ALIEN_HULLS[hullId]) return getAlienShipIcon(hullId);
   const hull = lookupHull(hullId);
   if (!hull) return null;
+  if (PIXEL_SHIP_ART) return getHumanShipIcon(hullId, hull, variant);
   const cacheKey = `icon_${hullId}`;
   if (shipImageCache.has(cacheKey)) return shipImageCache.get(cacheKey);
   const canvas = renderShipIcon(hull);

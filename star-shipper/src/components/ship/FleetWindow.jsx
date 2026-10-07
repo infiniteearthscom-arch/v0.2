@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { fittingAPI } from '@/utils/api';
 import { useGameStore } from '@/stores/gameStore';
-import { getShipImage, MAX_FLEET_SIZE } from '@/utils/shipRenderer';
+import { getShipImage, shipVariant, MAX_FLEET_SIZE } from '@/utils/shipRenderer';
 import { computeFleetStats } from '@/utils/fleetStats';
 import {
   COLORS, FONT, SectionHead, Pill, PanelButton, MessageBar, glow,
@@ -11,12 +11,13 @@ import {
 // ============================================
 // SHIP THUMBNAIL (uses shared renderer)
 // ============================================
-const ShipThumb = ({ hullId, size = 48 }) => {
-  const img = useMemo(() => getShipImage(hullId, size / 200), [hullId, size]);
+const ShipThumb = ({ hullId, shipId, size = 48 }) => {
+  const img = useMemo(() => getShipImage(hullId, size / 200, shipVariant(shipId)), [hullId, size, shipId]);
   if (!img) return null;
+  // Contain, don't stretch: sprites are taller than wide.
   return (
-    <img src={img.dataUrl} width={size} height={size}
-      style={{ imageRendering: 'pixelated', display: 'block' }} />
+    <img src={img.dataUrl}
+      style={{ imageRendering: 'pixelated', display: 'block', width: size, height: size, objectFit: 'contain' }} />
   );
 };
 
@@ -81,7 +82,7 @@ const ShipCard = ({
           borderRadius: 2,
           filter: isStored ? 'grayscale(0.5)' : 'none',
         }}>
-          <ShipThumb hullId={ship.hull_type_id} size={48} />
+          <ShipThumb hullId={ship.hull_type_id} shipId={ship.id} size={48} />
         </div>
 
         {/* Info */}

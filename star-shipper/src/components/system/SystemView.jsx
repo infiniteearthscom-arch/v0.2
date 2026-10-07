@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 // DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, FACTIONS as SHIP_FACTIONS } from '@/utils/shipRenderer';
+import { getShipIcon, shipVariant, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, FACTIONS as SHIP_FACTIONS } from '@/utils/shipRenderer';
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText, alignTimeSeconds, ALIGN_HIT_PENALTY, ALIGN_PENALTY_CAP } from '@/utils/warp';
 import { autoJumpEnabled } from '@/components/galaxy/GateWindow';
@@ -1620,7 +1620,7 @@ export const SystemView = () => {
     return sorted.map((ship, i) => {
       const hullId = ship.hull_type_id;
       const isActive = ship.id === playerShip?.id;
-      const icon = getShipIcon(hullId);
+      const icon = getShipIcon(hullId, shipVariant(ship.id));
       const hullData = HULL_SHAPES[hullId];
       const weapons = getShipWeapons(ship);
       return {
@@ -5174,7 +5174,7 @@ export const SystemView = () => {
                 if (!r) continue;
                 const px = r.x, py = r.y, rot = r.rot;
                 const hullId = p.ship_visual?.hull_type_id;
-                const icon = hullId ? getShipIcon(hullId) : null;
+                const icon = hullId ? getShipIcon(hullId, shipVariant(p.userId)) : null;
                 out.push({ userId, p, px, py, rot, icon, fleet: r.fleet });
               }
               return out.map(({ userId, p, px, py, rot, icon, fleet }) => {
@@ -5188,7 +5188,7 @@ export const SystemView = () => {
                 // Dimmer glow than the flagship so the player can
                 // still tell which ship is "the peer" at a glance.
                 const wingmen = (fleet || []).map((w, idx) => {
-                  const wIcon = w.hull_type_id ? getShipIcon(w.hull_type_id) : null;
+                  const wIcon = w.hull_type_id ? getShipIcon(w.hull_type_id, shipVariant(`${p.userId}:${i}`)) : null;
                   const wiw = wIcon?.width ?? 20;
                   const wih = wIcon?.height ?? 20;
                   return (

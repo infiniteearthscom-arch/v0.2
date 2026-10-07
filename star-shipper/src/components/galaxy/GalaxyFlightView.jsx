@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 // DraggableWindow removed — GalaxyFlightView now renders full-screen
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
-import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
+import { getShipIcon, shipVariant, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
 import { generateGalaxy, FACTIONS as GALAXY_FACTIONS, STAR_DISPLAY } from '@/utils/galaxyGenerator';
 import { tierColor, tierLabel } from '@/utils/tiers';
 import { computeTerritory, FACTION_LABEL, NEST_LABEL } from '@/utils/factions';
@@ -207,7 +207,7 @@ export const GalaxyFlightView = () => {
       .sort((a, b) => (a.id === activeShipId ? -1 : b.id === activeShipId ? 1 : 0));
     return sorted.slice(0, MAX_FLEET_SIZE).map((ship, i) => {
       const hullId = ship.hull_type_id;
-      const icon = getShipIcon(hullId);
+      const icon = getShipIcon(hullId, shipVariant(ship.id));
       const hullData = HULL_SHAPES[hullId];
       return {
         id: ship.id,

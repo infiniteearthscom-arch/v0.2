@@ -15,7 +15,7 @@ import { describeWeaponEffectiveness } from '@/utils/combat';
 // drifted from shipRenderer.js -- the mining barges (Prospector,
 // Excavator, Leviathan) added in 041 rendered in-game but vanished in
 // the designer because they only existed in shipRenderer's copy.
-import { HULL_SHAPES } from '@/utils/shipRenderer';
+import { HULL_SHAPES, getShipImage, shipVariant } from '@/utils/shipRenderer';
 
 // ============================================
 // SEEDED RANDOM (for consistent ship details)
@@ -404,6 +404,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull, activeShi
   const row = (ship, isStored) => {
     const selected = selectedId === ship.id;
     const isFlag = ship.id === activeShipId;
+    const thumb = getShipImage(ship.hull_type_id, 0.15, shipVariant(ship.id));
     return (
       <div key={ship.id}
         onClick={() => onSelect(ship.id)}
@@ -414,6 +415,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull, activeShi
         } ${isStored ? 'opacity-80' : ''}`}
       >
         <div className="flex items-center gap-1">
+          {thumb && <img src={thumb.dataUrl} alt="" style={{ width: 22, height: 22, objectFit: 'contain', imageRendering: 'pixelated', flexShrink: 0 }} />}
           {renamingId === ship.id ? (
             <input autoFocus value={renameVal} maxLength={48}
               onChange={e => setRenameVal(e.target.value)}

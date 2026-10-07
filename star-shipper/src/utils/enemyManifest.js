@@ -11,7 +11,7 @@
 // Nothing here rolls dice. If you need different enemies, edit the
 // templates in the DB (migration 069) -- not this file.
 
-import { getShipIcon, HULL_SHAPES, PIRATE_HULLS, factionKey } from './shipRenderer';
+import { getShipIcon, shipVariant, HULL_SHAPES, PIRATE_HULLS, factionKey } from './shipRenderer';
 import { ALIEN_HULLS } from './alienShipRenderer';
 
 // Hull the renderer falls back to if the manifest names a hull it has
@@ -80,7 +80,7 @@ export const hydrateEnemies = (manifest, systemId, opts = {}) => {
     return {
       id: e.id,
       hullId,
-      icon: getShipIcon(hullId),
+      icon: getShipIcon(hullId, shipVariant(e.id)),
       faction: factionKey(e.faction),
       templateId: e.template_id,
       tier: e.tier || 1,
