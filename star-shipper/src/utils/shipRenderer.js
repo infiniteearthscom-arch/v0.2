@@ -3,6 +3,8 @@
 //   'detail' — full procedural art for fleet window thumbnails (scale ~0.2-0.5)
 //   'icon'   — clean silhouette for system view (renders at exact target pixel height)
 
+import { ALIEN_HULLS, getAlienShipIcon, getAlienShipImage } from './alienShipRenderer';
+
 const CELL = 20;
 const rgb = (r,g,b) => `rgb(${r},${g},${b})`;
 const rgba = (r,g,b,a) => `rgba(${r},${g},${b},${a})`;
@@ -228,7 +230,13 @@ HULL_SHAPES.pod = {
 export const FACTIONS = {
   player: { name: 'Independent', color: '#22ddee', hostile: false },
   pirate: { name: 'Void Reavers', color: '#ff4444', hostile: true, tagColor: '#ff4444', tagBg: '#ff444422' },
+  // Enemy factions (docs/enemy-factions-spec.md, 2026-10-07). Armour +
+  // hull beasts (bring lasers) and shield + reactor machines (bring kinetics).
+  swarm:  { name: 'The Swarm', color: '#5ef0a8', hostile: true, tagColor: '#5ef0a8', tagBg: '#5ef0a822', weakTo: 'Lasers' },
+  synod:  { name: 'The Synod', color: '#3ad8ff', hostile: true, tagColor: '#3ad8ff', tagBg: '#3ad8ff22', weakTo: 'Kinetics' },
 };
+// Manifest faction id -> FACTIONS key ('void_reavers' / 'reavers' are the pirates).
+export const factionKey = (f) => (f === 'swarm' || f === 'synod' ? f : 'pirate');
 
 // ============================================
 // PIRATE HULL SHAPES (Void Reavers faction)
@@ -430,10 +438,11 @@ const renderShipIcon = (hull) => {
 const shipImageCache = new Map();
 
 /** Lookup hull from either player or pirate hulls */
-const lookupHull = (hullId) => HULL_SHAPES[hullId] || PIRATE_HULLS[hullId] || null;
+const lookupHull = (hullId) => HULL_SHAPES[hullId] || PIRATE_HULLS[hullId] || ALIEN_HULLS[hullId] || null;
 
 /** Fleet window thumbnails */
 export const getShipImage = (hullId, scale = 0.3) => {
+  if (ALIEN_HULLS[hullId]) return getAlienShipImage(hullId, 2);
   const hull = lookupHull(hullId);
   if (!hull) return null;
   const cacheKey = `detail_${hullId}_${scale}`;
@@ -446,6 +455,7 @@ export const getShipImage = (hullId, scale = 0.3) => {
 
 /** System view tiny icons */
 export const getShipIcon = (hullId) => {
+  if (ALIEN_HULLS[hullId]) return getAlienShipIcon(hullId);
   const hull = lookupHull(hullId);
   if (!hull) return null;
   const cacheKey = `icon_${hullId}`;

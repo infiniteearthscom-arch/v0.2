@@ -35,6 +35,7 @@ export function buildFleets(members) {
         armor: 0,  maxArmor: 0,
         hull: 0,   maxHull: 0,
         shieldRegenTimer: 0,
+        lastHitAt: -1e9,     // game-time of the last hit on the pool (Swarm hull knitting waits on it)
         lootCredits: 0,
         memberIds: [],
         members: [],          // member refs (for attrition checks)

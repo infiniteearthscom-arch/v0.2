@@ -11,13 +11,14 @@
 // Nothing here rolls dice. If you need different enemies, edit the
 // templates in the DB (migration 069) -- not this file.
 
-import { getShipIcon, HULL_SHAPES, PIRATE_HULLS } from './shipRenderer';
+import { getShipIcon, HULL_SHAPES, PIRATE_HULLS, factionKey } from './shipRenderer';
+import { ALIEN_HULLS } from './alienShipRenderer';
 
 // Hull the renderer falls back to if the manifest names a hull it has
 // no silhouette for (a DB-only hull added after this build shipped).
 const FALLBACK_HULL_ID = 'pirate_marauder';
 
-const lookupHull = (hullId) => PIRATE_HULLS[hullId] || HULL_SHAPES[hullId] || null;
+const lookupHull = (hullId) => PIRATE_HULLS[hullId] || HULL_SHAPES[hullId] || ALIEN_HULLS[hullId] || null;
 
 // Phase 4 behavior ladder (docs/combat-redesign-plan.md §C Phase 4):
 //   simple      -- T1: chase, orbit close, fire everything
@@ -28,7 +29,10 @@ const lookupHull = (hullId) => PIRATE_HULLS[hullId] || HULL_SHAPES[hullId] || nu
 // A template's behavior_mode overrides the tier default when it isn't
 // the seed value 'aggressive'.
 export const BEHAVIOR_BY_TIER = { 1: 'simple', 2: 'evasive', 3: 'coordinated', 4: 'tactical', 5: 'elite' };
-export const BEHAVIOR_RANK = { simple: 1, evasive: 2, coordinated: 3, tactical: 4, elite: 5 };
+// Faction modes (enemy-factions-spec §5.1): 'swarm' fans out like a
+// coordinated fleet and never kites / regroups / flees; 'synod' behaves
+// as tactical at every tier (kites early, regroups, calls any fleet).
+export const BEHAVIOR_RANK = { simple: 1, evasive: 2, coordinated: 3, tactical: 4, elite: 5, swarm: 3, synod: 4 };
 export const behaviorFor = (behaviorMode, tier) => {
   if (behaviorMode && behaviorMode !== 'aggressive' && BEHAVIOR_RANK[behaviorMode]) return behaviorMode;
   return BEHAVIOR_BY_TIER[Math.max(1, Math.min(5, tier || 1))];
@@ -77,7 +81,7 @@ export const hydrateEnemies = (manifest, systemId, opts = {}) => {
       id: e.id,
       hullId,
       icon: getShipIcon(hullId),
-      faction: 'pirate',
+      faction: factionKey(e.faction),
       templateId: e.template_id,
       tier: e.tier || 1,
       name: e.name,

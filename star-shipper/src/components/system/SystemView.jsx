@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 // DraggableWindow removed — SystemView now renders full-screen
 import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES } from '@/utils/shipRenderer';
+import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, FACTIONS as SHIP_FACTIONS } from '@/utils/shipRenderer';
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
 import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
 import { qualityMultiplier } from '@/utils/quality';
@@ -76,7 +76,19 @@ const BEHAVIOR_TUNING = {
   coordinated: { orbitMult: 1.3, speedMult: 0.75, fleeHull: 0.15, kiteShield: 0.20, regroupHull: null },
   tactical:    { orbitMult: 1.3, speedMult: 0.8, fleeHull: 0.10, kiteShield: 0.20, regroupHull: 0.40 },
   elite:       { orbitMult: 1.3, speedMult: 0.85, fleeHull: 0.05, kiteShield: 0.20, regroupHull: 0.35 },
+  // Enemy factions (docs/enemy-factions-spec.md §5.1):
+  //   swarm -- closes in, never kites / regroups / flees (fleeHull 0 = never)
+  //   synod -- tactical at every tier, kites early, regroups at half hull
+  swarm:       { orbitMult: 0.8, speedMult: 0.95, fleeHull: 0,    kiteShield: null, regroupHull: null },
+  synod:       { orbitMult: 1.3, speedMult: 0.8,  fleeHull: 0.10, kiteShield: 0.35, regroupHull: 0.50 },
 };
+// Faction pool rules (spec §5.2): Swarm hull knits back once nothing has
+// hit the pool for SWARM_KNIT_DELAY s; a Synod fleet with a living Tender
+// regenerates shields faster; Swarm fleets may engage one past the rally cap.
+const SWARM_KNIT_DELAY = 10;        // seconds since the last hit
+const SWARM_KNIT_RATE = 0.005;      // fraction of max hull per second
+const SYNOD_TENDER_REGEN_MULT = 1.5;
+const SWARM_RALLY_BONUS = 1;
 // Rally cap: max fleets engaging the player at once, by the SYSTEM's
 // region tier. Extra fleets hold their patrol until a slot frees --
 // deep space stays readable instead of a pile-on (plan Phase 4).
@@ -3215,7 +3227,8 @@ export const SystemView = () => {
       // system. A fleet already engaged always keeps its slot.
       const systemTier = Math.max(1, Math.min(5, getGalaxy().systemMap[currentSystemId]?.regionTier ?? 1));
       const rallyCap = RALLY_CAP_BY_TIER[systemTier] ?? 2;
-      const canEngage = (fleetId) => engagedFleets.has(fleetId) || engagedFleets.size < rallyCap;
+      const canEngage = (fleetId) => engagedFleets.has(fleetId)
+        || engagedFleets.size < rallyCap + (fleetsRef.current.get(fleetId)?.faction === 'swarm' ? SWARM_RALLY_BONUS : 0);
       // Phase 4 reinforcements: coordinated (T3) fleets call the nearest
       // idle fleet within range; tactical/elite call the nearest idle
       // fleet anywhere in the system. Marked here, applied in the loop
@@ -3244,8 +3257,15 @@ export const SystemView = () => {
         fleet.shieldRegenTimer -= delta;
         if (fleet.shieldRegenTimer <= 0 && fleet.shield < fleet.maxShield) {
           const leader = leaderByFleet.get(fleet.id);
-          const mult = leader?.state === 'regroup' ? REGROUP_SHIELD_REGEN_MULT : 1;
+          let mult = leader?.state === 'regroup' ? REGROUP_SHIELD_REGEN_MULT : 1;
+          // Synod: a living Tender in the fleet is the repair boat.
+          if (fleet.faction === 'synod' && fleet.members.some(m => m.hull > 0 && m.hullId === 'synod_tender')) mult *= SYNOD_TENDER_REGEN_MULT;
           fleet.shield = Math.min(fleet.maxShield, fleet.shield + SHIELD_REGEN_RATE * mult * delta);
+        }
+        // Swarm: carcass knitting -- pooled hull regenerates once the pool
+        // has gone SWARM_KNIT_DELAY s without a hit. Nothing else regens hull.
+        if (fleet.faction === 'swarm' && fleet.hull > 0 && fleet.hull < fleet.maxHull && gameTimeRef.current - fleet.lastHitAt > SWARM_KNIT_DELAY) {
+          fleet.hull = Math.min(fleet.maxHull, fleet.hull + fleet.maxHull * SWARM_KNIT_RATE * delta);
         }
       }
       for (const enemy of enemies) {
@@ -3649,6 +3669,7 @@ export const SystemView = () => {
             const nearestFleet = fleetsRef.current.get(nearest.fleetId);
             if (nearestFleet) {
               const laserRes = damageFleet(nearestFleet, dmg, 'laser');
+              nearestFleet.lastHitAt = gameTimeRef.current;
               if (laserRes.shieldDamaged) nearestFleet.shieldRegenTimer = SHIELD_REGEN_DELAY;
             }
             effects.push({
@@ -3805,6 +3826,7 @@ export const SystemView = () => {
               const hitFleet = fleetsRef.current.get(e.fleetId);
               if (hitFleet) {
                 const projRes = damageFleet(hitFleet, p.damage, p.weapon_type);
+                hitFleet.lastHitAt = gameTimeRef.current;
                 if (projRes.shieldDamaged) hitFleet.shieldRegenTimer = SHIELD_REGEN_DELAY;
               }
               effects.push({ x: p.x, y: p.y, type: 'hit', age: 0, color: (hitFleet && hitFleet.shield > 0) ? '#4488ff' : '#ff8844' });
@@ -5241,7 +5263,7 @@ export const SystemView = () => {
                 {/* Faction name */}
                 {(enemy.state === 'attack' || enemy.state === 'chase') && (
                   <text x={enemy.x} y={enemy.y - enemy.displaySize - 5}
-                    textAnchor="middle" fill="#ff4444" fontSize="5" fontFamily="monospace" opacity="0.8">
+                    textAnchor="middle" fill={SHIP_FACTIONS[enemy.faction]?.tagColor || '#ff4444'} fontSize="5" fontFamily="monospace" opacity="0.8">
                     {enemy.name}
                   </text>
                 )}
@@ -5814,7 +5836,19 @@ export const SystemView = () => {
                   fontSize: '0.8rem',
                 }}
               >
-                <div style={{ color: enemy.isElite ? '#ffd166' : '#ff6b6b' }}>{enemy.name}</div>
+                <div style={{ color: enemy.isElite ? '#ffd166' : (SHIP_FACTIONS[enemy.faction]?.color || '#ff6b6b') }}>{enemy.name}</div>
+                {(() => {
+                  // Faction + what to bring, derived from the fleet's pooled
+                  // profile (not hand-tagged): the thickest layer decides.
+                  const fac = SHIP_FACTIONS[enemy.faction] || SHIP_FACTIONS.pirate;
+                  const fl = fleetsRef.current.get(enemy.fleetId);
+                  const weak = fl ? (fl.maxArmor > fl.maxShield ? 'Lasers' : fl.maxShield > fl.maxArmor ? 'Kinetics' : 'Missiles') : (fac.weakTo || null);
+                  return (
+                    <div style={{ color: fac.color, fontSize: '0.74rem' }}>
+                      {fac.name}{weak ? <span style={{ color: '#7a8a9a' }}> · weak to <span style={{ color: '#e2e8f0' }}>{weak}</span></span> : null}
+                    </div>
+                  );
+                })()}
                 <div style={{ color: '#7a8a9a' }}>
                   {enemy.hullName || enemy.hullId} · <span style={{ color: '#c084fc' }}>{enemy.behavior}</span> · {enemy.maxHull} hull
                   {enemy.maxArmor > 0 ? ` · ${enemy.maxArmor} armr` : ''}
