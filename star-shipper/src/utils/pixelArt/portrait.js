@@ -1,14 +1,20 @@
-// pixelArt/portrait.js -- procedural NPC portraits, 64x64 (v2, 2026-09-24).
+// pixelArt/portrait.js -- procedural NPC portraits, 64x64 (v3, 2026-10-06).
 //
-// Two races for now:
-//   human  -- skin tones, 12 hair styles, eyes with iris + catchlight,
-//             brows, noses, mouths, facial hair, scars / freckles /
-//             tattoos, glasses, earrings, role collar + insignia.
-//   cyborg -- Mechanicus-flavoured augmented humanoids: rust-red cowl,
-//             steel face plating (half / lower / full skull), glowing
-//             optic lenses, respirator grille, cables from temple and
-//             jaw to the collar, brass cog insignia, grey/pale skin.
-// Same seed + role = same face forever. Baked once, cached.
+// Rewritten for a retro sci-fi sprite look (owner: "more pixel arty, like
+// Retro Diffusion sprites"). The rules this follows:
+//   * one dark 1-px outline around the whole bust, selective interior lines
+//   * every material shades from a 5-step ramp (outline / deep / shadow /
+//     base / light) with hue-shifted shadows (cooler) and lights (warmer)
+//   * cel bands quantised from a lambert term, a 2-px checker dither only
+//     at the base/shadow boundary
+//   * key light upper-left, cool rim light down the right edge
+//   * big readable eyes (5x3 socket, iris, pupil, catchlight), 2-px brows
+//   * sci-fi gear: flight helmets with visors, headsets with a mic LED,
+//     HUD monocles, high collars with a glowing chest strip, pauldrons
+//   * calm background: stepped diagonal, faint scanlines, holo ring, corner
+//     brackets like an ID card
+// Two races as before: human and cyborg (steel plating, glowing optics,
+// respirator grille, cables, rust cowl). Same seed + role = same face.
 
 import { bakeSheet } from '../spriteBake.js';
 
@@ -24,302 +30,428 @@ class Rng {
   pick(arr) { return arr[this.int(0, arr.length - 1)]; }
   chance(p) { return this.next() < p; }
 }
+
+// ---- colour: hex <-> rgb, hsl ramps ----
 const hex = (h) => { const v = parseInt(h.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
-const shade = (c, k) => c.map(v => Math.max(0, Math.min(255, Math.round(v * k))));
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+// 5-step ramp: 0 outline, 1 deep shadow, 2 shadow, 3 base, 4 light.
+// Shadows swing toward blue/purple, lights toward yellow -- the retro cel look.
+// Shadows blend toward a cool navy-purple, lights toward warm cream -- the
+// classic pixel-art ramp. Blending (not HSL maths) keeps light skin from
+// turning salmon in the shadow steps.
+const COOL = [34, 22, 58], WARM = [255, 242, 208];
+const ramp = (h, { shade = 1, light = 1 } = {}) => {
+  const b = typeof h === 'string' ? hex(h) : h;
+  return [
+    mix(mix(b, COOL, 0.86), [0, 0, 0], 0.25),
+    mix(b, COOL, 0.58 * shade),
+    mix(b, COOL, 0.32 * shade),
+    b,
+    mix(b, WARM, 0.32 * light),
+  ];
+};
+const skinRamp = (h) => ramp(h, { shade: 0.95, light: 0.9 });
 
 export const ROLE_STYLE = {
-  vendor:     { bg: ['#1a1408', '#3a2c10'], collar: '#c9962a', accent: '#fbbf24', title: 'Quartermaster',     cyborg: 0.35 },
-  broker:     { bg: ['#06202a', '#0c3a48'], collar: '#1c8ea6', accent: '#22d3ee', title: 'Contract Broker',   cyborg: 0.3 },
-  refiner:    { bg: ['#1a1208', '#3a2810'], collar: '#8a5a2a', accent: '#f59e0b', title: 'Refinery Chief',    cyborg: 0.7 },
-  dockmaster: { bg: ['#101418', '#242c34'], collar: '#5a6a7a', accent: '#a0b0c0', title: 'Dockmaster',        cyborg: 0.5 },
-  scientist:  { bg: ['#081a12', '#10382a'], collar: '#2a8a5a', accent: '#4ade80', title: 'Research Liaison',  cyborg: 0.6 },
-  pirate:     { bg: ['#1a0808', '#3a1010'], collar: '#8a2a2a', accent: '#ef4444', title: 'Pirate Captain',    cyborg: 0.45 },
-  commander:  { bg: ['#0a1020', '#182a4a'], collar: '#2a4a8a', accent: '#60a5fa', title: 'Fleet Commander',   cyborg: 0.25 },
-  instructor: { bg: ['#06202a', '#0c3a48'], collar: '#1c6ea6', accent: '#22d3ee', title: 'Flight Instructor', cyborg: 0.2 },
-  guide:      { bg: ['#14082a', '#28104a'], collar: '#6a2aaa', accent: '#aa66ff', title: 'Guild Contact',     cyborg: 0.4 },
-  envoy:      { bg: ['#081a12', '#10382a'], collar: '#2a8a5a', accent: '#4ade80', title: 'Faction Envoy',     cyborg: 0.3 },
+  vendor:     { bg: ['#141008', '#2e2410'], collar: '#b8862a', accent: '#fbbf24', title: 'Quartermaster',     cyborg: 0.35 },
+  broker:     { bg: ['#061a22', '#0a303c'], collar: '#1a7f96', accent: '#22d3ee', title: 'Contract Broker',   cyborg: 0.3 },
+  refiner:    { bg: ['#160e06', '#30200c'], collar: '#8a5424', accent: '#f59e0b', title: 'Refinery Chief',    cyborg: 0.7 },
+  dockmaster: { bg: ['#0e1216', '#1e262e'], collar: '#56687a', accent: '#a0b8cc', title: 'Dockmaster',        cyborg: 0.5 },
+  scientist:  { bg: ['#06160e', '#0c2e22'], collar: '#268256', accent: '#4ade80', title: 'Research Liaison',  cyborg: 0.6 },
+  pirate:     { bg: ['#160606', '#301010'], collar: '#8a2626', accent: '#ef4444', title: 'Pirate Captain',    cyborg: 0.45 },
+  commander:  { bg: ['#080e1c', '#14243e'], collar: '#2a4a8a', accent: '#60a5fa', title: 'Fleet Commander',   cyborg: 0.25 },
+  instructor: { bg: ['#061a22', '#0a303c'], collar: '#1c6498', accent: '#22d3ee', title: 'Flight Instructor', cyborg: 0.2 },
+  guide:      { bg: ['#100620', '#22103e'], collar: '#6a2aaa', accent: '#aa66ff', title: 'Guild Contact',     cyborg: 0.4 },
+  envoy:      { bg: ['#06160e', '#0c2e22'], collar: '#268256', accent: '#4ade80', title: 'Faction Envoy',     cyborg: 0.3 },
 };
-const SKIN_HUMAN = ['#f3d2b4', '#e8b993', '#d9a06e', '#c17d4a', '#9c5a2e', '#6e3f1f', '#f7dcc8', '#b98a63'];
-const SKIN_CYBORG = ['#b9b3b0', '#a8a39f', '#c8c0b8', '#8f8a86', '#d1c9c0'];
-const HAIR = ['#141414', '#2e1f14', '#5a3a22', '#8b5a2b', '#b8894a', '#d9c08a', '#8c8c8c', '#e6e6e6', '#c0392b', '#2c5fbf', '#7a3fb0', '#1f8a6a'];
-const IRIS = ['#3a2a1a', '#2f6b3a', '#2f4d9a', '#6a4a20', '#22a5b8', '#8a5ad8', '#5a6a7a'];
-const STEEL = ['#8a929c', '#9aa3ad', '#6f7882'];
-const BRASS = ['#b08a3a', '#c9a24a', '#8a6a2a'];
-const RUST = ['#9a2a2a', '#a8342c', '#7a1e1e'];
+const SKIN_HUMAN = ['#f2cfae', '#e6b48c', '#d49a68', '#bd7a48', '#95562c', '#683a1c', '#f6dbc6', '#b4845c'];
+const SKIN_CYBORG = ['#b2aeb4', '#a29ea6', '#c4bcb8', '#8c8890', '#cbc3bb'];
+const HAIR = ['#1a1a20', '#2e1f14', '#5a3a22', '#8b5a2b', '#b8894a', '#dcc48e', '#8c8c94', '#e8e8ec', '#c0392b', '#2c5fbf', '#7a3fb0', '#1f8a6a', '#e07a2a', '#d14a8a'];
+const IRIS = ['#3a2a1a', '#2f6b3a', '#2f4d9a', '#6a4a20', '#22a5b8', '#8a5ad8', '#5a6a7a', '#c08a20'];
+const LENS = ['#ff3b3b', '#ff7a1f', '#3bff7a', '#3bd8ff', '#ffd23b'];
+
+// materials (mask ids)
+const M = { BG: 0, SKIN: 1, HAIR: 2, GARB: 3, STEEL: 4, HOOD: 5, GEAR: 6, GLASS: 7 };
 
 export function getPortrait(seedStr, role = 'vendor') {
-  const key = `v2|${role}|${seedStr}`;
+  const key = `v3|${role}|${seedStr}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const rng = new Rng(hashStr(`${role}|${seedStr}`));
   const st = ROLE_STYLE[role] || ROLE_STYLE.vendor;
   const race = rng.chance(st.cyborg) ? 'cyborg' : 'human';
-  const skin = hex(rng.pick(race === 'cyborg' ? SKIN_CYBORG : SKIN_HUMAN));
-  const skinD = shade(skin, 0.74), skinDD = shade(skin, 0.55), skinL = shade(skin, 1.12);
-  const hair = hex(rng.pick(HAIR)), hairD = shade(hair, 0.65), hairL = shade(hair, 1.3);
-  const iris = hex(rng.pick(IRIS));
-  const collar = hex(st.collar), collarD = shade(collar, 0.6), collarL = shade(collar, 1.25);
-  const accent = hex(st.accent);
-  const bg0 = hex(st.bg[0]), bg1 = hex(st.bg[1]);
-  const steel = hex(rng.pick(STEEL)), steelD = shade(steel, 0.6), steelL = shade(steel, 1.25);
-  const brass = hex(rng.pick(BRASS)), brassD = shade(brass, 0.6);
-  const rust = hex(rng.pick(RUST)), rustD = shade(rust, 0.55), rustL = shade(rust, 1.25);
 
-  // geometry
-  const cx = 32, cy = 27;
-  const headW = rng.int(11, 14), headH = rng.int(14, 17);
-  const jaw = rng.pick(['round', 'square', 'narrow']);
-  const eyeY = cy + 1, eyeGap = rng.int(5, 7);
-  const noseStyle = rng.pick(['button', 'straight', 'wide']);
-  const mouthStyle = rng.pick(['flat', 'smile', 'frown', 'flat', 'smirk']);
-  const browThick = rng.int(1, 2);
-
-  // human features
-  const hairStyle = race === 'human'
-    ? (role === 'pirate' ? rng.pick(['short', 'mohawk', 'bandana', 'long', 'undercut', 'bald', 'ponytail'])
-      : rng.pick(['short', 'long', 'bald', 'bun', 'cap', 'undercut', 'curly', 'ponytail', 'sidepart', 'buzz', 'beret', 'hood']))
-    : null;
-  const marks = {
-    scar: rng.chance(role === 'pirate' ? 0.55 : 0.12),
-    beard: race === 'human' && rng.chance(role === 'pirate' ? 0.6 : 0.3),
-    beardStyle: rng.pick(['stubble', 'full', 'goatee']),
-    freckles: race === 'human' && rng.chance(0.25),
-    tattoo: rng.chance(role === 'pirate' ? 0.45 : 0.12),
-    glasses: rng.chance(role === 'scientist' || role === 'broker' ? 0.45 : 0.1),
-    earring: rng.chance(0.3),
-    patch: role === 'pirate' && rng.chance(0.25),
+  // ---- palette ----
+  const R = {
+    skin: race === 'cyborg' ? ramp(rng.pick(SKIN_CYBORG), { shade: 0.8 }) : skinRamp(rng.pick(SKIN_HUMAN)),
+    hair: ramp(rng.pick(HAIR)),
+    garb: ramp(st.collar),
+    steel: ramp('#8a96a4'),
+    hood: ramp(rng.pick(['#8e2a2a', '#9a3426', '#6e1e22'])),
+    gear: ramp(rng.pick(['#3a4048', '#2c3238', '#4a5058'])),
+    brass: ramp('#c9a24a'),
   };
-  // cyborg features
-  const cy_ = {
-    cowl: race === 'cyborg' && rng.chance(0.7),
+  const accent = hex(st.accent), accentL = mix(accent, [255, 255, 255], 0.55), accentD = mix(accent, [0, 0, 0], 0.5);
+  const iris = hex(rng.pick(IRIS));
+  const lens = hex(rng.pick(LENS));
+  const bg0 = hex(st.bg[0]), bg1 = hex(st.bg[1]);
+  const OUT = [10, 8, 16]; // universal outline
+
+  // ---- geometry ----
+  const cx = 32, cy = 25;
+  const headW = rng.int(12, 14), headH = rng.int(14, 16);
+  const jaw = rng.pick(['round', 'square', 'narrow', 'round']);
+  const eyeY = cy + 2, eyeGap = rng.int(5, 6);
+  const browTilt = rng.pick([-1, 0, 0, 1]);          // -1 angry, 1 worried
+  const mouthStyle = rng.pick(['flat', 'smile', 'frown', 'flat', 'smirk', 'open']);
+  const chinY = cy + headH;
+  const shoulderY = chinY + 5;
+
+  // ---- wardrobe rolls ----
+  let hairStyle = 'short', gear = 'none';
+  if (race === 'human') {
+    hairStyle = role === 'pirate'
+      ? rng.pick(['short', 'mohawk', 'long', 'undercut', 'bald', 'ponytail', 'swept'])
+      : rng.pick(['short', 'long', 'bald', 'bun', 'undercut', 'curly', 'ponytail', 'swept', 'buzz', 'short', 'long']);
+    const gearPool = {
+      instructor: ['helmet', 'headset', 'headset', 'none'], commander: ['helmet', 'headset', 'none', 'none'],
+      dockmaster: ['headset', 'headset', 'cap', 'none'], scientist: ['monocle', 'monocle', 'goggles', 'none'],
+      broker: ['monocle', 'none', 'none', 'headset'], vendor: ['cap', 'none', 'none', 'headset'],
+      pirate: ['bandana', 'bandana', 'patch', 'none', 'goggles'], guide: ['hood', 'hood', 'none', 'monocle'],
+      envoy: ['none', 'none', 'cap'], refiner: ['goggles', 'goggles', 'cap', 'none'],
+    };
+    gear = rng.pick(gearPool[role] || ['none', 'headset', 'cap']);
+  }
+  const marks = {
+    scar: rng.chance(role === 'pirate' ? 0.5 : 0.12),
+    beard: race === 'human' && rng.chance(role === 'pirate' ? 0.55 : 0.28),
+    beardStyle: rng.pick(['stubble', 'full', 'goatee']),
+    tattoo: rng.chance(role === 'pirate' ? 0.4 : 0.1),
+    earring: rng.chance(0.3),
+    side: rng.int(0, 1),
+  };
+  const cyb = {
+    cowl: race === 'cyborg' && rng.chance(0.65),
     plating: race === 'cyborg' ? rng.pick(['half_left', 'half_right', 'lower', 'skull', 'brow', 'none']) : 'none',
     optics: race === 'cyborg' ? rng.pick(['left', 'right', 'both', 'both', 'mono']) : 'none',
     grille: race === 'cyborg' && rng.chance(0.55),
     cables: race === 'cyborg' ? rng.int(1, 3) : 0,
-    lensColor: hex(rng.pick(['#ff3b3b', '#ff7a1f', '#3bff7a', '#3bd8ff'])),
-    templePort: race === 'cyborg' && rng.chance(0.6),
+    port: race === 'cyborg' && rng.chance(0.6),
   };
-  const scarSide = rng.int(0, 1);
 
   const sheet = bakeSheet({
     fw: PX, fh: PX, frames: 1, extra: { px: PX, race },
     paintFrame: (f, put) => {
-      const P = (x, y, c, a = 255) => { if (x >= 0 && y >= 0 && x < PX && y < PX) put(0, x, y, c, a); };
-      const rect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) P(x, y, c); };
-      const line = (x0, y0, x1, y1, c) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1); for (let i = 0; i <= n; i++) P(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), c); };
-      const inHead = (x, y) => {
-        const nx = (x + 0.5 - cx) / headW; let ny = (y + 0.5 - cy) / headH;
-        if (jaw === 'square' && y > cy + headH * 0.35) ny = (y + 0.5 - cy) / (headH * 1.08);
-        if (jaw === 'narrow' && y > cy) return nx * nx * (1 + (y - cy) / headH * 0.6) + ny * ny <= 1;
-        return nx * nx + ny * ny <= 1;
-      };
+      // colour buffer + material mask; everything composes here, then one
+      // outline / rim pass, then a single blit.
+      const col = new Array(PX * PX).fill(null);
+      const mat = new Uint8Array(PX * PX);
+      const idx = (x, y) => y * PX + x;
+      const inB = (x, y) => x >= 0 && y >= 0 && x < PX && y < PX;
+      const set = (x, y, c, m) => { if (!inB(x, y)) return; col[idx(x, y)] = c; if (m != null) mat[idx(x, y)] = m; };
+      const paint = (x, y, c) => { if (inB(x, y)) col[idx(x, y)] = c; };
+      const getM = (x, y) => (inB(x, y) ? mat[idx(x, y)] : M.BG);
+      const rect = (x0, y0, x1, y1, c, m) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, c, m); };
+      const line = (x0, y0, x1, y1, c, m) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1); for (let i = 0; i <= n; i++) set(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), c, m); };
 
-      // ---- background: gradient + dither + faint role pattern ----
+      // head span table: half-width per row, rounded -- pixel-art curves
+      // come out cleaner from spans than from testing an ellipse per pixel.
+      const span = new Map();
+      for (let y = cy - headH; y <= chinY; y++) {
+        const t = (y + 0.5 - cy) / headH;
+        let hw = headW * Math.sqrt(Math.max(0, 1 - t * t));
+        if (t > 0) {
+          if (jaw === 'narrow') hw *= 1 - 0.32 * t * t;
+          if (jaw === 'square') hw = t < 0.75 ? Math.max(hw, headW * (1 - 0.18 * t)) : hw;
+          if (jaw === 'round') hw *= 1 - 0.1 * t * t;
+        }
+        span.set(y, Math.max(1, Math.round(hw)));
+      }
+      const inHead = (x, y) => { const hw = span.get(y); return hw != null && Math.abs(x + 0.5 - cx) <= hw; };
+
+      // ---- background ----
       for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) {
-        const t = y / PX, d = ((x + y) & 1) ? 0.03 : -0.03;
-        let c = mix(bg0, bg1, 1 - t + d);
-        if (((x - y) % 9 === 0) && x > 40 - y * 0.2) c = mix(c, accent, 0.06);
-        P(x, y, c);
+        const t = (x + y * 0.55) / (PX * 1.55);
+        let c = t < 0.42 ? bg0 : t < 0.72 ? mix(bg0, bg1, 0.5) : bg1;
+        if ((t > 0.40 && t < 0.44) || (t > 0.70 && t < 0.74)) c = ((x + y) & 1) ? mix(bg0, bg1, t < 0.5 ? 0.5 : 1) : (t < 0.5 ? bg0 : mix(bg0, bg1, 0.5));
+        if (y % 4 === 3) c = mix(c, [0, 0, 0], 0.18); // scanline
+        set(x, y, c, M.BG);
       }
-      // rim light ring behind the head
-      for (let y = cy - headH - 4; y <= cy + headH + 4; y++) for (let x = cx - headW - 6; x <= cx + headW + 6; x++) {
-        const nx = (x + 0.5 - cx) / (headW + 5), ny = (y + 0.5 - cy) / (headH + 4);
-        const r = nx * nx + ny * ny;
-        if (r <= 1 && r > 0.8 && ((x + y) & 1)) P(x, y, mix(bg1, accent, 0.25));
+      // holo ring behind the head + soft fill
+      for (let y = 0; y < shoulderY; y++) for (let x = 0; x < PX; x++) {
+        const nx = (x + 0.5 - cx) / (headW + 7), ny = (y + 0.5 - cy) / (headH + 6), r = nx * nx + ny * ny;
+        if (r <= 1) paint(x, y, mix(col[idx(x, y)], accent, 0.07));
+        if (r > 0.86 && r <= 1) paint(x, y, mix(col[idx(x, y)], accent, ((x + y) & 1) ? 0.42 : 0.2));
       }
+      // corner brackets (ID card)
+      for (let i = 0; i < 5; i++) { paint(1 + i, 1, accentD); paint(1, 1 + i, accentD); paint(PX - 2 - i, 1, accentD); paint(PX - 2, 1 + i, accentD); paint(1 + i, PX - 2, accentD); paint(1, PX - 2 - i, accentD); paint(PX - 2 - i, PX - 2, accentD); paint(PX - 2, PX - 2 - i, accentD); }
 
-      // ---- shoulders / garment (rows 46..63) ----
-      const isRobe = race === 'cyborg' && cy_.cowl;
-      for (let y = 46; y < PX; y++) {
-        const half = 9 + (y - 46) * 1.55;
+      // ---- garment: shoulders, collar, chest ----
+      const isRobe = race === 'cyborg' && cyb.cowl;
+      const G = isRobe ? R.hood : R.garb;
+      for (let y = shoulderY; y < PX; y++) {
+        const t = y - shoulderY;
+        const half = Math.min(31, 7 + t * 2.1 + (t > 2 ? 2 : 0));
         for (let x = 0; x < PX; x++) {
           const dx = x + 0.5 - cx;
           if (Math.abs(dx) > half) continue;
-          const base = isRobe ? rust : collar;
-          const edge = Math.abs(dx) > half - 2 || y === 46;
-          let c = edge ? shade(base, 0.6) : dx < -half * 0.4 ? shade(base, 1.15) : dx > half * 0.5 ? shade(base, 0.8) : base;
-          if (isRobe && ((y - 46) % 5 === 0) && Math.abs(dx) < half - 3) c = shade(c, 0.85); // robe folds
-          P(x, y, c);
+          let tone = 3;
+          if (t <= 1) tone = 4;                                         // top highlight
+          else if (dx > half * 0.55) tone = 2;                           // right shoulder in shadow
+          else if (dx < -half * 0.6) tone = 4;                           // left shoulder catches light
+          if (Math.abs(dx) < 6 && t > 2) tone = 2;                       // chest V shadow
+          if (Math.abs(dx) < 2 && t > 3) tone = 1;
+          if (isRobe && ((t + Math.floor(Math.abs(dx) / 5)) % 6 === 0) && Math.abs(dx) > 6) tone = 2; // folds
+          set(x, y, G[tone], M.GARB);
         }
       }
-      // collar detail: lapels + insignia / cog
-      for (let y = 46; y < 54; y++) { P(cx - 5 + (y - 46), y, collarL); P(cx + 4 - (y - 46), y, collarL); }
-      if (race === 'cyborg') {
-        // brass cog on the left breast
-        const gx = cx - 12, gy = 57;
-        for (let a = 0; a < 8; a++) P(gx + Math.round(3.5 * Math.cos(a * Math.PI / 4)), gy + Math.round(3.5 * Math.sin(a * Math.PI / 4)), brass);
-        for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (x * x + y * y <= 4) P(gx + x, gy + y, (x * x + y * y <= 1) ? brassD : brass);
+      // pauldron edge lines + glowing chest strip
+      for (let t = 3; t < 8; t++) { set(cx - 7 - Math.round(t * 2.1), shoulderY + t, G[1], M.GARB); set(cx + 6 + Math.round(t * 2.1), shoulderY + t, G[1], M.GARB); }
+      if (!isRobe) {
+        for (let y = shoulderY + 4; y < PX - 2; y++) { set(cx - 1, y, accent, M.GARB); set(cx, y, accentL, M.GARB); set(cx + 1, y, accent, M.GARB); if (y % 3 === 0) { set(cx - 2, y, mix(G[3], accent, 0.4), M.GARB); set(cx + 2, y, mix(G[3], accent, 0.4), M.GARB); } }
+        // rank pips on the left breast
+        const pips = role === 'commander' ? 3 : role === 'instructor' || role === 'dockmaster' ? 2 : 1;
+        for (let i = 0; i < pips; i++) { rect(cx - 15 + i * 3, shoulderY + 9, cx - 14 + i * 3, shoulderY + 10, accentL, M.GARB); }
       } else {
-        // role badge: 3x3 accent chip on the right breast + rank stripes
-        rect(cx + 9, 56, cx + 11, 58, accent); P(cx + 10, 57, shade(accent, 1.4));
-        for (let i = 0; i < (role === 'commander' ? 3 : role === 'instructor' ? 2 : 1); i++) rect(cx - 14, 56 + i * 2, cx - 9, 56 + i * 2, collarL);
+        // brass cog on the robe
+        const gx = cx - 13, gy = shoulderY + 11;
+        for (let a = 0; a < 8; a++) set(gx + Math.round(3.5 * Math.cos(a * Math.PI / 4)), gy + Math.round(3.5 * Math.sin(a * Math.PI / 4)), R.brass[3], M.GEAR);
+        for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (x * x + y * y <= 4) set(gx + x, gy + y, x * x + y * y <= 1 ? R.brass[1] : R.brass[3], M.GEAR);
       }
+      // high collar
+      for (let y = shoulderY - 2; y <= shoulderY + 2; y++) for (let x = cx - 8; x <= cx + 7; x++) { if (Math.abs(x + 0.5 - cx) > 5 + (y - shoulderY + 2)) continue; set(x, y, G[y === shoulderY - 2 ? 4 : x < cx - 2 ? 3 : 2], M.GARB); }
+      set(cx - 1, shoulderY, G[1], M.GARB); set(cx, shoulderY, G[1], M.GARB);
 
       // ---- neck ----
-      rect(cx - 4, cy + headH - 3, cx + 3, 47, skinD);
-      rect(cx - 3, cy + headH - 3, cx + 1, 47, skin);
+      for (let y = chinY - 2; y < shoulderY - 1; y++) for (let x = cx - 4; x <= cx + 3; x++) set(x, y, R.skin[x > cx + 1 || y > chinY ? 2 : 3], M.SKIN);
 
-      // ---- head ----
-      for (let y = cy - headH; y <= cy + headH + 1; y++) for (let x = cx - headW - 1; x <= cx + headW + 1; x++) {
+      // ---- head: cel shading from a lambert term ----
+      const L = [-0.38, -0.42, 0.82];
+      for (let y = cy - headH; y <= chinY; y++) for (let x = cx - headW - 1; x <= cx + headW + 1; x++) {
         if (!inHead(x, y)) continue;
         const nx = (x + 0.5 - cx) / headW, ny = (y + 0.5 - cy) / headH;
-        const edgeR = nx * nx + ny * ny;
-        let c = skin;
-        if (edgeR > 0.86) c = skinD;
-        if (nx > 0.45) c = mix(c, skinD, 0.7);
-        if (nx < -0.4 && ny < -0.1) c = skinL;
-        if (edgeR > 0.86 && nx > 0.3) c = skinDD;
-        P(x, y, c);
+        const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+        const d = nx * L[0] + ny * L[1] + nz * L[2];
+        let tone = d > 0.86 ? 4 : d > 0.5 ? 3 : d > 0.22 ? 2 : 1;
+        if (tone === 3 && d < 0.55 && ((x + y) & 1)) tone = 2;           // dither band
+        if (tone === 4 && d < 0.9 && ((x + y) & 1)) tone = 3;
+        if (y >= chinY - 1) tone = Math.min(tone, 1);                     // under-chin
+        set(x, y, R.skin[tone], M.SKIN);
       }
       // ears
-      const earY = cy;
-      for (let y = earY - 2; y <= earY + 2; y++) { P(cx - headW - 1, y, skinD); P(cx - headW - 2, y, skin); P(cx + headW + 1, y, skinDD); P(cx + headW + 2, y, skinD); }
-      if (marks.earring) { P(cx + headW + 2, earY + 3, brass); P(cx + headW + 2, earY + 4, hex('#ffe08a')); }
+      for (let y = cy - 1; y <= cy + 3; y++) { set(cx - headW - 1, y, R.skin[3], M.SKIN); set(cx - headW - 2, y, R.skin[y === cy - 1 ? 4 : 3], M.SKIN); set(cx + headW + 1, y, R.skin[2], M.SKIN); set(cx + headW + 2, y, R.skin[2], M.SKIN); }
+      set(cx - headW - 1, cy + 1, R.skin[2], M.SKIN); set(cx + headW + 1, cy + 1, R.skin[1], M.SKIN);
+      if (marks.earring) { set(cx + headW + 2, cy + 4, R.brass[3], M.GEAR); set(cx + headW + 2, cy + 5, R.brass[4], M.GEAR); }
 
-      // ---- cyborg plating (before hair/cowl so the cowl frames it) ----
-      const plateRegion = (test) => { for (let y = cy - headH; y <= cy + headH + 1; y++) for (let x = cx - headW - 1; x <= cx + headW + 1; x++) if (inHead(x, y) && test(x, y)) { const nx = (x + 0.5 - cx) / headW, ny = (y + 0.5 - cy) / headH; const rim = nx * nx + ny * ny > 0.82; P(x, y, rim ? steelD : (x % 5 === 0 && y % 5 === 0) ? steelL : steel); } };
-      if (cy_.plating === 'half_left') plateRegion((x) => x < cx - 1);
-      if (cy_.plating === 'half_right') plateRegion((x) => x > cx + 1);
-      if (cy_.plating === 'lower') plateRegion((x, y) => y > cy + 4);
-      if (cy_.plating === 'skull') plateRegion(() => true);
-      if (cy_.plating === 'brow') plateRegion((x, y) => y < cy - 4);
-      if (cy_.plating !== 'none') { // rivets along the seam
-        const seamPts = cy_.plating === 'half_left' ? [[cx - 1, cy - 8], [cx - 1, cy - 2], [cx - 1, cy + 5], [cx - 1, cy + 11]]
-          : cy_.plating === 'half_right' ? [[cx + 2, cy - 8], [cx + 2, cy - 2], [cx + 2, cy + 5], [cx + 2, cy + 11]]
-          : cy_.plating === 'lower' ? [[cx - 8, cy + 5], [cx - 3, cy + 5], [cx + 3, cy + 5], [cx + 8, cy + 5]]
-          : cy_.plating === 'brow' ? [[cx - 8, cy - 5], [cx, cy - 5], [cx + 8, cy - 5]] : [[cx - 9, cy - 6], [cx + 9, cy - 6], [cx, cy + 12]];
-        for (const [x, y] of seamPts) if (inHead(x, y)) P(x, y, brassD);
+      // ---- cyborg plating ----
+      const plate = (test) => { for (let y = cy - headH; y <= chinY; y++) for (let x = cx - headW - 2; x <= cx + headW + 2; x++) { if (!inHead(x, y) || !test(x, y)) continue; const nx = (x + 0.5 - cx) / headW; let tone = nx < -0.35 ? 4 : nx > 0.45 ? 2 : 3; if (y >= chinY - 1) tone = 1; if ((x % 6 === 0) && (y % 6 === 0)) tone = Math.max(1, tone - 1); set(x, y, R.steel[tone], M.STEEL); } };
+      if (cyb.plating === 'half_left') plate((x) => x < cx - 1);
+      if (cyb.plating === 'half_right') plate((x) => x > cx + 1);
+      if (cyb.plating === 'lower') plate((x, y) => y > cy + 5);
+      if (cyb.plating === 'skull') plate(() => true);
+      if (cyb.plating === 'brow') plate((x, y) => y < cy - 4);
+      if (cyb.plating !== 'none') {
+        const pts = cyb.plating === 'half_left' ? [[cx - 1, cy - 8], [cx - 1, cy - 1], [cx - 1, cy + 6], [cx - 1, cy + 12]]
+          : cyb.plating === 'half_right' ? [[cx + 2, cy - 8], [cx + 2, cy - 1], [cx + 2, cy + 6], [cx + 2, cy + 12]]
+          : cyb.plating === 'lower' ? [[cx - 8, cy + 6], [cx - 3, cy + 6], [cx + 3, cy + 6], [cx + 8, cy + 6]]
+          : cyb.plating === 'brow' ? [[cx - 8, cy - 5], [cx, cy - 5], [cx + 8, cy - 5]] : [[cx - 9, cy - 6], [cx + 9, cy - 6], [cx, cy + 12]];
+        for (const [x, y] of pts) if (inHead(x, y)) set(x, y, R.brass[2], M.STEEL);
       }
-      if (cy_.templePort) { rect(cx + headW - 4, cy - 6, cx + headW - 2, cy - 4, steelD); P(cx + headW - 3, cy - 5, cy_.lensColor); }
+      if (cyb.port) { rect(cx + headW - 5, cy - 7, cx + headW - 2, cy - 4, R.steel[1], M.STEEL); set(cx + headW - 4, cy - 6, lens, M.STEEL); set(cx + headW - 3, cy - 6, mix(lens, [255, 255, 255], 0.5), M.STEEL); }
 
       // ---- eyes ----
-      const drawHumanEye = (ex) => {
-        rect(ex - 2, eyeY - 1, ex + 2, eyeY + 1, hex('#f4f4f4'));
-        P(ex - 3, eyeY, skinDD); P(ex + 3, eyeY, skinDD);
-        rect(ex - 1, eyeY - 1, ex + 1, eyeY + 1, iris); P(ex, eyeY, hex('#111')); P(ex - 1, eyeY - 1, hex('#ffffff'));
-        for (let x = ex - 3; x <= ex + 3; x++) P(x, eyeY - 2, skinDD); // lid
-      };
-      const drawOptic = (ex, big = false) => {
-        const r = big ? 4 : 3;
-        for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) { const d = x * x + y * y; if (d > r * r + 1) continue; P(ex + x, eyeY + y, d <= 1 ? hex('#ffffff') : d <= (r - 1) * (r - 1) ? cy_.lensColor : d <= r * r - 1 ? brass : steelD); }
-        P(ex - 1, eyeY - 1, mix(cy_.lensColor, hex('#ffffff'), 0.6));
-      };
       const lx = cx - eyeGap, rx = cx + eyeGap;
-      if (race === 'human') {
-        drawHumanEye(lx); drawHumanEye(rx);
-        if (marks.patch) { rect(rx - 3, eyeY - 2, rx + 3, eyeY + 2, hex('#1a1a1a')); line(rx - 3, eyeY - 2, cx + headW, cy - headH + 4, hex('#1a1a1a')); }
-      } else if (cy_.optics === 'mono') {
-        drawOptic(cx, true);
-      } else {
-        if (cy_.optics === 'left' || cy_.optics === 'both') drawOptic(lx); else drawHumanEye(lx);
-        if (cy_.optics === 'right' || cy_.optics === 'both') drawOptic(rx); else drawHumanEye(rx);
-      }
-      // brows
-      if (race === 'human' || cy_.plating === 'none' || cy_.plating === 'lower') {
-        for (let t = 0; t < browThick; t++) { line(lx - 3, eyeY - 4 - t, lx + 3, eyeY - 5 - t, hairD); line(rx - 3, eyeY - 5 - t, rx + 3, eyeY - 4 - t, hairD); }
-      }
-      if (marks.glasses) {
-        for (let x = lx - 4; x <= rx + 4; x++) { if ((x > lx + 3 && x < rx - 3) || x === lx - 4 || x === rx + 4) P(x, eyeY, hex('#c0c8d0')); }
-        for (const ex of [lx, rx]) { for (let y = eyeY - 2; y <= eyeY + 2; y++) { P(ex - 4, y, hex('#c0c8d0')); P(ex + 4, y, hex('#c0c8d0')); } for (let x = ex - 3; x <= ex + 3; x++) { P(x, eyeY - 3, hex('#c0c8d0')); P(x, eyeY + 3, hex('#c0c8d0')); P(x, eyeY - 2, mix(hex('#c8dcff'), skin, 0.5)); } }
+      const eye = (ex, closedLid = false) => {
+        // socket shadow, white, iris, pupil, catchlight, lids
+        rect(ex - 2, eyeY - 1, ex + 2, eyeY + 1, [244, 244, 248], M.SKIN);
+        rect(ex - 1, eyeY - 1, ex + 1, eyeY + 1, iris, M.SKIN);
+        set(ex, eyeY, [8, 8, 12], M.SKIN); set(ex, eyeY + 1, mix(iris, [8, 8, 12], 0.5), M.SKIN);
+        set(ex - 1, eyeY - 1, [255, 255, 255], M.SKIN);
+        for (let x = ex - 3; x <= ex + 3; x++) set(x, eyeY - 2, OUT, M.SKIN);           // upper lid
+        set(ex - 3, eyeY - 1, OUT, M.SKIN); set(ex + 3, eyeY - 1, OUT, M.SKIN);
+        for (let x = ex - 2; x <= ex + 2; x++) set(x, eyeY + 2, R.skin[2], M.SKIN);      // lower lid
+        set(ex - 3, eyeY + 1, R.skin[2], M.SKIN); set(ex + 3, eyeY, R.skin[2], M.SKIN);
+        if (closedLid) rect(ex - 2, eyeY - 1, ex + 2, eyeY - 1, OUT, M.SKIN);
+      };
+      const optic = (ex, big = false) => {
+        const r = big ? 4 : 3;
+        for (let y = -r - 1; y <= r + 1; y++) for (let x = -r - 1; x <= r + 1; x++) {
+          const d = x * x + y * y;
+          if (d > (r + 1) * (r + 1)) continue;
+          const c = d <= 1 ? [255, 255, 255] : d <= (r - 1) * (r - 1) ? lens : d <= r * r ? R.brass[2] : R.steel[1];
+          set(ex + x, eyeY + y, c, M.STEEL);
+        }
+        set(ex - 1, eyeY - 1, mix(lens, [255, 255, 255], 0.7), M.STEEL);
+        // bloom
+        for (const [dx, dy] of [[-r - 2, 0], [r + 2, 0], [0, -r - 2], [0, r + 2]]) if (getM(ex + dx, eyeY + dy) !== M.BG) paint(ex + dx, eyeY + dy, mix(col[idx(ex + dx, eyeY + dy)], lens, 0.45));
+      };
+      if (race === 'human') { eye(lx); eye(rx); }
+      else if (cyb.optics === 'mono') optic(cx, true);
+      else { if (cyb.optics === 'left' || cyb.optics === 'both') optic(lx); else eye(lx); if (cyb.optics === 'right' || cyb.optics === 'both') optic(rx); else eye(rx); }
+      // brows: 2 px thick, tilt gives the expression
+      if (race === 'human' || cyb.plating === 'none' || cyb.plating === 'lower') {
+        const bc = race === 'human' ? R.hair[1] : R.skin[1];
+        for (let i = -3; i <= 3; i++) {
+          const dyL = browTilt === -1 ? (i > 0 ? -1 : 0) : browTilt === 1 ? (i < 0 ? -1 : 0) : 0;
+          const dyR = browTilt === -1 ? (i < 0 ? -1 : 0) : browTilt === 1 ? (i > 0 ? -1 : 0) : 0;
+          set(lx + i, eyeY - 4 + dyL, bc, M.SKIN); set(lx + i, eyeY - 5 + dyL, bc, M.SKIN);
+          set(rx + i, eyeY - 4 + dyR, bc, M.SKIN); set(rx + i, eyeY - 5 + dyR, bc, M.SKIN);
+        }
       }
 
-      // ---- nose ----
-      const ny0 = cy + 3;
-      if (noseStyle === 'button') { P(cx, ny0 + 2, skinDD); P(cx - 1, ny0 + 2, skinD); P(cx + 1, ny0 + 2, skinD); P(cx, ny0 + 1, skinD); }
-      else if (noseStyle === 'straight') { line(cx, ny0 - 2, cx, ny0 + 2, skinD); P(cx - 1, ny0 + 3, skinDD); P(cx + 1, ny0 + 3, skinDD); P(cx + 1, ny0, skinDD); }
-      else { rect(cx - 2, ny0 + 2, cx + 2, ny0 + 3, skinD); P(cx - 2, ny0 + 3, skinDD); P(cx + 2, ny0 + 3, skinDD); }
+      // ---- nose: right-side shadow + nostrils ----
+      const ny0 = cy + 6;
+      for (let y = ny0 - 2; y <= ny0 + 1; y++) set(cx + 1, y, R.skin[2], M.SKIN);
+      set(cx + 2, ny0 + 1, R.skin[2], M.SKIN); set(cx - 1, ny0 + 2, R.skin[1], M.SKIN); set(cx + 1, ny0 + 2, R.skin[1], M.SKIN); set(cx, ny0 + 2, R.skin[2], M.SKIN);
+      set(cx - 1, ny0 - 1, R.skin[4], M.SKIN);
 
       // ---- mouth / grille ----
-      const my = cy + 8;
-      if (race === 'cyborg' && cy_.grille) {
-        rect(cx - 6, my - 2, cx + 6, my + 3, steel);
-        for (let x = cx - 5; x <= cx + 5; x += 2) line(x, my - 1, x, my + 2, steelD);
-        rect(cx - 6, my - 2, cx + 6, my - 2, steelL); P(cx - 7, my, brass); P(cx + 7, my, brass);
+      const my = cy + 10;
+      if (race === 'cyborg' && cyb.grille) {
+        rect(cx - 6, my - 2, cx + 6, my + 3, R.steel[3], M.STEEL);
+        for (let x = cx - 5; x <= cx + 5; x += 2) line(x, my - 1, x, my + 2, R.steel[1], M.STEEL);
+        rect(cx - 6, my - 2, cx + 6, my - 2, R.steel[4], M.STEEL); set(cx - 7, my, R.brass[3], M.STEEL); set(cx + 7, my, R.brass[3], M.STEEL);
       } else {
-        const lip = mix(skinDD, hex('#8a3a3a'), race === 'human' ? 0.5 : 0.1);
-        if (mouthStyle === 'flat') line(cx - 3, my, cx + 3, my, lip);
-        else if (mouthStyle === 'smile') { P(cx - 4, my - 1, lip); line(cx - 3, my, cx + 3, my, lip); P(cx + 4, my - 1, lip); line(cx - 2, my + 1, cx + 2, my + 1, mix(lip, skin, 0.5)); }
-        else if (mouthStyle === 'frown') { P(cx - 4, my + 1, lip); line(cx - 3, my, cx + 3, my, lip); P(cx + 4, my + 1, lip); }
-        else { line(cx - 3, my, cx + 2, my, lip); P(cx + 3, my - 1, lip); }
+        const lip = R.skin[1], lipL = mix(R.skin[3], [220, 120, 120], race === 'human' ? 0.35 : 0.1);
+        if (mouthStyle === 'flat') { line(cx - 3, my, cx + 3, my, lip, M.SKIN); line(cx - 2, my + 1, cx + 2, my + 1, lipL, M.SKIN); }
+        else if (mouthStyle === 'smile') { set(cx - 4, my - 1, lip, M.SKIN); line(cx - 3, my, cx + 3, my, lip, M.SKIN); set(cx + 4, my - 1, lip, M.SKIN); line(cx - 2, my + 1, cx + 2, my + 1, lipL, M.SKIN); }
+        else if (mouthStyle === 'frown') { set(cx - 4, my + 1, lip, M.SKIN); line(cx - 3, my, cx + 3, my, lip, M.SKIN); set(cx + 4, my + 1, lip, M.SKIN); }
+        else if (mouthStyle === 'open') { rect(cx - 3, my, cx + 3, my + 1, lip, M.SKIN); rect(cx - 2, my, cx + 2, my, [240, 240, 244], M.SKIN); }
+        else { line(cx - 3, my, cx + 2, my, lip, M.SKIN); set(cx + 3, my - 1, lip, M.SKIN); line(cx - 2, my + 1, cx + 1, my + 1, lipL, M.SKIN); }
       }
 
       // ---- facial hair / marks ----
       if (marks.beard) {
-        for (let y = my - 1; y <= cy + headH + 1; y++) for (let x = cx - headW; x <= cx + headW; x++) {
+        for (let y = my - 1; y <= chinY; y++) for (let x = cx - headW; x <= cx + headW; x++) {
           if (!inHead(x, y)) continue;
           const nx = (x + 0.5 - cx) / headW;
-          const on = marks.beardStyle === 'stubble' ? ((x * 7 + y * 3) % 5 === 0) : marks.beardStyle === 'goatee' ? Math.abs(nx) < 0.3 && y >= my + 1 : (y >= my + 1 || Math.abs(nx) > 0.45);
-          if (on && !(y === my && Math.abs(nx) < 0.35)) P(x, y, ((x + y) & 1) ? hairD : hair);
+          const on = marks.beardStyle === 'stubble' ? ((x * 7 + y * 3) % 4 === 0) : marks.beardStyle === 'goatee' ? Math.abs(nx) < 0.3 && y >= my + 2 : (y >= my + 2 || Math.abs(nx) > 0.5);
+          if (on && !(y <= my + 1 && Math.abs(nx) < 0.4)) set(x, y, R.hair[((x + y) & 1) ? 2 : 3], M.HAIR);
         }
       }
-      if (marks.scar) { const sx = scarSide ? cx + 4 : cx - 9; for (let i = 0; i < 6; i++) { P(sx + i, cy - 6 + i, mix(skinDD, hex('#c04a4a'), 0.6)); if (i % 2) P(sx + i - 1, cy - 6 + i, skinD); } }
-      if (marks.freckles) for (let i = 0; i < 9; i++) { const fx = cx - 8 + (i * 5) % 17, fy = cy + 2 + (i * 3) % 5; if (inHead(fx, fy) && Math.abs(fx - cx) > 2) P(fx, fy, skinD); }
-      if (marks.tattoo) { const tx = scarSide ? cx + headW - 5 : cx - headW + 3; for (let i = 0; i < 5; i++) P(tx + (i % 2), cy - 2 + i * 2, accent); P(tx + 1, cy - 4, accent); }
+      if (marks.scar) { const sx = marks.side ? cx + 4 : cx - 9; for (let i = 0; i < 6; i++) { set(sx + i, cy - 5 + i, mix(R.skin[1], [200, 70, 70], 0.5), M.SKIN); if (i % 2) set(sx + i + 1, cy - 5 + i, R.skin[4], M.SKIN); } }
+      if (marks.tattoo) { const tx = marks.side ? cx + headW - 5 : cx - headW + 3; for (let i = 0; i < 5; i++) set(tx + (i % 2), cy - 2 + i * 2, accent, M.SKIN); set(tx + 1, cy - 4, accent, M.SKIN); }
 
       // ---- cyborg cables + cowl ----
       if (race === 'cyborg') {
-        const cableC = hex('#2a2e34'), cableL = hex('#5a626c');
-        const starts = [[cx + headW - 2, cy - 3], [cx + headW - 4, cy + 8], [cx - headW + 3, cy + 9]];
-        for (let i = 0; i < cy_.cables; i++) {
-          const [sx, sy] = starts[i];
-          const dir = sx > cx ? 1 : -1;
-          const ex = cx + dir * (12 + i * 3), ey = 50 + i * 2;
-          const mid = [sx + dir * 6, sy + 8];
-          line(sx, sy, mid[0], mid[1], cableC); line(mid[0], mid[1], ex, ey, cableC);
-          line(sx, sy - 1, mid[0], mid[1] - 1, cableL);
-          rect(sx - 1, sy - 1, sx + 1, sy + 1, brassD); P(sx, sy, brass);
-          rect(ex - 1, ey - 1, ex + 1, ey + 1, steelD);
+        const starts = [[cx + headW - 1, cy - 2], [cx + headW - 3, cy + 9], [cx - headW + 2, cy + 10]];
+        for (let i = 0; i < cyb.cables; i++) {
+          const [sx, sy] = starts[i], dir = sx > cx ? 1 : -1;
+          const ex = cx + dir * (13 + i * 3), ey = shoulderY + 4 + i * 2, mid = [sx + dir * 6, sy + 8];
+          line(sx, sy, mid[0], mid[1], R.gear[1], M.GEAR); line(mid[0], mid[1], ex, ey, R.gear[1], M.GEAR);
+          line(sx, sy - 1, mid[0], mid[1] - 1, R.gear[3], M.GEAR);
+          rect(sx - 1, sy - 1, sx + 1, sy + 1, R.brass[2], M.GEAR); set(sx, sy, R.brass[4], M.GEAR);
+          rect(ex - 1, ey - 1, ex + 1, ey + 1, R.steel[1], M.GEAR);
         }
-        if (cy_.cowl) {
-          for (let y = cy - headH - 6; y < 50; y++) for (let x = cx - headW - 8; x <= cx + headW + 8; x++) {
+        if (cyb.cowl) {
+          for (let y = cy - headH - 6; y < shoulderY + 1; y++) for (let x = cx - headW - 8; x <= cx + headW + 8; x++) {
             const nx = (x + 0.5 - cx) / (headW + 7), ny = (y + 0.5 - cy + 2) / (headH + 7);
-            const inner = inHead(x, y) || (y > cy + headH - 2 && Math.abs(x + 0.5 - cx) < headW - 2);
+            const inner = inHead(x, y) || (y > chinY - 2 && Math.abs(x + 0.5 - cx) < headW - 3);
             if (nx * nx + ny * ny <= 1 && !inner) {
-              const shadow = (x + 0.5 - cx) / headW, sy = (y + 0.5 - cy) / headH;
-              const nearFace = shadow * shadow + sy * sy < 1.12;
-              P(x, y, nearFace ? rustD : (x < cx ? rustL : rust));
+              const sx = (x + 0.5 - cx) / headW, sy = (y + 0.5 - cy) / headH;
+              const near = sx * sx + sy * sy < 1.15;
+              set(x, y, R.hood[near ? 1 : x < cx - 3 ? 4 : x > cx + 4 ? 2 : 3], M.HOOD);
             }
           }
-          for (let x = cx - 4; x <= cx + 4; x++) P(x, cy - headH - 5, rustL); // cowl ridge
+          for (let x = cx - 5; x <= cx + 5; x++) set(x, cy - headH - 5, R.hood[4], M.HOOD);
         }
       }
 
-      // ---- human hair / headgear ----
+      // ---- human hair ----
       const top = cy - headH;
-      const hairBand = (y0, y1, extra, colour = null) => { for (let y = y0; y <= y1; y++) for (let x = cx - headW - extra; x <= cx + headW + extra; x++) { const nx = (x + 0.5 - cx) / (headW + extra), ny = (y + 0.5 - cy) / (headH + extra); if (nx * nx + ny * ny <= 1) P(x, y, colour || (x < cx - 3 ? hairL : x > cx + 5 ? hairD : hair)); } };
+      const H = R.hair;
+      const hairTone = (x, y, base = 3) => { let t = x < cx - 4 ? 4 : x > cx + 5 ? 2 : base; if ((x * 3 + y) % 7 === 0) t = Math.max(1, t - 1); return H[t]; };
+      const cap = (y0, y1, extra) => { for (let y = y0; y <= y1; y++) for (let x = cx - headW - extra; x <= cx + headW + extra; x++) { const nx = (x + 0.5 - cx) / (headW + extra), ny = (y + 0.5 - cy - 1) / (headH + extra + 1); if (nx * nx + ny * ny <= 1) set(x, y, hairTone(x, y), M.HAIR); } };
+      const sideburns = (yEnd) => { for (let y = top + 6; y < yEnd; y++) { set(cx - headW - 1, y, H[3], M.HAIR); set(cx - headW, y, H[3], M.HAIR); set(cx + headW, y, H[2], M.HAIR); set(cx + headW + 1, y, H[2], M.HAIR); } };
       if (race === 'human') switch (hairStyle) {
-        case 'short': hairBand(top - 1, top + 5, 1); for (let y = top + 6; y < cy - 2; y++) { P(cx - headW - 1, y, hair); P(cx - headW, y, hair); P(cx + headW, y, hairD); P(cx + headW + 1, y, hairD); } break;
-        case 'buzz': for (let y = top - 1; y <= top + 5; y++) for (let x = cx - headW; x <= cx + headW; x++) { const nx = (x + 0.5 - cx) / headW, ny = (y + 0.5 - cy) / headH; if (nx * nx + ny * ny <= 1 && ((x + y) & 1)) P(x, y, hairD); } break;
-        case 'undercut': hairBand(top - 2, top + 4, 0); for (let x = cx - headW + 2; x <= cx + 2; x++) P(x, top - 3, hair); break;
-        case 'sidepart': hairBand(top - 1, top + 5, 1); for (let y = top + 6; y < cy - 1; y++) { P(cx - headW - 1, y, hair); P(cx - headW, y, hair); } for (let x = cx - headW + 1; x <= cx - 2; x++) P(x, top + 6, hair); break;
-        case 'long': hairBand(top - 1, top + 5, 1); for (let y = top + 6; y < cy + headH + 8; y++) { for (let k = 1; k <= 3; k++) { P(cx - headW - k, y, k === 3 ? hairD : hair); P(cx + headW + k, y, k === 1 ? hair : hairD); } } break;
-        case 'curly': for (let y = top - 3; y <= top + 7; y++) for (let x = cx - headW - 3; x <= cx + headW + 3; x++) { const nx = (x + 0.5 - cx) / (headW + 3), ny = (y + 0.5 - cy) / (headH + 3); if (nx * nx + ny * ny <= 1 && !inHead(x, y + 3) && ((x * 3 + y * 5) % 4 !== 0)) P(x, y, ((x + y) & 1) ? hair : hairD); } break;
-        case 'bun': hairBand(top - 1, top + 5, 1); for (let y = top - 6; y < top - 1; y++) for (let x = cx - 3; x <= cx + 3; x++) P(x, y, x < cx ? hairL : hair); break;
-        case 'ponytail': hairBand(top - 1, top + 5, 1); for (let y = top + 4; y < cy + headH + 6; y++) { P(cx + headW + 2, y, hair); P(cx + headW + 3, y, hairD); } break;
-        case 'mohawk': for (let y = top - 7; y < top + 3; y++) for (let x = cx - 2; x <= cx + 2; x++) P(x, y, x < cx ? hairL : x > cx ? hairD : hair); break;
-        case 'cap': hairBand(top - 2, top + 5, 2, collar); for (let x = cx - headW - 2; x <= cx + 5; x++) { P(x, top + 6, collarD); P(x, top + 7, collarD); } rect(cx - 2, top + 1, cx + 1, top + 3, accent); break;
-        case 'beret': hairBand(top - 3, top + 4, 3, collar); for (let x = cx - headW - 3; x <= cx + headW + 3; x++) P(x, top + 5, collarD); P(cx + 2, top - 3, collarL); break;
-        case 'bandana': hairBand(top - 1, top + 4, 1, hex('#c0392b')); for (let x = cx - headW - 1; x <= cx + headW + 1; x++) P(x, top + 5, hex('#8a2a1a')); for (let y = top + 3; y < top + 10; y++) { P(cx + headW + 2, y, hex('#c0392b')); P(cx + headW + 3, y + 1, hex('#8a2a1a')); } break;
-        case 'hood': for (let y = top - 6; y < 50; y++) for (let x = cx - headW - 8; x <= cx + headW + 8; x++) { const nx = (x + 0.5 - cx) / (headW + 7), ny = (y + 0.5 - cy + 2) / (headH + 7); if (nx * nx + ny * ny <= 1 && !inHead(x, y) && !(y > cy + headH - 2 && Math.abs(x + 0.5 - cx) < headW - 2)) P(x, y, x < cx ? collar : collarD); } break;
-        case 'bald': default: for (let x = cx - 4; x <= cx - 1; x++) P(x, top + 2, skinL); break;
+        case 'short': cap(top - 4, top + 7, 2); sideburns(cy); for (let x = cx - 7; x <= cx + 3; x++) set(x, top + 8, H[2], M.HAIR); for (let x = cx - 9; x <= cx - 6; x++) set(x, top + 9, H[2], M.HAIR); break;
+        case 'buzz': for (let y = top - 1; y <= top + 5; y++) for (let x = cx - headW; x <= cx + headW; x++) { const nx = (x + 0.5 - cx) / headW, ny = (y + 0.5 - cy) / headH; if (nx * nx + ny * ny <= 1 && ((x + y) & 1)) set(x, y, H[2], M.HAIR); } break;
+        case 'undercut': cap(top - 4, top + 4, 0); for (let x = cx - headW + 3; x <= cx + 1; x++) { set(x, top - 4, H[3], M.HAIR); set(x, top - 5, H[4], M.HAIR); } break;
+        case 'swept': cap(top - 4, top + 6, 2); sideburns(cy - 1); for (let i = 0; i < 8; i++) { set(cx - headW + 2 + i, top + 6 + Math.floor(i / 3), H[i % 3 ? 3 : 4], M.HAIR); } for (let i = 0; i < 4; i++) set(cx + 4 + i, top - 3 - (i > 1 ? 1 : 0), H[4], M.HAIR); break;
+        case 'long': cap(top - 4, top + 7, 2); for (let y = top + 6; y < chinY + 9; y++) for (let k = 1; k <= 3; k++) { set(cx - headW - k, y, H[k === 3 ? 2 : 3], M.HAIR); set(cx + headW + k, y, H[k === 1 ? 3 : 2], M.HAIR); } break;
+        case 'curly': for (let y = top - 4; y <= top + 7; y++) for (let x = cx - headW - 3; x <= cx + headW + 3; x++) { const nx = (x + 0.5 - cx) / (headW + 3), ny = (y + 0.5 - cy) / (headH + 3); if (nx * nx + ny * ny <= 1 && !inHead(x, y + 3) && ((x * 3 + y * 5) % 4 !== 0)) set(x, y, H[((x + y) & 1) ? 3 : 2], M.HAIR); } break;
+        case 'bun': cap(top - 3, top + 6, 1); for (let y = top - 7; y < top - 1; y++) for (let x = cx - 3; x <= cx + 3; x++) set(x, y, H[x < cx ? 4 : 3], M.HAIR); break;
+        case 'ponytail': cap(top - 4, top + 7, 2); for (let y = top + 4; y < chinY + 8; y++) { set(cx + headW + 2, y, H[3], M.HAIR); set(cx + headW + 3, y, H[2], M.HAIR); } break;
+        case 'mohawk': for (let y = top - 8; y < top + 3; y++) for (let x = cx - 2; x <= cx + 2; x++) set(x, y, H[x < cx ? 4 : x > cx ? 2 : 3], M.HAIR); break;
+        case 'bald': default: for (let x = cx - 5; x <= cx - 2; x++) set(x, top + 2, R.skin[4], M.SKIN); break;
       }
 
-      // ---- outline: darken head/garment pixels that touch the background ----
-      const isBg = (x, y) => { if (x < 0 || y < 0 || x >= PX || y >= PX) return false; return !inHead(x, y) && y < 46 && !(y >= cy + headH - 3 && Math.abs(x + 0.5 - cx) <= 4); };
-      for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) {
-        if (isBg(x, y)) continue;
-        if (isBg(x - 1, y) || isBg(x + 1, y) || isBg(x, y - 1) || isBg(x, y + 1)) {
-          if (inHead(x, y) || (y >= cy + headH - 3 && y < 46)) P(x, y, mix(skinDD, bg0, 0.45));
+      // ---- sci-fi gear ----
+      const Gr = R.gear;
+      if (gear === 'helmet') {
+        // dome in the garment colour, visor band over the eyes, chin guard
+        for (let y = top - 4; y <= cy + 8; y++) for (let x = cx - headW - 3; x <= cx + headW + 3; x++) {
+          const nx = (x + 0.5 - cx) / (headW + 2.5), ny = (y + 0.5 - cy) / (headH + 3);
+          if (nx * nx + ny * ny > 1) continue;
+          const isVisor = y >= eyeY - 4 && y <= eyeY + 3 && Math.abs(nx) < 0.92;
+          if (isVisor) { const vt = (x - (cx - headW)) / (headW * 2); set(x, y, vt < 0.25 && y < eyeY ? accentL : ((x + y * 2) % 11 === 0) ? accent : mix(accentD, [10, 12, 20], 0.6), M.GLASS); }
+          else set(x, y, R.garb[y < top + 2 ? 4 : nx < -0.4 ? 4 : nx > 0.5 ? 2 : 3], M.GEAR);
         }
+        rect(cx - 2, top - 3, cx + 1, top - 1, accent, M.GEAR); // crest light
+      } else if (gear === 'headset') {
+        for (let x = cx - headW - 1; x <= cx + headW + 1; x++) { const ny = top - 2 + Math.round(((x - cx) / headW) ** 2 * 3); set(x, ny, Gr[3], M.GEAR); set(x, ny + 1, Gr[1], M.GEAR); }
+        rect(cx - headW - 3, cy - 2, cx - headW, cy + 4, Gr[3], M.GEAR); rect(cx - headW - 2, cy - 1, cx - headW - 1, cy + 3, Gr[2], M.GEAR); set(cx - headW - 2, cy, Gr[4], M.GEAR);
+        line(cx - headW - 2, cy + 4, cx - 6, cy + 11, Gr[1], M.GEAR); set(cx - 5, cy + 11, accent, M.GEAR); set(cx - 4, cy + 11, accentL, M.GEAR);
+      } else if (gear === 'monocle') {
+        const ex = marks.side ? rx : lx;
+        for (let i = -4; i <= 4; i++) { set(ex + i, eyeY - 3, accent, M.GEAR); set(ex + i, eyeY + 3, accent, M.GEAR); }
+        for (let i = -2; i <= 2; i++) { set(ex - 4, eyeY + i, accent, M.GEAR); set(ex + 4, eyeY + i, accent, M.GEAR); }
+        for (let y = eyeY - 2; y <= eyeY + 2; y++) for (let x = ex - 3; x <= ex + 3; x++) paint(x, y, mix(col[idx(x, y)], accent, 0.3));
+        line(ex + (marks.side ? 4 : -4), eyeY - 3, cx + (marks.side ? headW + 1 : -headW - 1), eyeY - 6, Gr[2], M.GEAR);
+      } else if (gear === 'goggles') {
+        for (let x = cx - headW - 1; x <= cx + headW + 1; x++) { set(x, top + 3, Gr[1], M.GEAR); set(x, top + 4, Gr[3], M.GEAR); set(x, top + 5, Gr[2], M.GEAR); }
+        for (const ex of [cx - 5, cx + 5]) { rect(ex - 3, top + 2, ex + 3, top + 6, Gr[1], M.GEAR); rect(ex - 2, top + 3, ex + 2, top + 5, mix(accentD, [20, 24, 30], 0.5), M.GLASS); set(ex - 2, top + 3, accentL, M.GLASS); }
+      } else if (gear === 'cap') {
+        for (let y = top - 3; y <= top + 4; y++) for (let x = cx - headW - 2; x <= cx + headW + 2; x++) { const nx = (x + 0.5 - cx) / (headW + 2), ny = (y + 0.5 - cy) / (headH + 2); if (nx * nx + ny * ny <= 1) set(x, y, R.garb[y < top ? 4 : nx > 0.4 ? 2 : 3], M.GEAR); }
+        for (let x = cx - headW - 3; x <= cx + 4; x++) { set(x, top + 5, R.garb[1], M.GEAR); set(x, top + 6, R.garb[1], M.GEAR); }
+        rect(cx - 2, top, cx + 1, top + 2, accent, M.GEAR);
+      } else if (gear === 'hood') {
+        for (let y = top - 6; y < shoulderY + 1; y++) for (let x = cx - headW - 8; x <= cx + headW + 8; x++) {
+          const nx = (x + 0.5 - cx) / (headW + 7), ny = (y + 0.5 - cy + 2) / (headH + 7);
+          if (nx * nx + ny * ny <= 1 && !inHead(x, y) && !(y > chinY - 2 && Math.abs(x + 0.5 - cx) < headW - 3)) {
+            const sx = (x + 0.5 - cx) / headW, sy = (y + 0.5 - cy) / headH;
+            set(x, y, R.garb[sx * sx + sy * sy < 1.15 ? 1 : x < cx - 3 ? 4 : x > cx + 4 ? 2 : 3], M.HOOD);
+          }
+        }
+      } else if (gear === 'bandana') {
+        const B = ramp('#c0392b');
+        for (let y = top - 2; y <= top + 4; y++) for (let x = cx - headW - 1; x <= cx + headW + 1; x++) { const nx = (x + 0.5 - cx) / (headW + 1), ny = (y + 0.5 - cy) / (headH + 1); if (nx * nx + ny * ny <= 1) set(x, y, B[x < cx - 3 ? 4 : x > cx + 4 ? 2 : 3], M.GEAR); }
+        for (let x = cx - headW - 1; x <= cx + headW + 1; x++) if (inHead(x, top + 5)) set(x, top + 5, B[1], M.GEAR);
+        for (let y = top + 3; y < top + 11; y++) { set(cx + headW + 2, y, B[3], M.GEAR); set(cx + headW + 3, y + 1, B[2], M.GEAR); }
+      } else if (gear === 'patch') {
+        const ex = marks.side ? rx : lx;
+        rect(ex - 3, eyeY - 2, ex + 3, eyeY + 2, Gr[1], M.GEAR); rect(ex - 2, eyeY - 1, ex + 1, eyeY + 1, Gr[2], M.GEAR);
+        line(ex - 3, eyeY - 2, cx - headW, top + 5, OUT, M.GEAR); line(ex + 3, eyeY - 2, cx + headW, top + 5, OUT, M.GEAR);
       }
+
+      // ---- outline + interior lines + rim light ----
+      const outlineOf = (m) => (m === M.SKIN ? R.skin[0] : m === M.HAIR ? R.hair[0] : m === M.GARB ? G[0] : m === M.STEEL ? R.steel[0] : m === M.HOOD ? R.hood[0] : OUT);
+      const final = col.slice();
+      for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) {
+        const m = mat[idx(x, y)];
+        if (m === M.BG) continue;
+        const nb = [getM(x - 1, y), getM(x + 1, y), getM(x, y - 1), getM(x, y + 1)];
+        if (nb.includes(M.BG)) { final[idx(x, y)] = mix(outlineOf(m), OUT, 0.5); continue; }
+        // selective interior lines: hair / hood / gear / steel against skin
+        const hard = (a, b) => (a !== b) && ((a === M.SKIN && (b === M.HAIR || b === M.HOOD || b === M.GEAR || b === M.STEEL || b === M.GLASS)) || (a === M.SKIN && b === M.GARB && y < shoulderY - 1));
+        if (hard(m, nb[2]) || hard(m, nb[0])) final[idx(x, y)] = R.skin[1];
+        if ((m === M.HAIR || m === M.HOOD || m === M.GEAR) && (nb[3] === M.SKIN)) final[idx(x, y)] = outlineOf(m);
+      }
+      // rim light: right-hand silhouette edge, one pixel in
+      for (let y = 2; y < PX - 6; y++) for (let x = 1; x < PX - 1; x++) {
+        const m = mat[idx(x, y)];
+        if (m === M.BG || m === M.GLASS) continue;
+        if (getM(x + 1, y) === M.BG && getM(x + 2, y) === M.BG && getM(x - 1, y) !== M.BG) final[idx(x - 1, y)] = mix(final[idx(x - 1, y)], accentL, 0.55);
+        if (getM(x, y - 1) === M.BG && getM(x + 1, y - 1) === M.BG && x > cx && getM(x, y + 1) !== M.BG) final[idx(x, y + 1)] = mix(final[idx(x, y + 1)], accentL, 0.35);
+      }
+      for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) put(0, x, y, final[idx(x, y)], 255);
     },
   });
   cache.set(key, sheet);
   return sheet;
 }
 
-// ---- names + cast ----
+// ---- names + cast (unchanged from v2) ----
 const SYL_A = ['Ka', 'Vor', 'Tal', 'Mi', 'Ren', 'Sa', 'Ori', 'Dex', 'Lu', 'Hal', 'Zen', 'Bri', 'Ashe', 'Nik', 'Tam', 'Jov', 'Ely', 'Rho', 'Cass', 'Ibo', 'Mar', 'Ori', 'Sef', 'Ada'];
 const SYL_B = ['ra', 'en', 'ik', 'os', 'ael', 'um', 'ith', 'ar', 'ey', 'ok', 'ia', 'ul', 'an', 'es', 'ov', 'ix', 'ine', 'ett'];
 const SURN = ['Vance', 'Okoro', 'Reyes', 'Halvorsen', 'Tanaka', 'Mbeki', 'Ashby', 'Kowal', 'Ferreira', 'Dagny', 'Sato', 'Quill', 'Marchetti', 'Ndlovu', 'Brandt', 'Oyelaran', 'Ives', 'Tarrant', 'Zhou', 'Kessler', 'Adeyemi', 'Voss', 'Lindqvist', 'Castellan'];
