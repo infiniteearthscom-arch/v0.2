@@ -1111,6 +1111,10 @@ export const GalaxyMapWindow = () => {
                     <span className="text-[0.8rem] text-slate-400">{f.name}</span>
                   </div>
                 ))}
+                <div className="text-[0.8rem] text-slate-600 uppercase tracking-wider mt-3 mb-2">Travel</div>
+                <div className="flex items-center gap-2"><div style={{ width: 14, height: 0, borderTop: '2px dashed #4477aa' }} /><span className="text-[0.8rem] text-slate-400">Jump-gate lane</span></div>
+                <div className="flex items-center gap-2"><div style={{ width: 14, height: 0, borderTop: '2px dotted #22d3ee' }} /><span className="text-[0.8rem] text-slate-400">Route preview / warp hop</span></div>
+                <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#445' }} /><span className="text-[0.8rem] text-slate-400">Island region (no lane in — warp core)</span></div>
                 <div className="text-[0.8rem] text-slate-600 uppercase tracking-wider mt-3 mb-2">Star Types</div>
                 {Object.entries(STAR_COLORS).map(([type, color]) => (
                   <div key={type} className="flex items-center gap-2">

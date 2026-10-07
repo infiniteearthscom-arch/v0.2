@@ -61,6 +61,13 @@ export const HULL_GATES = {
   capital:    { skill: 'cmd_capital',    level: 2 },
 };
 
+// Warp Core (jump-gates-spec §6): craft-only outside islands; island
+// stations sell it at this price. `live` is filled per request in
+// api/skills.js from the module-row probe so clients gate free warp only
+// once migration 095 has run.
+export const WARP_CORE_MODULE_ID = 'utility_warp_core_3';
+export const ISLAND_CORE_PRICE = 250000;
+
 export const GATE_CONFIG = {
   module_gates: MODULE_GATES,
   hull_gates: HULL_GATES,

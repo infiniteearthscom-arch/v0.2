@@ -18,6 +18,7 @@ import { TradeInviteToast } from '@/components/trade/TradeInviteToast';
 import { CorpWindow } from '@/components/corp/CorpWindow';
 import { BountyBoardWindow } from '@/components/bounty/BountyBoardWindow';
 import { AnomaliesWindow } from '@/components/anomalies/AnomaliesWindow';
+import { GateWindow } from '@/components/galaxy/GateWindow';
 import { BaseWindow } from '@/components/base/BaseWindow';
 import { foundryAPI, researchAPI } from '@/utils/api';
 import { registerResourceTypes } from '@/components/pixel/PixelArt';
@@ -779,6 +780,7 @@ export const GameFrame = ({ children }) => {
 
       {/* Signals -- cosmic signature sites in the current system (083). */}
       <AnomaliesWindow />
+      <GateWindow />
       <BaseWindow />
 
       {/* Inbox / Mail — same pattern. */}

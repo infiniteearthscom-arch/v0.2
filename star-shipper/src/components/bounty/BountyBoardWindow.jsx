@@ -35,6 +35,8 @@ const HULL_OPTIONS = [
   { value: 'frigate',     label: 'Frigate' },
   { value: 'destroyer',   label: 'Destroyer' },
   { value: 'capital',     label: 'Capital' },
+  { value: 'swarm',       label: 'Swarm (any ship)' },
+  { value: 'synod',       label: 'Synod (any ship)' },
 ];
 
 const fmtNum = (n) => (n == null ? '—' : Number(n).toLocaleString());

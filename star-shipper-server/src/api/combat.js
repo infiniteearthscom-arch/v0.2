@@ -38,6 +38,7 @@ import { insertModuleItem, addResourceStack } from '../lib/wrecks.js';
 import { queryAll } from '../db/index.js';
 import { offerByKey, pathBetween } from '../game/contracts.js';
 import { progressBounties } from './contracts.js';
+import { logActivity } from '../lib/activity.js';
 
 // ---- contested-haul ambushes (2026-09-22) ----
 // userId -> Set(contractId) that already got their one ambush;
@@ -280,6 +281,14 @@ router.post('/claim-loot', async (req, res) => {
       throw e;
     }
 
+    // Named elite down (enemy-factions Phase D): galaxy-wide ticker event.
+    // The salvage IS the kill record, so this cannot be fished.
+    if (entry.isElite && entry.templateId) {
+      try {
+        const tmpl = (await getCatalog()).byId.get(entry.templateId);
+        if (tmpl) logActivity({ userId: req.user.id, senderName: req.user.username, type: 'elite_slain', systemId: system_id, payload: { elite_name: tmpl.name, faction: entry.faction || 'reavers', tier: entry.tier } });
+      } catch (e) { console.warn('elite ticker failed:', e.message); }
+    }
     // Bounty contracts (080): a validated salvage is the kill record.
     let bounties = [];
     try {

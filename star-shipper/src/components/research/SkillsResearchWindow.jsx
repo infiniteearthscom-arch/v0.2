@@ -76,6 +76,9 @@ const WIRED_BONUS_TYPES = new Set([
   'area_scan_radius_pct',       // SystemView handleAreaScan
   'bulk_belt_cooldown_pct',     // SystemView handleBeltScan
   'sweep_cooldown_pct',         // SystemView handleSystemSweep
+  // Travel (jump-gates-spec §7)
+  'jump_range_pct',             // utils/warp.js free-warp ring (Jump Drive Calibration, Warp Core Tuning)
+  'align_time_pct',             // utils/warp.js alignTimeSeconds (Fleet Alignment)
   // Research
   'rp_rate_pct',                // api/research.js RP trickle scalar
 ]);

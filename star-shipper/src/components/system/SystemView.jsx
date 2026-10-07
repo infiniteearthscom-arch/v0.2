@@ -4,7 +4,8 @@ import { useGameStore, useShips, useActiveShip } from '@/stores/gameStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getShipIcon, FORMATION_OFFSETS, MAX_FLEET_SIZE, HULL_SHAPES, FACTIONS as SHIP_FACTIONS } from '@/utils/shipRenderer';
 import { hydrateEnemies, BEHAVIOR_RANK } from '@/utils/enemyManifest';
-import { fleetWarpProfile, warpCheck, warpBlockText } from '@/utils/warp';
+import { fleetWarpProfile, warpCheck, warpBlockText, alignTimeSeconds, ALIGN_HIT_PENALTY, ALIGN_PENALTY_CAP } from '@/utils/warp';
+import { autoJumpEnabled } from '@/components/galaxy/GateWindow';
 import { qualityMultiplier } from '@/utils/quality';
 import { getPlanetSheet, getShadeMask, lightIndexFor, spinRate } from '@/utils/planetRenderer';
 import { getStarSheet, getPulsarBeamSheet, getStationSheet, pickStationVariety, getGateSheet, getWarpSheet, STATION_FRAMES, GATE_FRAMES, WARP_FRAMES } from '@/utils/structureRenderer';
@@ -29,7 +30,7 @@ const SpriteFrame = ({ sheet, frame, world, opacity = 1 }) => {
 import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
-import { buildFleets, damageFleet, fleetFrontLayer } from '@/utils/fleetEntities';
+import { buildFleets, damageFleet, fleetFrontLayer, recomputeDeathOrder } from '@/utils/fleetEntities';
 import { getFleetScanTimeMs, getFleetScanRange, DEFAULT_SCAN_RANGE } from '@/utils/shipStats';
 import { getQualityTier } from '@/data/resources';
 import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI, basesAPI } from '@/utils/api';
@@ -89,6 +90,17 @@ const SWARM_KNIT_DELAY = 10;        // seconds since the last hit
 const SWARM_KNIT_RATE = 0.005;      // fraction of max hull per second
 const SYNOD_TENDER_REGEN_MULT = 1.5;
 const SWARM_RALLY_BONUS = 1;
+// Faction signature moves (spec §5.1), T5 flagships only:
+//   Swarm  -- SPAWN: at SWARM_SPAWN_HULL_FRAC pooled hull the flagship ejects
+//             SWARM_SPAWN_COUNT Needles that join the pool (once per fight).
+//   Synod  -- OVERCLOCK: +SYNOD_OVERCLOCK_SHIELD max shield restored and
+//             weapons cycle SYNOD_OVERCLOCK_RATE x faster for
+//             SYNOD_OVERCLOCK_SECONDS, on the elite cooldown.
+const SWARM_SPAWN_HULL_FRAC = 0.3;
+const SWARM_SPAWN_COUNT = 2;
+const SYNOD_OVERCLOCK_SHIELD = 0.4;
+const SYNOD_OVERCLOCK_RATE = 1.5;
+const SYNOD_OVERCLOCK_SECONDS = 6;
 // Rally cap: max fleets engaging the player at once, by the SYSTEM's
 // region tier. Extra fleets hold their patrol until a slot frees --
 // deep space stays readable instead of a pile-on (plan Phase 4).
@@ -142,8 +154,9 @@ const fireEnemyWeapons = (enemy, dist, dx, dy, delta, projectiles) => {
     });
   };
   const weapons = enemy.weapons;
+  const rate = enemy._rateMult || 1; // Synod overclock
   if (!weapons || weapons.length === 0) {
-    enemy.fireCooldown -= delta;
+    enemy.fireCooldown -= delta * rate;
     if (enemy.fireCooldown <= 0) {
       enemy.fireCooldown = enemy.fireRate;
       fire(enemy.damage, enemy.weaponType);
@@ -151,7 +164,7 @@ const fireEnemyWeapons = (enemy, dist, dx, dy, delta, projectiles) => {
     return;
   }
   for (const w of weapons) {
-    w.cooldown -= delta;
+    w.cooldown -= delta * rate;
     if (w.cooldown > 0 || dist >= w.range) continue;
     w.cooldown = w.fireRate;
     fire(w.damage, w.damageType);
@@ -996,6 +1009,60 @@ export const SystemView = () => {
   const fetchSkillsAndResearch = useGameStore(state => state.fetchSkillsAndResearch);
   const activeBonusesRef = useRef(activeBonuses);
   activeBonusesRef.current = activeBonuses;
+
+  // ---- Jump-gate alignment (jump-gates-spec §3) ----
+  // { targetSystemId, total, remaining, penalty, startedAt, lastHitSeen }
+  // Lives in a ref (the loop ticks it every frame); the HUD reads it on
+  // the frame re-render. Thrust cancels, hits add ALIGN_HIT_PENALTY.
+  const gateAlignRef = useRef(null);
+  const performGateJump = (targetSystemId) => {
+    const st = useGameStore.getState();
+    const galaxy = getGalaxy();
+    const currentSys = galaxy.systemMap[st.currentSystem];
+    const targetSys = galaxy.systemMap[targetSystemId];
+    if (!currentSys || !targetSys) return false;
+    const profile = fleetWarpProfile(st.ships, st.activeBonuses);
+    const check = warpCheck(currentSys, targetSys, profile);
+    if (!(check.ok && check.via === 'gate')) {
+      st.setPendingJump(null);
+      if (pushToast) pushToast({ kind: 'error', text: `Jump refused: ${warpBlockText(check, targetSys, profile) || 'no lane to that system'}`, duration: 5000 });
+      return false;
+    }
+    playSound('dock_complete'); // TODO: register a dedicated 'warp_jump' asset in utils/audio.js
+    st.enterSystem(targetSys.id, 'jump_gate');
+    return true;
+  };
+  const startGateAlignment = (targetSystemId) => {
+    const st = useGameStore.getState();
+    const galaxy = getGalaxy();
+    const currentSys = galaxy.systemMap[st.currentSystem];
+    const targetSys = galaxy.systemMap[targetSystemId];
+    if (!currentSys || !targetSys) return;
+    const profile = fleetWarpProfile(st.ships, st.activeBonuses);
+    const check = warpCheck(currentSys, targetSys, profile);
+    if (!(check.ok && check.via === 'gate')) {
+      if (pushToast) pushToast({ kind: 'error', text: `Cannot align: ${warpBlockText(check, targetSys, profile) || 'no lane to that system'}`, duration: 4500 });
+      return;
+    }
+    const total = alignTimeSeconds(st.ships, st.activeBonuses);
+    cancelAutopilot?.();
+    shipVelRef.current = { x: 0, y: 0 };
+    gateAlignRef.current = { targetSystemId, targetName: targetSys.name, total, remaining: total, penalty: 0, startedAt: gameTimeRef.current, lastHitSeen: lastPlayerHitTimeRef.current };
+    playSound('button_click');
+    if (pushToast) pushToast({ kind: 'info', text: `Aligning to the ${targetSys.name} lane — ${total.toFixed(1)} s. Thrust to abort.`, duration: 2500 });
+  };
+  const cancelGateAlignment = (why) => {
+    if (!gateAlignRef.current) return;
+    gateAlignRef.current = null;
+    if (why && pushToast) pushToast({ kind: 'info', text: `Alignment aborted (${why})`, duration: 2000 });
+  };
+  const gateJumpRequest = useGameStore(state => state.gateJumpRequest);
+  useEffect(() => {
+    if (!gateJumpRequest) return;
+    const id = gateJumpRequest.targetSystemId;
+    useGameStore.getState().clearGateJumpRequest();
+    startGateAlignment(id);
+  }, [gateJumpRequest]); // eslint-disable-line react-hooks/exhaustive-deps
   // First-load fetch + 60s refresh so completed-while-flying skills
   // start applying without needing the player to open the window.
   useEffect(() => {
@@ -2700,6 +2767,28 @@ export const SystemView = () => {
       if (orbitLockRef.current && (hasManualInput || autopilotTargetRef.current)) {
         automationRef.current.releaseOrbitLock(hasManualInput ? 'manual thrust' : 'autopilot');
       }
+      // Jump-gate alignment tick (jump-gates-spec §3): hold at the gate,
+      // count down, extend on hits, jump at zero. Thrust or leaving the
+      // gate aborts.
+      if (gateAlignRef.current) {
+        const al = gateAlignRef.current;
+        if (hasManualInput) cancelGateAlignment('manual thrust');
+        else if (!dockedBodyRef.current || dockedBodyRef.current.type !== 'jump_gate') cancelGateAlignment('left the gate');
+        else if (isPodRef.current) cancelGateAlignment('pod');
+        else {
+          if (lastPlayerHitTimeRef.current > al.startedAt && lastPlayerHitTimeRef.current !== al.lastHitSeen) {
+            al.lastHitSeen = lastPlayerHitTimeRef.current;
+            if (al.penalty < ALIGN_PENALTY_CAP) { al.penalty = Math.min(ALIGN_PENALTY_CAP, al.penalty + ALIGN_HIT_PENALTY); al.remaining += ALIGN_HIT_PENALTY; }
+          }
+          shipVelRef.current = { x: 0, y: 0 };
+          al.remaining -= delta;
+          if (al.remaining <= 0) {
+            const target = al.targetSystemId;
+            gateAlignRef.current = null;
+            performGateJump(target);
+          }
+        }
+      }
       
       // Get autopilot target
       const target = autopilotTargetRef.current;
@@ -2835,17 +2924,28 @@ export const SystemView = () => {
                     const setGalaxyAutopilot = st.setGalaxyAutopilotTarget;
                     const targetSys = pending?.targetSystemId ? galaxy.systemMap[pending.targetSystemId] : null;
 
-                    if (targetBody.type === 'jump_gate' && targetSys) {
-                      const profile = fleetWarpProfile(st.ships, st.activeBonuses);
-                      const check = warpCheck(currentSys, targetSys, profile);
-                      if (check.ok && check.via === 'gate') {
-                        st.enterSystem(targetSys.id, 'jump_gate');
-                        return;
-                      }
-                      if (!check.ok) {
+                    // Jump-gates-spec §2-§4: a gate is a door, not a second
+                    // warp point. With a pending target (map Jump button or a
+                    // plotted route) and auto-jump on, start the alignment
+                    // timer; otherwise open the lane picker. Galaxy flight is
+                    // never entered from a gate.
+                    if (targetBody.type === 'jump_gate') {
+                      if (targetSys && autoJumpEnabled()) {
+                        const profile = fleetWarpProfile(st.ships, st.activeBonuses);
+                        const check = warpCheck(currentSys, targetSys, profile);
+                        if (check.ok && check.via === 'gate') { startGateAlignment(targetSys.id); return; }
                         st.setPendingJump(null);
-                        if (pushToast) pushToast({ kind: 'error', text: `Jump refused: ${warpBlockText(check, targetSys, profile)}`, duration: 5000 });
-                        return; // stay docked at the gate
+                        if (pushToast) pushToast({ kind: 'error', text: `Jump refused: ${warpBlockText(check, targetSys, profile) || 'no lane to that system'}`, duration: 5000 });
+                      }
+                      st.openWindow('gate');
+                      return;
+                    }
+                    // Warp point: free galaxy flight needs a warp core (§6).
+                    {
+                      const profile = fleetWarpProfile(st.ships, st.activeBonuses);
+                      if (profile.warpCoreLive !== false && profile.hasWarpCore === false) {
+                        if (pushToast) pushToast({ kind: 'error', text: 'No warp core fitted — this fleet travels by jump gate. Craft a Warp Core (Warp Theory) or buy one at an island station.', duration: 5000 });
+                        return; // stay docked at the warp point
                       }
                     }
 
@@ -3378,6 +3478,7 @@ export const SystemView = () => {
         // home for a fast recharge, then come back).
         const tune = BEHAVIOR_TUNING[enemy.behavior] || BEHAVIOR_TUNING.simple;
         const efleet = fleetsRef.current.get(enemy.fleetId);
+        enemy._rateMult = (efleet && efleet.overclockUntil > gameTimeRef.current) ? SYNOD_OVERCLOCK_RATE : 1;
         const fleetHullFrac = efleet ? efleet.hull / Math.max(1, efleet.maxHull) : 1;
         const fleetShieldFrac = efleet && efleet.maxShield > 0 ? efleet.shield / efleet.maxShield : 1;
         const attackRange = Math.max(PIRATE_ATTACK_RANGE, (enemy.range || PIRATE_ATTACK_RANGE) * 0.9);
@@ -3417,7 +3518,7 @@ export const SystemView = () => {
           if (dist > PIRATE_DEAGGRO_RANGE * 1.5) enemy.state = 'patrol';
         } else if (enemy.state === 'returning') {
           // Switch back to patrol once close enough to home
-          if (homeDist < enemy.patrolRadius * 1.2) { enemy.state = 'patrol'; enemy._regrouped = false; }
+          if (homeDist < enemy.patrolRadius * 1.2) { enemy.state = 'patrol'; enemy._regrouped = false; enemy._spawned = false; }
         }
 
         // Movement based on state
@@ -3463,11 +3564,55 @@ export const SystemView = () => {
           //   named elites -> ALPHA STRIKE: every weapon fires an extra
           //   1.5× volley;  other T5 flagships -> SHIELD SURGE: restore
           //   30% of the fleet's max shield. Both on one cooldown.
-          if (enemy.isFlagship && enemy.behavior === 'elite' && !dockedBodyRef.current) {
+          // Faction signature moves (enemy-factions-spec §5.1), T5 flagships.
+          const factionT5 = enemy.isFlagship && (enemy.tier || 1) >= 5 && (enemy.behavior === 'swarm' || enemy.behavior === 'synod');
+          if (factionT5 && enemy.behavior === 'swarm' && !enemy._spawned && efleet && efleet.hull / Math.max(1, efleet.maxHull) < SWARM_SPAWN_HULL_FRAC && !dockedBodyRef.current) {
+            // SPAWN: eject Needles that join the pool. Cloned from a Needle in
+            // this system if one exists (any state), else from the flagship at
+            // a fraction of its stats. No loot -- the server has no claim
+            // entry for them; their value is the extra hull in the pool.
+            enemy._spawned = true;
+            const src = enemiesRef.current.find(e => e.hullId === 'swarm_needle') || null;
+            const base = src || enemy;
+            const scale = src ? 1 : 0.08;
+            for (let k = 0; k < SWARM_SPAWN_COUNT; k++) {
+              const a = Math.random() * Math.PI * 2, d = enemy.displaySize + 12;
+              const clone = {
+                ...base,
+                id: `${enemy.id}_spawn${k + 1}`,
+                name: `T${enemy.tier} Needle`,
+                hullId: 'swarm_needle', hullName: 'Needle', icon: src ? src.icon : getShipIcon('swarm_needle') || enemy.icon,
+                displaySize: src ? src.displaySize : Math.max(4, Math.round(enemy.displaySize * 0.4)),
+                isFlagship: false, isElite: false, isSpawned: true, lootCredits: 0,
+                maxHull: Math.max(20, Math.round((base.maxHull || 60) * scale)),
+                maxArmor: Math.round((base.maxArmor || 0) * scale), maxShield: 0,
+                speed: src ? src.speed : Math.round(enemy.speed * 1.6),
+                weapons: (base.weapons || []).slice(0, 1).map(w => ({ ...w, damage: Math.round(w.damage * (src ? 1 : 0.3)), cooldown: Math.random() })),
+                x: enemy.x + Math.cos(a) * d, y: enemy.y + Math.sin(a) * d, vx: 0, vy: 0, rotation: enemy.rotation,
+                state: 'chase', fireCooldown: 0, shieldRegenTimer: 0, specialTimer: 0, regroupTimer: 0, jinkTimer: 0, orbitDir: 1,
+                formationSlot: Math.min(efleet.members.length + 1, FORMATION_OFFSETS.length - 1),
+              };
+              clone.hull = clone.maxHull;
+              clone.formationOffset = FORMATION_OFFSETS[clone.formationSlot] || { x: 0, y: 0 };
+              enemiesRef.current.push(clone);
+              efleet.members.push(clone); efleet.memberIds.push(clone.id);
+              efleet.maxHull += clone.maxHull; efleet.hull += clone.maxHull;
+              efleet.maxArmor += clone.maxArmor; efleet.armor += clone.maxArmor;
+            }
+            recomputeDeathOrder(efleet);
+            effects.push({ x: enemy.x, y: enemy.y, type: 'explosion', age: 0, size: enemy.displaySize * 0.6 });
+            if (pushToast) pushToast({ kind: 'error', text: `★ ${enemy.name}: SPAWN`, duration: 2200 });
+          }
+          if (enemy.isFlagship && (enemy.behavior === 'elite' || (factionT5 && enemy.behavior === 'synod')) && !dockedBodyRef.current) {
             enemy.specialTimer -= delta;
             if (enemy.specialTimer <= 0 && dist < (enemy.range || PIRATE_ATTACK_RANGE)) {
               enemy.specialTimer = ELITE_SPECIAL_COOLDOWN;
-              if (enemy.isElite) {
+              if (enemy.behavior === 'synod') {
+                // OVERCLOCK: shields up, weapons spin faster for a few seconds.
+                if (efleet && efleet.maxShield > 0) efleet.shield = Math.min(efleet.maxShield, efleet.shield + efleet.maxShield * SYNOD_OVERCLOCK_SHIELD);
+                if (efleet) efleet.overclockUntil = gameTimeRef.current + SYNOD_OVERCLOCK_SECONDS;
+                if (pushToast) pushToast({ kind: 'error', text: `★ ${enemy.name}: OVERCLOCK`, duration: 2200 });
+              } else if (enemy.isElite) {
                 const pAngle = Math.atan2(dy, dx);
                 for (const w of (enemy.weapons || [])) {
                   for (let k = -1; k <= 1; k++) {
@@ -5793,6 +5938,43 @@ export const SystemView = () => {
                     </div>
                   );
                 })}
+                {/* Jump-gate alignment bar (jump-gates-spec §3): fills as the
+                    fleet aligns; hits push the end out (penalty shown). */}
+                {gateAlignRef.current && (() => {
+                  const al = gateAlignRef.current;
+                  const frac = Math.max(0, Math.min(1, 1 - al.remaining / Math.max(0.01, al.total + al.penalty)));
+                  return (
+                    <div className="flex items-center gap-2" style={{ height: 15, marginTop: 2 }}>
+                      <span style={{ color: '#44ff88', fontSize: '0.5rem', width: 8 }}>⛩</span>
+                      <span style={{ color: '#44ff88', fontSize: '0.8rem', width: 30 }}>ALIGN</span>
+                      <div style={{ flex: 1, height: 6, background: '#0f2a1a', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ width: `${frac * 100}%`, height: '100%', background: 'linear-gradient(90deg,#1f8a5a,#44ff88)', boxShadow: '0 0 6px #44ff88' }} />
+                      </div>
+                      <span style={{ color: '#44ff88', fontSize: '0.8rem', width: 62, textAlign: 'right' }}>
+                        {Math.max(0, al.remaining).toFixed(1)}s{al.penalty > 0 ? ` +${al.penalty.toFixed(1)}` : ''}
+                      </span>
+                    </div>
+                  );
+                })()}
+                {/* Route strip (jump-gates-spec §4) */}
+                {(() => {
+                  const st = useGameStore.getState();
+                  const route = st.plannedRoute;
+                  if (!route || route.arrived) return null;
+                  const hop = route.hops[route.index];
+                  const hopSys = hop ? getGalaxy().systemMap[hop.id] : null;
+                  return (
+                    <div className="flex items-center gap-2" style={{ height: 15, marginTop: 2, fontSize: '0.74rem' }}>
+                      <span style={{ color: '#22d3ee', width: 8, fontSize: '0.5rem' }}>🧭</span>
+                      <span style={{ color: '#22d3ee', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        Hop {route.index + 1}/{route.hops.length} · {hop?.via === 'gate' ? 'gate' : 'warp'} → {hopSys?.name || hop?.id}
+                        {gateAlignRef.current ? ' · aligning' : ''}
+                      </span>
+                      <button onClick={() => { cancelGateAlignment(); st.clearPlannedRoute(); }} title="Cancel route"
+                        style={{ color: '#7a8a9a', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.74rem' }}>✕</button>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}

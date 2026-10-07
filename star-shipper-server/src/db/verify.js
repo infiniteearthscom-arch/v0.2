@@ -150,6 +150,14 @@ async function main() {
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
 
+  // --- migration 095 (warp core + travel skills) ---
+  const wcMod = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types mt JOIN item_definitions i ON i.id = mt.id JOIN crafting_recipes cr ON cr.output_item_id = mt.id WHERE mt.id = 'utility_warp_core_3'`);
+  report('Warp Core module + item twin + recipe (095)', wcMod.rows[0]?.n === 1, `found ${wcMod.rows[0]?.n}`);
+  const wt = await pool.query(`SELECT unlocks FROM tech_definitions WHERE id = 'tech_warp_theory'`);
+  report('Warp Theory unlocks the Warp Core (095)', JSON.stringify(wt.rows[0]?.unlocks || {}).includes('utility_warp_core_3'));
+  const fa = await pool.query(`SELECT name, bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'nav_warp_drive'`);
+  report('nav_warp_drive is Fleet Alignment / align_time_pct (095)', fa.rows[0]?.name === 'Fleet Alignment' && fa.rows[0]?.t === 'align_time_pct', JSON.stringify(fa.rows[0]));
+
   // --- migration 094 (enemy factions: Swarm + Synod) ---
   const facHulls = await pool.query(`SELECT COUNT(*)::int AS n FROM hull_types WHERE class IN ('Swarm','Synod') AND price IS NULL`);
   report('18 Swarm/Synod hulls, never sold (094)', facHulls.rows[0]?.n === 18, `found ${facHulls.rows[0]?.n}`);

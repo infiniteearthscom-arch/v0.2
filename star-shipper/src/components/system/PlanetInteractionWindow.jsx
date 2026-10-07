@@ -2192,7 +2192,19 @@ const VendorTab = ({ body }) => {
       // craft-only modules don't appear in the vendor (their recipe
       // is still discoverable via the Crafting window).
       const mods = modsRes.modules || [];
-      setModules(mods.filter(m => m.buy_price));
+      // Warp Core (jump-gates-spec §6): craft-only everywhere except island
+      // stations, which list it at the server's island price.
+      const st = useGameStore.getState();
+      const wc = st.fitGates?.warp_core;
+      let listed = mods.filter(m => m.buy_price);
+      if (wc?.live && wc.module_id) {
+        const core = mods.find(m => m.id === wc.module_id);
+        const sysId = st.currentSystem;
+        let island = false;
+        try { island = !!generateGalaxy(12345, 200).systemMap[sysId]?.isIsland; } catch {}
+        if (core && island && !listed.some(m => m.id === core.id)) listed = [...listed, { ...core, buy_price: wc.island_price, island_only: true }];
+      }
+      setModules(listed);
 
       // Supplies are non-module purchasable items — fuel, probes etc
       // For now these come from a static list since they use the crafting system

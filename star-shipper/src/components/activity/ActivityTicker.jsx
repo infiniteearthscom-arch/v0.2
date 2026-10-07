@@ -108,8 +108,13 @@ export function formatEvent(evt) {
           : `${name} delivered ${p.cargo_label || 'freight'} to ${p.dest_station || 'a station'}${pay}`,
       };
     }
+    case 'elite_slain': {
+      const fac = p.faction === 'swarm' ? 'The Swarm' : p.faction === 'synod' ? 'The Synod' : 'the Void Reavers';
+      const color = p.faction === 'swarm' ? '#5ef0a8' : p.faction === 'synod' ? '#3ad8ff' : '#ffd166';
+      return { icon: '★', color, text: `${name} slew ${p.elite_name || 'a named elite'} of ${fac}${p.tier ? ` (T${p.tier})` : ''}` };
+    }
     case 'bounty_claimed': {
-      const tgt = p.target_hull === 'any' ? 'a pirate' : `a Pirate ${p.target_hull}`;
+      const tgt = p.target_hull === 'any' ? 'a pirate' : p.target_hull === 'swarm' ? 'a Swarm ship' : p.target_hull === 'synod' ? 'a Synod ship' : `a Pirate ${p.target_hull}`;
       const reward = (typeof p.reward === 'number')
         ? ` for ${p.reward.toLocaleString()}cr`
         : '';

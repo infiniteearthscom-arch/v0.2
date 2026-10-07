@@ -28,7 +28,8 @@
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
 import { query, queryAll, transaction } from '../db/index.js';
-import { GATE_CONFIG } from '../game/fitGates.js';
+import { GATE_CONFIG, WARP_CORE_MODULE_ID, ISLAND_CORE_PRICE } from '../game/fitGates.js';
+import { isWarpCoreLive } from '../game/warp.js';
 
 const router = express.Router();
 
@@ -317,7 +318,7 @@ router.get('/', authMiddleware, async (req, res) => {
         // Phase 3 capability gates (module tiers / hull classes / fleet
         // size) so the Ship Builder shows the same locks the server
         // enforces. Single source: src/game/fitGates.js.
-        fit_gates: GATE_CONFIG,
+        fit_gates: { ...GATE_CONFIG, warp_core: { module_id: WARP_CORE_MODULE_ID, island_price: ISLAND_CORE_PRICE, live: await isWarpCoreLive({ query }) } },
         now: new Date().toISOString(),
       };
     });

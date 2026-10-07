@@ -476,6 +476,25 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     sys.resourceProfile = RESOURCE_PROFILES[sys.starType] || RESOURCE_PROFILES.yellow_star;
   }
 
+  // ---- Step 1.75: Islands (jump-gates-spec §5) ----
+  // The ISLAND_REGIONS highest-tier regions (never Core Worlds) get NO lane
+  // to the outside: internal gates only, reached by free warp. Faction
+  // nests skip island regions (factions.js reads reg.isIsland), so the
+  // Hive Nest / Forge Choir stay gate-reachable.
+  const ISLAND_REGIONS = 2;
+  const regHash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
+  const islandIds = new Set(
+    regions.filter(r => r !== regions[0]).sort((a, b) => (b.tier - a.tier) || (regHash(`island|${a.id}`) - regHash(`island|${b.id}`))).slice(0, ISLAND_REGIONS).map(r => r.id)
+  );
+  for (const reg of regions) reg.isIsland = islandIds.has(reg.id);
+  for (const sys of systems) sys.isIsland = islandIds.has(sys.regionId);
+  // A lane may not cross an island boundary (into, out of, or between islands).
+  const laneAllowed = (i, j) => {
+    const a = systems[i], b = systems[j];
+    if (!a.isIsland && !b.isIsland) return true;
+    return a.regionId === b.regionId;
+  };
+
   // ---- Step 2: Build jump gate network ----
   // Connect nearby systems, targeting ~60% coverage
   const targetGateSystems = Math.floor(systems.length * JUMP_GATE_COVERAGE);
@@ -494,6 +513,7 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
       const ti = systems[i].regionTier ?? 1;
       const tj = systems[j].regionTier ?? 1;
       if (Math.abs(ti - tj) > 1) continue;
+      if (!laneAllowed(i, j)) continue;
       edges.push({ i, j, dist: d });
     }
   }
@@ -534,6 +554,7 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     for (let j = i + 1; j < systems.length; j++) {
       const ti = systems[i].regionTier ?? 1, tj = systems[j].regionTier ?? 1;
       if (Math.abs(ti - tj) > 1) continue;
+      if (!laneAllowed(i, j)) continue;
       allEdges.push({ i, j, dist: Math.sqrt((systems[i].x - systems[j].x) ** 2 + (systems[i].y - systems[j].y) ** 2) });
     }
   }
@@ -555,6 +576,7 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     for (let j = i + 1; j < systems.length; j++) {
       const ti = systems[i].regionTier ?? 1, tj = systems[j].regionTier ?? 1;
       if (Math.abs(ti - tj) !== 1) continue;
+      if (!laneAllowed(i, j)) continue;
       const d = Math.sqrt((systems[i].x - systems[j].x) ** 2 + (systems[i].y - systems[j].y) ** 2);
       if (d < JUMP_GATE_MAX_DISTANCE * 1.5) frontierCandidates.push({ i, j, dist: d, lo: Math.min(ti, tj) });
     }
@@ -594,6 +616,7 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
     systems,
     systemMap,
     regions,
+    islands: [...islandIds],
     stats: {
       totalSystems: systems.length,
       gatedSystems: systems.filter(s => s.hasJumpGate).length,

@@ -17,6 +17,8 @@ const TARGET_HULLS = new Set([
   'any',
   'fighter', 'scout', 'frigate', 'destroyer', 'capital',
   'gunship', 'corvette', 'interceptor',
+  // Faction targets (enemy-factions Phase D): any ship of that faction.
+  'swarm', 'synod',
 ]);
 
 function makeErr(statusCode, message) {

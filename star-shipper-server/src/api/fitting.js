@@ -7,7 +7,8 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
-import { moduleGateFor, hullGateFor, assertGate, getFleetCap, getFleetCapInfo, MAX_FLEET_CAP } from '../game/fitGates.js';
+import { moduleGateFor, hullGateFor, assertGate, getFleetCap, getFleetCapInfo, MAX_FLEET_CAP, WARP_CORE_MODULE_ID, ISLAND_CORE_PRICE } from '../game/fitGates.js';
+import { getGalaxy as getWarpGalaxy } from '../game/warp.js';
 import { modulesFromFitted, ejectResources, ejectItems, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
 
@@ -52,6 +53,7 @@ router.get('/my-ships', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const ships = await queryAll(`
       SELECT s.*, ht.name as hull_name, ht.class as hull_class,
+             sb.name as storage_body_name,
              ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors,
              ht.grid_w, ht.grid_h, ht.slots as hull_slots,
              d.name as design_name,
@@ -59,6 +61,7 @@ router.get('/my-ships', authMiddleware, async (req, res) => {
       FROM ships s
       LEFT JOIN hull_types ht ON s.hull_type_id = ht.id
       LEFT JOIN ship_designs d ON s.design_id = d.id
+      LEFT JOIN celestial_bodies sb ON sb.id = s.storage_body_id
       WHERE s.user_id = $1
       ORDER BY s.created_at ASC
     `, [userId]);
@@ -744,6 +747,19 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
       );
       const mod = modResult.rows[0];
       if (!mod) throw Object.assign(new Error('Module not found'), { statusCode: 404 });
+      // Warp Core (jump-gates-spec §6): craft-only, EXCEPT island stations,
+      // which sell it at ISLAND_CORE_PRICE -- a pilot standing there reached
+      // the island with a core, so this is a safety net, not a shortcut.
+      if (!mod.buy_price && mod.id === WARP_CORE_MODULE_ID) {
+        const raw = req.app.get('io')?.presence?.getUserDockedBody?.(userId) || null;
+        const bodyId = raw ? await resolveBodyId(String(raw)) : null;
+        const row = bodyId ? (await client.query(`SELECT cb.body_type, ss.procedural_id FROM celestial_bodies cb JOIN star_systems ss ON ss.id = cb.system_id WHERE cb.id = $1`, [bodyId])).rows[0] : null;
+        const sys = row ? getWarpGalaxy().systemMap[row.procedural_id || 'sol'] : null;
+        if (!row || row.body_type !== 'station' || !sys?.isIsland) {
+          throw Object.assign(new Error('Warp cores are craft-only here — island stations sell them'), { statusCode: 400 });
+        }
+        mod.buy_price = ISLAND_CORE_PRICE;
+      }
       if (!mod.buy_price) throw Object.assign(new Error('Module not available for purchase'), { statusCode: 400 });
 
       // Migration 053: research-gated modules check player_research

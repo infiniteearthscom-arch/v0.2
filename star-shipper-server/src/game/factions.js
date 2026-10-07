@@ -20,6 +20,8 @@
 //     highest-tier Synod region the Forge Choir. Every system there fields
 //     the nest faction (no contest roll). If a faction owns no region, the
 //     deepest non-Core region not already a nest is promoted to it.
+//   * Island regions (galaxyGenerator reg.isIsland) are never nests: the
+//     Hive Nest and Forge Choir stay gate-reachable.
 
 export const FACTIONS = ['reavers', 'synod', 'swarm'];
 export const FACTION_LABEL = { reavers: 'Void Reavers', synod: 'The Synod', swarm: 'The Swarm' };
@@ -83,9 +85,9 @@ export function computeTerritory(galaxy) {
   const nests = { swarm: null, synod: null };
   const byTierDesc = regions.slice().sort((a, b) => (b.tier - a.tier) || (unitHash(a.id) - unitHash(b.id)));
   for (const fac of ['swarm', 'synod']) {
-    const own = byTierDesc.find(r => regionFaction.get(r.id) === fac);
+    const own = byTierDesc.find(r => regionFaction.get(r.id) === fac && !r.isIsland);
     if (own) { nests[fac] = own.id; continue; }
-    const promote = byTierDesc.find(r => r.name !== 'Core Worlds' && r !== regions[0] && !Object.values(nests).includes(r.id) && regionFaction.get(r.id) === 'reavers');
+    const promote = byTierDesc.find(r => r.name !== 'Core Worlds' && r !== regions[0] && !r.isIsland && !Object.values(nests).includes(r.id) && regionFaction.get(r.id) === 'reavers');
     if (promote) { regionFaction.set(promote.id, fac); nests[fac] = promote.id; }
   }
   const nestRegionIds = new Set(Object.values(nests).filter(Boolean));

@@ -26,6 +26,19 @@ for (const r of galaxy.regions) {
   console.log(`  ${r.name.padEnd(22)} T${r.tier}  ${FACTION_LABEL[T.regionFaction.get(r.id)].padEnd(13)} ${r.systemIds.length} systems${nest ? `  <-- ${NEST_LABEL[nest[0]]}` : ''}`);
 }
 console.log(`nests: swarm=${T.nests.swarm || 'NONE'} synod=${T.nests.synod || 'NONE'}`);
+// Islands (jump-gates-spec §5): no lane in; every non-island system must still be gate-reachable from Sol.
+const islands = galaxy.regions.filter(r => r.isIsland);
+console.log('islands:', islands.map(r => `${r.name} (T${r.tier}, ${r.systemIds.length} systems, ${T.regionFaction.get(r.id)})`).join(' | ') || 'NONE');
+{
+  const seen = new Set(['sol']); const q = ['sol'];
+  while (q.length) { const id = q.shift(); for (const n of (galaxy.systemMap[id]?.jumpConnections || [])) if (!seen.has(n)) { seen.add(n); q.push(n); } }
+  const nonIsland = galaxy.systems.filter(s => !s.isIsland);
+  const unreachable = nonIsland.filter(s => !seen.has(s.id));
+  const leak = galaxy.systems.filter(s => s.isIsland && seen.has(s.id));
+  console.log(`gate-reachable from Sol: ${seen.size} / non-island ${nonIsland.length}; unreachable non-island: ${unreachable.length}; islands leaked: ${leak.length}`);
+  if (unreachable.length || leak.length) { console.error('FAIL: island cut broke reachability'); process.exitCode = 1; }
+  for (const r of islands) { const ids = new Set(r.systemIds); const s0 = r.systemIds[0]; const seenI = new Set([s0]); const qq = [s0]; while (qq.length) { const id = qq.shift(); for (const n of (galaxy.systemMap[id]?.jumpConnections || [])) if (ids.has(n) && !seenI.has(n)) { seenI.add(n); qq.push(n); } } console.log(`  ${r.name}: internal gate connectivity ${seenI.size}/${r.systemIds.length}`); }
+}
 if (!T.nests.swarm || !T.nests.synod) { console.error('FAIL: a nest is missing'); process.exitCode = 1; }
 
 try {

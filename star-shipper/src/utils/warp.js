@@ -19,6 +19,43 @@
 // `jump_range_pct`) stretches the free-warp ring.
 
 export const WARP_RANGE_BY_CLASS = { 0: 600, 1: 800, 2: 1050, 3: 1350, 4: 1700, 5: 2100 };
+
+// ---- Warp Core (jump-gates-spec §6) ----
+// Free galaxy flight needs a Warp Core fitted anywhere in the ACTIVE fleet
+// (stored ships never count -- pitfall #15). The pod always counts as
+// having one, so a podded pilot can warp home from an island. Until the
+// module row exists in the DB (migration 095) the server reports
+// warp_core.live = false and warp stays ungated; the store calls
+// setWarpCoreLive() from the GET /skills payload.
+export const WARP_CORE_MODULE_ID = 'utility_warp_core_3';
+let _warpCoreLive = true;
+export const setWarpCoreLive = (live) => { _warpCoreLive = live !== false; };
+export const isWarpCoreLive = () => _warpCoreLive;
+const fittedIsWarpCore = (fv) => !!fv && (fv.module_type_id === WARP_CORE_MODULE_ID || fv.stats?.warp_core === true);
+export const fleetHasWarpCore = (ships) => {
+  const active = (ships || []).filter(s => s.storage_body_id == null);
+  const nonPod = active.filter(s => s.hull_type_id !== 'pod');
+  if (nonPod.length === 0) return true; // pod-only fleet: the pod carries a core
+  return nonPod.some(s => Object.values(s.fitted_modules || {}).some(fittedIsWarpCore));
+};
+
+// ---- Fleet alignment (jump-gates-spec §3) ----
+// Per ship: ALIGN_BASE + (100 - base_maneuver)/100 * ALIGN_SPAN; the fleet
+// takes the slowest ship + ALIGN_PER_EXTRA per additional active ship,
+// then the Fleet Alignment skill (align_time_pct, negative) shortens it.
+export const ALIGN_BASE = 2, ALIGN_SPAN = 10, ALIGN_PER_EXTRA = 0.5;
+export const ALIGN_HIT_PENALTY = 0.25, ALIGN_PENALTY_CAP = 6;
+export const alignTimeSeconds = (ships, bonuses = {}) => {
+  const active = (ships || []).filter(s => s.storage_body_id == null && s.hull_type_id !== 'pod');
+  if (!active.length) return ALIGN_BASE; // pod
+  let slowest = 0;
+  for (const s of active) {
+    const man = Number.isFinite(Number(s.base_maneuver)) ? Number(s.base_maneuver) : 50;
+    slowest = Math.max(slowest, ALIGN_BASE + ((100 - Math.max(0, Math.min(100, man))) / 100) * ALIGN_SPAN);
+  }
+  const pct = Number(bonuses?.align_time_pct) || 0;
+  return Math.max(0.5, (slowest + ALIGN_PER_EXTRA * (active.length - 1)) * (1 + pct / 100));
+};
 export const MAX_TIER = 5;
 // Free warp reaches one tier above your drive class; a jump gate reaches
 // two ("the gate takes you one step deeper than you could fly").
@@ -69,7 +106,8 @@ export const fleetWarpProfile = (ships, bonuses = {}) => {
   }
   const pct = Number(bonuses?.jump_range_pct) || 0;
   const range = Math.round((WARP_RANGE_BY_CLASS[driveClass] ?? WARP_RANGE_BY_CLASS[0]) * (1 + pct / 100));
-  return { driveClass, range, maxTier: maxFreeWarpTier(driveClass), maxGateTier: maxGateTier(driveClass), limitingShip, jumpRangePct: pct };
+  const hasWarpCore = fleetHasWarpCore(ships);
+  return { driveClass, range, maxTier: maxFreeWarpTier(driveClass), maxGateTier: maxGateTier(driveClass), limitingShip, jumpRangePct: pct, hasWarpCore, warpCoreLive: _warpCoreLive };
 };
 
 export const isGateConnected = (origin, target) =>
@@ -89,10 +127,13 @@ export const warpCheck = (origin, target, profile) => {
     }
     return { ok: true, via: 'gate', reason: null, distance };
   }
+  if (needsCore(profile)) return { ok: false, via: null, reason: 'core', distance };
   if (tier > profile.maxTier) return { ok: false, via: null, reason: 'tier', distance };
   if (distance > profile.range) return { ok: false, via: null, reason: 'range', distance };
   return { ok: true, via: 'warp', reason: null, distance };
 };
+// Free warp is refused without a core once the module is live.
+const needsCore = (profile) => (profile.warpCoreLive ?? _warpCoreLive) && profile.hasWarpCore === false;
 
 // Free-warp only (ignores gates): used by the galaxy-flight views, where
 // the fleet is PHYSICALLY flying -- a gate-connected system is still
@@ -103,6 +144,7 @@ export const freeWarpCheck = (origin, target, profile) => {
   if (origin.id === target.id) return { ok: true, via: 'here', reason: null, distance: 0 };
   const distance = galaxyDistance(origin, target);
   const tier = target.regionTier ?? 1;
+  if (needsCore(profile)) return { ok: false, via: null, reason: 'core', distance };
   if (tier > profile.maxTier) return { ok: false, via: null, reason: 'tier', distance };
   if (distance > profile.range) return { ok: false, via: null, reason: 'range', distance };
   return { ok: true, via: 'warp', reason: null, distance };
@@ -116,6 +158,9 @@ export const warpBlockText = (check, target, profile) => {
   const t = target?.regionTier ?? 1;
   if (check.reason === 'tier' && check.via === 'gate') {
     return `T${t} space needs drive class ${Math.max(1, t - 2)}+ to gate into (fleet is class ${profile.driveClass}${limitedBy(profile)})`;
+  }
+  if (check.reason === 'core') {
+    return 'No warp core fitted — this fleet travels by jump gate (craft a Warp Core, or buy one at an island station)';
   }
   if (check.reason === 'tier') {
     return `T${t} space needs drive class ${Math.max(1, t - 1)}+ to warp into (fleet is class ${profile.driveClass}${limitedBy(profile)}) — or reach it by jump gate`;

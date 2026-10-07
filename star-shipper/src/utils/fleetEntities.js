@@ -95,21 +95,27 @@ export function buildFleets(members) {
   // Escorts (lightest hull) die first; the flagship (leader) dies last at
   // threshold 0. A member dies once the pooled hull drops to/below its
   // threshold: T_k = maxHull − (sum of member hulls up to & incl. k).
-  for (const f of fleets.values()) {
-    const order = f.members.slice().sort((a, b) => {
-      if (a.id === f.flagshipId) return 1;   // flagship always last
-      if (b.id === f.flagshipId) return -1;
-      return (a.maxHull ?? a.hull ?? 0) - (b.maxHull ?? b.hull ?? 0); // lightest first
-    });
-    let cum = 0;
-    for (const m of order) {
-      cum += (m.maxHull ?? m.hull ?? 0);
-      m.deathThreshold = f.maxHull - cum;
-    }
-    f.deathOrder = order;
-  }
+  for (const f of fleets.values()) recomputeDeathOrder(f);
 
   return fleets;
+}
+
+// Rebuild a fleet's death order + thresholds from its current members.
+// Called by buildFleets and again when members are ADDED mid-fight (the
+// Swarm flagship's Spawn move): the new bodies extend the pool, and the
+// thresholds must partition the new maxHull exactly or attrition drifts.
+export function recomputeDeathOrder(f) {
+  const order = f.members.slice().sort((a, b) => {
+    if (a.id === f.flagshipId) return 1;   // flagship always last
+    if (b.id === f.flagshipId) return -1;
+    return (a.maxHull ?? a.hull ?? 0) - (b.maxHull ?? b.hull ?? 0); // lightest first
+  });
+  let cum = 0;
+  for (const m of order) {
+    cum += (m.maxHull ?? m.hull ?? 0);
+    m.deathThreshold = f.maxHull - cum;
+  }
+  f.deathOrder = order;
 }
 
 // Apply damage to a fleet's pooled defense via the shared triangle helper.

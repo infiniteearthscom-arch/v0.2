@@ -393,6 +393,12 @@ function buildProcedural(systemId, galaxySys, catalog) {
   const content = generateSystemContent(galaxySys);
   const bodies = content?.bodies || [];
   const maxOrbit = Math.max(800, ...bodies.filter(b => b.orbitRadius).map(b => b.orbitRadius));
+  // Gate camps (jump-gates-spec §4): in systems of danger >= 3 the first
+  // fleet (two in a nest) patrols the jump gate, so an arriving fleet has
+  // to fight through its alignment to leave. Gate orbit is slow (0.001
+  // rad/s), so its t=0 position is a fair camp centre.
+  const gate = bodies.find(b => b.type === 'jump_gate');
+  const campPos = gate ? { x: Math.round(Math.cos(gate.orbitOffset || 0) * (gate.orbitRadius || 0)), y: Math.round(Math.sin(gate.orbitOffset || 0) * (gate.orbitRadius || 0)) } : null;
 
   // One faction per system (spec §3); nests add fleets and always field
   // the T5 named elite in their highest-danger systems.
@@ -405,13 +411,20 @@ function buildProcedural(systemId, galaxySys, catalog) {
 
   let nextId = 1;
   for (let f = 0; f < fleetCount; f++) {
-    const roster = composeFleet(catalog, rng, tier, f, faction, { forceElite: nest && dangerLevel >= 5 && f === 0 });
+    // Nest guarantee: the nest's named elite leads fleet 0 in its highest-
+    // danger systems (danger >= the region tier: T5 nests at danger 5, a T4
+    // nest at danger 4 -- islands can push a faction's nest down to T4).
+    const roster = composeFleet(catalog, rng, tier, f, faction, { forceElite: nest && f === 0 && dangerLevel >= Math.max(3, tier) });
     if (!roster.length) continue;
     const fleetId = `fleet_${f}`;
     const angle = rng.range(0, Math.PI * 2);
     const dist = rng.range(maxOrbit * 0.3, maxOrbit * 0.9);
-    const patrolCenter = { x: Math.round(Math.cos(angle) * dist), y: Math.round(Math.sin(angle) * dist) };
-    const patrolRadius = Math.round(rng.range(80, 180));
+    const camps = campPos && dangerLevel >= 3 ? (nest ? 2 : 1) : 0;
+    const camp = f < camps;
+    const patrolCenter = camp
+      ? { x: campPos.x + Math.round(Math.cos(angle) * 120), y: campPos.y + Math.round(Math.sin(angle) * 120) }
+      : { x: Math.round(Math.cos(angle) * dist), y: Math.round(Math.sin(angle) * dist) };
+    const patrolRadius = camp ? 150 : Math.round(rng.range(80, 180));
     const memberIds = [];
     const baseAngle = rng.range(0, Math.PI * 2);
 
@@ -436,7 +449,7 @@ function buildProcedural(systemId, galaxySys, catalog) {
         loot_credits: rollLoot(rng, inst, dangerLevel, tier, template),
       });
     });
-    fleets.push({ id: fleetId, tier, faction, patrol_center: patrolCenter, patrol_radius: patrolRadius, member_ids: memberIds });
+    fleets.push({ id: fleetId, tier, faction, camp, patrol_center: patrolCenter, patrol_radius: patrolRadius, member_ids: memberIds });
   }
   return { enemies, fleets, tier, dangerLevel, faction, nest };
 }

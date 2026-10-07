@@ -17,6 +17,7 @@ const edgeVia = (from, to, profile) => {
   if (isGateConnected(from, to)) {
     if (tier <= (profile.maxGateTier ?? maxGateTier(profile.driveClass))) return 'gate';
   }
+  if (profile.hasWarpCore === false && profile.warpCoreLive !== false) return null; // gate-bound fleet (jump-gates-spec §6)
   if (tier <= profile.maxTier && galaxyDistance(from, to) <= profile.range) return 'warp';
   return null;
 };

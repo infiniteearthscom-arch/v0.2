@@ -1,3 +1,4 @@
+import { setWarpCoreLive } from '../utils/warp';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
@@ -47,6 +48,7 @@ const initialState = {
   currentSystem: 'sol',
   currentLocation: null,
   pendingJump: null, // { targetSystemId } — set when player clicks Jump, autopilots to gate first
+  gateJumpRequest: null, // { targetSystemId } from GateWindow -> SystemView starts alignment, then clears it
   // Galaxy map v2 route planner: { targetId, targetName, hops: [{id, via}], index }.
   // index = the hop we are currently travelling toward. SystemView's
   // route-follow effect turns each hop into pendingJump + an autopilot
@@ -138,6 +140,7 @@ const initialState = {
     research: { open: false, x: 200, y: 150, minimized: false },
     planetInteraction: { open: false, x: 300, y: 100, minimized: false },
     galaxyMap: { open: false, x: 80, y: 60, minimized: false },
+    gate: { open: false, x: 120, y: 80, minimized: false }, // jump-gate lane picker (jump-gates-spec §2)
     questLog: { open: false, x: 250, y: 80, minimized: false },
     // Closed by default — window open state is not persisted, so this
     // is what every page load / reset starts from; the player opens it
@@ -506,7 +509,10 @@ export const useGameStore = create(
               // Phase 3 capability gates (module tier / hull class /
               // fleet size) -- server table, read by the Ship Builder
               // via utils/fitGates.js.
-              if (skillsData.fit_gates) state.fitGates = skillsData.fit_gates;
+              if (skillsData.fit_gates) {
+                state.fitGates = skillsData.fit_gates;
+                try { setWarpCoreLive(skillsData.fit_gates?.warp_core?.live !== false); } catch {}
+              }
               state.skillsLoaded = true;
               // Aggregate active bonuses from skill levels.
               const bonuses = {};
@@ -744,6 +750,11 @@ export const useGameStore = create(
       setPendingJump: (targetSystemId) => set(state => {
         state.pendingJump = targetSystemId ? { targetSystemId } : null;
       }),
+      requestGateJump: (targetSystemId) => set(state => {
+        state.gateJumpRequest = targetSystemId ? { targetSystemId } : null;
+        if (targetSystemId) state.pendingJump = { targetSystemId };
+      }),
+      clearGateJumpRequest: () => set(state => { state.gateJumpRequest = null; }),
 
       // Route planner. hops exclude the origin. Setting a route does NOT
       // move the ship by itself -- SystemView's route-follow effect

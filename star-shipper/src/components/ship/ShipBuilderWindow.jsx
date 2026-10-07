@@ -379,26 +379,79 @@ const ShipCanvas = ({ hullId, scale = 2, showSlots = false, slots = [], modules 
 // ============================================
 // SHIP SELECTOR PANEL
 // ============================================
-const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull }) => {
+// Two lists (owner 2026-10-07): the ACTIVE fleet on top, ships STORED at a
+// station below -- same-named hulls in one list made fitting the right one
+// a guess. The selected row grows a pencil: click to rename inline (Enter
+// saves, Escape cancels) through the same /fitting/rename-ship the Fleet
+// window uses.
+const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull, activeShipId, onRename }) => {
   const [showBuy, setShowBuy] = useState(false);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameVal, setRenameVal] = useState('');
   const fitGates = useGameStore(state => state.fitGates);
   const skills = useGameStore(state => state.skills);
+  const active = ships.filter(s => s.storage_body_id == null);
+  const stored = ships.filter(s => s.storage_body_id != null);
+
+  const startRename = (ship) => { setRenamingId(ship.id); setRenameVal(ship.name || ''); };
+  const commitRename = async () => {
+    const id = renamingId; const val = renameVal.trim();
+    setRenamingId(null);
+    if (!id || !val) return;
+    await onRename?.(id, val);
+  };
+
+  const row = (ship, isStored) => {
+    const selected = selectedId === ship.id;
+    const isFlag = ship.id === activeShipId;
+    return (
+      <div key={ship.id}
+        onClick={() => onSelect(ship.id)}
+        className={`w-full text-left p-2 rounded transition-all text-xs cursor-pointer ${
+          selected
+            ? 'bg-cyan-900/30 border border-cyan-500/40'
+            : 'bg-slate-800/30 border border-slate-700/30 hover:border-slate-600/50'
+        } ${isStored ? 'opacity-80' : ''}`}
+      >
+        <div className="flex items-center gap-1">
+          {renamingId === ship.id ? (
+            <input autoFocus value={renameVal} maxLength={48}
+              onChange={e => setRenameVal(e.target.value)}
+              onClick={e => e.stopPropagation()}
+              onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null); }}
+              onBlur={commitRename}
+              className="flex-1 min-w-0 bg-slate-900/70 border border-cyan-500/40 rounded px-1 py-0.5 text-xs text-slate-100 outline-none"
+            />
+          ) : (
+            <div className="font-medium text-slate-200 flex-1 min-w-0 truncate">{ship.name}</div>
+          )}
+          {isFlag && <span className="text-[0.7rem] px-1 rounded bg-cyan-900/40 text-cyan-300 border border-cyan-700/40" title="Flagship (active ship)">FLAG</span>}
+          {selected && renamingId !== ship.id && (
+            <button onClick={e => { e.stopPropagation(); startRename(ship); }} title="Rename ship"
+              className="text-slate-500 hover:text-cyan-300 px-1">✎</button>
+          )}
+        </div>
+        <div className="text-[0.8rem] text-slate-500">
+          {ship.hull_name || 'Unknown'} • {ship.hull_class || ''}
+          {isStored && <span className="text-amber-500/80"> • stored{ship.storage_body_name ? ` at ${ship.storage_body_name}` : ''}</span>}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-2">
-      <div className="text-[0.8rem] text-slate-500 uppercase tracking-wider">Your Fleet</div>
-      {ships.map(ship => (
-        <button key={ship.id} onClick={() => onSelect(ship.id)}
-          className={`w-full text-left p-2 rounded transition-all text-xs ${
-            selectedId === ship.id
-              ? 'bg-cyan-900/30 border border-cyan-500/40'
-              : 'bg-slate-800/30 border border-slate-700/30 hover:border-slate-600/50'
-          }`}
-        >
-          <div className="font-medium text-slate-200">{ship.name}</div>
-          <div className="text-[0.8rem] text-slate-500">{ship.hull_name || 'Unknown'} • {ship.hull_class || ''}</div>
-        </button>
-      ))}
+      <div className="text-[0.8rem] text-slate-500 uppercase tracking-wider">Active Fleet <span className="text-slate-600">· {active.length}</span></div>
+      {active.map(ship => row(ship, false))}
+      {active.length === 0 && (
+        <div className="text-xs text-slate-600 italic py-2">No ships in your active fleet</div>
+      )}
+      {stored.length > 0 && (
+        <>
+          <div className="text-[0.8rem] text-slate-500 uppercase tracking-wider pt-2">Stored at Station <span className="text-slate-600">· {stored.length}</span></div>
+          {stored.map(ship => row(ship, true))}
+        </>
+      )}
       {ships.length === 0 && (
         <div className="text-xs text-slate-600 italic py-2">No ships yet</div>
       )}
@@ -771,6 +824,7 @@ export const ShipBuilderWindow = () => {
   const [launching, setLaunching] = useState(false);
   const completeQuest = useGameStore(state => state.completeQuest);
   const fetchShips = useGameStore(state => state.fetchShips);
+  const activeShipId = useGameStore(state => state.activeShipId);
   const closeWindow = useGameStore(state => state.closeWindow);
   const openWindow = useGameStore(state => state.openWindow);
   const pushToast = useGameStore(state => state.pushToast);
@@ -812,7 +866,8 @@ export const ShipBuilderWindow = () => {
       setShips(shipsRes.ships || []);
       // Auto-select first ship
       if (shipsRes.ships?.length > 0 && !selectedShipId) {
-        selectShip(shipsRes.ships[0].id);
+        const first = shipsRes.ships.find(s => s.storage_body_id == null) || shipsRes.ships[0];
+        selectShip(first.id);
       }
     } catch (err) {
       console.error('Failed to load fitting data:', err);
@@ -831,6 +886,18 @@ export const ShipBuilderWindow = () => {
   };
 
   const flash = (kind, text) => pushToast({ kind, text });
+
+  const handleRename = async (shipId, name) => {
+    try {
+      const result = await fittingAPI.renameShip(shipId, name);
+      if (result.success) {
+        setShips(prev => prev.map(s => s.id === shipId ? { ...s, name: result.name } : s));
+        setShipDetail(prev => (prev && prev.id === shipId ? { ...prev, name: result.name } : prev));
+        fetchShips(); // HUD / fleet readout / presence name tags
+        flash('success', `Renamed to "${result.name}"`);
+      }
+    } catch (err) { flash('error', err.message || 'Failed to rename'); }
+  };
 
   // In-flight guard: a double-click bought two hulls before the first
   // response landed. Audit fix 2026-09-03.
@@ -985,7 +1052,7 @@ export const ShipBuilderWindow = () => {
         <div className="flex-1 flex gap-3 min-h-0">
           {/* Left: Ship selector */}
           <div className="w-44 flex-shrink-0 overflow-y-auto pr-1">
-            <ShipSelector ships={ships} selectedId={selectedShipId} onSelect={selectShip} hulls={hulls} onBuyHull={handleBuyHull} />
+            <ShipSelector ships={ships} selectedId={selectedShipId} onSelect={selectShip} hulls={hulls} onBuyHull={handleBuyHull} activeShipId={activeShipId} onRename={handleRename} />
           </div>
 
           {/* Center: Ship canvas + slot tooltip below */}
