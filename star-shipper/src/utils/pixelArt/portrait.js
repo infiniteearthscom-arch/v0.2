@@ -1,4 +1,4 @@
-// pixelArt/portrait.js -- procedural NPC portraits, 64x64 (v3, 2026-10-06).
+// pixelArt/portrait.js -- procedural NPC portraits, 64x64 (v4, 2026-10-06).
 //
 // Rewritten for a retro sci-fi sprite look (owner: "more pixel arty, like
 // Retro Diffusion sprites"). The rules this follows:
@@ -11,8 +11,11 @@
 //   * big readable eyes (5x3 socket, iris, pupil, catchlight), 2-px brows
 //   * sci-fi gear: flight helmets with visors, headsets with a mic LED,
 //     HUD monocles, high collars with a glowing chest strip, pauldrons
-//   * calm background: stepped diagonal, faint scanlines, holo ring, corner
-//     brackets like an ID card
+//   * v4 (owner reference sprite): muted, desaturated ramps; ONE dark olive
+//     outline colour on every seam between materials, not just the
+//     silhouette; grainy noise dither inside the shading; a 1-px light line
+//     along every top edge; hot accent glows with white cores; flat
+//     background, no ring / scanlines / brackets
 // Two races as before: human and cyborg (steel plating, glowing optics,
 // respirator grille, cables, rust cowl). Same seed + role = same face.
 
@@ -40,8 +43,10 @@ const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 // classic pixel-art ramp. Blending (not HSL maths) keeps light skin from
 // turning salmon in the shadow steps.
 const COOL = [34, 22, 58], WARM = [255, 242, 208];
-const ramp = (h, { shade = 1, light = 1 } = {}) => {
-  const b = typeof h === 'string' ? hex(h) : h;
+const ramp = (h, { shade = 1, light = 1, desat = 0.3 } = {}) => {
+  const raw = typeof h === 'string' ? hex(h) : h;
+  const lum = Math.round(raw[0] * 0.3 + raw[1] * 0.59 + raw[2] * 0.11);
+  const b = mix(raw, [lum, lum, lum], desat);
   return [
     mix(mix(b, COOL, 0.86), [0, 0, 0], 0.25),
     mix(b, COOL, 0.58 * shade),
@@ -50,7 +55,7 @@ const ramp = (h, { shade = 1, light = 1 } = {}) => {
     mix(b, WARM, 0.32 * light),
   ];
 };
-const skinRamp = (h) => ramp(h, { shade: 0.95, light: 0.9 });
+const skinRamp = (h) => ramp(h, { shade: 0.95, light: 0.9, desat: 0.22 });
 
 export const ROLE_STYLE = {
   vendor:     { bg: ['#141008', '#2e2410'], collar: '#b8862a', accent: '#fbbf24', title: 'Quartermaster',     cyborg: 0.35 },
@@ -74,7 +79,7 @@ const LENS = ['#ff3b3b', '#ff7a1f', '#3bff7a', '#3bd8ff', '#ffd23b'];
 const M = { BG: 0, SKIN: 1, HAIR: 2, GARB: 3, STEEL: 4, HOOD: 5, GEAR: 6, GLASS: 7 };
 
 export function getPortrait(seedStr, role = 'vendor') {
-  const key = `v3|${role}|${seedStr}`;
+  const key = `v4|${role}|${seedStr}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const rng = new Rng(hashStr(`${role}|${seedStr}`));
@@ -89,13 +94,14 @@ export function getPortrait(seedStr, role = 'vendor') {
     steel: ramp('#8a96a4'),
     hood: ramp(rng.pick(['#8e2a2a', '#9a3426', '#6e1e22'])),
     gear: ramp(rng.pick(['#3a4048', '#2c3238', '#4a5058'])),
-    brass: ramp('#c9a24a'),
+    brass: ramp('#c9a24a', { desat: 0.1 }),
   };
   const accent = hex(st.accent), accentL = mix(accent, [255, 255, 255], 0.55), accentD = mix(accent, [0, 0, 0], 0.5);
   const iris = hex(rng.pick(IRIS));
   const lens = hex(rng.pick(LENS));
   const bg0 = hex(st.bg[0]), bg1 = hex(st.bg[1]);
-  const OUT = [10, 8, 16]; // universal outline
+  const OUT = [26, 30, 24]; // the one outline colour (dark olive, like the reference sprite)
+  const noise = (x, y) => { let h = (x * 73856093) ^ (y * 19349663) ^ hashStr(seedStr); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 
   // ---- geometry ----
   const cx = 32, cy = 25;
@@ -146,9 +152,17 @@ export function getPortrait(seedStr, role = 'vendor') {
       // outline / rim pass, then a single blit.
       const col = new Array(PX * PX).fill(null);
       const mat = new Uint8Array(PX * PX);
+      const tone = new Uint8Array(PX * PX).fill(255);   // ramp step per pixel (255 = not from a ramp)
       const idx = (x, y) => y * PX + x;
       const inB = (x, y) => x >= 0 && y >= 0 && x < PX && y < PX;
-      const set = (x, y, c, m) => { if (!inB(x, y)) return; col[idx(x, y)] = c; if (m != null) mat[idx(x, y)] = m; };
+      const G0 = (race === 'cyborg' && cyb.cowl) ? R.hood : R.garb;
+      const RAMPS = { [M.SKIN]: [R.skin], [M.HAIR]: [R.hair], [M.GARB]: [G0], [M.STEEL]: [R.steel], [M.HOOD]: [R.hood, G0], [M.GEAR]: [R.gear, R.garb, R.brass, R.steel] };
+      const set = (x, y, c, m) => {
+        if (!inB(x, y)) return;
+        const i = idx(x, y); col[i] = c;
+        if (m != null) { mat[i] = m; let t = 255; for (const r of (RAMPS[m] || [])) { const k = r.indexOf(c); if (k >= 0) { t = k; break; } } tone[i] = t; }
+      };
+      const rampAt = (i) => { for (const r of (RAMPS[mat[i]] || [])) if (r.indexOf(col[i]) >= 0 || r[tone[i]] === col[i]) return r; return (RAMPS[mat[i]] || [])[0] || null; };
       const paint = (x, y, c) => { if (inB(x, y)) col[idx(x, y)] = c; };
       const getM = (x, y) => (inB(x, y) ? mat[idx(x, y)] : M.BG);
       const rect = (x0, y0, x1, y1, c, m) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, c, m); };
@@ -169,22 +183,9 @@ export function getPortrait(seedStr, role = 'vendor') {
       }
       const inHead = (x, y) => { const hw = span.get(y); return hw != null && Math.abs(x + 0.5 - cx) <= hw; };
 
-      // ---- background ----
-      for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) {
-        const t = (x + y * 0.55) / (PX * 1.55);
-        let c = t < 0.42 ? bg0 : t < 0.72 ? mix(bg0, bg1, 0.5) : bg1;
-        if ((t > 0.40 && t < 0.44) || (t > 0.70 && t < 0.74)) c = ((x + y) & 1) ? mix(bg0, bg1, t < 0.5 ? 0.5 : 1) : (t < 0.5 ? bg0 : mix(bg0, bg1, 0.5));
-        if (y % 4 === 3) c = mix(c, [0, 0, 0], 0.18); // scanline
-        set(x, y, c, M.BG);
-      }
-      // holo ring behind the head + soft fill
-      for (let y = 0; y < shoulderY; y++) for (let x = 0; x < PX; x++) {
-        const nx = (x + 0.5 - cx) / (headW + 7), ny = (y + 0.5 - cy) / (headH + 6), r = nx * nx + ny * ny;
-        if (r <= 1) paint(x, y, mix(col[idx(x, y)], accent, 0.07));
-        if (r > 0.86 && r <= 1) paint(x, y, mix(col[idx(x, y)], accent, ((x + y) & 1) ? 0.42 : 0.2));
-      }
-      // corner brackets (ID card)
-      for (let i = 0; i < 5; i++) { paint(1 + i, 1, accentD); paint(1, 1 + i, accentD); paint(PX - 2 - i, 1, accentD); paint(PX - 2, 1 + i, accentD); paint(1 + i, PX - 2, accentD); paint(1, PX - 2 - i, accentD); paint(PX - 2 - i, PX - 2, accentD); paint(PX - 2, PX - 2 - i, accentD); }
+      // ---- background: flat, like a sprite on a card ----
+      const bgFlat = mix(bg0, bg1, 0.35);
+      for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) set(x, y, bgFlat, M.BG);
 
       // ---- garment: shoulders, collar, chest ----
       const isRobe = race === 'cyborg' && cyb.cowl;
@@ -205,10 +206,17 @@ export function getPortrait(seedStr, role = 'vendor') {
           set(x, y, G[tone], M.GARB);
         }
       }
-      // pauldron edge lines + glowing chest strip
-      for (let t = 3; t < 8; t++) { set(cx - 7 - Math.round(t * 2.1), shoulderY + t, G[1], M.GARB); set(cx + 6 + Math.round(t * 2.1), shoulderY + t, G[1], M.GARB); }
+      // pauldron seams (outline colour, highlight above) + panel lines + hot chest strip
+      for (let t = 3; t < 8; t++) { for (const sx of [cx - 7 - Math.round(t * 2.1), cx + 6 + Math.round(t * 2.1)]) { set(sx, shoulderY + t, OUT, M.GARB); set(sx, shoulderY + t - 1, G[4], M.GARB); } }
+      for (const yy of [shoulderY + 7, shoulderY + 12]) for (let x = 0; x < PX; x++) { if (getM(x, yy) !== M.GARB || Math.abs(x + 0.5 - cx) < 8) continue; if ((x + yy) % 9 < 5) { set(x, yy, OUT, M.GARB); set(x, yy - 1, G[4], M.GARB); } }
       if (!isRobe) {
-        for (let y = shoulderY + 4; y < PX - 2; y++) { set(cx - 1, y, accent, M.GARB); set(cx, y, accentL, M.GARB); set(cx + 1, y, accent, M.GARB); if (y % 3 === 0) { set(cx - 2, y, mix(G[3], accent, 0.4), M.GARB); set(cx + 2, y, mix(G[3], accent, 0.4), M.GARB); } }
+        const core = mix(accent, [255, 255, 255], 0.75);
+        for (let y = shoulderY + 4; y < PX - 1; y++) {
+          set(cx - 2, y, OUT, M.GARB); set(cx + 2, y, OUT, M.GARB);
+          set(cx - 1, y, accentD, M.GARB); set(cx + 1, y, accentD, M.GARB);
+          set(cx, y, (y % 4 === 1) ? core : accent, M.GARB);
+        }
+        set(cx - 2, shoulderY + 3, OUT, M.GARB); set(cx - 1, shoulderY + 3, OUT, M.GARB); set(cx, shoulderY + 3, OUT, M.GARB); set(cx + 1, shoulderY + 3, OUT, M.GARB); set(cx + 2, shoulderY + 3, OUT, M.GARB);
         // rank pips on the left breast
         const pips = role === 'commander' ? 3 : role === 'instructor' || role === 'dockmaster' ? 2 : 1;
         for (let i = 0; i < pips; i++) { rect(cx - 15 + i * 3, shoulderY + 9, cx - 14 + i * 3, shoulderY + 10, accentL, M.GARB); }
@@ -278,7 +286,7 @@ export function getPortrait(seedStr, role = 'vendor') {
         for (let y = -r - 1; y <= r + 1; y++) for (let x = -r - 1; x <= r + 1; x++) {
           const d = x * x + y * y;
           if (d > (r + 1) * (r + 1)) continue;
-          const c = d <= 1 ? [255, 255, 255] : d <= (r - 1) * (r - 1) ? lens : d <= r * r ? R.brass[2] : R.steel[1];
+          const c = d <= 1 ? [255, 250, 240] : d <= (r - 1) * (r - 1) ? (d <= 2 ? mix(lens, [255, 255, 255], 0.5) : lens) : d <= r * r ? mix(lens, OUT, 0.55) : OUT;
           set(ex + x, eyeY + y, c, M.STEEL);
         }
         set(ex - 1, eyeY - 1, mix(lens, [255, 255, 255], 0.7), M.STEEL);
@@ -424,25 +432,32 @@ export function getPortrait(seedStr, role = 'vendor') {
         line(ex - 3, eyeY - 2, cx - headW, top + 5, OUT, M.GEAR); line(ex + 3, eyeY - 2, cx + headW, top + 5, OUT, M.GEAR);
       }
 
-      // ---- outline + interior lines + rim light ----
-      const outlineOf = (m) => (m === M.SKIN ? R.skin[0] : m === M.HAIR ? R.hair[0] : m === M.GARB ? G[0] : m === M.STEEL ? R.steel[0] : m === M.HOOD ? R.hood[0] : OUT);
-      const final = col.slice();
+      // ---- texture: grainy noise dither inside the ramps (reference look) ----
       for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) {
-        const m = mat[idx(x, y)];
-        if (m === M.BG) continue;
-        const nb = [getM(x - 1, y), getM(x + 1, y), getM(x, y - 1), getM(x, y + 1)];
-        if (nb.includes(M.BG)) { final[idx(x, y)] = mix(outlineOf(m), OUT, 0.5); continue; }
-        // selective interior lines: hair / hood / gear / steel against skin
-        const hard = (a, b) => (a !== b) && ((a === M.SKIN && (b === M.HAIR || b === M.HOOD || b === M.GEAR || b === M.STEEL || b === M.GLASS)) || (a === M.SKIN && b === M.GARB && y < shoulderY - 1));
-        if (hard(m, nb[2]) || hard(m, nb[0])) final[idx(x, y)] = R.skin[1];
-        if ((m === M.HAIR || m === M.HOOD || m === M.GEAR) && (nb[3] === M.SKIN)) final[idx(x, y)] = outlineOf(m);
+        const i = idx(x, y), t = tone[i];
+        if (t === 255 || t === 0 || mat[i] === M.BG || mat[i] === M.GLASS) continue;
+        const r = rampAt(i); if (!r) continue;
+        const n = noise(x, y);
+        const grain = mat[i] === M.SKIN ? 0.10 : 0.17;
+        if (t >= 2 && n < grain) col[i] = r[t - 1];
+        else if (t === 4 && n > 1 - grain * 0.6) col[i] = r[3];
       }
-      // rim light: right-hand silhouette edge, one pixel in
-      for (let y = 2; y < PX - 6; y++) for (let x = 1; x < PX - 1; x++) {
-        const m = mat[idx(x, y)];
-        if (m === M.BG || m === M.GLASS) continue;
-        if (getM(x + 1, y) === M.BG && getM(x + 2, y) === M.BG && getM(x - 1, y) !== M.BG) final[idx(x - 1, y)] = mix(final[idx(x - 1, y)], accentL, 0.55);
-        if (getM(x, y - 1) === M.BG && getM(x + 1, y - 1) === M.BG && x > cx && getM(x, y + 1) !== M.BG) final[idx(x, y + 1)] = mix(final[idx(x, y + 1)], accentL, 0.35);
+      // ---- outline: silhouette AND every seam between materials, one colour ----
+      const final = col.slice();
+      const seam = (a, b) => a !== b && !(a === M.GLASS || b === M.GLASS) && !((a === M.SKIN && b === M.HAIR && false));
+      for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) {
+        const i = idx(x, y), m = mat[i];
+        if (m === M.BG) continue;
+        const l = getM(x - 1, y), rgt = getM(x + 1, y), u = getM(x, y - 1), d = getM(x, y + 1);
+        if (l === M.BG || rgt === M.BG || u === M.BG || d === M.BG) { final[i] = OUT; continue; }
+        // interior seams: draw on the lower / right side of each boundary so lines stay 1 px
+        if (seam(m, u) || seam(m, l)) final[i] = OUT;
+      }
+      // ---- 1-px light line along every top edge (under an outline), skin excepted ----
+      for (let y = 1; y < PX; y++) for (let x = 0; x < PX; x++) {
+        const i = idx(x, y), m = mat[i];
+        if (m === M.BG || m === M.SKIN || m === M.GLASS || tone[i] === 255 || tone[i] === 0) continue;
+        if (final[idx(x, y - 1)] === OUT && final[i] !== OUT) { const r = rampAt(i); if (r) final[i] = r[4]; }
       }
       for (let y = 0; y < PX; y++) for (let x = 0; x < PX; x++) put(0, x, y, final[idx(x, y)], 255);
     },
