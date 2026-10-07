@@ -28,8 +28,11 @@
 import { queryAll } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
 import { generateGalaxy, generateSystemContent } from './galaxyGenerator.js';
+import { computeTerritory, factionOfSystem, isNestRegion, normalizeFaction } from './factions.js';
 
-export const MANIFEST_VERSION = 2;
+// 3 (2026-10-07): enemy factions -- rosters change for every system, so
+// the client's claim index rebuilds on entry (same refresh story as v2).
+export const MANIFEST_VERSION = 3;
 
 // ---- galaxy singleton (same seed/count as the client) ----
 const GALAXY_SEED = 12345;
@@ -38,6 +41,11 @@ let _galaxyCache = null;
 const getGalaxy = () => {
   if (!_galaxyCache) _galaxyCache = generateGalaxy(GALAXY_SEED, GALAXY_SYSTEM_COUNT);
   return _galaxyCache;
+};
+let _territoryCache = null;
+export const getTerritory = () => {
+  if (!_territoryCache) _territoryCache = computeTerritory(getGalaxy());
+  return _territoryCache;
 };
 
 // Same LCG the client used for pirate spawns; kept so seeds stay familiar.
@@ -84,6 +92,17 @@ const ELITE_CHANCE_BY_TIER = { 4: 0.2, 5: 0.1 };
 const T5_GUARANTEED_ELITE = true;
 // Escort picks: this fraction from the region tier, the rest from tier-1.
 const SAME_TIER_ESCORT_FRAC = 0.7;
+// Per-faction spawn modifiers (docs/enemy-factions-spec.md §6).
+//   sizeDelta  -- added to the rolled fleet size (clamped 1..5)
+//   lootMult   -- credit loot scalar (Swarm carcasses carry little cash;
+//                 their value is the resource drops in loot_table)
+//   nestFleets -- extra fleets per system inside the faction's nest region
+const FACTION_TUNING = {
+  reavers: { sizeDelta: 0,  lootMult: 1.0, nestFleets: 0 },
+  swarm:   { sizeDelta: +1, lootMult: 0.4, nestFleets: 1 },
+  synod:   { sizeDelta: -1, lootMult: 1.1, nestFleets: 1 },
+};
+const FLEET_SIZE_MIN = 1, FLEET_SIZE_MAX = 5;
 
 // Per-type fallbacks for any weapon module lacking combat_tuned stats.
 // Mirrors client weapons.js WEAPON_DEFAULTS.
@@ -137,13 +156,23 @@ async function loadCatalog() {
     });
     list.push({ ...t, loot_multiplier: Number(t.loot_multiplier) || 1, modules: mods });
   }
-  // (tier → role → templates) index for the spawner.
+  return indexCatalog(list, hullMap, moduleMap);
+}
+
+// (faction → tier → role → templates) plus the legacy (tier → role) view.
+// Template rows carry 'void_reavers' from 069; it normalises to 'reavers'.
+function indexCatalog(list, hullMap, moduleMap) {
   const byTierRole = {};
+  const byFaction = {};
   for (const t of list) {
+    t.faction = normalizeFaction(t.faction);
     byTierRole[t.tier] ??= {};
     (byTierRole[t.tier][t.role] ??= []).push(t);
+    byFaction[t.faction] ??= {};
+    byFaction[t.faction][t.tier] ??= {};
+    (byFaction[t.faction][t.tier][t.role] ??= []).push(t);
   }
-  return { templates: list, byId: new Map(list.map(t => [t.id, t])), byTierRole, hulls: hullMap, modules: moduleMap };
+  return { templates: list, byId: new Map(list.map(t => [t.id, t])), byTierRole, byFaction, hulls: hullMap, modules: moduleMap };
 }
 
 // Test hook: inject a catalog shaped like loadCatalog()'s result so the
@@ -158,9 +187,7 @@ export function _setCatalogForTests(rows) {
     byTemplate.get(tm.template_id).push(tm);
   }
   const list = templates.map(t => ({ ...t, loot_multiplier: Number(t.loot_multiplier) || 1, modules: byTemplate.get(t.id) || [] }));
-  const byTierRole = {};
-  for (const t of list) { byTierRole[t.tier] ??= {}; (byTierRole[t.tier][t.role] ??= []).push(t); }
-  _catalog = { templates: list, byId: new Map(list.map(t => [t.id, t])), byTierRole, hulls: hullMap, modules: moduleMap };
+  _catalog = indexCatalog(list, hullMap, moduleMap);
   _manifestCache.clear();
 }
 
@@ -283,41 +310,51 @@ function displayName(template, inst, tier) {
 // renderer sizes). sqrt keeps a capital from paying 33× an interceptor.
 function rollLoot(rng, inst, dangerLevel, tier, template) {
   const hullFactor = Math.max(1, Math.min(4, Math.sqrt((inst.max_hull || 60) / 60)));
+  const facMult = (FACTION_TUNING[normalizeFaction(template.faction)] || FACTION_TUNING.reavers).lootMult;
   return Math.round(
     rng.range(LOOT_CREDITS_MIN, LOOT_CREDITS_MAX)
     * hullFactor
     * (LOOT_TIER_MULT[tier] ?? 1)
     * template.loot_multiplier
+    * facMult
   );
 }
 
 // ============================================
 // FLEET COMPOSITION
 // ============================================
-function pickTemplates(catalog, rng, tier, role, fallbackTiers = []) {
+// Pools are scoped to ONE faction (spec §3: never mixed within a system);
+// a faction missing a (tier, role) falls back to its own lower tiers, then
+// to the Reavers so a thin roster can never empty a system.
+const poolFor = (catalog, faction, tier, role) => catalog.byFaction?.[faction]?.[tier]?.[role] || null;
+function pickTemplates(catalog, rng, tier, role, fallbackTiers = [], faction = 'reavers') {
   const tiers = [tier, ...fallbackTiers];
-  for (const t of tiers) {
-    const pool = catalog.byTierRole[t]?.[role];
-    if (pool && pool.length) return pool;
+  for (const f of [faction, 'reavers']) {
+    for (const t of tiers) {
+      const pool = poolFor(catalog, f, t, role);
+      if (pool && pool.length) return pool;
+    }
   }
   return null;
 }
 
 // Returns the list of templates for one fleet; index 0 is the flagship.
-function composeFleet(catalog, rng, tier, fleetIdx) {
+function composeFleet(catalog, rng, tier, fleetIdx, faction = 'reavers', opts = {}) {
   const [minSize, maxSize] = FLEET_SIZE_BY_TIER[tier] || FLEET_SIZE_BY_TIER[1];
-  const size = rng.int(minSize, maxSize);
+  const tune = FACTION_TUNING[faction] || FACTION_TUNING.reavers;
+  const size = Math.max(FLEET_SIZE_MIN, Math.min(FLEET_SIZE_MAX, rng.int(minSize, maxSize) + tune.sizeDelta));
   const roster = [];
 
   // Flagship (or elite).
   let flagPool = null;
   const eliteChance = ELITE_CHANCE_BY_TIER[tier] || 0;
-  const forceElite = T5_GUARANTEED_ELITE && tier === 5 && fleetIdx === 0;
+  const forceElite = opts.forceElite || (T5_GUARANTEED_ELITE && tier === 5 && fleetIdx === 0);
   if (forceElite || (eliteChance > 0 && rng.range(0, 1) < eliteChance)) {
-    flagPool = pickTemplates(catalog, rng, tier, 'elite');
+    flagPool = pickTemplates(catalog, rng, tier, 'elite', [], faction);
   }
-  if (!flagPool) flagPool = pickTemplates(catalog, rng, tier, 'flagship', [tier - 1, tier - 2, 1]);
-  if (!flagPool) flagPool = catalog.templates.filter(t => t.tier <= tier);
+  if (!flagPool) flagPool = pickTemplates(catalog, rng, tier, 'flagship', [tier - 1, tier - 2, 1], faction);
+  if (!flagPool) flagPool = catalog.templates.filter(t => t.tier <= tier && t.faction === faction);
+  if (!flagPool.length) flagPool = catalog.templates.filter(t => t.tier <= tier);
   if (!flagPool.length) return roster;
   roster.push(rng.weighted(flagPool, t => t.spawn_weight || 1));
 
@@ -326,13 +363,15 @@ function composeFleet(catalog, rng, tier, fleetIdx) {
     const sameTier = rng.range(0, 1) < SAME_TIER_ESCORT_FRAC;
     const t = sameTier ? tier : Math.max(1, tier - 1);
     const pool = [
-      ...(catalog.byTierRole[t]?.escort || []),
-      ...(catalog.byTierRole[t]?.line || []),
+      ...(poolFor(catalog, faction, t, 'escort') || []),
+      ...(poolFor(catalog, faction, t, 'line') || []),
     ];
     const fallback = pool.length ? pool : [
-      ...(catalog.byTierRole[tier]?.escort || []),
-      ...(catalog.byTierRole[tier]?.line || []),
-      ...(catalog.byTierRole[1]?.escort || []),
+      ...(poolFor(catalog, faction, tier, 'escort') || []),
+      ...(poolFor(catalog, faction, tier, 'line') || []),
+      ...(poolFor(catalog, faction, 1, 'escort') || []),
+      ...(poolFor(catalog, 'reavers', tier, 'escort') || []),
+      ...(poolFor(catalog, 'reavers', 1, 'escort') || []),
     ];
     if (!fallback.length) break;
     roster.push(rng.weighted(fallback, x => x.spawn_weight || 1));
@@ -355,12 +394,18 @@ function buildProcedural(systemId, galaxySys, catalog) {
   const bodies = content?.bodies || [];
   const maxOrbit = Math.max(800, ...bodies.filter(b => b.orbitRadius).map(b => b.orbitRadius));
 
+  // One faction per system (spec §3); nests add fleets and always field
+  // the T5 named elite in their highest-danger systems.
+  const territory = getTerritory();
+  const faction = factionOfSystem(territory, systemId);
+  const nest = isNestRegion(territory, galaxySys.regionId) && territory.nests[faction] === galaxySys.regionId;
   let fleetCount = FLEETS_BY_DANGER[Math.min(5, dangerLevel)] ?? 2;
   if (dangerLevel >= 2) fleetCount += rng.int(0, 1);
+  if (nest) fleetCount += (FACTION_TUNING[faction] || FACTION_TUNING.reavers).nestFleets;
 
   let nextId = 1;
   for (let f = 0; f < fleetCount; f++) {
-    const roster = composeFleet(catalog, rng, tier, f);
+    const roster = composeFleet(catalog, rng, tier, f, faction, { forceElite: nest && dangerLevel >= 5 && f === 0 });
     if (!roster.length) continue;
     const fleetId = `fleet_${f}`;
     const angle = rng.range(0, Math.PI * 2);
@@ -391,9 +436,9 @@ function buildProcedural(systemId, galaxySys, catalog) {
         loot_credits: rollLoot(rng, inst, dangerLevel, tier, template),
       });
     });
-    fleets.push({ id: fleetId, tier, patrol_center: patrolCenter, patrol_radius: patrolRadius, member_ids: memberIds });
+    fleets.push({ id: fleetId, tier, faction, patrol_center: patrolCenter, patrol_radius: patrolRadius, member_ids: memberIds });
   }
-  return { enemies, fleets, tier, dangerLevel };
+  return { enemies, fleets, tier, dangerLevel, faction, nest };
 }
 
 function buildSol(catalog) {
@@ -431,7 +476,7 @@ function buildSol(catalog) {
     });
     fleets.push({ id: fleetId, tier: 1, name: zone.name, patrol_center: { x: zone.cx, y: zone.cy }, patrol_radius: zone.radius, member_ids: memberIds });
   }
-  return { enemies, fleets, tier: 1, dangerLevel: 0 };
+  return { enemies, fleets, tier: 1, dangerLevel: 0, faction: 'reavers', nest: false };
 }
 
 // enemyId → { credits, isFlagship, fleetId } for /claim-loot. Flagship =
@@ -446,7 +491,8 @@ export async function buildAmbushFleet({ systemId, tier, seed, fleetId, label })
   const catalog = await getCatalog();
   const t = Math.max(1, Math.min(5, tier || 1));
   const rng = new SeededRandom((seed >>> 0) + 9191);
-  const roster = composeFleet(catalog, rng, t, 0);
+  const faction = systemId === 'sol' ? 'reavers' : factionOfSystem(getTerritory(), systemId);
+  const roster = composeFleet(catalog, rng, t, 0, faction);
   const enemies = [];
   const memberIds = [];
   roster.forEach((template, m) => {
@@ -466,7 +512,7 @@ export async function buildAmbushFleet({ systemId, tier, seed, fleetId, label })
     });
   });
   const claimIndex = buildClaimIndex(enemies);
-  const fleet = { id: fleetId, tier: t, ambush: true, name: `Raiders after your ${label || 'cargo'}`, patrol_center: { x: 0, y: 0 }, patrol_radius: 120, member_ids: memberIds };
+  const fleet = { id: fleetId, tier: t, faction, ambush: true, name: `Raiders after your ${label || 'cargo'}`, patrol_center: { x: 0, y: 0 }, patrol_radius: 120, member_ids: memberIds };
   return { fleet, enemies: enemies.map(e => ({ ...e, is_flagship: claimIndex.get(e.id).isFlagship })), claimIndex };
 }
 
@@ -488,7 +534,7 @@ function buildClaimIndex(enemies) {
     }
     // templateId lets /combat/claim-loot roll the template's loot_table
     // (Phase 4b elite drops) without a second lookup.
-    index.set(e.id, { credits, isFlagship, fleetId: e.fleet_id, templateId: e.template_id, isElite: !!e.is_elite, tier: e.tier || 1 });
+    index.set(e.id, { credits, isFlagship, fleetId: e.fleet_id, templateId: e.template_id, isElite: !!e.is_elite, tier: e.tier || 1, faction: normalizeFaction(e.faction) });
   }
   return index;
 }
@@ -502,6 +548,7 @@ export function invalidateManifests() {
   _manifestCache.clear();
   _catalog = null;
   _catalogPromise = null;
+  _territoryCache = null;
 }
 
 // Returns { manifest, claimIndex } or null for an unknown system id.
@@ -526,6 +573,8 @@ export async function getSystemManifest(systemId) {
     system_id: systemId,
     tier: built.tier,
     danger_level: built.dangerLevel,
+    faction: built.faction || 'reavers',
+    nest: !!built.nest,
     fleets: built.fleets,
     enemies: built.enemies.map(e => ({ ...e, is_flagship: claimIndex.get(e.id).isFlagship })),
   };

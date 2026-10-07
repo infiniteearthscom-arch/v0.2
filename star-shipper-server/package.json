@@ -9,6 +9,7 @@
     "start": "node src/index.js",
     "db:migrate": "node src/db/migrate.js",
     "db:verify": "node src/db/verify.js",
+    "sim:factions": "node src/db/sim-factions.js",
     "db:rename": "node src/db/rename-user.js",
     "db:users": "node src/db/list-users.js",
     "db:recalc-ships": "node src/db/recalc-ships.js",

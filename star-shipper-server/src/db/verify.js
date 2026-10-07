@@ -110,7 +110,7 @@ async function main() {
   report('enemy_template_modules exists (069)', await tableExists('enemy_template_modules'));
   if (await tableExists('enemy_templates')) {
     const tcount = await pool.query(`SELECT COUNT(*)::int AS n FROM enemy_templates`);
-    report('enemy_templates seeded (069)', tcount.rows[0].n >= 18, `${tcount.rows[0].n} templates`);
+    report('enemy_templates seeded (069 + 094)', tcount.rows[0].n >= 56, `${tcount.rows[0].n} templates`);
     const orphanMods = await pool.query(
       `SELECT COUNT(*)::int AS n FROM enemy_template_modules tm
         LEFT JOIN module_types mt ON mt.id = tm.module_type_id WHERE mt.id IS NULL`
@@ -146,6 +146,19 @@ async function main() {
     `SELECT COUNT(*)::int AS n FROM module_types mt LEFT JOIN item_definitions idef ON idef.id = mt.id WHERE idef.id IS NULL`
   );
   report('every module_types row has an item_definitions row', orphanMods.rows[0].n === 0, `${orphanMods.rows[0].n} missing`);
+
+  // --- migration 094 (enemy factions: Swarm + Synod) ---
+  const facHulls = await pool.query(`SELECT COUNT(*)::int AS n FROM hull_types WHERE class IN ('Swarm','Synod') AND price IS NULL`);
+  report('18 Swarm/Synod hulls, never sold (094)', facHulls.rows[0]?.n === 18, `found ${facHulls.rows[0]?.n}`);
+  const facT = await pool.query(`SELECT faction, COUNT(*)::int AS n FROM enemy_templates WHERE faction IN ('swarm','synod') GROUP BY faction`);
+  const facCounts = Object.fromEntries(facT.rows.map(r => [r.faction, r.n]));
+  report('19 Swarm + 19 Synod templates (094)', facCounts.swarm === 19 && facCounts.synod === 19, JSON.stringify(facCounts));
+  const swarmShield = await pool.query(`SELECT COUNT(DISTINCT tm.template_id)::int AS n FROM enemy_template_modules tm JOIN enemy_templates t ON t.id = tm.template_id JOIN module_types mt ON mt.id = tm.module_type_id WHERE t.faction = 'swarm' AND tm.slot_type = 'shield' AND mt.stats->>'armor_hp' IS NULL`);
+  report('no Swarm template fits a shield (094)', swarmShield.rows[0]?.n === 0, `${swarmShield.rows[0]?.n} templates with shields`);
+  const synodNoShield = await pool.query(`SELECT COUNT(*)::int AS n FROM enemy_templates t WHERE t.faction = 'synod' AND NOT EXISTS (SELECT 1 FROM enemy_template_modules tm JOIN module_types mt ON mt.id = tm.module_type_id WHERE tm.template_id = t.id AND tm.slot_type = 'shield' AND mt.stats->>'armor_hp' IS NULL)`);
+  report('every Synod template fits a shield (094)', synodNoShield.rows[0]?.n === 0, `${synodNoShield.rows[0]?.n} without`);
+  const badRes = await pool.query(`SELECT COUNT(*)::int AS n FROM enemy_templates t, jsonb_array_elements(t.loot_table) d WHERE d->>'kind' = 'resource' AND NOT EXISTS (SELECT 1 FROM resource_types r WHERE r.name = d->>'resource_name')`);
+  report('every resource loot entry names a real resource (094)', badRes.rows[0]?.n === 0, `${badRes.rows[0]?.n} bad entries`);
 
   // --- migration 093 (fleet command text) ---
   const fc = await pool.query(`SELECT description, bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'cmd_fleet_command'`);

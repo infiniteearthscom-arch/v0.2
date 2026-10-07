@@ -197,6 +197,16 @@ router.post('/reload-templates', (req, res) => {
 // salvage against the manifest and pay the SERVER's number (the
 // client-side wreck credits are display-only). 404 unknown enemy,
 // 409 already claimed this visit.
+// resource_types.name -> id, cached for the process (names are seed data).
+const _resIdCache = new Map();
+async function resourceIdByName(name) {
+  if (_resIdCache.has(name)) return _resIdCache.get(name);
+  const row = await queryOne(`SELECT id FROM resource_types WHERE name = $1`, [name]);
+  const id = row ? row.id : null;
+  if (id) _resIdCache.set(name, id);
+  return id;
+}
+
 // ============================================
 router.post('/claim-loot', async (req, res) => {
   try {
@@ -232,10 +242,22 @@ router.post('/claim-loot', async (req, res) => {
         const tmpl = (await getCatalog()).byId.get(entry.templateId);
         const table = Array.isArray(tmpl?.loot_table) ? tmpl.loot_table : [];
         for (const drop of table) {
-          if (!drop?.module_type_id) continue;
-          if (Math.random() > (drop.chance ?? 1)) continue;
+          if (!drop || Math.random() > (drop.chance ?? 1)) continue;
           const [qmin, qmax] = Array.isArray(drop.quality) ? drop.quality : [60, 85];
           const q = Math.floor(qmin + Math.random() * Math.max(0, qmax - qmin + 1));
+          // Faction carcasses (094): {kind:'resource', resource_name, quantity:[min,max]}
+          // -- resolved by NAME so processed materials (serial ids) work.
+          if (drop.kind === 'resource' && drop.resource_name) {
+            const rid = await resourceIdByName(drop.resource_name);
+            if (!rid) { console.warn(`claim-loot: unknown resource "${drop.resource_name}" in ${entry.templateId}`); continue; }
+            const [nmin, nmax] = Array.isArray(drop.quantity) ? drop.quantity : [1, 1];
+            const n = Math.floor(nmin + Math.random() * Math.max(0, nmax - nmin + 1));
+            if (n <= 0) continue;
+            await addResourceStack({ query }, req.user.id, rid, n, { stat_purity: q, stat_stability: q, stat_potency: q, stat_density: q });
+            items.push({ name: `${n}× ${drop.resource_name}`, quality: q, material: true });
+            continue;
+          }
+          if (!drop.module_type_id) continue;
           const quality = { purity: q, stability: q, potency: q, density: q };
           const name = await insertModuleItem({ query }, req.user.id, drop.module_type_id, quality);
           if (name) items.push({ name, quality: q });
