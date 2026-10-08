@@ -1045,7 +1045,9 @@ export const SystemView = () => {
       return;
     }
     const total = alignTimeSeconds(st.ships, st.activeBonuses);
-    cancelAutopilot?.();
+    // Do NOT clear the autopilot target: the loop treats "docked with no
+    // target" as manual control and undocks a frame later, which would
+    // abort this alignment. The target stays the gate we are docked at.
     shipVelRef.current = { x: 0, y: 0 };
     gateAlignRef.current = { targetSystemId, targetName: targetSys.name, total, remaining: total, penalty: 0, startedAt: gameTimeRef.current, lastHitSeen: lastPlayerHitTimeRef.current };
     if (st.windows?.gate?.open) st.closeWindow('gate');
@@ -2699,6 +2701,9 @@ export const SystemView = () => {
     // never fire again, so take the hop from here.
     if (dockedBodyRef.current && dockedBodyRef.current.type === exitBody.type) {
       if (exitBody.type === 'jump_gate') {
+        if (!autopilotTargetRef.current || autopilotTargetRef.current.id !== exitBody.id) {
+          st.setAutopilotTarget({ id: exitBody.id, name: exitBody.name, type: exitBody.type });
+        }
         if (autoJumpEnabled()) startGateAlignment(hop.id);
         else st.openWindow('gate');
       } else {
