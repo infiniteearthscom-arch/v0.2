@@ -2933,7 +2933,7 @@ export const SystemView = () => {
                   if (targetBody.type === 'jump_gate' || targetBody.type === 'warp_point') {
                     // Exit system into galaxy flight!
                     const galaxy = getGalaxy();
-                    const currentSys = galaxy.systemMap[currentSystemId];
+                    const currentSys = galaxy.systemMap[useGameStore.getState().currentSystem || currentSystemId]; // store, not the loop closure (pitfall #7: stale after the first jump)
                     const sysX = currentSys?.x || 0;
                     const sysY = currentSys?.y || 0;
                     
@@ -3003,30 +3003,38 @@ export const SystemView = () => {
               rotationInput = (angleDiff > 0 ? 1 : -1) * rotationStrength;
             }
             
-            // APPROACH SPEED CONTROL — start slowing closer, maintain higher minimum speed
-            const slowdownStartDistance = 200;
-            
-            if (Math.abs(angleDiff) < 25) {
-              if (currentDistance < slowdownStartDistance) {
-                // Desired speed proportional to distance, but keep a decent minimum
-                const desiredSpeed = Math.max(20, (currentDistance / slowdownStartDistance) * SHIP_MAX_SPEED * 0.6);
-                
-                if (currentSpeed > desiredSpeed * 1.3) {
-                  // Going too fast for this distance - brake
-                  isBraking = true;
-                  thrustInput = 0;
-                } else if (currentSpeed < desiredSpeed * 0.5 && currentDistance > dockingRange * 1.5) {
-                  // Going too slow - speed up
-                  thrustInput = 0.6;
-                } else {
-                  // Coast or gentle thrust
-                  if (currentDistance > dockingRange * 2 && currentSpeed < 30) {
-                    thrustInput = 0.4;
-                  }
-                }
-              } else {
-                // Far from target - full thrust
-                thrustInput = 1;
+            // APPROACH SPEED CONTROL (rewritten 2026-10-07 -- owner: fast
+            // fleets circled the target instead of arriving). Decisions are
+            // made from the VELOCITY vector and a real stopping distance,
+            // not from the heading: the brakes act along the velocity, so a
+            // ship coasting sideways past the target can be slowed no matter
+            // which way its nose points. The old fixed 200-unit slowdown
+            // was far too late for a T3+ drive.
+            const velAngle = currentSpeed > 1 ? Math.atan2(vel.y, vel.x) * (180 / Math.PI) : targetAngle;
+            let velDiff = targetAngle - velAngle;
+            while (velDiff > 180) velDiff -= 360;
+            while (velDiff < -180) velDiff += 360;
+            // Distance needed to stop from the current speed (v^2 / 2a) with a margin.
+            const stopDist = (currentSpeed * currentSpeed) / (2 * SHIP_BRAKE_POWER) * 1.4 + dockingRange;
+            // Speed we may carry at this distance and still stop inside docking range.
+            const desiredSpeed = Math.max(20, Math.min(SHIP_MAX_SPEED,
+              Math.sqrt(2 * SHIP_BRAKE_POWER * Math.max(0, currentDistance - dockingRange)) * 0.75));
+
+            if (currentSpeed > 15 && Math.abs(velDiff) > 30 && currentDistance < Math.max(stopDist * 2, 300)) {
+              // Moving across or away from the target while close: kill the
+              // sideways velocity rather than orbiting it.
+              isBraking = true;
+              thrustInput = 0;
+            } else if (currentSpeed > desiredSpeed * 1.15 || currentDistance < stopDist) {
+              // Too fast for the remaining distance -- brake.
+              isBraking = true;
+              thrustInput = 0;
+            } else if (Math.abs(angleDiff) < 25) {
+              if (currentSpeed < desiredSpeed * 0.85) {
+                // Room to accelerate toward the target.
+                thrustInput = currentDistance > stopDist * 2 ? 1 : 0.6;
+              } else if (currentDistance > dockingRange * 2 && currentSpeed < 30) {
+                thrustInput = 0.4; // creep in
               }
             } else if (Math.abs(angleDiff) > 45 && currentSpeed > 20) {
               // Facing wrong way - brake first, then turn
