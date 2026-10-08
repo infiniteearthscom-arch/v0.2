@@ -81,7 +81,7 @@ export const GateWindow = () => {
     if (id === sys.id || lanes.some(x => x.sys.id === id)) continue;
     const t = galaxy.systemMap[id]; if (t) second.push({ from: l.sys, sys: t });
   }
-  const maxD = Math.max(1, ...lanes.map(l => l.dist), ...second.map(s => Math.hypot(s.sys.x - sys.x, s.sys.y - sys.y)) * 0.85);
+  const maxD = Math.max(1, ...lanes.map(l => l.dist), ...second.map(s => Math.hypot(s.sys.x - sys.x, s.sys.y - sys.y) * 0.85));
   const px = (t) => ({ x: cx + ((t.x - sys.x) / maxD) * R, y: cy + ((t.y - sys.y) / maxD) * R });
   const sol = galaxy.systemMap['sol'];
   const solAng = sol && sol.id !== sys.id ? Math.atan2(sol.y - sys.y, sol.x - sys.x) : null;
