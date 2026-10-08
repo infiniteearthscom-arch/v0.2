@@ -30,6 +30,7 @@ import { authMiddleware } from '../auth/index.js';
 import { query, queryAll, transaction } from '../db/index.js';
 import { GATE_CONFIG, WARP_CORE_MODULE_ID, ISLAND_CORE_PRICE } from '../game/fitGates.js';
 import { isWarpCoreLive } from '../game/warp.js';
+import { completeQuestInTx } from './quests.js';
 
 const router = express.Router();
 
@@ -413,7 +414,14 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
         [userId, newPos, skill_id, target_level, startsAt, finishesAt]
       );
 
-      return { position: newPos, skill_id, target_level, started_at: startsAt, finishes_at: finishesAt };
+      // Onboarding (096): queuing any skill completes "The Long Game" --
+      // server-side, inside this transaction, like the contract / base quests.
+      let quest = null;
+      try {
+        const qr = await completeQuestInTx(client, userId, 'tutorial_queue_skill');
+        if (qr && !qr.already_complete) quest = { quest_id: 'tutorial_queue_skill', title: qr.title || 'The Long Game', credits: qr.credits };
+      } catch (e) { console.warn('queue/add: quest hook failed', e?.message); }
+      return { position: newPos, skill_id, target_level, started_at: startsAt, finishes_at: finishesAt, quest };
     });
 
     res.json({ success: true, ...out });

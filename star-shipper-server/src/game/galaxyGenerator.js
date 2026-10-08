@@ -606,10 +606,18 @@ export const generateGalaxy = (galaxySeed = 12345, systemCount = 200) => {
   // rest run generateSystemContent (already deterministic from the
   // system seed) and check for a station body.
   const systemMap = {};
+  for (const sys of systems) systemMap[sys.id] = sys;
+  // Per-lane gates (2026-10-08): every lane end's id / name / position,
+  // read by laneGateBodies so each system gets one gate body per lane on
+  // the true galaxy bearing to that neighbour. Built before hasStation
+  // because computeHasStation runs generateSystemContent.
   for (const sys of systems) {
-    sys.hasStation = computeHasStation(sys);
-    systemMap[sys.id] = sys;
+    sys.laneTargets = (sys.jumpConnections || []).map(id => {
+      const t = systemMap[id];
+      return t ? { id: t.id, name: t.name, x: t.x, y: t.y } : null;
+    }).filter(Boolean);
   }
+  for (const sys of systems) sys.hasStation = computeHasStation(sys);
   
   return {
     seed: galaxySeed,
@@ -651,6 +659,57 @@ const PLANET_COUNTS = {
   neutron_star: [0, 2],
   black_hole:   [0, 1],
 };
+
+// One jump-gate body per lane (2026-10-08). Each gate sits at `radius`
+// from the star on the TRUE galaxy bearing to its destination (the
+// galaxy map and the system view share a y-down frame, so the gate to a
+// neighbour "north-east" on the map is north-east of the star), static
+// (orbitSpeed 0) so the bearing holds and the server's camp position
+// (t = 0) matches. Gates closer than MIN_GATE_SEP radians are pushed
+// apart symmetrically so two lanes in nearly the same direction never
+// stack. Deterministic from the lane list alone -- no rng. Used for
+// procedural systems AND Sol (SystemView / SystemMapWindow append these
+// to the hand-authored Sol bodies).
+const MIN_GATE_SEP = 0.45;
+export const laneGateBodies = (system, radius) => {
+  const targets = system.laneTargets || [];
+  if (!targets.length) return [];
+  const gates = targets.map(t => ({ t, ang: Math.atan2(t.y - system.y, t.x - system.x) }))
+    .sort((a, b) => a.ang - b.ang);
+  const n = gates.length;
+  if (n > 1) {
+    const sep = Math.min(MIN_GATE_SEP, (Math.PI * 2) / n);
+    for (let pass = 0; pass < 24; pass++) {
+      let moved = false;
+      for (let i = 0; i < n; i++) {
+        const a = gates[i], b = gates[(i + 1) % n];
+        let gap = b.ang - a.ang; if (i === n - 1) gap += Math.PI * 2;
+        if (gap < sep - 1e-6) { const push = (sep - gap) / 2; a.ang -= push; b.ang += push; moved = true; }
+      }
+      if (!moved) break;
+    }
+  }
+  return gates.map(g => ({
+    id: `gate_${g.t.id}`,
+    name: `${g.t.name} Gate`,
+    type: 'jump_gate',
+    laneTo: g.t.id,
+    orbitRadius: radius,
+    orbitSpeed: 0,
+    orbitOffset: ((g.ang % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2),
+    size: 12,
+  }));
+};
+
+// Arrival gate: the gate whose lane leads back to the system we came from
+// (EVE rule -- you appear at the gate you came through), else any gate.
+export const arrivalGateFor = (bodies, previousSystemId) =>
+  (previousSystemId && bodies.find(b => b.type === 'jump_gate' && b.laneTo === previousSystemId))
+  || bodies.find(b => b.type === 'jump_gate') || null;
+
+// Exit gate for a lane: the gate body whose laneTo is the destination.
+export const gateToSystem = (bodies, systemId) =>
+  bodies.find(b => b.type === 'jump_gate' && b.laneTo === systemId) || null;
 
 export const generateSystemContent = (system) => {
   if (system.id === 'sol') return null; // Sol uses hardcoded data
@@ -719,17 +778,12 @@ export const generateSystemContent = (system) => {
     });
   }
   
-  // Jump gate (if system has one)
+  // Jump gates: ONE PER LANE (2026-10-08), each on the bearing to its
+  // destination (laneGateBodies). The single gate's orbitOffset roll is
+  // still consumed so the warp point (next) keeps its position.
   if (system.hasJumpGate) {
-    bodies.push({
-      id: 'jump_gate',
-      name: 'Jump Gate',
-      type: 'jump_gate',
-      orbitRadius: orbitRadius + 200,
-      orbitSpeed: 0.001,
-      orbitOffset: rng.range(0, Math.PI * 2),
-      size: 12,
-    });
+    rng.range(0, Math.PI * 2);
+    bodies.push(...laneGateBodies(system, orbitRadius + 200));
   }
   
   // Warp point — every system has one (generic system exit)

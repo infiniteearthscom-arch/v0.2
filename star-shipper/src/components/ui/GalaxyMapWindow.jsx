@@ -613,7 +613,7 @@ export const GalaxyMapWindow = () => {
     setTimeout(() => {                                  // after SystemView mounts + spawns
       const s2 = useGameStore.getState();
       s2.setPendingJump(selectedSys.id);
-      s2.setAutopilotTarget({ id: 'jump_gate', name: 'Jump Gate', type: 'jump_gate' });
+      s2.setAutopilotTarget({ id: `gate_${selectedSys.id}`, name: `${selectedSys.name} Gate`, type: 'jump_gate' });
       s2.pushToast?.({ kind: 'info', text: `Heading to the jump gate for ${selectedSys.name}`, duration: 3500 });
     }, 400);
     closeWindow('galaxyMap');
@@ -1055,7 +1055,7 @@ export const GalaxyMapWindow = () => {
                   <button
                     onClick={() => {
                       setPendingJump(selectedSys.id);
-                      setAutopilotTarget({ id: 'jump_gate', name: 'Jump Gate', type: 'jump_gate' });
+                      setAutopilotTarget({ id: `gate_${selectedSys.id}`, name: `${selectedSys.name} Gate`, type: 'jump_gate' });
                       // Close the map so the autopilot run to the gate is visible.
                       closeWindow('galaxyMap');
                     }}

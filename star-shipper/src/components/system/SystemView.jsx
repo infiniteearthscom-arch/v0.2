@@ -37,7 +37,7 @@ import { fittingAPI, wrecksAPI, asteroidsAPI, resourcesAPI, combatAPI, basesAPI 
 import { getFleetMineRange } from '@/utils/mining';
 import { Hotbar, HOTBAR_SIZE } from '@/components/hud/Hotbar';
 import { playSound, startLoop, stopLoop } from '@/utils/audio';
-import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS, bodyPositionAt, orbitPositionAt, orbitPathFor } from '@/utils/galaxyGenerator';
+import { generateGalaxy, generateSystemContent, FACTIONS as GALAXY_FACTIONS, bodyPositionAt, orbitPositionAt, orbitPathFor, laneGateBodies, arrivalGateFor, gateToSystem } from '@/utils/galaxyGenerator';
 import { useTooltip } from '@/components/ui/TooltipProvider';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 import presence from '@/utils/presence';
@@ -318,9 +318,18 @@ const SOL_SYSTEM = {
     { id: 'saturn', name: 'Saturn', type: 'planet', planetType: 'gas_giant', orbitRadius: 3000, orbitSpeed: 0.002, orbitOffset: 0.8, size: 70, color: '#ddcc88', hasRings: true },
     { id: 'uranus', name: 'Uranus', type: 'planet', planetType: 'ice', orbitRadius: 3800, orbitSpeed: 0.0012, orbitOffset: 4.1, size: 40, color: '#88ccdd' },
     { id: 'neptune', name: 'Neptune', type: 'planet', planetType: 'ice', orbitRadius: 4500, orbitSpeed: 0.0008, orbitOffset: 2.6, size: 38, color: '#4466cc' },
-    { id: 'jump_gate', name: 'Jump Gate', type: 'jump_gate', orbitRadius: 5200, orbitSpeed: 0.0005, orbitOffset: 1.0, size: 12 },
+    // Jump gates: one per lane, appended by solWithGates() (2026-10-08).
     { id: 'warp_point', name: 'Warp Point', type: 'warp_point', orbitRadius: 5600, orbitSpeed: 0.0003, orbitOffset: 4.2, size: 10 },
   ],
+};
+const SOL_GATE_RADIUS = 5200;
+let _solWithGates = null;
+const solWithGates = () => {
+  if (!_solWithGates) {
+    const sol = getGalaxy().systemMap.sol;
+    _solWithGates = { ...SOL_SYSTEM, bodies: [...SOL_SYSTEM.bodies, ...(sol ? laneGateBodies(sol, SOL_GATE_RADIUS) : [])] };
+  }
+  return _solWithGates;
 };
 
 // ============================================
@@ -1001,6 +1010,10 @@ export const SystemView = () => {
   const fetchShips = useGameStore(state => state.fetchShips);
   const pushToast = useGameStore(state => state.pushToast);
   const completeQuest = useGameStore(state => state.completeQuest);
+  // Onboarding (096): the first manual thrust completes "First Light". The
+  // ref keeps it to one call per mount; the server ignores repeats.
+  const firstLightSentRef = useRef(false);
+  const questIsActive = (id) => (useGameStore.getState().quests || []).some(q => q.quest_id === id && q.status === 'active');
   // Active skill bonuses (Phase 1: Gunnery -> fleet_damage_pct,
   // Astrometrics -> sensor_range_pct). Mirrored to a ref so the
   // game-loop closure reads the current value rather than the one
@@ -1028,8 +1041,26 @@ export const SystemView = () => {
       if (pushToast) pushToast({ kind: 'error', text: `Jump refused: ${warpBlockText(check, targetSys, profile) || 'no lane to that system'}`, duration: 5000 });
       return false;
     }
+    const gate = dockedBodyRef.current;
+    if (!gate || gate.type !== 'jump_gate' || (gate.laneTo && gate.laneTo !== targetSys.id)) {
+      if (pushToast) pushToast({ kind: 'error', text: `The ${targetSys.name} lane leaves from the ${targetSys.name} Gate`, duration: 4000 });
+      return false;
+    }
     playSound('dock_complete'); // TODO: register a dedicated 'warp_jump' asset in utils/audio.js
     st.enterSystem(targetSys.id, 'jump_gate');
+    return true;
+  };
+  // Per-lane gates (2026-10-08): a lane can only be taken from ITS gate.
+  // If the fleet is docked elsewhere (another gate, or nowhere), fly to the
+  // right gate with the jump pending; the dock handler aligns on arrival.
+  const flyToLaneGate = (targetSystemId) => {
+    const st = useGameStore.getState();
+    const gate = gateToSystem(currentSystemRef.current.bodies, targetSystemId);
+    if (!gate) return false;
+    st.setPendingJump(targetSystemId);
+    setDestination(gate);
+    if (st.windows?.gate?.open) st.closeWindow('gate');
+    if (pushToast) pushToast({ kind: 'info', text: `Heading to the ${gate.name}`, duration: 2500 });
     return true;
   };
   const startGateAlignment = (targetSystemId) => {
@@ -1042,6 +1073,11 @@ export const SystemView = () => {
     const check = warpCheck(currentSys, targetSys, profile);
     if (!(check.ok && check.via === 'gate')) {
       if (pushToast) pushToast({ kind: 'error', text: `Cannot align: ${warpBlockText(check, targetSys, profile) || 'no lane to that system'}`, duration: 4500 });
+      return;
+    }
+    const here = dockedBodyRef.current;
+    if (!here || here.type !== 'jump_gate' || (here.laneTo && here.laneTo !== targetSystemId)) {
+      if (!flyToLaneGate(targetSystemId) && pushToast) pushToast({ kind: 'error', text: 'No gate for that lane in this system', duration: 4000 });
       return;
     }
     const total = alignTimeSeconds(st.ships, st.activeBonuses);
@@ -1130,15 +1166,15 @@ export const SystemView = () => {
   const prevSystemIdRef = useRef(currentSystemId);
   
   const baseSystem = useMemo(() => {
-    if (currentSystemId === 'sol') return SOL_SYSTEM;
+    if (currentSystemId === 'sol') return solWithGates();
 
     // Look up galaxy data and generate system content
     const galaxy = getGalaxy();
     const galaxySys = galaxy.systemMap[currentSystemId];
-    if (!galaxySys) return SOL_SYSTEM; // fallback
+    if (!galaxySys) return solWithGates(); // fallback
 
     const content = generateSystemContent(galaxySys);
-    if (!content) return SOL_SYSTEM; // fallback
+    if (!content) return solWithGates(); // fallback
 
     return content;
   }, [currentSystemId]);
@@ -1337,16 +1373,23 @@ export const SystemView = () => {
   // Docked state - which body we're currently docked at
   const [dockedBody, setDockedBody] = useState(null);
   const dockedBodyRef = useRef(null);
+  // Docked at a planet / station = inside the port, combat paused. Docked
+  // at a JUMP GATE = parked in open space while the fleet aligns: enemies
+  // keep shooting (that is the gate-camp risk the alignment penalty is
+  // for) and the fleet shoots back. Owner 2026-10-08: "attached to the
+  // gate and therefore immune" made plotted routes free.
+  const isSheltered = () => { const d = dockedBodyRef.current; return !!d && d.type !== 'jump_gate'; };
   
   // Game state as refs (no re-renders, always current values)
   // Compute initial ship position based on how we arrived
   const initialShipPos = useMemo(() => {
-    if (currentSystemId === 'sol') return { x: 900, y: 0 };
-    // Find the arrival body (warp point or jump gate)
-    const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
-    const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
-              || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
-              || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
+    if (currentSystemId === 'sol' && arrivalType !== 'jump_gate') return { x: 900, y: 0 };
+    // Find the arrival body: the gate whose lane leads back to the system
+    // we came from (per-lane gates, 2026-10-08), or the warp point.
+    const bodies = currentSystemRef.current.bodies;
+    const body = (arrivalType === 'jump_gate' ? arrivalGateFor(bodies, useGameStore.getState().previousSystem) : null)
+              || bodies.find(b => b.type === 'warp_point')
+              || bodies.find(b => b.type === 'jump_gate');
     if (body) {
       const angle = body.orbitOffset || 0;
       return {
@@ -2576,11 +2619,12 @@ export const SystemView = () => {
       // effect, NOT in the spawn-position memo -- that runs during render.
       orbitLockRef.current = null;
       setOrbitLocked(false);
-      // Spawn at arrival body based on how we got here
-      const bodyType = arrivalType === 'jump_gate' ? 'jump_gate' : 'warp_point';
-      const body = currentSystemRef.current.bodies.find(b => b.type === bodyType)
-                || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
-                || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
+      // Spawn at the arrival body: the gate leading back to the system we
+      // came from (per-lane gates, 2026-10-08), else the warp point.
+      const bodiesNow = currentSystemRef.current.bodies;
+      const body = (arrivalType === 'jump_gate' ? arrivalGateFor(bodiesNow, useGameStore.getState().previousSystem) : null)
+                || bodiesNow.find(b => b.type === 'warp_point')
+                || bodiesNow.find(b => b.type === 'jump_gate');
       if (body) {
         const angle = body.orbitOffset || 0;
         shipPosRef.current = {
@@ -2689,17 +2733,17 @@ export const SystemView = () => {
     }
     const hop = plannedRoute.hops[plannedRoute.index];
     if (!hop) return;
-    const exitType = hop.via === 'gate' ? 'jump_gate' : 'warp_point';
-    const exitBody = currentSystemRef.current.bodies.find(b => b.type === exitType)
-      || currentSystemRef.current.bodies.find(b => b.type === 'warp_point')
-      || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
+    const exitBody = hop.via === 'gate'
+      ? (gateToSystem(currentSystemRef.current.bodies, hop.id) || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate'))
+      : currentSystemRef.current.bodies.find(b => b.type === 'warp_point');
     if (!exitBody) return;
     st.setPendingJump(hop.id);
     const hopSys = getGalaxy().systemMap[hop.id];
     // Already docked at that exit (plotted the course from inside the gate
     // window, or while parked at the warp point)? The dock handler will
     // never fire again, so take the hop from here.
-    if (dockedBodyRef.current && dockedBodyRef.current.type === exitBody.type) {
+    if (dockedBodyRef.current && dockedBodyRef.current.type === exitBody.type
+        && (exitBody.type !== 'jump_gate' || dockedBodyRef.current.id === exitBody.id)) {
       if (exitBody.type === 'jump_gate') {
         if (!autopilotTargetRef.current || autopilotTargetRef.current.id !== exitBody.id) {
           st.setAutopilotTarget({ id: exitBody.id, name: exitBody.name, type: exitBody.type });
@@ -2956,6 +3000,11 @@ export const SystemView = () => {
                     // timer; otherwise open the lane picker. Galaxy flight is
                     // never entered from a gate.
                     if (targetBody.type === 'jump_gate') {
+                      if (targetSys && targetBody.laneTo && targetBody.laneTo !== targetSys.id) {
+                        // Per-lane gates: this is another lane's gate. Keep the
+                        // jump pending and fly on to the right one.
+                        if (flyToLaneGate(targetSys.id)) return;
+                      }
                       if (targetSys && autoJumpEnabled()) {
                         const profile = fleetWarpProfile(st.ships, st.activeBonuses);
                         const check = warpCheck(currentSys, targetSys, profile);
@@ -3044,6 +3093,10 @@ export const SystemView = () => {
         }
       } else {
         // MANUAL MODE
+        if (hasManualInput && !firstLightSentRef.current && questIsActive('tutorial_first_light')) {
+          firstLightSentRef.current = true;
+          if (completeQuest) completeQuest('tutorial_first_light');
+        }
         // Clear docked state when player takes manual control
         if (dockedBodyRef.current) {
           dockedBodyRef.current = null;
@@ -3369,7 +3422,7 @@ export const SystemView = () => {
       // (subject to the rally cap). One call per engaged fleet per frame
       // is plenty -- the callee stays flagged until it engages.
       const reinforceFleets = new Set();
-      if (!dockedBodyRef.current && !isPodRef.current) {
+      if (!isSheltered() && !isPodRef.current) {
         for (const [fid, leader] of leaderByFleet) {
           if (!engagedFleets.has(fid) || !ENGAGED(leader.state)) continue;
           const rank = BEHAVIOR_RANK[leader.behavior] || 1;
@@ -3472,7 +3525,7 @@ export const SystemView = () => {
           else enemy.rotation = leader.rotation;
           enemy.vx = 0; enemy.vy = 0;
           // Fire from formation (same rule as the leader).
-          if (!dockedBodyRef.current && enemy.state === 'attack' && dist < enemy.range) {
+          if (!isSheltered() && enemy.state === 'attack' && dist < enemy.range) {
             fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles);
           }
           continue; // skip the leader/free-agent state machine + movement
@@ -3482,7 +3535,7 @@ export const SystemView = () => {
         // hostile enemies. Pods are untargetable; pirates fly home and
         // resume patrol. Once in patrol, normal aggro rules apply --
         // undocking / disembarking near a patrol zone re-aggros.
-        if ((dockedBodyRef.current || isPodRef.current) &&
+        if ((isSheltered() || isPodRef.current) &&
             (enemy.state === 'chase' || enemy.state === 'attack' || enemy.state === 'flee')) {
           enemy.state = 'returning';
         }
@@ -3492,13 +3545,13 @@ export const SystemView = () => {
         // aggro range. Wingmen pour in from across the patrol when
         // one of them spots the player. Skipped while the player is
         // docked / podded (those overrides happened above).
-        if (!dockedBodyRef.current && !isPodRef.current
+        if (!isSheltered() && !isPodRef.current
             && enemy.fleetId && engagedFleets.has(enemy.fleetId)
             && (enemy.state === 'patrol' || enemy.state === 'returning')) {
           enemy.state = 'chase';
         }
         // Phase 4 reinforcements: a coordinated/tactical fleet called us.
-        if (!dockedBodyRef.current && !isPodRef.current
+        if (!isSheltered() && !isPodRef.current
             && enemy.fleetId && reinforceFleets.has(enemy.fleetId)
             && (enemy.state === 'patrol' || enemy.state === 'returning')
             && canEngage(enemy.fleetId)) {
@@ -3520,7 +3573,7 @@ export const SystemView = () => {
           // Pods are invisible to pirate aggro -- core podding rule.
           // Rally cap: hold patrol if the system already has its quota
           // of engaged fleets.
-          if (!dockedBodyRef.current && !isPodRef.current && dist < PIRATE_AGGRO_RANGE && canEngage(enemy.fleetId)) {
+          if (!isSheltered() && !isPodRef.current && dist < PIRATE_AGGRO_RANGE && canEngage(enemy.fleetId)) {
             enemy.state = 'chase';
             engagedFleets.add(enemy.fleetId);
           }
@@ -3600,7 +3653,7 @@ export const SystemView = () => {
           //   30% of the fleet's max shield. Both on one cooldown.
           // Faction signature moves (enemy-factions-spec §5.1), T5 flagships.
           const factionT5 = enemy.isFlagship && (enemy.tier || 1) >= 5 && (enemy.behavior === 'swarm' || enemy.behavior === 'synod');
-          if (factionT5 && enemy.behavior === 'swarm' && !enemy._spawned && efleet && efleet.hull / Math.max(1, efleet.maxHull) < SWARM_SPAWN_HULL_FRAC && !dockedBodyRef.current) {
+          if (factionT5 && enemy.behavior === 'swarm' && !enemy._spawned && efleet && efleet.hull / Math.max(1, efleet.maxHull) < SWARM_SPAWN_HULL_FRAC && !isSheltered()) {
             // SPAWN: eject Needles that join the pool. Cloned from a Needle in
             // this system if one exists (any state), else from the flagship at
             // a fraction of its stats. No loot -- the server has no claim
@@ -3637,7 +3690,7 @@ export const SystemView = () => {
             effects.push({ x: enemy.x, y: enemy.y, type: 'explosion', age: 0, size: enemy.displaySize * 0.6 });
             if (pushToast) pushToast({ kind: 'error', text: `★ ${enemy.name}: SPAWN`, duration: 2200 });
           }
-          if (enemy.isFlagship && (enemy.behavior === 'elite' || (factionT5 && enemy.behavior === 'synod')) && !dockedBodyRef.current) {
+          if (enemy.isFlagship && (enemy.behavior === 'elite' || (factionT5 && enemy.behavior === 'synod')) && !isSheltered()) {
             enemy.specialTimer -= delta;
             if (enemy.specialTimer <= 0 && dist < (enemy.range || PIRATE_ATTACK_RANGE)) {
               enemy.specialTimer = ELITE_SPECIAL_COOLDOWN;
@@ -3704,7 +3757,7 @@ export const SystemView = () => {
         enemy.y += enemy.vy * delta;
         
         // Fire at player (skip when docked)
-        if (!dockedBodyRef.current && enemy.state === 'attack' && dist < enemy.range) {
+        if (!isSheltered() && enemy.state === 'attack' && dist < enemy.range) {
           fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles);
         }
         
@@ -3715,7 +3768,7 @@ export const SystemView = () => {
       // Each fleet ship has its own weapons array. Cooldowns are tracked
       // per weapon in fleetWeaponCooldownsRef keyed by `${shipId}:${weaponIdx}`.
       // Skip entirely when docked — combat is paused at port.
-      if (!dockedBodyRef.current) {
+      if (!isSheltered()) {
       const fleetData = fleetShipsRef.current || [];
       const cooldowns = fleetWeaponCooldownsRef.current;
       const theta = shipRotationRef.current * Math.PI / 180;
@@ -3957,7 +4010,7 @@ export const SystemView = () => {
           if (enemies[ei].hull <= 0) enemies.splice(ei, 1);
         }
       }
-      } // end if (!dockedBodyRef.current)
+      } // end if (!isSheltered())
       
       // --- Update projectiles & collisions ---
       for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -4734,7 +4787,7 @@ export const SystemView = () => {
       // so the OS-level keydown repeat (~30/sec while held) just no-ops
       // after the first call. dockedBody check prevents the engine
       // firing while parked at a station.
-      if (key === 'w' && !dockedBodyRef.current) {
+      if (key === 'w' && !isSheltered()) {
         startLoop('fleet_engine');
       }
 
@@ -5181,6 +5234,31 @@ export const SystemView = () => {
                       {ship.name}
                     </text>
                   )}
+                  {/* Jump-gate alignment (jump-gates-spec §3), drawn ON the
+                      flagship rather than in the HUD (owner 2026-10-08): a
+                      ring that fills clockwise as the fleet aligns, the
+                      countdown under the name. A hit pushes the ring back
+                      and flashes it amber. */}
+                  {ship.isActive && gateAlignRef.current && (() => {
+                    const al = gateAlignRef.current;
+                    const total = Math.max(0.01, al.total + al.penalty);
+                    const frac = Math.max(0, Math.min(1, 1 - al.remaining / total));
+                    const r = Math.max(14, ih * 0.9);
+                    const C = 2 * Math.PI * r;
+                    const hitFlash = al.lastHitSeen > al.startedAt && (gameTimeRef.current - al.lastHitSeen) < 0.5;
+                    const col = hitFlash ? '#ffb347' : '#44ff88';
+                    return (
+                      <g style={{ pointerEvents: 'none' }}>
+                        <circle r={r} fill="none" stroke="#0f2a1a" strokeWidth="2.5" opacity="0.9" />
+                        <circle r={r} fill="none" stroke={col} strokeWidth="2.5" strokeLinecap="round"
+                          strokeDasharray={`${frac * C} ${C}`} transform="rotate(-90)"
+                          style={{ filter: `drop-shadow(0 0 3px ${col})` }} />
+                        <text x={0} y={ih/2 + 17} textAnchor="middle" fill={col} fontSize="7" fontFamily="monospace">
+                          ALIGNING {Math.max(0, al.remaining).toFixed(1)}s{al.penalty > 0 ? ` +${al.penalty.toFixed(1)}` : ''}
+                        </text>
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}
@@ -5972,24 +6050,6 @@ export const SystemView = () => {
                     </div>
                   );
                 })}
-                {/* Jump-gate alignment bar (jump-gates-spec §3): fills as the
-                    fleet aligns; hits push the end out (penalty shown). */}
-                {gateAlignRef.current && (() => {
-                  const al = gateAlignRef.current;
-                  const frac = Math.max(0, Math.min(1, 1 - al.remaining / Math.max(0.01, al.total + al.penalty)));
-                  return (
-                    <div className="flex items-center gap-2" style={{ height: 15, marginTop: 2 }}>
-                      <span style={{ color: '#44ff88', fontSize: '0.5rem', width: 8 }}>⛩</span>
-                      <span style={{ color: '#44ff88', fontSize: '0.8rem', width: 30 }}>ALIGN</span>
-                      <div style={{ flex: 1, height: 6, background: '#0f2a1a', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ width: `${frac * 100}%`, height: '100%', background: 'linear-gradient(90deg,#1f8a5a,#44ff88)', boxShadow: '0 0 6px #44ff88' }} />
-                      </div>
-                      <span style={{ color: '#44ff88', fontSize: '0.8rem', width: 62, textAlign: 'right' }}>
-                        {Math.max(0, al.remaining).toFixed(1)}s{al.penalty > 0 ? ` +${al.penalty.toFixed(1)}` : ''}
-                      </span>
-                    </div>
-                  );
-                })()}
                 {/* Route strip (jump-gates-spec §4) */}
                 {(() => {
                   const st = useGameStore.getState();

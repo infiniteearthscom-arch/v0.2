@@ -274,6 +274,7 @@ const initialState = {
   // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
   viewMode: 'system',
   arrivalType: 'warp', // 'warp' or 'jump_gate' — where to spawn in system
+  previousSystem: null, // the system we jumped from: a gate arrival spawns at the gate leading back there
   
   // Galaxy flight state
   galaxyShipPosition: { x: 0, y: 0 }, // position in galaxy coordinates
@@ -540,8 +541,13 @@ export const useGameStore = create(
       addSkillToQueue: async (skillId, targetLevel) => {
         try {
           const { skillsAPI } = await import('@/utils/api');
-          await skillsAPI.queueAdd(skillId, targetLevel);
+          const out = await skillsAPI.queueAdd(skillId, targetLevel);
           await get().fetchSkillsAndResearch();
+          if (out?.quest) { // 096: "The Long Game" completed server-side
+            get().fetchQuests?.();
+            if (out.quest.credits !== undefined) set(state => { state.resources.credits = out.quest.credits; });
+            get().pushToast({ kind: 'success', text: `Quest Completed: ${out.quest.title}`, duration: 5000 });
+          }
         } catch (error) {
           const msg = error?.message || 'Failed to queue skill';
           get().pushToast({ kind: 'error', text: msg, duration: 4000 });
@@ -802,6 +808,7 @@ export const useGameStore = create(
         const wasDiscovered = (get().discoveredSystems || []).includes(systemId);
         set(state => {
           state.viewMode = 'system';
+          state.previousSystem = prevSystem && prevSystem !== systemId ? prevSystem : null;
           state.currentSystem = systemId;
           state.arrivalType = arrivalType; // 'warp' or 'jump_gate'
           state.galaxyAutopilotTarget = null;

@@ -32,7 +32,7 @@ import { computeTerritory, factionOfSystem, isNestRegion, normalizeFaction } fro
 
 // 3 (2026-10-07): enemy factions -- rosters change for every system, so
 // the client's claim index rebuilds on entry (same refresh story as v2).
-export const MANIFEST_VERSION = 3;
+export const MANIFEST_VERSION = 4; // 4: per-lane gates, camps keyed to gate bodies (2026-10-08)
 
 // ---- galaxy singleton (same seed/count as the client) ----
 const GALAXY_SEED = 12345;
@@ -397,8 +397,14 @@ function buildProcedural(systemId, galaxySys, catalog) {
   // fleet (two in a nest) patrols the jump gate, so an arriving fleet has
   // to fight through its alignment to leave. Gate orbit is slow (0.001
   // rad/s), so its t=0 position is a fair camp centre.
-  const gate = bodies.find(b => b.type === 'jump_gate');
-  const campPos = gate ? { x: Math.round(Math.cos(gate.orbitOffset || 0) * (gate.orbitRadius || 0)), y: Math.round(Math.sin(gate.orbitOffset || 0) * (gate.orbitRadius || 0)) } : null;
+  // Per-lane gates (2026-10-08): one gate body per lane. Camps spread over
+  // the gates, starting from a seeded one, so a nest's two camps sit on
+  // two different lanes and a one-camp system's camp is not always on the
+  // same lane.
+  const gates = bodies.filter(b => b.type === 'jump_gate');
+  const gatePos = (g) => ({ x: Math.round(Math.cos(g.orbitOffset || 0) * (g.orbitRadius || 0)), y: Math.round(Math.sin(g.orbitOffset || 0) * (g.orbitRadius || 0)) });
+  const campStart = gates.length ? rng.int(0, gates.length - 1) : 0;
+  const campPos = gates.length ? gatePos(gates[0]) : null; // non-null = camps possible
 
   // One faction per system (spec §3); nests add fleets and always field
   // the T5 named elite in their highest-danger systems.
@@ -421,8 +427,9 @@ function buildProcedural(systemId, galaxySys, catalog) {
     const dist = rng.range(maxOrbit * 0.3, maxOrbit * 0.9);
     const camps = campPos && dangerLevel >= 3 ? (nest ? 2 : 1) : 0;
     const camp = f < camps;
+    const campAt = camp ? gatePos(gates[(campStart + f) % gates.length]) : null;
     const patrolCenter = camp
-      ? { x: campPos.x + Math.round(Math.cos(angle) * 120), y: campPos.y + Math.round(Math.sin(angle) * 120) }
+      ? { x: campAt.x + Math.round(Math.cos(angle) * 120), y: campAt.y + Math.round(Math.sin(angle) * 120) }
       : { x: Math.round(Math.cos(angle) * dist), y: Math.round(Math.sin(angle) * dist) };
     const patrolRadius = camp ? 150 : Math.round(rng.range(80, 180));
     const memberIds = [];
@@ -449,7 +456,7 @@ function buildProcedural(systemId, galaxySys, catalog) {
         loot_credits: rollLoot(rng, inst, dangerLevel, tier, template),
       });
     });
-    fleets.push({ id: fleetId, tier, faction, camp, patrol_center: patrolCenter, patrol_radius: patrolRadius, member_ids: memberIds });
+    fleets.push({ id: fleetId, tier, faction, camp, camp_gate: camp ? gates[(campStart + f) % gates.length].id : null, patrol_center: patrolCenter, patrol_radius: patrolRadius, member_ids: memberIds });
   }
   return { enemies, fleets, tier, dangerLevel, faction, nest };
 }

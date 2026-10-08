@@ -217,6 +217,15 @@ async function main() {
   const bref = await pool.query(`SELECT buy_price, requires_tech FROM module_types WHERE id = 'base_refinery'`);
   report('base_refinery is craft-only + gated by tech_refining (086)', bref.rows[0]?.buy_price == null && bref.rows[0]?.requires_tech === 'tech_refining');
 
+  // --- migration 096 (flight school) ---
+  const fsq = await pool.query(`SELECT COUNT(*)::int AS n FROM quest_definitions WHERE id IN ('tutorial_first_light','tutorial_eyes_open','tutorial_queue_skill')`);
+  report('flight-school quests (096)', fsq.rows[0].n === 3, `${fsq.rows[0].n}/3`);
+  const fsc = await pool.query(`SELECT id, triggers_quests::text AS t FROM quest_definitions WHERE id IN ('tutorial_first_light','tutorial_eyes_open','tutorial_fit_modules')`);
+  const trig = Object.fromEntries(fsc.rows.map(r => [r.id, r.t || '']));
+  report('flight-school chain wired (096)', trig.tutorial_first_light?.includes('tutorial_eyes_open') && trig.tutorial_eyes_open?.includes('tutorial_fly_to_luna') && trig.tutorial_fit_modules?.includes('tutorial_queue_skill'), JSON.stringify(trig));
+  const stale = await pool.query(`SELECT COUNT(*)::int AS n FROM quest_definitions WHERE description LIKE '%🧭%' OR description LIKE '%Harvesters tab%' OR description LIKE '%City tab%'`);
+  report('no stale UI names in quest text (096)', stale.rows[0].n === 0, `${stale.rows[0].n} stale`);
+
   // --- migration 085 (onboarding expansion) ---
   const onb = await pool.query(`SELECT COUNT(*)::int AS n FROM quest_definitions WHERE id LIKE 'tutorial_first_%'`);
   report('onboarding expansion quests (085)', onb.rows[0].n === 6, `${onb.rows[0].n}/6`);

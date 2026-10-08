@@ -20,8 +20,10 @@ router.get('/', authMiddleware, async (req, res) => {
     // 'tutorial_buy_starter_scout' was retired in migration 034 --
     // new players spawn with the Starter Scout already granted by
     // grantStarterShip() in auth, so they jump straight into
-    // 'tutorial_fly_to_luna' (Into the Black). Tutorial quests are
-    // auto-pinned so they appear in the top-of-screen overlay.
+    // 'tutorial_fly_to_luna' (Into the Black) -- since 096 the chain
+    // opens with 'tutorial_first_light' (press W/A/S/D) and 'tutorial_eyes_open'
+    // (System Map click) before it. Tutorial quests are auto-pinned so they
+    // appear in the top-of-screen overlay.
     const existing = await queryOne(
       `SELECT COUNT(*) as count FROM player_quests WHERE user_id = $1`,
       [userId]
@@ -29,7 +31,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (parseInt(existing.count) === 0) {
       await query(
         `INSERT INTO player_quests (user_id, quest_id, pinned)
-         VALUES ($1, 'tutorial_fly_to_luna', TRUE)
+         VALUES ($1, 'tutorial_first_light', TRUE)
          ON CONFLICT DO NOTHING`,
         [userId]
       );
@@ -70,6 +72,8 @@ router.get('/', authMiddleware, async (req, res) => {
 // a backfilled veteran never gets stuck. Refining leaves no record, so
 // Grade Up has no predicate.
 const AUTO_SATISFY = {
+  // 096: a pilot who already trains or queues anything has learned the skill queue.
+  tutorial_queue_skill:       `SELECT 1 FROM player_skill_queue WHERE user_id = $1 UNION ALL SELECT 1 FROM player_skills WHERE user_id = $1 AND level > 0 LIMIT 1`,
   tutorial_first_contract:    `SELECT 1 FROM player_contracts WHERE user_id = $1 LIMIT 1`,
   tutorial_first_delivery:    `SELECT 1 FROM player_contracts WHERE user_id = $1 AND status = 'delivered' AND contract_type IN ('haul','fetch') LIMIT 1`,
   tutorial_first_refine:      `SELECT 1 FROM player_refine_jobs WHERE user_id = $1 AND status = 'collected' LIMIT 1`,

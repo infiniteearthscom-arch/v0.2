@@ -38,6 +38,10 @@ export const GateWindow = () => {
   const pendingJump = useGameStore(s => s.pendingJump);
   const plannedRoute = useGameStore(s => s.plannedRoute);
   const requestGateJump = useGameStore(s => s.requestGateJump);
+  const dockedBody = useGameStore(s => s.dockedBody);
+  // Per-lane gates (2026-10-08): the lane this gate serves. Other lanes
+  // are shown for orientation; picking one flies the fleet to its gate.
+  const hereLane = dockedBody?.type === 'jump_gate' ? (dockedBody.laneTo || null) : null;
 
   const galaxy = useMemo(() => getGalaxy(), []);
   const territory = useMemo(() => computeTerritory(galaxy), [galaxy]);
@@ -65,11 +69,11 @@ export const GateWindow = () => {
   useEffect(() => {
     if (!isOpen) return;
     const hop = plannedRoute?.hops?.[plannedRoute.index];
-    const pre = pendingJump?.targetSystemId || hop?.id;
+    const pre = pendingJump?.targetSystemId || hop?.id || hereLane;
     if (pre && lanes.some(l => l.sys.id === pre)) { setSelectedId(pre); return; }
     const first = lanes.find(l => l.check.ok) || lanes[0];
     setSelectedId(first ? first.sys.id : null);
-  }, [isOpen, lanes, pendingJump, plannedRoute]);
+  }, [isOpen, lanes, pendingJump, plannedRoute, hereLane]);
 
   if (!isOpen || !sys) return null;
   const selected = lanes.find(l => l.sys.id === selectedId) || null;
@@ -95,7 +99,7 @@ export const GateWindow = () => {
   };
 
   return (
-    <ModalOverlay windowId="gate" title={`Jump Gate — ${sys.name}`} icon="⛩" accent="#44ff88" width={820} height={520}>
+    <ModalOverlay windowId="gate" title={`${dockedBody?.type === 'jump_gate' ? dockedBody.name : 'Jump Gate'} — ${sys.name}`} icon="⛩" accent="#44ff88" width={820} height={520}>
       <div className="flex gap-3 h-full" style={{ fontFamily: F }}>
         {/* ---- lanes list ---- */}
         <div className="flex flex-col" style={{ width: 340 }}>
@@ -108,7 +112,7 @@ export const GateWindow = () => {
                 <div key={l.sys.id} onClick={() => setSelectedId(l.sys.id)}
                   className={`p-2 rounded cursor-pointer text-xs border ${sel ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-slate-800/30 border-slate-700/30 hover:border-slate-500/50'} ${l.check.ok ? '' : 'opacity-70'}`}>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-100 flex-1 truncate">{l.known ? l.sys.name : 'Unknown System'}</span>
+                    <span className="font-semibold text-slate-100 flex-1 truncate">{l.known ? l.sys.name : 'Unknown System'}{l.sys.id === hereLane && <span className="text-emerald-400 font-normal" title="You are docked at this lane's gate"> · here</span>}</span>
                     <span style={{ color: tierColor(l.sys.regionTier), fontFamily: FM }}>T{tierLabel(l.sys.regionTier)}</span>
                     <span className="text-yellow-400" style={{ fontSize: '0.65rem' }}>{'★'.repeat(l.sys.dangerLevel || 0)}{'☆'.repeat(5 - (l.sys.dangerLevel || 0))}</span>
                   </div>
@@ -121,6 +125,7 @@ export const GateWindow = () => {
               );
             })}
             {lanes.length === 0 && <div className="text-xs text-slate-600 italic p-2">This gate has no lanes. Leave by the warp point.</div>}
+            {lanes.length > 1 && <div className="text-[0.72rem] text-slate-600 italic px-2 pt-1">Each lane leaves from its own gate. Pick another lane to fly to that gate.</div>}
           </div>
         </div>
 
@@ -172,11 +177,11 @@ export const GateWindow = () => {
             <label className="flex items-center gap-1 text-slate-400 cursor-pointer" title="On a plotted course, start alignment automatically at each gate">
               <input type="checkbox" checked={autoJump} onChange={toggleAuto} /> auto-jump on routes
             </label>
-            <button onClick={() => { playSound('button_click'); openWindow('galaxyMap'); }}
+            <button onClick={() => { playSound('button_click'); closeWindow('gate'); openWindow('galaxyMap'); }}
               className="px-2 py-1 rounded border border-slate-600/50 text-slate-300 hover:border-cyan-500/50">Plot a course…</button>
             <button onClick={jump} disabled={!selected || !selected.check.ok}
               className={`px-3 py-1.5 rounded font-semibold border ${selected?.check.ok ? 'bg-emerald-700/40 border-emerald-500/60 text-emerald-200 hover:bg-emerald-700/60' : 'bg-slate-800/40 border-slate-700/40 text-slate-500 cursor-not-allowed'}`}>
-              ⛩ ALIGN &amp; JUMP
+              {selected && hereLane && selected.sys.id !== hereLane ? '→ FLY TO GATE' : '⛩ ALIGN & JUMP'}
             </button>
           </div>
         </div>

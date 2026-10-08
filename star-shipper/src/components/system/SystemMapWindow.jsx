@@ -12,7 +12,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { generateGalaxy, generateSystemContent, bodyPositionAt } from '@/utils/galaxyGenerator';
+import { generateGalaxy, generateSystemContent, bodyPositionAt, laneGateBodies } from '@/utils/galaxyGenerator';
 import { QUALITY_TIERS } from '@/data/resources';
 
 // Same tier bands + colors as the asteroid tooltip (data/resources.js
@@ -56,9 +56,17 @@ const SOL_SYSTEM = {
     { id: 'saturn', name: 'Saturn', type: 'planet', planetType: 'gas_giant', orbitRadius: 3000, orbitSpeed: 0.002, orbitOffset: 0.8, size: 70, color: '#ddcc88' },
     { id: 'uranus', name: 'Uranus', type: 'planet', planetType: 'ice', orbitRadius: 3800, orbitSpeed: 0.0012, orbitOffset: 4.1, size: 40, color: '#88ccdd' },
     { id: 'neptune', name: 'Neptune', type: 'planet', planetType: 'ice', orbitRadius: 4500, orbitSpeed: 0.0008, orbitOffset: 2.6, size: 38, color: '#4466cc' },
-    { id: 'jump_gate', name: 'Jump Gate', type: 'jump_gate', orbitRadius: 5200, orbitSpeed: 0.0005, orbitOffset: 1.0, size: 12 },
+    // Jump gates: one per lane, appended by solWithGates() (2026-10-08).
     { id: 'warp_point', name: 'Warp Point', type: 'warp_point', orbitRadius: 5600, orbitSpeed: 0.0003, orbitOffset: 4.2, size: 10 },
   ],
+};
+let _solWithGates = null;
+const solWithGates = () => {
+  if (!_solWithGates) {
+    const sol = getGalaxy().systemMap.sol;
+    _solWithGates = { ...SOL_SYSTEM, bodies: [...SOL_SYSTEM.bodies, ...(sol ? laneGateBodies(sol, 5200) : [])] };
+  }
+  return _solWithGates;
 };
 
 const GALAXY_SEED = 12345;
@@ -482,11 +490,11 @@ export const SystemMapWindow = () => {
 
   const system = useMemo(() => {
     if (!inSystem) return null;
-    if (currentSystemId === 'sol') return SOL_SYSTEM;
+    if (currentSystemId === 'sol') return solWithGates();
     const galaxy = getGalaxy();
     const galaxySys = galaxy.systemMap[currentSystemId];
-    if (!galaxySys) return SOL_SYSTEM;
-    return generateSystemContent(galaxySys) || SOL_SYSTEM;
+    if (!galaxySys) return solWithGates();
+    return generateSystemContent(galaxySys) || solWithGates();
   }, [inSystem, currentSystemId]);
 
   const handleClickBody = useCallback((body) => {
@@ -494,6 +502,9 @@ export const SystemMapWindow = () => {
     // Asteroid rows (telemetry list) pass { id, name, type: 'asteroid' };
     // SystemView's autopilot resolves the rock's position itself.
     setAutopilotTarget({ id: body.id, name: body.name, type: body.type });
+    // Onboarding (096): the first autopilot set from the map completes "Eyes Open".
+    const st = useGameStore.getState();
+    if ((st.quests || []).some(q => q.quest_id === 'tutorial_eyes_open' && q.status === 'active')) st.completeQuest?.('tutorial_eyes_open');
   }, [setAutopilotTarget]);
   const [mineralFilter, setMineralFilter] = useState('');
 

@@ -127,3 +127,80 @@ A, B and C are safe to push while the owner is remote. D's code can be written e
 3. Islands: **two**, never a nest, until an end-game T6 faction exists.
 4. Warp Core: **craft-only** outside islands; island vendors sell it at a prohibitive price. Warp intricacies to be revisited as the specialisation trees grow.
 5. Stranding: **the pod carries a warp core**; no migration grant. Fleets without a fitted core are gate-bound.
+
+---
+
+## 10. Per-lane gates (BUILT 2026-10-08)
+
+Owner: plotted routes were too easy. The one-gate-per-system layout meant a
+jump dropped the fleet ON the exit for the next hop, so a six-hop route was
+six alignment timers and nothing else. EVE's answer is the one we copied:
+**every lane has its own gate**, and arriving through a lane puts you at
+that lane's gate, so each hop is an in-system crossing before the next
+alignment.
+
+- **Bodies.** `laneGateBodies(system, radius)` in `galaxyGenerator.js`
+  (both copies) emits one `jump_gate` body per lane: id `gate_<systemId>`,
+  name `<System> Gate`, `laneTo`, static (`orbitSpeed 0`), at the outer
+  gate radius on the TRUE galaxy bearing to that neighbour (the map and
+  the system view share a y-down frame). Gates closer than 0.45 rad are
+  pushed apart symmetrically (seed 12345: 458 gates, max 5 per system,
+  minimum separation 25.8°). The old single gate's rng roll is still
+  consumed, so the warp point and every later body keep their place.
+  Sol's hand-authored body list has no gate row any more; `solWithGates()`
+  (SystemView / SystemMapWindow) appends its lane gates at radius 5200.
+  Systems carry `laneTargets` (id / name / x / y per lane) from step 3.
+- **Arrival.** `enterSystem` records `previousSystem`; a gate arrival
+  spawns at `arrivalGateFor(bodies, previousSystem)` — the gate whose lane
+  leads back where you came from (hydration / refresh has no previous
+  system: first gate).
+- **A lane is taken only from its gate.** `startGateAlignment` and
+  `performGateJump` refuse unless the fleet is docked at the gate whose
+  `laneTo` is the target; from anywhere else `flyToLaneGate` keeps the
+  jump pending and autopilots to the right gate, and the dock handler
+  aligns on arrival (auto-jump) or opens the picker. Docking at another
+  lane's gate with a jump pending flies on instead of aligning. The route
+  effect resolves each gate hop with `gateToSystem(bodies, hop.id)`, and
+  "already docked at the exit" now means that exact gate.
+- **Picker.** `GateWindow` is titled with the gate you are at, marks that
+  lane "· here", preselects it, and its button reads ALIGN & JUMP for the
+  gate's own lane or → FLY TO GATE for any other. The galaxy map's Jump
+  button targets `gate_<id>` directly.
+- **Camps.** `enemyManifest` (MANIFEST_VERSION 4) spreads camps over the
+  gate bodies from a seeded start (a nest's two camps sit on two lanes);
+  fleets carry `camp_gate`.
+- **Names and fog.** Gate names reveal the neighbour's name even when it
+  is undiscovered — EVE does the same, and it is the exploration hint.
+- **Not changed.** Lane network, islands, alignment maths, warp point.
+
+## 11. Future ideas from the EVE comparison (NOT scoped, 2026-10-08)
+
+Kept here so the next travel session starts from a list, not a memory.
+
+1. **Arrival offset.** Drop the fleet 150–250 units short of the arrival
+   gate so even a "turn around" costs an approach. Cheap: the spawn code
+   in SystemView (two places) plus a nudge along the gate bearing.
+2. **Gate cloak.** 10–30 s invisible + invulnerable on arrival, broken by
+   any input; campers wait, the pilot decides. Hook noted in §3
+   (`cloakUntil`); needs the sensor filter and the enemy aggro gate to
+   read it, and a HUD cue on the flagship like the align ring.
+3. **Autopilot handicap.** Auto-jump routes land further off the gate and
+   align ×1.25 slower than a hand-flown jump, so hands-on travel is the
+   faster, safer choice (EVE: autopilot lands 15 km off and slow-boats).
+4. **Tackle / held state.** Gate camps fit a "web" or "scrambler": while a
+   tackler is in range the alignment timer pauses (or runs at half speed)
+   instead of taking +0.25 s per hit. Needs a module flag on enemy
+   templates + a timer rule; the HUD ring would show a red lock.
+5. **Route preferences.** Shortest vs safer routing (avoid T≥N / nests),
+   an avoid-system list, and hop colouring by tier on the map's route
+   preview. Pure client: `routePlanner` + GalaxyMapWindow.
+6. **Mass-based alignment and in-system speed.** Align time from hull mass
+   (capitals 15–20 s, frigates 3 s) and a per-class in-system cruise
+   speed, so a freighter route costs minutes and an interceptor seconds.
+   Touches `alignTimeSeconds` and the physics max speed table.
+7. **Camp variety.** Insta-lock scouts that only report (the camp fleet
+   warps to you), smartbomb equivalents (area damage on gate arrival),
+   bubble equivalents on nest lanes (alignment cannot start inside a
+   radius). All manifest-side composition + small loop rules.
+8. **Island-local contract boards and a dedicated jump sound** (carried
+   over from §5 / §3).
