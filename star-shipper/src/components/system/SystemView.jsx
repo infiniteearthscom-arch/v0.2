@@ -1048,6 +1048,7 @@ export const SystemView = () => {
     cancelAutopilot?.();
     shipVelRef.current = { x: 0, y: 0 };
     gateAlignRef.current = { targetSystemId, targetName: targetSys.name, total, remaining: total, penalty: 0, startedAt: gameTimeRef.current, lastHitSeen: lastPlayerHitTimeRef.current };
+    if (st.windows?.gate?.open) st.closeWindow('gate');
     playSound('button_click');
     if (pushToast) pushToast({ kind: 'info', text: `Aligning to the ${targetSys.name} lane — ${total.toFixed(1)} s. Thrust to abort.`, duration: 2500 });
   };
@@ -2692,8 +2693,28 @@ export const SystemView = () => {
       || currentSystemRef.current.bodies.find(b => b.type === 'jump_gate');
     if (!exitBody) return;
     st.setPendingJump(hop.id);
-    st.setAutopilotTarget({ id: exitBody.id, name: exitBody.name, type: exitBody.type });
     const hopSys = getGalaxy().systemMap[hop.id];
+    // Already docked at that exit (plotted the course from inside the gate
+    // window, or while parked at the warp point)? The dock handler will
+    // never fire again, so take the hop from here.
+    if (dockedBodyRef.current && dockedBodyRef.current.type === exitBody.type) {
+      if (exitBody.type === 'jump_gate') {
+        if (autoJumpEnabled()) startGateAlignment(hop.id);
+        else st.openWindow('gate');
+      } else {
+        const profile = fleetWarpProfile(st.ships, st.activeBonuses);
+        if (profile.warpCoreLive !== false && profile.hasWarpCore === false) {
+          if (pushToast) pushToast({ kind: 'error', text: 'No warp core fitted — this hop needs free warp. Plot a gate route instead.', duration: 5000 });
+          st.clearPlannedRoute();
+          return;
+        }
+        const cur = getGalaxy().systemMap[currentSystemId];
+        st.enterGalaxyFlight(cur?.x || 0, cur?.y || 0);
+        if (hopSys) st.setGalaxyAutopilotTarget({ id: hopSys.id, name: hopSys.name });
+      }
+      return;
+    }
+    st.setAutopilotTarget({ id: exitBody.id, name: exitBody.name, type: exitBody.type });
     if (pushToast) pushToast({
       kind: 'info',
       text: `Route: hop ${plannedRoute.index + 1}/${plannedRoute.hops.length} — ${hop.via === 'gate' ? 'jump gate' : 'warp'} to ${hopSys?.name || hop.id}`,
