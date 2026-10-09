@@ -278,6 +278,12 @@ async function main() {
   report('onboarding expansion quests (085)', onb.rows[0].n === 6, `${onb.rows[0].n}/6`);
   const hook = await pool.query(`SELECT triggers_quests::text AS t FROM quest_definitions WHERE id = 'tutorial_collect_harvester'`);
   report('Coming Home triggers Hired Gun (085)', (hook.rows[0]?.t || '').includes('tutorial_first_contract'));
+  // --- migration 106 (craftable item descriptions): no craftable output with an empty / emoji-only / placeholder description ---
+  const weakDesc = await pool.query(`
+    SELECT DISTINCT i.id FROM crafting_recipes r JOIN item_definitions i ON i.id = r.output_item_id
+     WHERE i.description IS NULL OR length(trim(i.description)) < 25 OR i.description ~ 'Fit it to a plot\\.$'`);
+  report('craftable items have real descriptions (106)', weakDesc.rows.length === 0, weakDesc.rows.map(r => r.id).join(', ') || 'all good');
+
   // --- migration 105 (quest text links): every [[skill:id|..]] / [[tech:id|..]] must resolve ---
   const qdesc = await pool.query(`SELECT id, description FROM quest_definitions`);
   const skillIds = new Set((await pool.query(`SELECT id FROM skill_definitions`)).rows.map(r => r.id));
