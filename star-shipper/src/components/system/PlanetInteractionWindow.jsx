@@ -3378,7 +3378,9 @@ const RepairTab = ({ body, effectiveBodyId }) => {
   const curArmor = Math.round(maxArmor * fleetArmorPct);
   const missingHull = Math.max(0, maxHull - curHull);
   const missingArmor = Math.max(0, maxArmor - curArmor);
-  const cost = missingHull * (repairRates?.hull ?? 2) + missingArmor * (repairRates?.armor ?? 3);
+  // Dock Maintenance (102): the server applies the same skill multiplier.
+  const repairSkillPct = useGameStore(s => s.activeBonuses?.repair_cost_pct) || 0;
+  const cost = Math.round((missingHull * (repairRates?.hull ?? 2) + missingArmor * (repairRates?.armor ?? 3)) * Math.max(0, 1 + repairSkillPct / 100));
   const nothingToRepair = missingHull === 0 && missingArmor === 0;
   const canAfford = credits >= cost;
 
@@ -3415,7 +3417,7 @@ const RepairTab = ({ body, effectiveBodyId }) => {
     <div style={{ padding: '10px 12px', fontFamily: F }}>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 10, lineHeight: 1.4 }}>
         Station crews patch the whole fleet's hull and armor. Priced per point:
-        hull {repairRates?.hull ?? 2} cr · armor {repairRates?.armor ?? 3} cr. Shields recharge on their own.
+        hull {repairRates?.hull ?? 2} cr · armor {repairRates?.armor ?? 3} cr{repairSkillPct < 0 ? ` · Dock Maintenance ${repairSkillPct}%` : ''}. Shields recharge on their own.
       </div>
       <Bar label="HULL" cur={curHull} max={maxHull} color={fleetHullPct > 0.6 ? '#22c55e' : fleetHullPct > 0.3 ? '#fbbf24' : '#ef4444'} track="#332222" />
       <Bar label="ARMOR" cur={curArmor} max={maxArmor} color="#d8a24a" track="#332b1a" />

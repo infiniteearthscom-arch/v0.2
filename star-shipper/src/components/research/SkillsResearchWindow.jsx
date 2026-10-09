@@ -63,6 +63,8 @@ const WIRED_BONUS_TYPES = new Set([
   'shield_max_pct', 'armor_max_pct', 'hull_max_pct', 'shield_boost_pct', 'shield_resist_pct', 'armor_resist_pct',
   'active_cap_cost_pct', 'capacitor_pct', 'cap_recharge_pct', 'cpu_flat', 'overheat_damage_pct', 'weapon_cap_cost_pct',
   'armor_repair_pct',           // Repair Systems (101) -> SystemView runActive('armor_repairer')
+  // Tank tuning (102): Overheat duration / cooldown, hive delay, shield regen, empty-cap penalty, repair bill
+  'overheat_duration_pct', 'overheat_cooldown_pct', 'repair_delay_pct', 'shield_recharge_pct', 'cap_empty_rate_pct', 'repair_cost_pct',
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'mining_range_pct',           // Beam Focusing -> mining reach (utils/mining.js + /asteroids/mine, 087)

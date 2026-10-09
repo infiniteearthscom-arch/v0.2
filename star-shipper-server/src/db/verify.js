@@ -233,6 +233,10 @@ async function main() {
   const repSys = await pool.query(`SELECT bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'eng_repair_systems'`);
   report('Repair Systems skill drives armor_repair_pct (101)', repSys.rows[0]?.t === 'armor_repair_pct');
 
+  // --- migration 102 (tank tuning skills) ---
+  const tune = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE id IN ('eng_heat_sinks','eng_heat_dissipation','eng_nanite_interfacing','eng_shield_management','eng_emergency_power','log_dock_maintenance') AND bonus_per_level->>'type' IN ('overheat_duration_pct','overheat_cooldown_pct','repair_delay_pct','shield_recharge_pct','cap_empty_rate_pct','repair_cost_pct')`);
+  report('tank tuning skills (102)', tune.rows[0].n === 6, `${tune.rows[0].n}/6`);
+
   // --- migration 099 (turrets + targeting) ---
   report('hull_types.max_weapon_size (099)', await columnExists('hull_types', 'max_weapon_size'));
   const tur = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('weapon_cannon_1','weapon_laser_2','weapon_beam_4','weapon_coil_4')`);

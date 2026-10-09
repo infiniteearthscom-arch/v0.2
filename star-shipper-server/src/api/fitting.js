@@ -1427,7 +1427,9 @@ router.post('/repair', authMiddleware, async (req, res) => {
       const hp = clampPct(hull_pct ?? 1), ap = clampPct(armor_pct ?? 1);
       const missingHull = Math.round(maxHull * (1 - hp));
       const missingArmor = Math.round(maxArmor * (1 - ap));
-      const cost = Math.round((missingHull * HULL_REPAIR_PER_HP + missingArmor * ARMOR_REPAIR_PER_HP) * (1 - discountPct / 100));
+      // Dock Maintenance (102): repair_cost_pct is negative (−5 %/level), applied after the shop discount.
+      const skillMult = Math.max(0, 1 + ((await getPlayerBonuses(userId)).repair_cost_pct || 0) / 100);
+      const cost = Math.round((missingHull * HULL_REPAIR_PER_HP + missingArmor * ARMOR_REPAIR_PER_HP) * (1 - discountPct / 100) * skillMult);
 
       const user = await client.query(`SELECT credits FROM users WHERE id = $1 FOR UPDATE`, [userId]);
       const credits = parseInt(user.rows[0]?.credits || 0);

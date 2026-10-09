@@ -2108,6 +2108,10 @@ export const SystemView = () => {
   // it pauses with the sim. `repairingRef` feeds the HUD readout label.
   const lastPlayerHitTimeRef = useRef(-1e9);
   const repairingRef = useRef(false);
+  // Nanite swarm (owner 2026-10-09): tiny drones orbit every fleet ship and
+  // fire mini repair beams while the hive ticks or the Armor Repairer runs.
+  // alpha fades in/out in the loop; kind = which pool is being knitted.
+  const naniteSwarmRef = useRef({ alpha: 0, kind: 'hull' });
   const getFleetRepairRates = () => {
     let hull = 0, armor = 0, delay = 8;
     for (const ship of (fleetShipsRef.current || [])) {
@@ -2121,8 +2125,10 @@ export const SystemView = () => {
         if (st.repair_delay) delay = Math.max(delay, st.repair_delay);
       }
     }
-    const pct = Number(useGameStore.getState().activeBonuses?.remote_rep_pct) || 0;
-    const mult = 1 + pct / 100;
+    const B = useGameStore.getState().activeBonuses || {};
+    const mult = 1 + (Number(B.remote_rep_pct) || 0) / 100;
+    // Nanite Interfacing (102): the hive starts sooner after the last hit.
+    delay = delay * Math.max(0.2, 1 + (Number(B.repair_delay_pct) || 0) / 100);
     return { hull: hull * mult, armor: armor * mult, delay };
   };
   const formatContents = (contents) => {
@@ -4063,7 +4069,8 @@ export const SystemView = () => {
             const cost = w.damage * perDmg * Math.max(0.3, 1 + pct('weapon_cap_cost_pct'));
             if (cost > 0) {
               if (capRef.current >= cost) capRef.current -= cost;
-              else { capRef.current = 0; capScale = 2; }
+              // Emergency Power (102) shrinks the empty-cap penalty (×2 cycle -> ×1.6 at V).
+              else { capRef.current = 0; capScale = 1 + Math.max(0, 1 + pct('cap_empty_rate_pct')); }
             }
           }
           cooldowns.set(cooldownKey, w.fire_rate * rateMult * capScale);
@@ -4384,7 +4391,9 @@ export const SystemView = () => {
       // --- Player shield regen ---
       playerShieldRegenTimerRef.current -= delta;
       if (playerShieldRegenTimerRef.current <= 0 && playerShieldRef.current < playerMaxShieldRef.current) {
-        playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current + SHIELD_REGEN_RATE * delta);
+        // Shield Management (102): passive regen +8 %/level.
+        const regenMult = 1 + ((activeBonusesRef.current || {}).shield_recharge_pct || 0) / 100;
+        playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current + SHIELD_REGEN_RATE * regenMult * delta);
       }
 
       // --- Field repair (Repair Nanite Hive) ---
@@ -4408,8 +4417,14 @@ export const SystemView = () => {
           }
         }
         repairingRef.current = repairing;
+        // Nanite swarm visibility: hive ticking OR the Armor Repairer running.
+        const sw = naniteSwarmRef.current;
+        const swarmOn = (repairing || activeModsRef.current.armor_repairer.on) && !isPodRef.current;
+        if (swarmOn) sw.kind = (repairing && needsHull) ? 'hull' : 'armor';
+        sw.alpha += ((swarmOn ? 1 : 0) - sw.alpha) * Math.min(1, delta * 3);
+        if (sw.alpha < 0.01 && !swarmOn) sw.alpha = 0;
       }
-      
+
       // --- Update effects ---
       for (let i = effects.length - 1; i >= 0; i--) {
         effects[i].age += delta;
@@ -5512,6 +5527,54 @@ export const SystemView = () => {
                 </g>
               );
             })}
+            {/* Nanite repair swarm (owner 2026-10-09): while the Repair
+                Nanite Hive ticks or the Armor Repairer runs, a handful of
+                tiny drones orbit every fleet ship and fire mini beams at
+                the hull. Green while hull is knitting, amber for armor.
+                Pure render off refs (no state, no per-frame allocation
+                beyond the SVG nodes); fades via naniteSwarmRef.alpha. */}
+            {naniteSwarmRef.current.alpha > 0.01 && (() => {
+              const sw = naniteSwarmRef.current;
+              const t = gameTimeRef.current;
+              const col = sw.kind === 'hull' ? '#a3e635' : '#fbbf24';
+              const DRONES = 5;
+              return (
+                <g style={{ pointerEvents: 'none' }} opacity={sw.alpha}>
+                  {fleetShips.map((ship, si) => {
+                    if (!ship.icon) return null;
+                    let sx, sy;
+                    if (ship.isActive) { sx = shipPosRef.current.x; sy = shipPosRef.current.y; }
+                    else { const w = wingmenPosRef.current[ship.id]; if (!w) return null; sx = w.x; sy = w.y; }
+                    const ih = ship.icon.height;
+                    const orbitR = Math.max(9, ih * 0.75);
+                    const drones = [];
+                    for (let i = 0; i < DRONES; i++) {
+                      // Each drone rides its own orbit speed / phase with a small radial bob.
+                      const phase = si * 1.7 + i * (Math.PI * 2 / DRONES);
+                      const ang = phase + t * (1.6 + 0.25 * i);
+                      const r = orbitR * (1 + 0.14 * Math.sin(t * 2.3 + i * 1.9));
+                      const dx = Math.cos(ang) * r, dy = Math.sin(ang) * r;
+                      // Mini beam ~35 % of the time, aimed at a point just inside the hull.
+                      const firing = ((t * 2.7 + i * 0.61 + si * 0.37) % 1) < 0.35;
+                      const hx = Math.cos(ang + 0.6) * ih * 0.22, hy = Math.sin(ang + 0.6) * ih * 0.22;
+                      drones.push(
+                        <g key={i}>
+                          {firing && (
+                            <>
+                              <line x1={sx + dx} y1={sy + dy} x2={sx + hx} y2={sy + hy} stroke={col} strokeWidth="0.5" opacity="0.85" />
+                              <circle cx={sx + hx} cy={sy + hy} r="0.9" fill="#ffffff" opacity="0.9" />
+                            </>
+                          )}
+                          <circle cx={sx + dx} cy={sy + dy} r="1.1" fill={col} opacity="0.95" />
+                          <circle cx={sx + dx} cy={sy + dy} r="2.2" fill={col} opacity="0.22" />
+                        </g>
+                      );
+                    }
+                    return <g key={`nanite-${ship.id}`}>{drones}</g>;
+                  })}
+                </g>
+              );
+            })()}
             {/* Realtime presence peer ships (Phase 1). Other players
                 in the same system, rendered via the same shipRenderer
                 hull silhouettes so the player sees what the peer is
@@ -6477,6 +6540,10 @@ export const SystemView = () => {
                 const nowS = gameTimeRef.current;
                 const active = h.until > nowS;
                 const remain = Math.max(0, Math.ceil(h.cooldownUntil - nowS));
+                // Heat Sinks / Heat Dissipation (102): longer burn, shorter cooldown.
+                const OB = st.activeBonuses || {};
+                const heatSeconds = OVERHEAT_SECONDS * Math.max(0.5, 1 + (OB.overheat_duration_pct || 0) / 100);
+                const heatCooldown = OVERHEAT_COOLDOWN * Math.max(0.3, 1 + (OB.overheat_cooldown_pct || 0) / 100);
                 return {
                   id: 'overheat', icon: '🔥', color: active ? '#fbbf24' : '#f97316', label: active ? `HEAT ${Math.ceil(h.until - nowS)}s` : 'Overheat',
                   available: researched && lvl >= 1, disabled: active || remain > 0, remain: active ? 0 : remain, active,
@@ -6484,15 +6551,15 @@ export const SystemView = () => {
                     : lvl < 1 ? 'Train Thermodynamics I to unlock Overheat'
                     : active ? `Overheating: +${OVERHEAT_PCT}% turret damage and rate, +${OVERHEAT_PCT}% boosting`
                     : remain > 0 ? `Overheat cooling down (${remain}s)`
-                    : `+${OVERHEAT_PCT}% turret damage AND rate (×${(OVERHEAT_MULT * OVERHEAT_MULT).toFixed(2)} DPS) and +${OVERHEAT_PCT}% boosting for ${OVERHEAT_SECONDS}s, then ${Math.round(OVERHEAT_HULL_FRAC * 100 * Math.max(0, 1 - lvl * 0.1))}% max hull in heat damage. ${OVERHEAT_CAP} capacitor, ${OVERHEAT_COOLDOWN}s cooldown.`,
+                    : `+${OVERHEAT_PCT}% turret damage AND rate (×${(OVERHEAT_MULT * OVERHEAT_MULT).toFixed(2)} DPS) and +${OVERHEAT_PCT}% boosting for ${heatSeconds.toFixed(1)}s, then ${Math.round(OVERHEAT_HULL_FRAC * 100 * Math.max(0, 1 - lvl * 0.1))}% max hull in heat damage. ${OVERHEAT_CAP} capacitor, ${heatCooldown.toFixed(0)}s cooldown.`,
                   onActivate: () => {
                     const t = gameTimeRef.current;
                     if (h.cooldownUntil > t) return;
                     if (capMaxRef.current > 0 && capRef.current < OVERHEAT_CAP) { if (pushToast) pushToast({ kind: 'error', text: `Overheat needs ${OVERHEAT_CAP} capacitor`, duration: 2500 }); return; }
                     if (capMaxRef.current > 0) capRef.current -= OVERHEAT_CAP;
-                    activeModsRef.current.overheat = { until: t + OVERHEAT_SECONDS, cooldownUntil: t + OVERHEAT_COOLDOWN, settled: false };
+                    activeModsRef.current.overheat = { until: t + heatSeconds, cooldownUntil: t + heatCooldown, settled: false };
                     playSound('button_click');
-                    if (pushToast) pushToast({ kind: 'info', text: `OVERHEAT — turrets and boosters +${OVERHEAT_PCT}% for ${OVERHEAT_SECONDS} s`, duration: 2500 });
+                    if (pushToast) pushToast({ kind: 'info', text: `OVERHEAT — turrets and boosters +${OVERHEAT_PCT}% for ${heatSeconds.toFixed(0)} s`, duration: 2500 });
                   },
                 };
               })(),
