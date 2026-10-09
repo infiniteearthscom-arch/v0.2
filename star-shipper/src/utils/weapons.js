@@ -18,6 +18,31 @@ import { qualityMultiplier } from './quality';
 // DEFAULTS — base stats per weapon type
 // ============================================
 
+// Turret hit chance (099): EVE-style tracking + falloff, one roll per shot.
+//   omega   = target angular velocity around the shooter (rad/s)
+//   chance  = 0.5 ^ ((omega / tracking)^2) × (d <= optimal ? 1 : 0.5 ^ (((d - optimal) / falloff)^2))
+// Missiles never roll here (they have no tracking stat).
+export const turretHitChance = (w, dist, omega, mults = {}) => {
+  if (!w || w.type === 'missile' || w.tracking == null) return 1;
+  const tracking = Math.max(0.01, w.tracking * (mults.tracking || 1));
+  const optimal = w.optimal * (mults.optimal || 1);
+  const falloff = Math.max(1, w.falloff * (mults.falloff || 1));
+  // Signature (target size) factor: a fighter is harder to track than a
+  // capital. mults.signature = clamp(14 / displaySize, 0.5, 1.6).
+  const track = Math.pow(0.5, ((omega * (mults.signature || 1)) / tracking) ** 2);
+  const fall = dist <= optimal ? 1 : Math.pow(0.5, ((dist - optimal) / falloff) ** 2);
+  return Math.max(0, Math.min(1, track * fall));
+};
+// Angular velocity of the target as seen from the shooter (rad/s).
+export const signatureFactor = (displaySize) => Math.max(0.5, Math.min(1.6, 14 / Math.max(1, displaySize || 12)));
+export const angularVelocity = (sx, sy, svx, svy, tx, ty, tvx, tvy) => {
+  const rx = tx - sx, ry = ty - sy;
+  const d2 = rx * rx + ry * ry;
+  if (d2 < 1) return 0;
+  const vx = (tvx || 0) - (svx || 0), vy = (tvy || 0) - (svy || 0);
+  return Math.abs(rx * vy - ry * vx) / d2;
+};
+
 export const WEAPON_DEFAULTS = {
   laser: {
     type: 'laser',
@@ -156,11 +181,25 @@ export const getShipWeapons = (ship) => {
     // without the flag we keep the per-TYPE defaults, exactly as before.
     const tuned = serverStats?.combat_tuned === true;
     const loaded = fittedValue?.loaded;
+    const range = Math.round((tuned ? (serverStats.range ?? base.range) : base.range) * qRangeMult);
+    // Turret model (combat profession Phase A, 099): size / family /
+    // tracking / optimal / falloff. Rows fitted before 099 carry none of
+    // these, so derive them the same way the server manifest does.
+    const tier = Number(fittedValue?.tier ?? serverStats?.tier) || 1;
+    const size = serverStats?.size || (tier <= 2 ? 'small' : tier === 3 ? 'medium' : 'large');
+    const idText = String(fittedValue?.module_type_id || fittedValue?.item_id || '');
+    const family = serverStats?.family || (type === 'laser' ? 'energy' : type === 'missile' ? 'missile' : (/rail|coil/.test(idText) ? 'hybrid' : 'projectile'));
+    const trackDefault = size === 'small' ? 1.8 : size === 'medium' ? 1.1 : 0.6;
+    const optimal = type === 'missile' ? range : Math.round(serverStats?.optimal != null ? serverStats.optimal * qRangeMult : range * 0.75);
     weapons.push({
       ...base,
       damage:    Math.round((tuned ? (serverStats.damage ?? base.damage) : base.damage) * qMult),
-      range:     Math.round((tuned ? (serverStats.range ?? base.range) : base.range) * qRangeMult),
+      range,
       fire_rate: (tuned ? (serverStats.fire_rate ?? base.fire_rate) : base.fire_rate),
+      size, family, tier,
+      tracking: type === 'missile' ? null : (serverStats?.tracking ?? trackDefault),
+      optimal,
+      falloff: type === 'missile' ? 0 : Math.max(1, range - optimal),
       slot_id: slot.id,
       quality_mult: qMult,
       // Pass through server-overrides for missile-only fields if present

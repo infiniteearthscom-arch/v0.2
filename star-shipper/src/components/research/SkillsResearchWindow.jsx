@@ -51,7 +51,14 @@ const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 // new bonus types get plugged into combat / mining / etc.
 const WIRED_BONUS_TYPES = new Set([
   // Combat
-  'fleet_damage_pct',           // Gunnery -> weapons.js fleet damage scalar
+  'fleet_damage_pct',           // (legacy) fleet damage scalar
+  // Combat profession Phase A (099): turrets + targeting -> SystemView firing loop
+  'weapon_small_energy_dmg_pct', 'weapon_small_proj_dmg_pct', 'weapon_small_hybrid_dmg_pct',
+  'weapon_medium_energy_dmg_pct', 'weapon_medium_proj_dmg_pct', 'weapon_medium_hybrid_dmg_pct',
+  'weapon_large_energy_dmg_pct', 'weapon_large_proj_dmg_pct', 'weapon_large_hybrid_dmg_pct',
+  'weapon_all_turret_dmg_pct', 'fleet_fire_rate_pct', 'fleet_weapon_range_pct', 'fleet_tracking_pct',
+  'weapon_optimal_range_pct', 'weapon_falloff_pct',
+  'max_locked_targets_flat', 'locked_target_dmg_pct', 'targeting_range_pct', 'lock_time_pct', 'lock_speed_pct',
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'mining_range_pct',           // Beam Focusing -> mining reach (utils/mining.js + /asteroids/mine, 087)

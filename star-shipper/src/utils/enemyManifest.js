@@ -70,6 +70,12 @@ export const hydrateEnemies = (manifest, systemId, opts = {}) => {
       fireRate: w.fire_rate,
       range: w.range,
       quality: w.quality,
+      // Turret model (099); older manifests lack these -> client defaults.
+      size: w.size || null,
+      family: w.family || null,
+      tracking: w.tracking ?? (w.damage_type === 'missile' ? null : 1.2),
+      optimal: w.optimal ?? (w.damage_type === 'missile' ? w.range : Math.round(w.range * 0.75)),
+      falloff: w.falloff ?? (w.damage_type === 'missile' ? 0 : Math.max(1, w.range - Math.round(w.range * 0.75))),
       cooldown: 0, // runtime, seconds until this weapon may fire again
     }));
     // Legacy single-weapon fields stay populated (HUD tint, name suffix,

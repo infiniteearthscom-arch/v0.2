@@ -7,7 +7,7 @@ import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { qualityMultiplier } from '../lib/quality.js';
 import { logActivity } from '../lib/activity.js';
 import { completeQuestInTx } from './quests.js';
-import { moduleGateFor, hullGateFor, assertGate, getFleetCap, getFleetCapInfo, MAX_FLEET_CAP, WARP_CORE_MODULE_ID, ISLAND_CORE_PRICE } from '../game/fitGates.js';
+import { moduleGateFor, hullGateFor, assertGate, getFleetCap, getFleetCapInfo, MAX_FLEET_CAP, WARP_CORE_MODULE_ID, ISLAND_CORE_PRICE, weaponSize, SIZE_RANK } from '../game/fitGates.js';
 import { getGalaxy as getWarpGalaxy } from '../game/warp.js';
 import { modulesFromFitted, ejectResources, ejectItems, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
@@ -55,7 +55,7 @@ router.get('/my-ships', authMiddleware, async (req, res) => {
       SELECT s.*, ht.name as hull_name, ht.class as hull_class,
              sb.name as storage_body_name,
              ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors,
-             ht.grid_w, ht.grid_h, ht.slots as hull_slots,
+             ht.grid_w, ht.grid_h, ht.slots as hull_slots, ht.max_weapon_size,
              d.name as design_name,
              COALESCE(s.computed_cargo, d.total_cargo, 0) as total_cargo
       FROM ships s
@@ -83,7 +83,7 @@ router.get('/ship/:shipId', authMiddleware, async (req, res) => {
     const ship = await queryOne(`
       SELECT s.*, ht.name as hull_name, ht.class as hull_class,
              ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors,
-             ht.grid_w, ht.grid_h, ht.slots as hull_slots, ht.price as hull_price,
+             ht.grid_w, ht.grid_h, ht.slots as hull_slots, ht.max_weapon_size, ht.price as hull_price,
              COALESCE(s.computed_cargo, d.total_cargo, 0) as total_cargo
       FROM ships s
       LEFT JOIN hull_types ht ON s.hull_type_id = ht.id
@@ -300,7 +300,7 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
     const result = await transaction(async (client) => {
       // Get ship with hull info
       const shipResult = await client.query(`
-        SELECT s.*, ht.slots as hull_slots
+        SELECT s.*, ht.slots as hull_slots, ht.max_weapon_size
         FROM ships s
         JOIN hull_types ht ON s.hull_type_id = ht.id
         WHERE s.id = $1 AND s.user_id = $2
@@ -338,9 +338,20 @@ router.post('/fit-module', authMiddleware, async (req, res) => {
         throw Object.assign(new Error(`Module type "${mod.slot_type}" doesn't fit "${slot.type}" slot`), { statusCode: 400 });
       }
 
+      // Turret size vs hull mount (099): a hull mounts turrets up to its
+      // max_weapon_size (small / medium / large). Checked at fit time only.
+      if (mod.slot_type === 'weapon') {
+        const size = weaponSize(mod.stats, mod.tier);
+        const hullMax = ship.max_weapon_size || 'small';
+        if ((SIZE_RANK[size] || 1) > (SIZE_RANK[hullMax] || 1)) {
+          const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+          throw Object.assign(new Error(`${mod.name} is a ${cap(size)} turret — this hull mounts ${cap(hullMax)} turrets at most`), { statusCode: 403 });
+        }
+      }
       // Phase 3 capability gate: T2+ weapons / defenses need the family's
-      // operation skill at (tier - 1). Only checked here, so already-
-      // fitted modules stay grandfathered.
+      // operation skill at (tier - 1); turret sizes gate on the size's
+      // Operation skill (099). Only checked here, so already-fitted
+      // modules stay grandfathered.
       await assertGate(client, userId, moduleGateFor(mod), mod.name);
 
       // Remove from cargo
@@ -844,7 +855,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
     const ships = await queryAll(`
       SELECT s.*, ht.name as hull_name, ht.class as hull_class,
              ht.base_hull, ht.base_speed, ht.base_maneuver, ht.base_sensors,
-             ht.grid_w, ht.grid_h, ht.slots as hull_slots,
+             ht.grid_w, ht.grid_h, ht.slots as hull_slots, ht.max_weapon_size,
              (u.active_ship_id = s.id) as is_active,
              cb.name AS storage_body_name
       FROM ships s

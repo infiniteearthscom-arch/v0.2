@@ -217,6 +217,20 @@ async function main() {
   const bref = await pool.query(`SELECT buy_price, requires_tech FROM module_types WHERE id = 'base_refinery'`);
   report('base_refinery is craft-only + gated by tech_refining (086)', bref.rows[0]?.buy_price == null && bref.rows[0]?.requires_tech === 'tech_refining');
 
+  // --- migration 099 (turrets + targeting) ---
+  report('hull_types.max_weapon_size (099)', await columnExists('hull_types', 'max_weapon_size'));
+  const tur = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('weapon_cannon_1','weapon_laser_2','weapon_beam_4','weapon_coil_4')`);
+  report('ladder turrets T1 cannon / T2 laser / T4 beam / T4 coil (099)', tur.rows[0].n === 4, `${tur.rows[0].n}/4`);
+  const untagged = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE slot_type = 'weapon' AND (stats->>'size' IS NULL OR stats->>'family' IS NULL)`);
+  report('every turret row carries size + family (099)', untagged.rows[0].n === 0, `${untagged.rows[0].n} untagged`);
+  const twins099 = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types mt LEFT JOIN item_definitions i ON i.id = mt.id WHERE mt.id IN ('weapon_cannon_1','weapon_laser_2','weapon_beam_4','weapon_coil_4') AND i.id IS NULL`);
+  report('099 turrets have item twins', twins099.rows[0].n === 0);
+  const gunWired = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE id LIKE 'gun_%' AND bonus_per_level->>'type' LIKE 'weapon_%' OR id IN ('gun_rapid_fire','gun_precision','gun_motion') AND bonus_per_level->>'type' LIKE 'fleet_%'`);
+  report('Gunnery skills wired to turret bonuses (099)', gunWired.rows[0].n >= 15, `${gunWired.rows[0].n} rows`);
+  const hullMax = await pool.query(`SELECT id, max_weapon_size FROM hull_types WHERE id IN ('frigate','capital','fighter')`);
+  const hm = Object.fromEntries(hullMax.rows.map(r => [r.id, r.max_weapon_size]));
+  report('hull mounts: fighter small / frigate medium / capital large (099)', hm.fighter === 'small' && hm.frigate === 'medium' && hm.capital === 'large', JSON.stringify(hm));
+
   // --- migration 098 (Sol belt radius) ---
   const solBelt = await pool.query(`SELECT orbit_radius, size FROM celestial_bodies WHERE id = '00000000-0000-0000-0001-000000000006'`);
   report('Sol asteroid belt row at radius 1500 / size 250 (098)', Number(solBelt.rows[0]?.orbit_radius) === 1500 && Number(solBelt.rows[0]?.size) === 250, JSON.stringify(solBelt.rows[0]));

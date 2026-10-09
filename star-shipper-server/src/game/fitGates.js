@@ -37,10 +37,23 @@ export const fleetCapHint = (level, disciplineLevel = 0) => {
 
 // Slot family → sub-family → gating skill id. Required level = tier - 1.
 export const MODULE_GATES = {
+  // Small turrets (T1-T2) by FAMILY (combat profession Phase A, 099):
+  // energy = lasers, projectile = cannons, hybrid = rail / coil, missile.
+  // The damage_type keys stay for clients that predate the family stat.
   weapon: {
-    laser:   'gun_small_energy',       // Small Energy Turret Operation
-    kinetic: 'gun_small_projectile',   // Small Projectile Turret Operation
-    missile: 'mis_missile_launcher',   // Missile Launcher Operation
+    energy:     'gun_small_energy',       // Small Energy Turret Operation
+    projectile: 'gun_small_projectile',   // Small Projectile Turret Operation
+    hybrid:     'gun_small_hybrid',       // Small Hybrid Turret Operation
+    missile:    'mis_missile_launcher',   // Missile Launcher Operation
+    laser:   'gun_small_energy',
+    kinetic: 'gun_small_projectile',
+  },
+  // Medium (T3) and large (T4-T5) turrets: the size's Operation skill.
+  // Medium: level I. Large: T4 level I, T5 level II. Missiles keep the
+  // tier-1 rule on Missile Launcher Operation whatever their size.
+  weapon_size: {
+    medium: { energy: 'gun_medium_energy', projectile: 'gun_medium_projectile', hybrid: 'gun_medium_hybrid', missile: 'mis_missile_launcher' },
+    large:  { energy: 'gun_large_energy',  projectile: 'gun_large_projectile',  hybrid: 'gun_large_hybrid',  missile: 'mis_missile_launcher' },
   },
   shield: {
     shield: 'eng_shield_upgrades',     // Shield Upgrades
@@ -84,10 +97,25 @@ const guessDamageType = (id) => {
   return 'kinetic';
 };
 
+// Turret family / size (099). Mirrored in the client's utils/fitGates.js.
+export const SIZE_RANK = { small: 1, medium: 2, large: 3 };
+export function weaponFamily(stats, moduleId) {
+  if (stats?.family) return stats.family;
+  const dt = stats?.damage_type || guessDamageType(moduleId);
+  if (dt === 'laser') return 'energy';
+  if (dt === 'missile') return 'missile';
+  return /rail|coil/.test(String(moduleId || '')) ? 'hybrid' : 'projectile';
+}
+export function weaponSize(stats, tier) {
+  if (stats?.size && SIZE_RANK[stats.size]) return stats.size;
+  const t = Number(tier) || 1;
+  return t <= 2 ? 'small' : t === 3 ? 'medium' : 'large';
+}
+
 // Which sub-family a module belongs to (mirrors the client's copy in
 // star-shipper/src/utils/fitGates.js).
 export function moduleSubFamily(slotType, stats, moduleId) {
-  if (slotType === 'weapon') return stats?.damage_type || guessDamageType(moduleId);
+  if (slotType === 'weapon') return weaponFamily(stats, moduleId);
   if (slotType === 'shield') return stats?.armor_hp != null ? 'armor' : 'shield';
   if (slotType === 'utility') return stats?.telemetry_tier != null ? 'telemetry' : null;
   return null;
@@ -97,6 +125,17 @@ export function moduleSubFamily(slotType, stats, moduleId) {
 export function moduleGateFor({ id, slot_type, tier, stats }) {
   const t = Number(tier) || 1;
   if (t <= 1) return null;
+  if (slot_type === 'weapon') {
+    const fam = weaponFamily(stats, id);
+    const size = weaponSize(stats, t);
+    if (fam === 'missile' || size === 'small') {
+      const skill = MODULE_GATES.weapon[fam];
+      return skill ? { skill, level: t - 1 } : null;
+    }
+    const skill = MODULE_GATES.weapon_size[size]?.[fam];
+    if (!skill) return null;
+    return { skill, level: size === 'medium' ? 1 : Math.max(1, t - 3) };
+  }
   const sub = moduleSubFamily(slot_type, stats, id);
   const skill = sub && MODULE_GATES[slot_type]?.[sub];
   if (!skill) return null;

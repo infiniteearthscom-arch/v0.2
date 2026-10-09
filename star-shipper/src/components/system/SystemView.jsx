@@ -27,7 +27,7 @@ const SpriteFrame = ({ sheet, frame, world, opacity = 1 }) => {
     </svg>
   );
 };
-import { getShipWeapons, WEAPON_DEFAULTS } from '@/utils/weapons';
+import { getShipWeapons, turretHitChance, angularVelocity, signatureFactor, WEAPON_DEFAULTS } from '@/utils/weapons';
 import { computeFleetStats, getShipHullContribution } from '@/utils/fleetStats';
 import { applyDamage } from '@/utils/combat';
 import { buildFleets, damageFleet, fleetFrontLayer, recomputeDeathOrder } from '@/utils/fleetEntities';
@@ -147,18 +147,23 @@ const getGalaxy = () => {
 // state and the player is inside its longest weapon's range. Enemies
 // without a `weapons` array (shouldn't exist post-manifest) fall back to
 // the legacy single-weapon fields.
-const fireEnemyWeapons = (enemy, dist, dx, dy, delta, projectiles) => {
+const fireEnemyWeapons = (enemy, dist, dx, dy, delta, projectiles, playerVel, playerSig) => {
   const pAngle = Math.atan2(dy, dx);
-  const fire = (damage, weaponType) => {
+  const fire = (damage, weaponType, miss) => {
     projectiles.push({
       x: enemy.x, y: enemy.y,
       vx: Math.cos(pAngle) * PROJECTILE_SPEED * 0.7,
       vy: Math.sin(pAngle) * PROJECTILE_SPEED * 0.7,
       age: 0, fromPlayer: false, damage,
-      color: enemy.engineColor,
+      color: miss ? '#6b7280' : enemy.engineColor,
       weapon_type: weaponType || 'kinetic',
+      miss: !!miss, // turret that lost the tracking / falloff roll: a tracer, no hit (099)
     });
   };
+  // Turret roll (099): the player's angular velocity around this enemy
+  // vs the turret's tracking, and distance vs optimal + falloff.
+  const omega = angularVelocity(enemy.x, enemy.y, enemy._vx || 0, enemy._vy || 0,
+    enemy.x + dx, enemy.y + dy, playerVel?.x || 0, playerVel?.y || 0);
   const weapons = enemy.weapons;
   const rate = enemy._rateMult || 1; // Synod overclock
   if (!weapons || weapons.length === 0) {
@@ -173,7 +178,9 @@ const fireEnemyWeapons = (enemy, dist, dx, dy, delta, projectiles) => {
     w.cooldown -= delta * rate;
     if (w.cooldown > 0 || dist >= w.range) continue;
     w.cooldown = w.fireRate;
-    fire(w.damage, w.damageType);
+    const chance = w.damageType === 'missile' || w.tracking == null ? 1
+      : turretHitChance({ type: w.damageType, tracking: w.tracking, optimal: w.optimal ?? w.range * 0.75, falloff: w.falloff ?? w.range * 0.25 }, dist, omega, { signature: playerSig || 1 });
+    fire(w.damage, w.damageType, Math.random() > chance);
   }
 };
 
@@ -1363,6 +1370,39 @@ export const SystemView = () => {
   // the ref keeps the game loop's empty-deps closure current.
   const designatedEnemyIdRef = useRef(null);
   designatedEnemyIdRef.current = designatedEnemyId;
+  // Target LOCKS (combat profession Phase A, 099). Fleet-wide list of
+  // { id, startedAt, lockedAt } in game seconds. Weapons prefer locked
+  // targets (the designated one first); missiles fire ONLY at a finished
+  // lock. Max locks = 1 + Targeting / Multitasking levels (cap 5); lock
+  // time = 2 s shortened by Target Signature Analysis + Signature
+  // Analysis; lock range = the longer of sensor range and the fleet's
+  // longest weapon, × Long Range Targeting. Replaces the per-ship missile
+  // lock timer.
+  const locksRef = useRef([]);
+  const LOCK_BASE_SECONDS = 2.0;
+  const lockLimits = () => {
+    const B = activeBonusesRef.current || {};
+    const max = Math.max(1, Math.min(5, 1 + Math.floor(B.max_locked_targets_flat || 0)));
+    const time = LOCK_BASE_SECONDS * (1 + (B.lock_time_pct || 0) / 100) / (1 + (B.lock_speed_pct || 0) / 100);
+    return { max, time: Math.max(0.4, time), rangeMult: 1 + (B.targeting_range_pct || 0) / 100 };
+  };
+  const addLock = (enemyId) => {
+    if (!enemyId) return;
+    const locks = locksRef.current;
+    if (locks.some(l => l.id === enemyId)) return;
+    const { max } = lockLimits();
+    while (locks.length >= max) {
+      const i = locks.findIndex(l => l.id !== designatedEnemyIdRef.current);
+      locks.splice(i >= 0 ? i : 0, 1);
+    }
+    locks.push({ id: enemyId, startedAt: gameTimeRef.current, lockedAt: null });
+  };
+  const removeLock = (enemyId) => { locksRef.current = locksRef.current.filter(l => l.id !== enemyId); };
+  const lockFor = (enemyId) => locksRef.current.find(l => l.id === enemyId) || null;
+  // Alpha Volley (099): with Capital Weapons researched + Surgical Strike I,
+  // every LARGE turret's next shot inside a 3 s window does ×2.5. 20 s cooldown.
+  const alphaVolleyRef = useRef({ until: 0, fired: new Set(), cooldownUntil: 0 });
+  const ALPHA_VOLLEY_MULT = 2.5, ALPHA_VOLLEY_WINDOW = 3, ALPHA_VOLLEY_COOLDOWN = 20;
   const autopilotTargetRef = useRef(null);
 
   // Scanner tracking for the System Map pane.
@@ -2215,6 +2255,7 @@ export const SystemView = () => {
     const pick = seen[(idx + 1) % seen.length].e;
     playSound('button_click');
     useGameStore.getState().setDesignatedEnemy(pick.id);
+    addLock(pick.id);
     if (pushToast) pushToast({
       kind: 'info',
       text: `Targeting ${pick.name} (${Math.round(Math.sqrt(seen[(idx + 1) % seen.length].d2))} units)${seen.length > 1 ? ' — T again for the next' : ''}`,
@@ -3322,6 +3363,7 @@ export const SystemView = () => {
               if (next) {
                 setDesignatedEnemy(next.id);
                 designatedEnemyIdRef.current = next.id;
+                addLock(next.id);
               } else {
                 clearDesignatedEnemy();
                 designatedEnemyIdRef.current = null;
@@ -3435,6 +3477,14 @@ export const SystemView = () => {
       // fleet anywhere in the system. Marked here, applied in the loop
       // (subject to the rally cap). One call per engaged fleet per frame
       // is plenty -- the callee stays flagged until it engages.
+      // Turret tracking (099) needs every enemy's velocity; the AI writes
+      // positions in many places, so estimate it from last frame once here.
+      for (const e of enemies) {
+        if (e._lx != null && delta > 0) { e._vx = (e.x - e._lx) / delta; e._vy = (e.y - e._ly) / delta; }
+        e._lx = e.x; e._ly = e.y;
+      }
+      // Our flagship's signature for the enemies' tracking rolls (bigger hull = easier to hit).
+      const playerSig = signatureFactor(HULL_SHAPES[(fleetShipsRef.current || []).find(f => f.isActive)?.hull_type_id]?.displaySize || 12);
       const reinforceFleets = new Set();
       if (!isSheltered() && !isPodRef.current) {
         for (const [fid, leader] of leaderByFleet) {
@@ -3540,7 +3590,7 @@ export const SystemView = () => {
           enemy.vx = 0; enemy.vy = 0;
           // Fire from formation (same rule as the leader).
           if (!isSheltered() && enemy.state === 'attack' && dist < enemy.range) {
-            fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles);
+            fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles, shipVelRef.current, playerSig);
           }
           continue; // skip the leader/free-agent state machine + movement
         }
@@ -3772,7 +3822,7 @@ export const SystemView = () => {
         
         // Fire at player (skip when docked)
         if (!isSheltered() && enemy.state === 'attack' && dist < enemy.range) {
-          fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles);
+          fireEnemyWeapons(enemy, dist, dx, dy, delta, projectiles, shipVelRef.current, playerSig);
         }
         
         // (Shield regen is now fleet-level — see the pre-pass above.)
@@ -3791,6 +3841,39 @@ export const SystemView = () => {
       // Right & behind vectors in world coords (matches render-side math)
       const rightX = -sinT, rightY = cosT;
       const behindX = -cosT, behindY = -sinT;
+
+      // ---- Turret bonuses (099): size × family + capstone + support skills ----
+      const B = activeBonusesRef.current || {};
+      const pct = (k) => (B[k] || 0) / 100;
+      const famKey = (w) => w.family === 'energy' ? 'energy' : w.family === 'hybrid' ? 'hybrid' : 'proj';
+      const dmgMultFor = (w, target) => {
+        let m = 1 + pct('fleet_damage_pct');
+        if (w.type !== 'missile') m += pct('weapon_all_turret_dmg_pct') + pct(`weapon_${w.size || 'small'}_${famKey(w)}_dmg_pct`);
+        if (target && lockFor(target.id)?.lockedAt != null) m += pct('locked_target_dmg_pct');
+        return m;
+      };
+      const rateMult = Math.max(0.4, 1 - pct('fleet_fire_rate_pct'));
+      const rangeMult = 1 + pct('fleet_weapon_range_pct');
+      const trackMults = { tracking: 1 + pct('fleet_tracking_pct'), optimal: rangeMult * (1 + pct('weapon_optimal_range_pct')), falloff: rangeMult * (1 + pct('weapon_falloff_pct')) };
+      const effRange = (w) => w.type === 'missile' ? w.range * rangeMult : (w.optimal * trackMults.optimal + w.falloff * trackMults.falloff);
+      // ---- Lock upkeep (099): prune dead / out-of-range, finish timers ----
+      {
+        const lim = lockLimits();
+        let maxW = 0;
+        for (const fs of fleetData) for (const w of (fs.weapons || [])) maxW = Math.max(maxW, effRange(w));
+        const lockRange = Math.max(fleetSensorRange(), maxW) * lim.rangeMult;
+        const lr2 = lockRange * lockRange;
+        const nowT = gameTimeRef.current;
+        locksRef.current = locksRef.current.filter(l => {
+          const e = enemies.find(x => x.id === l.id);
+          if (!e || e.hull <= 0) return false;
+          if ((e.x - playerPos.x) ** 2 + (e.y - playerPos.y) ** 2 > lr2) return false;
+          if (l.lockedAt == null && nowT - l.startedAt >= lim.time) l.lockedAt = nowT;
+          return true;
+        });
+        while (locksRef.current.length > lim.max) locksRef.current.shift();
+        if (alphaVolleyRef.current.until && nowT > alphaVolleyRef.current.until) { alphaVolleyRef.current.until = 0; alphaVolleyRef.current.fired.clear(); }
+      }
 
       for (const fs of fleetData) {
         if (!fs.weapons || fs.weapons.length === 0) continue;
@@ -3830,7 +3913,8 @@ export const SystemView = () => {
           // only then nearest-any (the legacy behavior). Weapons chew
           // through one fleet's pool instead of splitting damage across
           // whichever fleet drifts closest mid-fight.
-          let nearest = null, nearestDist = w.range;
+          const wRange = effRange(w);
+          let nearest = null, nearestDist = wRange;
           const designId = designatedEnemyIdRef.current;
           let designFleetId = null;
           if (designId) {
@@ -3839,11 +3923,21 @@ export const SystemView = () => {
               designFleetId = d.fleetId;
               if (d.hull > 0) {
                 const dist = Math.sqrt((d.x - sx) ** 2 + (d.y - sy) ** 2);
-                if (dist < w.range) {
+                if (dist < wRange) {
                   nearest = d;
                   nearestDist = dist;
                 }
               }
+            }
+          }
+          // Locked targets (099) come before the designated FLEET: a held
+          // lock is the pilot saying "this one".
+          if (!nearest) {
+            for (const l of locksRef.current) {
+              const e = enemies.find(x => x.id === l.id);
+              if (!e || e.hull <= 0) continue;
+              const dist = Math.sqrt((e.x - sx) ** 2 + (e.y - sy) ** 2);
+              if (dist < nearestDist) { nearest = e; nearestDist = dist; }
             }
           }
           if (!nearest && designFleetId) {
@@ -3862,9 +3956,6 @@ export const SystemView = () => {
           }
           if (!nearest) {
             cooldowns.set(cooldownKey, 0); // ready to fire next frame
-            // No target = no lock. Drop any stale missile lock so a
-            // new target later starts the timer fresh.
-            if (w.type === 'missile') missileLockRef.current[fs.id] = null;
             continue;
           }
 
@@ -3880,40 +3971,54 @@ export const SystemView = () => {
               cooldowns.set(cooldownKey, 0.5);
               continue;
             }
-            // Lock state per ship -- shared across launchers on the
-            // same ship so they fire together once locked.
-            let lock = missileLockRef.current[fs.id];
-            if (!lock || lock.targetId !== nearest.id) {
-              lock = { targetId: nearest.id, startedAt: Date.now() };
-              missileLockRef.current[fs.id] = lock;
-            }
-            const lockElapsed = (Date.now() - lock.startedAt) / 1000;
-            const lockTime = w.lock_time ?? 2;
-            if (lockElapsed < lockTime) {
-              // Still acquiring -- short re-check interval so the
-              // lock ring fills smoothly.
-              cooldowns.set(cooldownKey, 0.1);
-              continue;
+            // Missiles fire only at a FINISHED fleet lock (099). The
+            // nearest-by-range pick above may be unlocked: switch to the
+            // nearest locked enemy in range, else start a lock on the
+            // pick (the lock list is fleet-wide, so every launcher on
+            // every ship shares it) and wait.
+            const lk = lockFor(nearest.id);
+            if (!lk || lk.lockedAt == null) {
+              let alt = null, altD = wRange;
+              for (const l of locksRef.current) {
+                if (l.lockedAt == null) continue;
+                const e = enemies.find(x => x.id === l.id);
+                if (!e || e.hull <= 0) continue;
+                const dist = Math.sqrt((e.x - sx) ** 2 + (e.y - sy) ** 2);
+                if (dist < altD) { alt = e; altD = dist; }
+              }
+              if (alt) { nearest = alt; nearestDist = altD; }
+              else { if (!lk) addLock(nearest.id); cooldowns.set(cooldownKey, 0.1); continue; }
             }
           }
 
           // Fire!
-          cooldowns.set(cooldownKey, w.fire_rate);
+          cooldowns.set(cooldownKey, w.fire_rate * rateMult);
           playSound('weapon_fire');
           const aimAngle = Math.atan2(nearest.y - sy, nearest.x - sx);
+          // Turret roll (099): tracking vs the target's angular velocity
+          // around this ship, and falloff past optimal. Missiles always "hit"
+          // here (they home; Phase D adds explosion velocity).
+          const omega = angularVelocity(sx, sy, shipVelRef.current.x, shipVelRef.current.y, nearest.x, nearest.y, nearest._vx || 0, nearest._vy || 0);
+          const hit = w.type === 'missile' ? true : Math.random() <= turretHitChance(w, nearestDist, omega, { ...trackMults, signature: signatureFactor(nearest.displaySize) });
+          // Alpha Volley (099): large turrets' first shot in the window ×2.5.
+          let alphaMult = 1;
+          if (w.size === 'large' && w.type !== 'missile' && alphaVolleyRef.current.until > gameTimeRef.current && !alphaVolleyRef.current.fired.has(cooldownKey)) {
+            alphaVolleyRef.current.fired.add(cooldownKey);
+            alphaMult = ALPHA_VOLLEY_MULT;
+          }
 
           if (w.type === 'laser') {
             // Instant beam — apply damage immediately, push a beam visual.
             // Gunnery skill: fleet_damage_pct from store bonuses (Small
             // Hybrid Turret Operation = +5%/level). Applies fleet-wide
             // so wingmen benefit from the captain's training too.
-            const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
+            const dmgBonus = dmgMultFor(w, nearest) * alphaMult;
             const dmg = w.damage * dmgBonus;
             // Combat F1: damage the target's FLEET pool (shield→armor→hull
             // via the triangle), not the individual member. Laser is strong
             // vs armor, weak vs shield.
             const nearestFleet = fleetsRef.current.get(nearest.fleetId);
-            if (nearestFleet) {
+            if (nearestFleet && hit) {
               const laserRes = damageFleet(nearestFleet, dmg, 'laser');
               nearestFleet.lastHitAt = gameTimeRef.current;
               if (laserRes.shieldDamaged) nearestFleet.shieldRegenTimer = SHIELD_REGEN_DELAY;
@@ -3924,24 +4029,24 @@ export const SystemView = () => {
               x2: nearest.x, y2: nearest.y,
               age: 0,
               lifetime: 0.15,
-              color: w.color,
+              color: hit ? w.color : '#6b7280', // grey beam = missed the roll (099)
               fromPlayer: true,
             });
             // Hit spark at impact point (blue while the fleet's shield holds).
-            effects.push({
+            if (hit) effects.push({
               x: nearest.x, y: nearest.y,
               type: 'hit', age: 0,
               color: (nearestFleet && nearestFleet.shield > 0) ? '#4488ff' : w.color,
             });
             // Combat F2: attrition — members peel off as the pooled hull
             // crosses their thresholds (flagship's death ends the fleet).
-            if (nearestFleet) checkFleetAttrition(nearestFleet);
+            if (nearestFleet && hit) checkFleetAttrition(nearestFleet);
           } else if (w.type === 'kinetic') {
             // Bullet with slight aim spread. Gunnery skill damage
             // bonus is baked into the projectile at spawn -- when the
             // projectile lands, it just subtracts its own damage value
             // and doesn't have to re-look-up the captain's bonus.
-            const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
+            const dmgBonus = dmgMultFor(w, nearest) * alphaMult;
             const spread = (Math.random() - 0.5) * (w.spread || 0.08) * 2;
             const fireAngle = aimAngle + spread;
             const speed = w.projectile_speed || 320;
@@ -3951,8 +4056,9 @@ export const SystemView = () => {
               vy: Math.sin(fireAngle) * speed,
               age: 0, fromPlayer: true,
               damage: w.damage * dmgBonus,
-              color: w.color,
+              color: hit ? w.color : '#6b7280',
               weapon_type: 'kinetic',
+              miss: !hit, // tracer only (099)
             });
           } else if (w.type === 'missile') {
             // Tracking projectile — re-aims toward target each frame.
@@ -3960,7 +4066,7 @@ export const SystemView = () => {
             // for curving paths toward moving targets). Without this
             // the global PROJECTILE_LIFETIME=0.8s despawned missiles
             // long before they reached their nominal max range.
-            const dmgBonus = 1 + ((activeBonusesRef.current?.fleet_damage_pct || 0) / 100);
+            const dmgBonus = dmgMultFor(w, nearest) * alphaMult;
             const speed = w.projectile_speed || 180;
             const lifetime = ((w.range || 1120) / speed) * 1.5;
             projectiles.push({
@@ -4061,7 +4167,9 @@ export const SystemView = () => {
           continue;
         }
         
-        if (p.fromPlayer) {
+        if (p.miss) {
+          // Tracer from a lost tracking / falloff roll (099): flies out, hits nothing.
+        } else if (p.fromPlayer) {
           // Check hits on enemies
           for (const e of enemies) {
             if (e.hull <= 0) continue;
@@ -5443,6 +5551,7 @@ export const SystemView = () => {
                    e.stopPropagation();
                    playSound('button_click');
                    setDesignatedEnemy(enemy.id);
+                   if (isDesignated) removeLock(enemy.id); else addLock(enemy.id);
                    if (pushToast) pushToast({
                      kind: 'info',
                      text: isDesignated
@@ -5559,33 +5668,22 @@ export const SystemView = () => {
                     bright as a "weapons free" indicator until lock
                     drops. */}
                 {(() => {
-                  const lock = missileLockRef.current[playerShip?.id];
-                  if (!lock || lock.targetId !== enemy.id) return null;
-                  // Find any missile weapon on the primary to read lock_time.
-                  // Use the first one (all missile launchers on a ship
-                  // share the same lock state).
-                  const missileWeapon = (playerShip?.fitted_modules
-                    ? Object.values(playerShip.fitted_modules).find(
-                        m => m?.module_type_id?.startsWith('weapon_missile')
-                      )
-                    : null);
-                  const lockTime = missileWeapon?.stats?.lock_time
-                    ?? WEAPON_DEFAULTS.missile.lock_time
-                    ?? 2;
-                  const elapsedSec = (Date.now() - lock.startedAt) / 1000;
-                  const pct = Math.min(1, elapsedSec / lockTime);
+                  // Lock ring (099): one per fleet lock. Amber dashed guide,
+                  // green arc fills over the lock time, solid when locked.
+                  const lock = lockFor(enemy.id);
+                  if (!lock) return null;
+                  const lim = lockLimits();
+                  const pct = lock.lockedAt != null ? 1 : Math.min(1, (gameTimeRef.current - lock.startedAt) / Math.max(0.01, lim.time));
                   const r = enemy.displaySize + 10;
                   const circumference = 2 * Math.PI * r;
                   const isLocked = pct >= 1;
                   return (
                     <g style={{ pointerEvents: 'none' }}>
-                      {/* Outer guide ring (always present) */}
                       <circle cx={enemy.x} cy={enemy.y} r={r}
                         fill="none" stroke="#fbbf24"
                         strokeWidth={isLocked ? 0.9 : 0.5}
                         strokeDasharray="3,2"
                         opacity={isLocked ? 0.9 : 0.55} />
-                      {/* Progress arc that fills clockwise */}
                       <circle cx={enemy.x} cy={enemy.y} r={r}
                         fill="none"
                         stroke={isLocked ? '#22c55e' : '#fbbf24'}
@@ -5593,7 +5691,6 @@ export const SystemView = () => {
                         strokeDasharray={`${pct * circumference} ${circumference}`}
                         transform={`rotate(-90, ${enemy.x}, ${enemy.y})`}
                         opacity={0.95} />
-                      {/* Tag */}
                       <text x={enemy.x} y={enemy.y + r + 6}
                         textAnchor="middle"
                         fill={isLocked ? '#22c55e' : '#fbbf24'}
@@ -6153,6 +6250,18 @@ export const SystemView = () => {
                     </div>
                   );
                 })()}
+                {(() => {
+                  const lim = lockLimits();
+                  const n = locksRef.current.length;
+                  const mine = lockFor(enemy.id);
+                  return (
+                    <div style={{ color: '#7a8a9a', fontSize: '0.74rem' }}>
+                      locks <span style={{ color: '#e2e8f0' }}>{n}/{lim.max}</span>
+                      {mine ? <span style={{ color: mine.lockedAt != null ? '#4ade80' : '#fbbf24' }}> · {mine.lockedAt != null ? 'LOCKED' : 'locking'}</span> : <span> · T or click to lock</span>}
+                      {' · '}{lim.time.toFixed(1)}s lock
+                    </div>
+                  );
+                })()}
                 <div style={{ color: '#7a8a9a' }}>
                   {enemy.hullName || enemy.hullId} · <span style={{ color: '#c084fc' }}>{enemy.behavior}</span> · {enemy.maxHull} hull
                   {enemy.maxArmor > 0 ? ` · ${enemy.maxArmor} armr` : ''}
@@ -6220,6 +6329,32 @@ export const SystemView = () => {
                   : 'Three sonar pings, then every enemy in the system for 30s. 120s cooldown.',
                 onActivate: handleSystemSweep,
               },
+              alpha_volley: (() => {
+                const st = useGameStore.getState();
+                const hasLarge = (fleetShipsRef.current || []).some(fs => (fs.weapons || []).some(w => w.size === 'large' && w.type !== 'missile'));
+                const researched = (st.techs || []).some(t => t.id === 'tech_capital_weap' && t.status === 'unlocked');
+                const skilled = ((st.skills || []).find(sk => sk.id === 'gun_surgical_strike')?.level || 0) >= 1;
+                const nowS = gameTimeRef.current;
+                const remain = Math.max(0, Math.ceil(alphaVolleyRef.current.cooldownUntil - nowS));
+                const active = alphaVolleyRef.current.until > nowS;
+                return {
+                  id: 'alpha_volley', icon: '💥', color: active ? '#fbbf24' : '#f87171', label: active ? 'VOLLEY' : 'Alpha Volley',
+                  available: hasLarge && researched && skilled, disabled: remain > 0 || active, remain, active,
+                  title: !hasLarge ? 'Fit a Large turret (T4+) on a hull that mounts one'
+                    : !researched ? 'Research Capital Weapons to unlock Alpha Volley'
+                    : !skilled ? 'Train Surgical Strike I to unlock Alpha Volley'
+                    : active ? 'Alpha Volley armed — every large turret fires ×2.5 for 3 s'
+                    : remain > 0 ? `Alpha Volley cooling down (${remain}s)`
+                    : 'Every large turret\'s next shot does ×2.5. 20 s cooldown.',
+                  onActivate: () => {
+                    const t = gameTimeRef.current;
+                    if (alphaVolleyRef.current.cooldownUntil > t) return;
+                    alphaVolleyRef.current = { until: t + ALPHA_VOLLEY_WINDOW, fired: new Set(), cooldownUntil: t + ALPHA_VOLLEY_COOLDOWN };
+                    playSound('button_click');
+                    if (pushToast) pushToast({ kind: 'info', text: 'ALPHA VOLLEY — large turrets firing ×2.5', duration: 2000 });
+                  },
+                };
+              })(),
             };
             hotbarActionsRef.current = {
               targetNearest: targetNearestEnemy,

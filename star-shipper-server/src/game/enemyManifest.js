@@ -239,14 +239,27 @@ function instantiate(template, rng, catalog) {
       const type = stats.damage_type || guessDamageType(mt.id);
       const base = WEAPON_DEFAULTS[type] || WEAPON_DEFAULTS.kinetic;
       const tuned = stats.combat_tuned === true;
+      const range = Math.round((tuned ? (stats.range ?? base.range) : base.range) * qRange);
+      // Turret model (099): size / family / tracking / optimal / falloff.
+      // Defaults mirror the client's weapons.js so an untagged row behaves
+      // the same on both sides.
+      const t = mt.tier || 1;
+      const size = stats.size || (t <= 2 ? 'small' : t === 3 ? 'medium' : 'large');
+      const family = stats.family || (type === 'laser' ? 'energy' : type === 'missile' ? 'missile' : (/rail|coil/.test(mt.id) ? 'hybrid' : 'projectile'));
+      const trackDefault = size === 'small' ? 1.8 : size === 'medium' ? 1.1 : 0.6;
+      const optimal = Math.round(stats.optimal != null ? stats.optimal * qRange : range * 0.75);
       const w = {
         module_type_id: mt.id,
         name: mt.name,
         damage_type: type,
         damage: Math.round((tuned ? (stats.damage ?? base.damage) : base.damage) * qMult),
-        range: Math.round((tuned ? (stats.range ?? base.range) : base.range) * qRange),
+        range,
         fire_rate: tuned ? (stats.fire_rate ?? base.fire_rate) : base.fire_rate,
         quality: q,
+        size, family,
+        tracking: type === 'missile' ? null : (stats.tracking ?? trackDefault),
+        optimal: type === 'missile' ? range : optimal,
+        falloff: type === 'missile' ? 0 : Math.max(1, range - optimal),
       };
       weapons.push(w);
       Object.assign(entry, { damage_type: type, damage: w.damage, range: w.range, fire_rate: w.fire_rate });

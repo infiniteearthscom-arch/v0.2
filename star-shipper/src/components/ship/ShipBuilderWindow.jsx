@@ -8,7 +8,7 @@ import { ItemTooltipContent } from '@/components/items/ItemTooltip';
 import { normalizeItem, normalizeFittedModule, SLOT_TYPE_META } from '@/utils/itemShape';
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { detectWeaponType } from '@/utils/weapons';
-import { moduleGateForItem, hullGateFor, gateStatus } from '@/utils/fitGates';
+import { moduleGateForItem, hullGateFor, gateStatus, weaponSize, SIZE_RANK } from '@/utils/fitGates';
 import { describeWeaponEffectiveness } from '@/utils/combat';
 // Single source of truth for hull shape data (pitfall #11 in CLAUDE.md).
 // ShipBuilderWindow used to inline its own HULL_SHAPES const which
@@ -962,6 +962,17 @@ export const ShipBuilderWindow = () => {
     // requirement instead of a server 403. Server still enforces.
     const cargoRow = (inventory?.items || []).find(it => it.id === dragData.stack_id);
     if (cargoRow) {
+      // Turret size vs hull mount (099): pre-check the server's rule.
+      if (cargoRow.item_data?.slot_type === 'weapon' && slot?.type === 'weapon') {
+        const hullRow = (useGameStore.getState().ships || []).find(sh => sh.id === selectedShipId);
+        const hullMax = hullRow?.max_weapon_size || 'small';
+        const size = weaponSize(cargoRow.item_data.base_stats, cargoRow.item_data.tier);
+        if ((SIZE_RANK[size] || 1) > (SIZE_RANK[hullMax] || 1)) {
+          const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+          flash('error', `${cargoRow.item_name || 'This turret'} is a ${cap(size)} turret — this hull mounts ${cap(hullMax)} turrets at most`);
+          return;
+        }
+      }
       const gs = gateStatus(moduleGateForItem(cargoRow, fitGates), skills);
       if (!gs.ok) {
         flash('error', `${cargoRow.item_name || 'This module'} requires ${gs.text} (you have ${gs.have ? gs.have : 'none'}) — train it in Skills & Research`);
