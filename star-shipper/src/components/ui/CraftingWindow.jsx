@@ -860,6 +860,25 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
 // MAIN COMPONENT
 // ============================================
 
+// Track / untrack a recipe in the top-right pinned stack (owner 2026-10-08:
+// "pin crafting item recipe requirements ... so a player can easily track
+// what they need to mine"). Lives in gameStore.pinnedRecipes (persisted).
+const TrackRecipeButton = ({ recipe }) => {
+  const pinned = useGameStore(state => state.pinnedRecipes) || [];
+  const pinRecipe = useGameStore(state => state.pinRecipe);
+  const on = pinned.some(r => r.id === recipe?.id);
+  return (
+    <button onClick={() => pinRecipe(recipe)} title={on ? 'Stop tracking this recipe' : 'Track this recipe\'s ingredients in the top-right stack'}
+      style={{
+        flexShrink: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer', fontFamily: FONT.ui, fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5,
+        background: on ? '#22c55e22' : 'transparent', color: on ? '#4ade80' : COLORS.TEXT.dim,
+        border: `1px solid ${on ? '#22c55e66' : COLORS.EDGE}`,
+      }}>
+      {on ? '📌 TRACKING' : '📌 TRACK'}
+    </button>
+  );
+};
+
 export const CraftingWindow = () => {
   const windows = useGameStore(state => state.windows);
   const completeQuest = useGameStore(state => state.completeQuest);
@@ -1293,7 +1312,7 @@ export const CraftingWindow = () => {
                 borderRadius: 3,
               }}>
                 <PixelItemIcon size={40} spec={recipeIconSpec(selectedRecipe)} />
-                <div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontSize: '0.8125rem',
                     fontWeight: 700,
@@ -1307,6 +1326,7 @@ export const CraftingWindow = () => {
                     fontFamily: FONT.ui,
                   }}>{selectedRecipe.item_description || selectedRecipe.description}</div>
                 </div>
+                <TrackRecipeButton recipe={selectedRecipe} />
               </div>
 
               {/* Ingredients */}

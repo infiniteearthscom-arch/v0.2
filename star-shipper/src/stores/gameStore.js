@@ -259,6 +259,11 @@ const initialState = {
   // see labels without having to discover the toggle.
   toolbarExpanded: true,
 
+  // Tracked crafting recipes (owner 2026-10-08): pinned from the Crafting
+  // window, shown as have/need tiles in the top-right stack next to the
+  // pinned quests so the pilot knows what to mine. Persisted locally.
+  pinnedRecipes: [], // [{ id, name, ingredients: [{ resource_name, quantity }] }]
+
   // UI scale -- multiplier applied to text sizes across the interface.
   // 1.0 = default. Drives root font-size (which scales Tailwind rem-based
   // text utilities) and is read directly by Toaster + future text-heavy
@@ -543,11 +548,7 @@ export const useGameStore = create(
           const { skillsAPI } = await import('@/utils/api');
           const out = await skillsAPI.queueAdd(skillId, targetLevel);
           await get().fetchSkillsAndResearch();
-          if (out?.quest) { // 096: "The Long Game" completed server-side
-            get().fetchQuests?.();
-            if (out.quest.credits !== undefined) set(state => { state.resources.credits = out.quest.credits; });
-            get().pushToast({ kind: 'success', text: `Quest Completed: ${out.quest.title}`, duration: 5000 });
-          }
+          if (out?.quest) get().applyServerQuest(out.quest); // 096: "The Long Game" completed server-side
         } catch (error) {
           const msg = error?.message || 'Failed to queue skill';
           get().pushToast({ kind: 'error', text: msg, duration: 4000 });
@@ -599,8 +600,21 @@ export const useGameStore = create(
       fetchQuests: async () => {
         try {
           const data = await questsAPI.getQuests();
+          const next = data.quests || [];
+          // Quests the server completed since our last look (starter-kit
+          // claim, contract accept / deliver, base build, probes, skill
+          // queue all complete quests INSIDE their own transaction): toast
+          // them here, so every refetch path announces them exactly once.
+          if (get().questsLoaded) {
+            const wasActive = new Set((get().quests || []).filter(q => q.status === 'active').map(q => q.quest_id));
+            for (const q of next) {
+              if (q.status === 'completed' && wasActive.has(q.quest_id)) {
+                get().pushToast({ kind: 'success', text: `Quest Completed: ${q.title}`, duration: 5000 });
+              }
+            }
+          }
           set(state => {
-            state.quests = data.quests || [];
+            state.quests = next;
             state.questsLoaded = true;
           });
         } catch (error) {
@@ -628,26 +642,44 @@ export const useGameStore = create(
         }
       },
 
+      // Track / untrack a crafting recipe in the pinned stack (max 6).
+      pinRecipe: (recipe) => set(state => {
+        if (!recipe?.id) return;
+        const list = state.pinnedRecipes || [];
+        const i = list.findIndex(r => r.id === recipe.id);
+        if (i >= 0) { list.splice(i, 1); return; }
+        list.push({ id: recipe.id, name: recipe.name, ingredients: (recipe.ingredients || []).map(g => ({ resource_name: g.resource_name, quantity: g.quantity })) });
+        while (list.length > 6) list.shift();
+        state.pinnedRecipes = list;
+      }),
+      unpinRecipe: (id) => set(state => { state.pinnedRecipes = (state.pinnedRecipes || []).filter(r => r.id !== id); }),
+
       completeQuest: async (questId) => {
-        // Snapshot the quest title before the API call so we can name it in
-        // the completion toast (the local quests list gets refetched after).
-        const questTitle = get().quests.find(q => q.quest_id === questId)?.title;
         try {
           const data = await questsAPI.completeQuest(questId);
-          if (data.success && !data.already_complete) {
-            get().fetchQuests();
-            if (data.credits !== undefined) {
-              set(state => { state.resources.credits = data.credits; });
-            }
-            get().pushToast({
-              kind: 'success',
-              text: `Quest Completed: ${questTitle || 'Unknown Quest'}`,
-              duration: 5000,
-            });
+          if (!data.success) return;
+          if (data.credits !== undefined) {
+            set(state => { state.resources.credits = data.credits; });
           }
+          // Refetch either way: a fresh completion needs the new chain
+          // link, and "already complete" means the SERVER finished it
+          // inside some transaction (e.g. the Starter Kit claim) while
+          // our list still showed it active -- owner report 2026-10-08:
+          // "Gear Up doesn't change when you buy the kit". The refetch
+          // diff toasts it.
+          get().fetchQuests();
         } catch (error) {
           console.error('Failed to complete quest:', error);
         }
+      },
+
+      // A server response carried a quest it completed in its own
+      // transaction ({ quest_id, title, credits }): sync credits and
+      // refetch (the diff in fetchQuests toasts it).
+      applyServerQuest: (quest) => {
+        if (!quest) return;
+        if (quest.credits !== undefined) set(state => { state.resources.credits = quest.credits; });
+        get().fetchQuests();
       },
 
       scrapShip: async (shipId) => {
@@ -705,7 +737,7 @@ export const useGameStore = create(
       // callable from anywhere (e.g. SystemView's auto-open on dock).
       openContextPanel: (windowId) => set(state => {
         // Keep in sync with CONTEXT_PANELS in GameFrame.jsx (LeftToolbar).
-        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction', 'leaderboards', 'corp', 'bounties', 'mail'];
+        const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction', 'leaderboards', 'corp', 'bounties', 'mail', 'anomalies'];
         for (const pid of CONTEXT_PANELS) {
           if (pid !== windowId && state.windows[pid]?.open) {
             state.windows[pid].open = false;
@@ -1043,6 +1075,7 @@ export const useGameStore = create(
       partialize: (state) => ({
         // Only persist UI state locally
         gameStarted: state.gameStarted,
+        pinnedRecipes: state.pinnedRecipes,
         audio: state.audio,
         uiScale: state.uiScale,
         toolbarExpanded: state.toolbarExpanded,

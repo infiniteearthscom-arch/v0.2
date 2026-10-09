@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { MAX_FLEET_SIZE } from '@/utils/shipRenderer';
 import { useGameStore, useActiveShip } from '@/stores/gameStore';
+import { openModalStack } from '@/components/ui/ModalOverlay';
 import { useAuthStore } from '@/stores/authStore';
 import { fittingAPI, contractsAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
@@ -429,7 +430,7 @@ const TopBar = () => {
 // ============================================
 
 // Keep in sync with CONTEXT_PANELS in gameStore.js (openContextPanel).
-const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction', 'leaderboards', 'corp', 'bounties', 'mail'];
+const CONTEXT_PANELS = ['character', 'fleet', 'inventory', 'crafting', 'questLog', 'planetInteraction', 'leaderboards', 'corp', 'bounties', 'mail', 'anomalies']; // anomalies (Signals) added 2026-10-08 -- it is a ContextPanel and must follow the one-at-a-time rule like the rest;
 const MODALS = ['shipBuilder', 'galaxyMap'];
 
 // Width of the toolbar in each state. Kept in sync with the ContextPanel
@@ -555,16 +556,18 @@ const LeftToolbar = () => {
       </div>
 
       {/* Right-edge chevron -- vertically centered against the button
-          column. Half-overlaps the toolbar so it reads as "the side
-          handle." Clicking flips toolbarExpanded; the toolbar width
-          animates and ContextPanel shifts to clear the new chrome. */}
+          column, fully OUTSIDE it with a 4 px gap (owner 2026-10-08: the
+          old half-overlap made it look like part of the Craft / Missions
+          buttons). Clicking flips toolbarExpanded; the toolbar width
+          animates and ContextPanel / the Planet window shift to clear it
+          (their left anchors include the chevron: see ContextPanel.jsx). */}
       <button
         onClick={() => { playSound('button_click'); toggleToolbar(); }}
         title={expanded ? 'Collapse menu to icons' : 'Show menu labels'}
         style={{
           position: 'absolute',
           top: '50%',
-          right: -10,
+          right: -22, // 18 wide + 4 px gap, clear of the buttons
           transform: 'translateY(-50%)',
           width: 18,
           height: 36,
@@ -630,6 +633,42 @@ const SystemMapToggle = () => {
 // server knows which body we're docked at (drives the "Pilots Docked
 // Here" panel + the Trade-button gating on profile windows). Runs once
 // per mount/dock-change; idempotent on the presence side.
+// Escape closes the active window (owner 2026-10-08). One global handler:
+// a modal on top closes first (last opened); otherwise the frontmost open
+// draggable window by z-order. A focused text field gets blurred on the
+// first press instead (its own Escape handlers -- rename fields, chat --
+// still run), the next press closes the window. Nothing open: SystemView /
+// GalaxyFlightView keep their Escape (cancel autopilot) behaviour.
+const EscapeCloser = () => {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) {
+        el.blur();
+        return;
+      }
+      const st = useGameStore.getState();
+      let target = openModalStack.length ? openModalStack[openModalStack.length - 1] : null;
+      if (!target) {
+        let topZ = -1;
+        for (const [id, w] of Object.entries(st.windows || {})) {
+          if (!w?.open || w.minimized) continue;
+          const z = st.windowZIndex?.[id] || 0;
+          if (z > topZ) { target = id; topZ = z; }
+        }
+      }
+      if (!target) return; // nothing open: let the views' own Escape (cancel autopilot) run
+      st.closeWindow(target);
+      e.stopPropagation(); // this press closed a window; it is not also an autopilot cancel
+    };
+    // Capture phase: runs before the views' bubble-phase listeners on window.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+  return null;
+};
+
 const DockedBodyPresenceBridge = () => {
   const dockedBodyDbId = useGameStore(s => s.dockedBodyDbId);
   useEffect(() => {
@@ -693,6 +732,10 @@ const ContractsPoller = () => {
           setActiveContracts?.(all.filter(c => c.status === 'active'));
         })
         .catch(() => {});
+      // Quests completed server-side (contracts, bases, signals) have no
+      // client hook; this refetch surfaces them (toast via the diff in
+      // fetchQuests) on the same cadence as contracts.
+      useGameStore.getState().fetchQuests?.();
     };
     fetchOnce();
     const t = setInterval(fetchOnce, 60_000);
@@ -727,6 +770,7 @@ export const GameFrame = ({ children }) => {
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#030610' }}>
       <DockedBodyPresenceBridge />
+      <EscapeCloser />
       <TradeBootstrap />
       <MailUnreadPoller />
       <ContractsPoller />

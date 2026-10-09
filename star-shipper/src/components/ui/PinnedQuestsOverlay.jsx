@@ -20,6 +20,7 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { resourcesAPI } from '@/utils/api';
 
 const EDGE = '#1a3050';
 const GOLD = { pri: '#f59e0b', light: '#fbbf24' };
@@ -59,8 +60,27 @@ export const PinnedQuestsOverlay = () => {
     const t = setInterval(() => tick(n => n + 1), 30_000);
     return () => clearInterval(t);
   }, [contracts.length]);
+  // Tracked recipes (2026-10-08): have/need per ingredient from the fleet
+  // hold, polled while anything is tracked (10 s; cheap, same endpoint the
+  // Cargo window polls at 5 s).
+  const recipes = useGameStore(state => state.pinnedRecipes) || [];
+  const unpinRecipe = useGameStore(state => state.unpinRecipe);
+  const [have, setHave] = useState({});
+  useEffect(() => {
+    if (!recipes.length) return undefined;
+    let cancelled = false;
+    const poll = () => resourcesAPI.getInventory().then(d => {
+      if (cancelled) return;
+      const totals = {};
+      for (const r of (d?.inventory || [])) totals[r.resource_name] = (totals[r.resource_name] || 0) + (r.stacks || []).reduce((a, st) => a + (Number(st.quantity) || 0), 0);
+      setHave(totals);
+    }).catch(() => {});
+    poll();
+    const t = setInterval(poll, 10_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [recipes.length]);
 
-  if (pinned.length === 0 && contracts.length === 0) return null;
+  if (pinned.length === 0 && contracts.length === 0 && recipes.length === 0) return null;
 
   return (
     <>
@@ -80,23 +100,28 @@ export const PinnedQuestsOverlay = () => {
       <div
         className="fixed z-20"
         style={{
-          // Below the fleet status readout (top:38). The activity ticker
-          // that used to sit at top:100 now lives in the chat panel's
-          // Events tab (2026-09-24), so the tiles take its slot.
-          top: 100,
-          left: '50%',
-          transform: 'translateX(-50%)',
+          // TOP-RIGHT (owner 2026-10-08): the centre stack sat under the
+          // menu windows at smaller resolutions, exactly when the pilot
+          // needs the quest text while working a window. Under the top
+          // bar, clear of the fleet readout (top-centre) and the chat
+          // panel (bottom-right). The trade-invite toast shares this
+          // corner briefly and sits above.
+          top: 70,
+          right: 12,
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
           pointerEvents: 'none', // tiles re-enable individually
-          maxWidth: '90vw',
+          width: 'min(340px, calc(100vw - 24px))',
+          maxHeight: 'calc(100vh - 140px)',
+          overflowY: 'auto',
         }}
       >
         {pinned.map(q => (
           <PinnedTile key={q.quest_id} quest={q} onUnpin={() => pinQuest(q.quest_id, false)} />
         ))}
         {contracts.map(c => <ContractTile key={c.id} contract={c} />)}
+        {recipes.map(r => <RecipeTile key={r.id} recipe={r} have={have} onUnpin={() => unpinRecipe(r.id)} />)}
       </div>
     </>
   );
@@ -112,7 +137,7 @@ const ContractTile = ({ contract: c }) => {
   return (
     <div style={{
       pointerEvents: 'auto', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 14px',
-      minWidth: 360, maxWidth: 520, background: 'rgba(8,14,28,0.92)',
+      width: '100%', background: 'rgba(8,14,28,0.92)', boxSizing: 'border-box',
       border: `1px solid ${accent.pri}55`, borderLeft: `3px solid ${accent.pri}`, borderRadius: 3, backdropFilter: 'blur(4px)',
     }}>
       <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>{isFetch ? '⛏' : isBounty ? '🎯' : '📦'}</div>
@@ -135,6 +160,45 @@ const ContractTile = ({ contract: c }) => {
   );
 };
 
+// Tracked recipe: one row per ingredient, have/need from the fleet hold.
+// Green when covered, amber while short; the header turns green when the
+// whole recipe is covered. Unpin with ✕ (or Untrack in the Crafting window).
+const RecipeTile = ({ recipe, have, onUnpin }) => {
+  const rows = (recipe.ingredients || []).map(g => ({ ...g, have: have[g.resource_name] || 0 }));
+  const ready = rows.length > 0 && rows.every(r => r.have >= r.quantity);
+  const accent = ready ? { pri: '#22c55e', light: '#4ade80' } : { pri: '#a855f7', light: '#c084fc' };
+  return (
+    <div style={{
+      pointerEvents: 'auto', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 14px',
+      width: '100%', boxSizing: 'border-box', background: 'rgba(8,14,28,0.92)',
+      border: `1px solid ${accent.pri}55`, borderLeft: `3px solid ${accent.pri}`, borderRadius: 3, backdropFilter: 'blur(4px)',
+    }}>
+      <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>⚒</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, color: accent.light, letterSpacing: 0.5 }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{recipe.name}</span>
+          <span style={{ fontSize: '0.5rem', fontFamily: FM, fontWeight: 700, color: accent.pri, opacity: 0.65, letterSpacing: 1.2, flexShrink: 0 }}>{ready ? 'READY TO CRAFT' : 'RECIPE'}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', columnGap: 10, rowGap: 1, marginTop: 3, fontFamily: FM, fontSize: '0.75rem' }}>
+          {rows.map(r => {
+            const ok = r.have >= r.quantity;
+            return (
+              <React.Fragment key={r.resource_name}>
+                <span style={{ color: ok ? '#86efac' : '#c9d4e2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.resource_name}</span>
+                <span style={{ color: ok ? '#4ade80' : '#fbbf24', textAlign: 'right' }}>{Math.min(r.have, r.quantity)}/{r.quantity}{ok ? ' ✓' : ` · need ${r.quantity - r.have}`}</span>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+      <button onClick={onUnpin} title="Stop tracking this recipe"
+        style={{ background: 'transparent', border: `1px solid ${EDGE}`, color: '#5a6a7a', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 2, fontSize: '0.8rem', fontFamily: F, lineHeight: 1, flexShrink: 0, marginTop: 1 }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = '#a04040'; e.currentTarget.style.borderColor = '#5a3030'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = '#5a6a7a'; e.currentTarget.style.borderColor = EDGE; }}>✕</button>
+    </div>
+  );
+};
+
 const PinnedTile = ({ quest, onUnpin }) => {
   const accent = accentFor(quest.category);
   return (
@@ -145,8 +209,8 @@ const PinnedTile = ({ quest, onUnpin }) => {
         alignItems: 'flex-start',
         gap: 10,
         padding: '8px 14px',
-        minWidth: 360,
-        maxWidth: 520,
+        width: '100%',
+        boxSizing: 'border-box',
         background: 'rgba(8,14,28,0.92)',
         border: `1px solid ${accent.pri}55`,
         borderLeft: `3px solid ${accent.pri}`,

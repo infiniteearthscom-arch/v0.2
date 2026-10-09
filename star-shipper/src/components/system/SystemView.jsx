@@ -42,6 +42,12 @@ import { useTooltip } from '@/components/ui/TooltipProvider';
 import { PlanetInteractionWindow } from './PlanetInteractionWindow';
 import presence from '@/utils/presence';
 
+// World clock epoch for orbital time (2026-10-08): 2026-01-01T00:00:00Z.
+// Keeps the shared time small (tens of millions of seconds) so angle maths
+// stays precise. Changing it re-rolls where every orbiting body sits.
+const WORLD_EPOCH_MS = Date.UTC(2026, 0, 1);
+const worldSeconds = () => (Date.now() + presence.getServerOffsetMs() - WORLD_EPOCH_MS) / 1000;
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -2814,8 +2820,16 @@ export const SystemView = () => {
       lastTime = currentTime;
       frameNum++;
       
-      // Use same time calculation as rendering: frameNum / 60
-      const gameTime = frameNum / 60;
+      // WORLD CLOCK (2026-10-08). Orbital time is wall-clock seconds since
+      // a fixed epoch plus the server clock offset -- the SAME number on
+      // every pilot's machine, so everyone's planets, moons and comets sit
+      // on the same orbital angle and a friend docked at Earth is drawn AT
+      // Earth. It used to be frameNum / 60: seconds since THIS page loaded
+      // (and 2x fast on a 120 Hz display), so each pilot had a private
+      // solar system. Physics still uses `delta`; this is only "where is
+      // everything in orbit". Every consumer takes differences or
+      // fractions, so the large value is harmless.
+      const gameTime = worldSeconds();
       gameTimeRef.current = gameTime; // Sync to ref for rendering
       
       // Read physics from ref (may change when active ship changes)
@@ -2916,8 +2930,8 @@ export const SystemView = () => {
           const estimatedSecondsToArrival = currentDistance / avgSpeed;
           const estimatedFramesToArrival = estimatedSecondsToArrival * 60; // Convert to frames
           
-          // Predict future position (use frame-based time like rendering does)
-          const futureTime = (frameNum + estimatedFramesToArrival * 0.7) / 60; // 70% prediction
+          // Predict future position on the shared world clock (70% prediction)
+          const futureTime = gameTime + (estimatedFramesToArrival * 0.7) / 60;
           let targetPos = bodyPositionAt(targetBody, futureTime, currentSystemRef.current.bodies);
           
           // When close, switch to tracking current position (not predicted)
@@ -4779,7 +4793,16 @@ export const SystemView = () => {
 
   // Keyboard input
   useEffect(() => {
+    // Typing in a text field (galaxy map search, chat, rename boxes) is
+    // not flying: W/A/S/D there used to register as thrust, which also
+    // UNDOCKED the fleet (owner 2026-10-08: "clicking the galaxy map
+    // detaches you from being docked" -- the search box took focus).
+    const inTextField = (e) => {
+      const el = e.target;
+      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+    };
     const handleKeyDown = (e) => {
+      if (inTextField(e)) return;
       const key = e.key.toLowerCase();
       keysPressed.current.add(key);
 
@@ -4791,9 +4814,14 @@ export const SystemView = () => {
         startLoop('fleet_engine');
       }
 
-      // Cancel autopilot on Escape
+      // Cancel autopilot on Escape -- but NOT while docked: the docked
+      // fleet's autopilot target IS the dock, and clearing it drops the
+      // loop into manual mode, which undocks (owner 2026-10-08: "escape
+      // closes the planet window but that also detaches you").
+      // GameFrame's EscapeCloser stops the event when it closed a window,
+      // so this only sees presses with nothing open.
       if (key === 'escape') {
-        cancelAutopilot();
+        if (!dockedBodyRef.current) cancelAutopilot();
       }
 
       // Cancel autopilot on manual movement keys
@@ -4842,7 +4870,7 @@ export const SystemView = () => {
     
     const handleKeyUp = (e) => {
       const key = e.key.toLowerCase();
-      keysPressed.current.delete(key);
+      keysPressed.current.delete(key); // always clear, even from a text field (a key held into a focus change)
       // Counterpart to the engine startLoop in handleKeyDown. Stops the
       // ambient when the player releases the gas. (Window blur isn't
       // handled here -- if the user alt-tabs while holding W, keyup

@@ -12,19 +12,21 @@ const diagMix = (c = 10) => `polygon(${c}px 0, 100% 0, 100% calc(100% - ${c}px),
 // the near-fullscreen default. Omit height to fit the content's height
 // (capped to the viewport). Big screens (Ship Builder, Galaxy Map, Planet)
 // omit both and keep the fullscreen frame.
+// Open modals, oldest first. GameFrame's EscapeCloser closes the LAST one
+// on Escape (owner 2026-10-08: "Escape should close the active window
+// always"). Modals used to each listen for Escape themselves, so one press
+// closed every open modal at once.
+export const openModalStack = [];
+
 export const ModalOverlay = ({ windowId, title, icon, accent = '#ff6622', width, height, children }) => {
   const isOpen = useGameStore(state => state.windows[windowId]?.open && !state.windows[windowId]?.minimized);
   const closeWindow = useGameStore(state => state.closeWindow);
 
-  // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
-    const handleKey = (e) => {
-      if (e.key === 'Escape') closeWindow(windowId);
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [isOpen, windowId, closeWindow]);
+    openModalStack.push(windowId);
+    return () => { const i = openModalStack.lastIndexOf(windowId); if (i >= 0) openModalStack.splice(i, 1); };
+  }, [isOpen, windowId]);
 
   if (!isOpen) return null;
 

@@ -51,13 +51,13 @@ These have all caused real bugs. Don't relearn them:
 
 4. **Galaxy-map vs galaxy-flight visual constants are calibrated as a pair.** Map uses small `STAR_SIZES` (4–9) at zoom ~0.58; flight view uses large ones (12–36) at zoom ~2.0. Touching one without the other will desync them. Same for window dimensions and viewBox in `GalaxyFlightView` — tuned together, change together.
 
-5. **Time source must be shared.** Physics writes `gameTimeRef.current = frameNum / 60`; rendering reads the same ref. Never use React `frameCount` state for time — batching makes it lag and planet positions desync between physics and visuals.
+5. **Time source must be shared — and it is the WORLD clock.** The loop writes `gameTimeRef.current = worldSeconds()` (wall clock + presence server offset − `WORLD_EPOCH_MS`, 2026-10-08); rendering, SystemMapWindow (via `store.gameTime`), autopilot intercept and orbit lock read the same number, so every pilot sees every orbiting body at the same angle. It used to be `frameNum / 60` — seconds since page load, private per pilot (two pilots docked at Earth saw each other on different parts of the orbit) and 2× fast on 120 Hz displays. Never use React `frameCount` state for time, and never go back to a per-session counter. Physics keeps using the frame `delta`; game-time consumers must only take differences or fractions (the absolute value is large).
 
 6. **Refs vs state.** Position, velocity, rotation, trails → refs. Window state, UI toggles, docked body → React state. Mixing causes lag (state for physics) or invisible updates (refs for UI).
 
 7. **`useEffect([], [])` closure staleness** — the game loop captures initial values. Anything derived from active-ship stats must be read from `shipPhysicsRef.current` each frame, not from closure scope.
 
-8. **Migrations: no `CREATE EXTENSION`** — DO dev DB blocks it. Use `gen_random_uuid()` (built into PG 18), not `uuid_generate_v4()`. **Migration 009 was skipped.** Highest authored is `096_flight_school.sql` — next new migration is `097`. **Every deploy that includes a migration needs `npm run db:migrate` from the DO console, then `npm run db:verify`** — 064/065 sat unapplied for two months and 068 for two weeks because that step was skipped.
+8. **Migrations: no `CREATE EXTENSION`** — DO dev DB blocks it. Use `gen_random_uuid()` (built into PG 18), not `uuid_generate_v4()`. **Migration 009 was skipped.** Highest authored is `098_sol_belt_radius.sql` — next new migration is `099`. **Every deploy that includes a migration needs `npm run db:migrate` from the DO console, then `npm run db:verify`** — 064/065 sat unapplied for two months and 068 for two weeks because that step was skipped.
 
 9. **`api.js` must use `VITE_API_URL`** — never hardcode `localhost:3001`. The localhost fallback in `api.js` is dead-code only (no local dev). The env var is baked into the bundle at build time, so changing it in DO requires a rebuild (push a commit or Force Rebuild — redeploy alone won't update the client).
 

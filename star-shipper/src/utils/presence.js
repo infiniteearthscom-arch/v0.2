@@ -85,6 +85,21 @@ let listenersBound = false;       // ensure we only attach socket handlers once 
 
 const peers = new Map();          // userId -> peerState
 
+// Server clock offset (ms), server - client, smoothed from the server
+// stamps on presence packets. SystemView's world clock adds it so every
+// pilot's planets sit on the same orbital angle regardless of local
+// clock skew (2026-10-08: two pilots docked at Earth saw each other on
+// different parts of the orbit). Zero until the first stamped packet.
+let serverOffsetMs = 0;
+let serverOffsetSamples = 0;
+function noteServerTs(serverTs, recvNow) {
+  if (typeof serverTs !== 'number' || !Number.isFinite(serverTs)) return;
+  const sample = serverTs - recvNow;
+  serverOffsetSamples++;
+  serverOffsetMs = serverOffsetSamples === 1 ? sample : serverOffsetMs + (sample - serverOffsetMs) * 0.1;
+}
+export function getServerOffsetMs() { return serverOffsetMs; }
+
 // Roster stats (Step 2). Server pushes 'presence:stats' on every
 // roster change. by_system only includes non-empty systems; consumers
 // MUST treat the broadcast as a full replacement, not a merge, so a
@@ -215,6 +230,7 @@ function ensureListenersBound() {
 
   socketBus.onSocketEvent('presence:peers', ({ peers: updates }) => {
     const recvNow = Date.now();
+    for (const u of updates || []) noteServerTs(u.ts, recvNow); // server stamps each entry
     for (const u of updates || []) {
       const p = peers.get(u.user_id);
       if (!p) continue;
@@ -497,5 +513,5 @@ if (typeof window !== 'undefined' && ENABLED) {
 
 export default {
   enterSystem, leaveSystem, sendPos, getPeers, getRenderState, getOnlineStats,
-  dockAtBody, undockFromBody, getDockedPilots, bumpShipVisual, on, isEnabled,
+  dockAtBody, undockFromBody, getDockedPilots, bumpShipVisual, on, isEnabled, getServerOffsetMs,
 };

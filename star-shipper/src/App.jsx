@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Starfield } from '@/components/ui/Starfield';
 import { GameFrame } from '@/components/ui/GameFrame';
 import { ShipBuilderWindow } from '@/components/ship/ShipBuilderWindow';
@@ -92,6 +92,55 @@ const QuestToast = () => {
 // ============================================
 // APP
 // ============================================
+// One-time commander rename (097), shown on the launch screen while the
+// server says it is still available. Same rules as registration; the
+// server is the authority (uniqueness, once-only) and returns a fresh JWT.
+const NameChangeOffer = () => {
+  const user = useAuthStore(state => state.user);
+  const renameUser = useAuthStore(state => state.renameUser);
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!user?.nameChangeAvailable) return null;
+  if (!open) {
+    return (
+      <button onClick={() => { setValue(user.username || ''); setErr(''); setOpen(true); }}
+        className="text-xs text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2">
+        Not happy with "{user.username}"? Change your commander name (one time only)
+      </button>
+    );
+  }
+  const submit = async (e) => {
+    e.preventDefault();
+    const name = value.trim();
+    if (name.length < 3 || name.length > 32) { setErr('3-32 characters'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(name)) { setErr('Letters, numbers and underscores only'); return; }
+    if (!window.confirm(`Change your commander name to "${name}"? This can only be done once.`)) return;
+    setBusy(true); setErr('');
+    const r = await renameUser(name);
+    setBusy(false);
+    if (r.success) setOpen(false); else setErr(r.error || 'Failed');
+  };
+  return (
+    <form onSubmit={submit} className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-2">
+        <input autoFocus value={value} onChange={e => setValue(e.target.value)} maxLength={32} disabled={busy}
+          className="px-3 py-1.5 rounded bg-slate-900/80 border border-cyan-500/30 text-cyan-100 text-sm w-56 focus:outline-none focus:border-cyan-400"
+          placeholder="New commander name" />
+        <button type="submit" disabled={busy}
+          className="px-3 py-1.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-100 text-sm hover:bg-cyan-500/30 disabled:opacity-50">
+          {busy ? 'Saving…' : 'Confirm'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} disabled={busy}
+          className="px-2 py-1.5 rounded border border-slate-600/40 text-slate-400 text-sm hover:text-slate-200">Cancel</button>
+      </div>
+      <div className="text-[0.7rem] text-slate-500">3-32 characters, letters / numbers / underscore. One change per account.</div>
+      {err && <div className="text-xs text-red-400">{err}</div>}
+    </form>
+  );
+};
+
 function App() {
   const windows = useGameStore(state => state.windows);
   const gameStarted = useGameStore(state => state.gameStarted);
@@ -176,7 +225,8 @@ function App() {
             STAR SHIPPER
           </h1>
           <p className="text-xl text-blue-400/70 mb-3">Build ships. Explore systems. Build an empire.</p>
-          <p className="text-sm text-blue-400/40 mb-12">Welcome back, Commander {user?.displayName || user?.username}</p>
+          <p className="text-sm text-blue-400/40 mb-3">Welcome back, Commander {user?.username}</p>
+          <div className="mb-10 min-h-[32px]"><NameChangeOffer /></div>
           <button
             onClick={() => { startGame(); openWindow('questLog'); }}
             className="px-8 py-4 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-100 text-xl font-medium hover:bg-blue-500/30 hover:border-blue-400/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-blue-500/20"

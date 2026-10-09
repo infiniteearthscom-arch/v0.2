@@ -77,6 +77,14 @@ export const authAPI = {
     return data;
   },
 
+  // One-time commander rename (097). Stores the fresh token the server
+  // issues (the JWT carries the username).
+  rename: async (username) => {
+    const data = await request('/auth/rename', { method: 'POST', body: JSON.stringify({ username }) });
+    if (data?.token) setToken(data.token);
+    return data;
+  },
+
   getMe: async () => {
     return request('/auth/me');
   },

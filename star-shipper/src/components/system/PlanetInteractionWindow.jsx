@@ -2280,7 +2280,11 @@ const VendorTab = ({ body }) => {
       if (result.success) {
         flash('success', `Bought ${result.module}`);
         if (itemId === 'starter_kit') {
-          completeQuest('tutorial_buy_starter_kit');
+          // The server completes Gear Up inside the claim transaction and
+          // returns it; sync + refetch (no second /complete round-trip).
+          const st = useGameStore.getState();
+          if (result.quest && st.applyServerQuest) st.applyServerQuest(result.quest);
+          else completeQuest('tutorial_buy_starter_kit');
         }
       }
     } catch (err) {
@@ -3891,7 +3895,7 @@ export const PlanetInteractionWindow = ({ body }) => {
       className="fixed z-30"
       style={{
         top: 46,
-        left: toolbarExpanded ? 178 : 56,
+        left: toolbarExpanded ? 194 : 72, // mirrors ContextPanel.jsx (toolbar + chevron)
         bottom: 44,
         // 720 chosen so the Harvesters tab can split into a ~470px
         // slot column on the left + the 220px cargo pane on the right

@@ -53,6 +53,18 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
+  // One-time commander rename (097). Offered on the launch screen before
+  // the game (and its socket) starts, so nothing in-game holds the old name.
+  renameUser: async (username) => {
+    try {
+      const data = await authAPI.rename(username);
+      if (data?.user) set({ user: data.user });
+      return { success: true, user: data?.user };
+    } catch (error) {
+      return { success: false, error: error?.message || 'Failed to change name' };
+    }
+  },
+
   // Register with email/password
   register: async (username, email, password) => {
     set({ error: null, isLoading: true });

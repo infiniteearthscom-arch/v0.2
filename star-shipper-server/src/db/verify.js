@@ -217,6 +217,15 @@ async function main() {
   const bref = await pool.query(`SELECT buy_price, requires_tech FROM module_types WHERE id = 'base_refinery'`);
   report('base_refinery is craft-only + gated by tech_refining (086)', bref.rows[0]?.buy_price == null && bref.rows[0]?.requires_tech === 'tech_refining');
 
+  // --- migration 098 (Sol belt radius) ---
+  const solBelt = await pool.query(`SELECT orbit_radius, size FROM celestial_bodies WHERE id = '00000000-0000-0000-0001-000000000006'`);
+  report('Sol asteroid belt row at radius 1500 / size 250 (098)', Number(solBelt.rows[0]?.orbit_radius) === 1500 && Number(solBelt.rows[0]?.size) === 250, JSON.stringify(solBelt.rows[0]));
+  const solRocks = await pool.query(`SELECT COUNT(*)::int AS n FROM asteroids WHERE belt_body_id = '00000000-0000-0000-0001-000000000006' AND sqrt(x*x + y*y) NOT BETWEEN 1300 AND 1700`);
+  report('Sol asteroids inside the drawn belt ring (098)', solRocks.rows[0].n === 0, `${solRocks.rows[0].n} outside 1300-1700`);
+
+  // --- migration 097 (one-time rename) ---
+  report('users.name_changed_at (097)', await columnExists('users', 'name_changed_at'));
+
   // --- migration 096 (flight school) ---
   const fsq = await pool.query(`SELECT COUNT(*)::int AS n FROM quest_definitions WHERE id IN ('tutorial_first_light','tutorial_eyes_open','tutorial_queue_skill')`);
   report('flight-school quests (096)', fsq.rows[0].n === 3, `${fsq.rows[0].n}/3`);

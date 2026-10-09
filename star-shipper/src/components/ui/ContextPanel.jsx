@@ -12,11 +12,13 @@ export const ContextPanel = ({ windowId, title, icon, accent = '#60a5fa', width 
   const isOpen = useGameStore(state => state.windows[windowId]?.open && !state.windows[windowId]?.minimized);
   const closeWindow = useGameStore(state => state.closeWindow);
   // Shift the panel right when the left toolbar shows labels. Numbers
-  // mirror TOOLBAR_WIDTH_{COLLAPSED,EXPANDED} in GameFrame.jsx -- 56 =
-  // toolbar (38) + left gutter (6) + small gap (12); 178 = expanded
-  // toolbar (160) + same gutters.
+  // mirror TOOLBAR_WIDTH_{COLLAPSED,EXPANDED} in GameFrame.jsx -- 72 =
+  // left gutter (6) + toolbar (38) + chevron (4 gap + 18) + small gap (6);
+  // 194 = the same with the expanded toolbar (160). The chevron sits
+  // fully outside the button column since 2026-10-08. PlanetInteractionWindow
+  // mirrors these two numbers.
   const toolbarExpanded = useGameStore(state => state.toolbarExpanded ?? true);
-  const leftAnchor = toolbarExpanded ? 178 : 56;
+  const leftAnchor = toolbarExpanded ? 194 : 72;
 
   if (!isOpen) return null;
 
