@@ -255,7 +255,23 @@ router.get('/here', async (req, res) => {
     const allBase = await queryAll(`SELECT id, name, tier, description, stats, requires_tech, buy_price FROM module_types WHERE slot_type = $1 ORDER BY tier, name`, [BASE_SLOT_TYPE]);
     const inCargo = {};
     for (const m of cargoMods) inCargo[m.item_id] = (inCargo[m.item_id] || 0) + 1;
-    const buildables = allBase.map(m => ({ id: m.id, name: m.name, tier: m.tier, description: m.description, stats: m.stats, requires_tech: m.requires_tech, unlocked: !m.requires_tech || techs.has(m.requires_tech), buy_price: m.buy_price, in_cargo: inCargo[m.id] || 0, foundry: m.stats?.foundry || null }));
+    // Build recipe + research name per building (2026-10-09): the console's
+    // station tree shows the ingredients with have/need, a TRACK button and
+    // a research link, like any other crafted item.
+    const baseRecipes = await queryAll(`SELECT id, output_item_id, ingredients, station_required FROM crafting_recipes WHERE output_item_id LIKE 'base_%'`);
+    const recipeByOut = Object.fromEntries(baseRecipes.map(r => [r.output_item_id, r]));
+    const techIds = [...new Set(allBase.map(m => m.requires_tech).filter(Boolean))];
+    const techRows = techIds.length ? await queryAll(`SELECT id, name FROM tech_definitions WHERE id = ANY($1::text[])`, [techIds]) : [];
+    const techName = Object.fromEntries(techRows.map(t => [t.id, t.name]));
+    const buildables = allBase.map(m => ({
+      id: m.id, name: m.name, tier: m.tier, description: m.description, stats: m.stats,
+      requires_tech: m.requires_tech, tech_name: m.requires_tech ? (techName[m.requires_tech] || m.requires_tech) : null,
+      unlocked: !m.requires_tech || techs.has(m.requires_tech), buy_price: m.buy_price, in_cargo: inCargo[m.id] || 0,
+      foundry: m.stats?.foundry || null,
+      recipe_id: recipeByOut[m.id]?.id || null,
+      ingredients: recipeByOut[m.id]?.ingredients || [],
+      station_required: recipeByOut[m.id]?.station_required || null,
+    }));
     res.json({
       buildables,
       body: { id: body.id, name: body.name, body_type: body.body_type, planet_type: body.planet_type, system_procedural_id: body.procedural_id, system_name: body.system_name },

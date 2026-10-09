@@ -22,6 +22,121 @@ import { PixelItemIcon, moduleIconSpec, resourceIconSpecByName } from '@/compone
 import { RefineryPanel } from '@/components/refinery/RefineryPanel';
 import { TrackButton } from '@/components/ui/TrackButton';
 import { ingredientsFromMap } from '@/utils/tracking';
+import { QuestText } from '@/components/ui/QuestText';
+
+// Station tree (owner 2026-10-09): families as rows, tiers as columns, so
+// the build progression reads left to right. Services sit under the tree.
+const TREE_FAMILIES = [
+  ['smelting', 'Smelting'], ['gas', 'Gas Works'], ['bio', 'Biolab'], ['electronics', 'Electronics'], ['assembly', 'Assembly'],
+];
+const TREE_TIERS = [1, 2, 3, 4, 5];
+
+// One building's full card: research link, build ingredients with
+// have/need from the base hold + fleet hold, TRACK, CRAFT.
+const BuildableCard = ({ b, base, foundry, tiers, goResearch, goCraft }) => {
+  const ft = b.foundry?.tier || b.tier || 0;
+  const tierOk = ft <= base.tier;
+  const color = b.foundry ? familyColor(b.foundry.family) : '#94a3b8';
+  const rows = (b.ingredients || []).map(g => ({ ...g, have: foundry?.materials?.[g.resource_name]?.quantity || 0 }));
+  const ready = rows.length > 0 && rows.every(r => r.have >= r.quantity);
+  return (
+    <Card accent={color} title={`${b.name.toUpperCase()} · T${b.tier}`}>
+      <div style={{ color: '#a8b4c5', fontSize: '0.76rem', lineHeight: 1.35 }}>{b.description}</div>
+      {!b.unlocked && b.requires_tech && (
+        <div style={{ marginTop: 6, fontSize: '0.78rem', color: '#fbbf24' }}>
+          🔒 Research <QuestText text={`[[tech:${b.requires_tech}|${b.tech_name || b.requires_tech}]]`} />
+        </div>
+      )}
+      {b.unlocked && !tierOk && <div style={{ marginTop: 6, fontSize: '0.74rem', color: '#f87171', fontFamily: FM }}>needs a {tiers?.[ft]?.name || `tier ${ft}`} base (this one is {tiers?.[base.tier]?.name || `tier ${base.tier}`})</div>}
+      {rows.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', columnGap: 10, rowGap: 1, marginTop: 6, fontFamily: FM, fontSize: '0.74rem' }}>
+          <span style={{ color: '#5a7080', letterSpacing: 1, fontSize: '0.62rem' }}>TO BUILD{b.station_required ? ` · AT ${String(b.station_required).replace(/^base_/, '').replace(/_/g, ' ').toUpperCase()}` : ''}</span>
+          <span style={{ color: ready ? '#4ade80' : '#5a7080', textAlign: 'right', fontSize: '0.62rem', letterSpacing: 1 }}>{ready ? 'READY' : 'HAVE / NEED'}</span>
+          {rows.map(r => {
+            const ok = r.have >= r.quantity;
+            return (
+              <React.Fragment key={r.resource_name}>
+                <span style={{ color: ok ? '#86efac' : '#c9d4e2' }}>{r.resource_name}</span>
+                <span style={{ color: ok ? '#4ade80' : '#fbbf24', textAlign: 'right' }}>{Math.min(r.have, r.quantity)}/{r.quantity}{ok ? ' ✓' : ` · need ${r.quantity - r.have}`}</span>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {b.unlocked && <Btn small accent="#c084fc" onClick={() => goCraft(b.recipe_id || `craft_${b.id}`)}>⚒ CRAFT</Btn>}
+        {rows.length > 0 && <TrackButton small item={{ kind: 'building', id: b.id, name: b.name, ingredients: rows.map(r => ({ resource_name: r.resource_name, quantity: r.quantity })) }} />}
+        {b.in_cargo > 0 && <span style={{ color: '#4ade80', fontSize: '0.7rem', fontFamily: FM }}>{b.in_cargo} in cargo</span>}
+        {b.buy_price && <span style={{ color: '#5a7080', fontSize: '0.7rem', fontFamily: FM }}>vendor {fmt(b.buy_price)} cr</span>}
+      </div>
+    </Card>
+  );
+};
+
+const StationTree = ({ buildables, base, foundry, tiers, goResearch, goCraft }) => {
+  const [pick, setPick] = useState(null);
+  const stations = buildables.filter(b => b.foundry);
+  const services = buildables.filter(b => !b.foundry);
+  const at = (family, tier) => stations.find(b => b.foundry.family === family && b.foundry.tier === tier);
+  const selected = buildables.find(b => b.id === pick) || null;
+  const chipStyle = (b) => {
+    const c = b.foundry ? familyColor(b.foundry.family) : '#94a3b8';
+    const on = pick === b.id;
+    const tierOk = (b.foundry?.tier || b.tier) <= base.tier;
+    return {
+      flex: 1, minWidth: 0, padding: '3px 5px', borderRadius: 3, cursor: 'pointer', textAlign: 'left',
+      background: on ? `${c}33` : b.unlocked ? `${c}12` : 'transparent',
+      border: `1px solid ${on ? c : b.unlocked ? `${c}66` : `${EDGE}`}`,
+      color: b.unlocked ? (tierOk ? '#e2e8f0' : '#8fa3b8') : '#5a7080',
+      fontSize: '0.68rem', fontFamily: F, fontWeight: 700, lineHeight: 1.15,
+      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    };
+  };
+  return (
+    <>
+      <Card title="FOUNDRY STATIONS · BUILD TREE">
+        <div style={{ color: '#5a7080', fontSize: '0.7rem', marginBottom: 6 }}>Rows are families, columns are tiers: each station is built from what the column to its left makes. Click one for its recipe.</div>
+        {/* Tier header row with dividers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(5, 1fr)', gap: 4, alignItems: 'center', marginBottom: 2 }}>
+          <span />
+          {TREE_TIERS.map(t => (
+            <div key={t} style={{ textAlign: 'center', fontFamily: FM, fontSize: '0.62rem', letterSpacing: 1, color: t <= base.tier ? GOLD.light : '#4a5a6a', borderBottom: `1px solid ${t <= base.tier ? GOLD.pri + '66' : EDGE}`, paddingBottom: 2 }}>
+              T{t}{tiers?.[t]?.name ? ` · ${tiers[t].name.toUpperCase()}` : ''}
+            </div>
+          ))}
+        </div>
+        {TREE_FAMILIES.map(([fam, label]) => (
+          <div key={fam} style={{ display: 'grid', gridTemplateColumns: '72px repeat(5, 1fr)', gap: 4, alignItems: 'center', padding: '3px 0', borderTop: `1px solid ${EDGE}44` }}>
+            <span style={{ color: familyColor(fam), fontSize: '0.66rem', fontFamily: FM, letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label.toUpperCase()}</span>
+            {TREE_TIERS.map(t => {
+              const b = at(fam, t);
+              if (!b) return <span key={t} style={{ textAlign: 'center', color: '#2a3a4a' }}>·</span>;
+              const built = Object.values(base.modules || {}).some(m => m.module_type_id === b.id);
+              return (
+                <button key={b.id} style={chipStyle(b)} onClick={() => setPick(pick === b.id ? null : b.id)}
+                  title={`${b.name}${b.unlocked ? '' : ' · research needed'}${built ? ' · built here' : ''}`}>
+                  {built ? '✓ ' : b.unlocked ? '' : '🔒 '}{b.name}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </Card>
+      {selected && <BuildableCard b={selected} base={base} foundry={foundry} tiers={tiers} goResearch={goResearch} goCraft={goCraft} />}
+      {services.length > 0 && (
+        <Card title="SERVICES">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {services.map(b => (
+              <button key={b.id} style={{ ...chipStyle(b), flex: '0 0 auto', minWidth: 110 }} onClick={() => setPick(pick === b.id ? null : b.id)}>
+                {b.unlocked ? '' : '🔒 '}{b.name} <span style={{ color: '#5a7080', fontWeight: 400 }}>T{b.tier}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+    </>
+  );
+};
 import { paintBaseArt, BASE_ART_W, BASE_ART_H, familyColor } from '@/utils/pixelArt/baseArt';
 
 const F = "'Rajdhani', sans-serif";
@@ -267,7 +382,7 @@ const HopperPanel = ({ base, slot, module, foundry, busy, act, reloadKey }) => {
 };
 
 // ---------------- empty plot: build picker ----------------
-const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, setResearchTargetTech, setCraftingTargetRecipe }) => {
+const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, setResearchTargetTech, setCraftingTargetRecipe, foundry }) => {
   // The console is a full-screen modal; the Research modal and the Crafting
   // panel open BEHIND it. Close the console before deep-linking.
   const goResearch = (techId) => { closeWindow('base'); setResearchTargetTech(techId); openWindow('research'); };
@@ -275,7 +390,6 @@ const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, 
   const areaTier = ((base.areas || []).find(a => (a.slots || []).includes(slot))?.tier) || 1;
   const inCargo = (data.cargo_modules || []);
   const cat = (data.buildables || []);
-  const groups = [['Foundry stations', cat.filter(b => b.foundry)], ['Services', cat.filter(b => !b.foundry)]];
   return (
     <div>
       <Card accent={GOLD.pri} title={`PLOT ${slot.toUpperCase()} · ${(base.areas || []).find(a => a.tier === areaTier)?.name || ''} AREA`}>
@@ -310,30 +424,7 @@ const EmptyPlotPanel = ({ base, slot, data, busy, act, openWindow, closeWindow, 
           );
         })}
       </Card>
-      {groups.map(([title, list]) => list.length > 0 && (
-        <Card key={title} title={title.toUpperCase()}>
-          {list.map(b => {
-            const ft = b.foundry?.tier || 0;
-            const tierOk = ft <= base.tier;
-            const color = b.foundry ? familyColor(b.foundry.family) : '#94a3b8';
-            return (
-              <div key={b.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 0', borderTop: `1px solid ${EDGE}55`, opacity: b.unlocked ? 1 : 0.6 }}>
-                <PixelItemIcon size={24} spec={moduleIconSpec({ itemId: b.id, slotType: 'base', tier: b.tier })} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: color, fontSize: '0.8rem', fontWeight: 700 }}>{b.name} <span style={{ color: '#5a7080', fontFamily: FM, fontSize: '0.7rem' }}>T{b.tier}{b.in_cargo ? ` · ${b.in_cargo} in cargo` : ''}</span></div>
-                  <div style={{ color: '#8fa3b8', fontSize: '0.72rem', lineHeight: 1.3 }}>{b.description}</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                    {!b.unlocked && <Btn small accent="#fbbf24" onClick={() => goResearch(b.requires_tech)}>🔒 RESEARCH</Btn>}
-                    {b.unlocked && !tierOk && <span style={{ color: '#f87171', fontSize: '0.7rem', fontFamily: FM }}>needs a tier {ft} base</span>}
-                    {b.unlocked && <Btn small accent="#c084fc" onClick={() => goCraft(`craft_${b.id}`)}>⚒ CRAFT</Btn>}
-                    {b.buy_price && <span style={{ color: '#5a7080', fontSize: '0.7rem', fontFamily: FM }}>vendor {fmt(b.buy_price)} cr</span>}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
-      ))}
+      <StationTree buildables={cat} base={base} foundry={foundry} tiers={data.tiers} goResearch={goResearch} goCraft={goCraft} />
     </div>
   );
 };
@@ -470,7 +561,9 @@ export const BaseWindow = () => {
       setErr(e.message || 'Base unavailable');
     }
   };
-  useEffect(() => { if (isOpen) load(); }, [isOpen, dockedBody?.id]);
+  // Also reload when the dock registers (dockedBodyDbId arrives a beat after
+  // the window opens when a starbase dock opens the console directly).
+  useEffect(() => { if (isOpen) load(); }, [isOpen, dockedBody?.id, dockedBodyDbId]);
   useEffect(() => { if (!isOpen) return undefined; const t = setInterval(() => { tick(n => n + 1); }, 1000); const p = setInterval(load, 8000); return () => { clearInterval(t); clearInterval(p); }; }, [isOpen]);
 
   const act = async (fn, okText) => {
@@ -625,7 +718,7 @@ export const BaseWindow = () => {
                 </Card>
               )}
               {selected && !selModule && (
-                <EmptyPlotPanel base={base} slot={selected} data={data} busy={busy} act={act} openWindow={openWindow} closeWindow={closeWindow} setResearchTargetTech={setResearchTargetTech} setCraftingTargetRecipe={setCraftingTargetRecipe} />
+                <EmptyPlotPanel base={base} slot={selected} data={data} busy={busy} act={act} openWindow={openWindow} closeWindow={closeWindow} setResearchTargetTech={setResearchTargetTech} setCraftingTargetRecipe={setCraftingTargetRecipe} foundry={foundry} />
               )}
               {selected && selModule && selKind === 'station' && !selModule.stats?.foundry?.hopper && <StationPanel base={base} slot={selected} module={selModule} foundry={foundry} reload={load} busy={busy} act={act} focusMaterial={focusMaterial} onGo={(stationId, material, built) => built ? goToStation(stationId, material) : goCraft(`craft_${stationId}`)} />}
               {selected && selModule && selKind === 'station' && selModule.stats?.foundry?.hopper && <HopperPanel base={base} slot={selected} module={selModule} foundry={foundry} busy={busy} act={act} reloadKey={data} />}

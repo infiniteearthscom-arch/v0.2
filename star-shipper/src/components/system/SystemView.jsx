@@ -1217,6 +1217,9 @@ export const SystemView = () => {
       extra.push({
         id: 'starbase_' + b.id, name: b.name, type: 'station', isStarbase: true, base_id: b.id,
         owner_name: b.owner_name, owner_id: b.owner_id, tier_name: b.tier_name, modules: b.modules,
+        // The planet row the base is anchored to: docking at your OWN starbase
+        // registers as docking at that planet so the base console works there.
+        celestial_body_id: b.celestial_body_id,
         parentBody: parent.id, orbitRadius: (parent.size || 20) + 26 + i * 6, orbitSpeed: 0.03,
         orbitOffset: (h % 628) / 100, size: 8,
       });
@@ -3172,6 +3175,13 @@ export const SystemView = () => {
                     }
                   } else {
                     openContextPanel('planetInteraction');
+                    // Own orbital base (owner 2026-10-09): docking at your
+                    // starbase opens the base console straight away instead
+                    // of making you dock at the planet and find the Base tab.
+                    const me = useAuthStore.getState().user?.id;
+                    if (targetBody.isStarbase && me && targetBody.owner_id === me) {
+                      useGameStore.getState().openWindow?.('base');
+                    }
                   }
                 }, 0);
               }

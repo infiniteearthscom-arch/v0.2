@@ -3726,7 +3726,17 @@ export const PlanetInteractionWindow = ({ body }) => {
     if (!body?.id) { setResolvedBodyId(null); setHasCity(false); return; }
     // Starbases are player structures, not celestial bodies -- never
     // register them server-side.
-    if (body.isStarbase) { setResolvedBodyId(null); setHasCity(false); return; }
+    if (body.isStarbase) {
+      // Your OWN starbase counts as being docked at its planet (2026-10-09),
+      // so presence registers the dock and every /bases endpoint (the
+      // console, depot, foundry) works from orbit. Others' starbases stay
+      // docking-only.
+      const me = useAuthStore.getState().user?.id;
+      const own = !!me && body.owner_id === me && body.celestial_body_id;
+      setResolvedBodyId(own ? body.celestial_body_id : null);
+      setHasCity(false);
+      return;
+    }
 
     if (currentSystemId === 'sol') {
       setResolvedBodyId(body.id);
