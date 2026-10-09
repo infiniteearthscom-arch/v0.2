@@ -35,6 +35,7 @@ import bountyRoutes from './api/bounty.js';
 import mailRoutes from './api/mail.js';
 import combatRoutes from './api/combat.js';
 import { setupSocketIO } from './realtime/socketHandler.js';
+import { authMiddleware } from './auth/index.js';
 
 // ============================================
 // EXPRESS SETUP
@@ -133,6 +134,17 @@ app.get('/api/diag/presence', (req, res) => {
     return res.status(503).json({ error: 'presence module not attached' });
   }
   res.json({ ...p.stats(), now: Date.now() });
+});
+
+// Online roster (owner 2026-10-09): who is online and which system each
+// pilot is in. Authenticated (usernames are public elsewhere, but no need
+// to hand a crawler the live map). Names only -- no positions, no fits.
+app.get('/api/presence/roster', authMiddleware, (req, res) => {
+  const p = io?.presence;
+  if (!p || typeof p.roster !== 'function') {
+    return res.status(503).json({ error: 'presence module not attached' });
+  }
+  res.json({ pilots: p.roster(), now: Date.now() });
 });
 
 // 404 handler

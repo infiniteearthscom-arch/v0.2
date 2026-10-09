@@ -48,3 +48,14 @@ SELECT pq.user_id, 'tutorial_fuel_harvester',
  ) done
  WHERE pq.quest_id = 'tutorial_deploy_harvester' AND pq.status = 'completed'
 ON CONFLICT (user_id, quest_id) DO NOTHING;
+
+-- Set & Forget (owner 2026-10-09, same pass): completes when the harvester
+-- gets a DEPOSIT, not on the drop -- server-side in /harvesters/deploy
+-- (with deposit_id) and /harvesters/assign-deposit. Text says so; Coming
+-- Home reminds the pilot the machine only runs while fueled.
+UPDATE quest_definitions SET
+  description = 'Dock at a planet, open the Auto tab (⚙️), drag your Basic Harvester from cargo onto a free slot, then click the harvester and assign it a deposit. The job is done once it has a deposit to dig -- fuel comes next.'
+WHERE id = 'tutorial_deploy_harvester';
+UPDATE quest_definitions SET
+  description = 'Give the harvester time to fill its hold -- it only runs while it has fuel, so keep a Fuel Cell on it. Then dock at the planet, open the Auto tab (⚙️), and collect the output. Passive income unlocked.'
+WHERE id = 'tutorial_collect_harvester';

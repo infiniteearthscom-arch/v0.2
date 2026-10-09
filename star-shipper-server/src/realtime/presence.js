@@ -557,5 +557,24 @@ export function attachPresence(io) {
     // through a room. We forward updates from the kick + connect
     // paths so the lookup stays in sync.
     getUserSocketId: (userId) => userSockets.get(userId) || null,
+    // Online roster (owner 2026-10-09): every connected pilot with the
+    // system they are in (null = galaxy flight / between systems). Read by
+    // GET /api/presence/roster for the top-bar ONLINE dropdown. Names come
+    // off the socket's auth user, so pilots outside any system room are
+    // listed too. Linear over userSockets -- tens of entries, fine.
+    roster: () => {
+      const out = [];
+      for (const [userId, socketId] of userSockets.entries()) {
+        const sock = io.sockets.sockets.get(socketId);
+        if (!sock) continue;
+        out.push({
+          user_id: userId,
+          name: sock.user?.username || 'pilot',
+          system_id: sock.data?.presence?.systemId || null,
+          docked: !!sock.data?.presence?.bodyId,
+        });
+      }
+      return out;
+    },
   };
 }

@@ -28,6 +28,8 @@ import { CargoTooltipLayer } from '@/components/items/CargoTooltipLayer';
 import { mailAPI } from '@/utils/api';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
+import { presenceAPI } from '@/utils/api';
+import { getSystemName } from '@/components/activity/ActivityTicker';
 
 // ============================================
 // CONSTANTS
@@ -76,6 +78,14 @@ const OnlineRosterIndicator = () => {
   const currentSystemId = useGameStore(s => s.currentSystem);
   const viewMode = useGameStore(s => s.viewMode);
   const [stats, setStats] = useState(() => presence.getOnlineStats());
+  // Roster dropdown (owner 2026-10-09): click the badge for every pilot
+  // online + the system they are in. Fetched on open and re-fetched on
+  // every stats change while open (join / leave / system change).
+  const [open, setOpen] = useState(false);
+  const [roster, setRoster] = useState(null);
+  const [rosterErr, setRosterErr] = useState(null);
+  const myId = useAuthStore(s => s.user?.id);
+  const openProfile = useGameStore(s => s.openProfile);
 
   useEffect(() => {
     if (!presence.isEnabled()) return;
@@ -84,6 +94,17 @@ const OnlineRosterIndicator = () => {
     setStats(presence.getOnlineStats());
     return presence.on('stats_changed', (s) => setStats(s));
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const load = () => presenceAPI.roster()
+      .then(r => { if (alive) { setRoster(r.pilots || []); setRosterErr(null); } })
+      .catch(e => { if (alive) setRosterErr(e?.message || 'Roster unavailable'); });
+    load();
+    const off = presence.on('stats_changed', load);
+    return () => { alive = false; off && off(); };
+  }, [open]);
 
   if (!presence.isEnabled()) return null;
 
@@ -105,28 +126,74 @@ const OnlineRosterIndicator = () => {
     .map(([id, n]) => `${id}: ${n}`)
     .join('\n');
   const tooltip = topSystems
-    ? `${total} pilot${total === 1 ? '' : 's'} online\nTop systems:\n${topSystems}`
-    : `${total} pilot${total === 1 ? '' : 's'} online`;
+    ? `${total} pilot${total === 1 ? '' : 's'} online\nTop systems:\n${topSystems}\n\nClick for the full roster`
+    : `${total} pilot${total === 1 ? '' : 's'} online\n\nClick for the full roster`;
 
   return (
-    <div
-      className="flex items-center gap-1 px-2 py-0.5"
-      style={{
-        background: 'rgba(12,26,51,0.4)',
-        border: `1px solid ${BLUE.dim}`,
-        borderRadius: 2,
-        color: BLUE.light,
-      }}
-      title={tooltip}
-    >
-      <span style={{ fontSize: '0.8rem' }}>👥</span>
-      <span className="font-bold">{total}</span>
-      <span style={{ color: '#3a4a5a', fontSize: '0.5rem' }}>ONLINE</span>
-      {here > 0 && (
+    <div className="relative">
+      <button
+        className="flex items-center gap-1 px-2 py-0.5"
+        style={{
+          background: open ? 'rgba(12,26,51,0.7)' : 'rgba(12,26,51,0.4)',
+          border: `1px solid ${BLUE.dim}`,
+          borderRadius: 2,
+          color: BLUE.light,
+          cursor: 'pointer',
+        }}
+        title={tooltip}
+        onClick={() => { playSound('button_click'); setOpen(o => !o); }}
+      >
+        <span style={{ fontSize: '0.8rem' }}>👥</span>
+        <span className="font-bold">{total}</span>
+        <span style={{ color: '#3a4a5a', fontSize: '0.5rem' }}>ONLINE</span>
+        {here > 0 && (
+          <>
+            <span style={{ color: '#0e1a2a', margin: '0 2px' }}>·</span>
+            <span className="font-bold" style={{ color: '#22d3ee' }}>{here}</span>
+            <span style={{ color: '#3a4a5a', fontSize: '0.5rem' }}>HERE</span>
+          </>
+        )}
+        <span style={{ color: '#3a4a5a' }}>{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
         <>
-          <span style={{ color: '#0e1a2a', margin: '0 2px' }}>·</span>
-          <span className="font-bold" style={{ color: '#22d3ee' }}>{here}</span>
-          <span style={{ color: '#3a4a5a', fontSize: '0.5rem' }}>HERE</span>
+          <div className="fixed inset-0" style={{ zIndex: 60 }} onClick={() => setOpen(false)} />
+          <div
+            className="absolute left-0 mt-1"
+            style={{
+              zIndex: 61, minWidth: 260, maxHeight: 360, overflowY: 'auto',
+              background: 'rgba(6,12,24,0.97)', border: `1px solid ${BLUE.dim}`, borderRadius: 3,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.6)', fontFamily: "'Share Tech Mono', monospace", fontSize: '0.8rem',
+            }}
+          >
+            <div className="px-2 py-1 flex items-center justify-between" style={{ borderBottom: `1px solid ${EDGE}`, color: '#8a9aaa', fontSize: '0.65rem', letterSpacing: 1 }}>
+              <span>PILOTS ONLINE · {roster ? roster.length : total}</span>
+              <span style={{ color: '#3a4a5a' }}>click a name for their profile</span>
+            </div>
+            {rosterErr && <div className="px-2 py-2" style={{ color: '#f87171' }}>{rosterErr}</div>}
+            {!roster && !rosterErr && <div className="px-2 py-2" style={{ color: '#64748b' }}>Loading…</div>}
+            {roster && roster.length === 0 && <div className="px-2 py-2" style={{ color: '#64748b' }}>Nobody else is flying right now.</div>}
+            {roster && roster.map(p => {
+              const isMe = p.user_id === myId;
+              const sameSystem = !!p.system_id && viewMode === 'system' && p.system_id === currentSystemId;
+              const where = p.system_id ? (getSystemName(p.system_id) || p.system_id) : 'in transit';
+              return (
+                <div key={p.user_id} className="px-2 py-1 flex items-center justify-between gap-3"
+                     style={{ borderBottom: `1px solid ${EDGE}`, background: sameSystem ? 'rgba(34,211,238,0.06)' : 'transparent' }}>
+                  <button
+                    onClick={() => { if (!isMe) { playSound('button_click'); setOpen(false); openProfile(p.user_id); } }}
+                    style={{ color: isMe ? '#fbbf24' : '#e2e8f0', cursor: isMe ? 'default' : 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', textAlign: 'left' }}
+                    title={isMe ? 'You' : `Open ${p.name}'s profile`}
+                  >
+                    {p.name}{isMe ? ' (you)' : ''}
+                  </button>
+                  <span style={{ color: sameSystem ? '#22d3ee' : p.system_id ? '#8a9aaa' : '#4a5a6a', whiteSpace: 'nowrap' }}>
+                    {where}{p.docked ? ' ⚓' : ''}{sameSystem && !isMe ? ' · HERE' : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </>
       )}
     </div>
@@ -157,6 +224,12 @@ const TopBar = () => {
   // reads them); the top bar just no longer displays them.
   const enemyCount = useGameStore(state => state.enemyCount);
   const autopilotTarget = useGameStore(state => state.autopilotTarget);
+  const dockedBody = useGameStore(state => state.dockedBody);
+  const currentSystemId = useGameStore(state => state.currentSystem);
+  // Docked at the autopilot target: the target is the dock itself (clearing
+  // it would undock), so say DOCKED rather than a cryptic "AP → Earth".
+  const dockedAtTarget = !!(autopilotTarget && dockedBody && (dockedBody.id === autopilotTarget.id || dockedBody.name === autopilotTarget.name));
+  const systemName = getSystemName(currentSystemId) || (currentSystemId ? String(currentSystemId) : '—');
 
   // Settings window opens from the gear button in the top bar. The
   // legacy 🔊/🔇 mute button moved into the settings panel itself so
@@ -305,8 +378,8 @@ const TopBar = () => {
             borderRadius: 2,
             color: BLUE.light,
           }}>
-            <span style={{ color: BLUE.light }}>◈</span>
-            <span className="font-bold">AP → {autopilotTarget.name}</span>
+            <span style={{ color: BLUE.light }}>{dockedAtTarget ? '⚓' : '◈'}</span>
+            <span className="font-bold">{dockedAtTarget ? `DOCKED · ${autopilotTarget.name}` : `AUTOPILOT → ${autopilotTarget.name}`}</span>
           </div>
         )}
       </div>
@@ -314,6 +387,12 @@ const TopBar = () => {
       {/* Right cluster: ship name, user, reset */}
       <div className="flex items-center gap-2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '0.8rem' }}>
         <div className="mx-1" style={{ width: 1, height: 18, background: EDGE }} />
+
+        {/* Current system (owner 2026-10-09) */}
+        <div className="px-2 py-0.5" style={{ borderLeft: `2px solid ${BLUE.dim}`, background: `rgba(12,26,51,0.4)` }} title="Current system">
+          <div className="text-[0.8rem] font-bold" style={{ color: '#c8d6e5' }}>{systemName}</div>
+          <div className="text-[0.4375rem]" style={{ color: '#3a5a6a' }}>SYSTEM</div>
+        </div>
 
         {/* Ship name */}
         <div className="px-2 py-0.5" style={{ borderLeft: `2px solid ${BLUE.dim}`, background: `rgba(12,26,51,0.4)` }}>

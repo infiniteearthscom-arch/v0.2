@@ -52,6 +52,10 @@ export const setupSocketIO = (httpServer) => {
   // below -- both fire on every connection. The 'presence:' event
   // namespace keeps them disjoint.
   const presence = attachPresence(io);
+  // Expose the query helpers on the io instance: /api/diag/presence and
+  // /api/presence/roster (index.js) read io.presence at request time.
+  // (The diag endpoint had expected this since Phase 1 but nothing set it.)
+  io.presence = presence;
 
   // ============================================
   // PHASE 2 STEP 1: CHAT

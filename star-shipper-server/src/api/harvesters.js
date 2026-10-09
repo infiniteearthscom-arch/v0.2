@@ -26,6 +26,18 @@ const harvesterMults = async (userId) => {
 };
 const effectiveHopperCap = (harvester, hm) => Math.round(harvester.storage_capacity * (hm?.hopper ?? 1));
 
+// Tutorial hooks (104): Set & Forget completes when a harvester gets a
+// DEPOSIT (deploy-with-deposit or assign-deposit), Fuel Up on refuel.
+// Server-side inside the feature transaction; the response carries
+// `quest` for the client toast (same pattern as contracts / skill queue).
+const questHook = async (client, userId, questId, fallbackTitle) => {
+  try {
+    const qr = await completeQuestInTx(client, userId, questId);
+    if (qr && !qr.already_complete) return { quest_id: questId, title: qr.title || fallbackTitle, credits: qr.credits };
+  } catch (e) { console.warn(`harvesters: quest hook ${questId} failed`, e?.message); }
+  return null;
+};
+
 // Per-player harvester cap per planet (2026-09-20). Slots are shared
 // planet-wide (first come), so cap what one pilot can hold on a single
 // world: base + Command Center Upgrades level (pln_cc_upgrades -- the
@@ -456,11 +468,12 @@ router.post('/deploy', authMiddleware, async (req, res) => {
         depositInfo?.stat_density || null,
         'idle',
       ]);
-      
-      return insertResult.rows[0];
+
+      const quest = deposit_id ? await questHook(client, userId, 'tutorial_deploy_harvester', 'Set & Forget') : null;
+      return { harvester: insertResult.rows[0], quest };
     });
-    
-    res.json({ success: true, harvester: result });
+
+    res.json({ success: true, ...result });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error('Error deploying harvester:', error);
@@ -534,7 +547,8 @@ router.post('/assign-deposit', authMiddleware, async (req, res) => {
           deposit.stat_purity, deposit.stat_stability, deposit.stat_potency, deposit.stat_density,
           newStatus, harvester_id]);
       
-      return { deposit_name: deposit.resource_name };
+      const quest = await questHook(client, userId, 'tutorial_deploy_harvester', 'Set & Forget');
+      return { deposit_name: deposit.resource_name, quest };
     });
     
     res.json({ success: true, ...result });
@@ -614,12 +628,7 @@ router.post('/refuel', authMiddleware, async (req, res) => {
 
       // Tutorial "Fuel Up" (104) completes here, server-side, like the
       // contract / base / skill-queue quests; the client toasts off `quest`.
-      let quest = null;
-      try {
-        const qr = await completeQuestInTx(client, userId, 'tutorial_fuel_harvester');
-        if (qr && !qr.already_complete) quest = { quest_id: 'tutorial_fuel_harvester', title: qr.title || 'Fuel Up', credits: qr.credits };
-      } catch (e) { console.warn('refuel: quest hook failed', e?.message); }
-
+      const quest = await questHook(client, userId, 'tutorial_fuel_harvester', 'Fuel Up');
       return { fuel_added_hours: fuelHours, total_fuel_hours: newFuel, status: newStatus, quest };
     });
     

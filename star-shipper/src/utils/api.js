@@ -559,6 +559,11 @@ export const contractsAPI = {
   pin: (id, pinned) => request(`/contracts/${encodeURIComponent(id)}/pin`, { method: 'POST', body: JSON.stringify({ pinned }) }),
 };
 
+// Online roster for the top-bar ONLINE dropdown (2026-10-09).
+export const presenceAPI = {
+  roster: () => request('/presence/roster'),
+};
+
 export const harvesterAPI = {
   getPlanetHarvesters: (bodyId) => request(`/harvesters/planet/${bodyId}`),
   // Every harvester I own, grouped by system procedural id (galaxy map).

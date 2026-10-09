@@ -1652,11 +1652,13 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
 
   const handleDeploy = async (slotIndex, dragData) => {
     try {
-      await harvesterAPI.deploy(effectiveBodyId, slotIndex, dragData.stack_id, null);
+      const result = await harvesterAPI.deploy(effectiveBodyId, slotIndex, dragData.stack_id, null);
       flash('success', 'Harvester deployed! Assign a deposit to start mining.');
       await fetchData();
-      // Tutorial: first harvester deploy completes "Set & Forget".
-      if (completeQuest) completeQuest('tutorial_deploy_harvester');
+      // Tutorial "Set & Forget" (104) completes SERVER-side once a deposit is
+      // assigned (deploy-with-deposit or the assign call), not on the drop.
+      const st = useGameStore.getState();
+      if (result?.quest && st.applyServerQuest) st.applyServerQuest(result.quest);
     } catch (err) {
       flash('error', err.message);
     }
@@ -1664,9 +1666,11 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
 
   const handleAssignDeposit = async (harvesterId, depositId) => {
     try {
-      await harvesterAPI.assignDeposit(harvesterId, depositId);
+      const result = await harvesterAPI.assignDeposit(harvesterId, depositId);
       flash('success', 'Deposit assigned.');
       await fetchData();
+      const st = useGameStore.getState();
+      if (result?.quest && st.applyServerQuest) st.applyServerQuest(result.quest);
     } catch (err) {
       flash('error', err.message);
     }

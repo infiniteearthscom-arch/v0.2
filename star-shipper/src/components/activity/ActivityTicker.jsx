@@ -22,7 +22,7 @@ const SYSTEM_COUNT = 200;
 // deterministic and the same one GalaxyMapWindow uses. We only need the
 // id->name lookup for the ticker.
 let _systemMap = null;
-function getSystemName(systemId) {
+export function getSystemName(systemId) {
   if (!systemId) return null;
   // 'sol' is the hardcoded starter system; not in the generator's
   // procedural set. Hand-resolve.
