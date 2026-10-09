@@ -217,6 +217,18 @@ async function main() {
   const bref = await pool.query(`SELECT buy_price, requires_tech FROM module_types WHERE id = 'base_refinery'`);
   report('base_refinery is craft-only + gated by tech_refining (086)', bref.rows[0]?.buy_price == null && bref.rows[0]?.requires_tech === 'tech_refining');
 
+  // --- migration 100 (capacitor + active tank) ---
+  const tank = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('utility_shield_booster_2','utility_armor_repairer_2','utility_shield_booster_4','utility_armor_repairer_4')`);
+  report('active tank modules (100)', tank.rows[0].n === 4, `${tank.rows[0].n}/4`);
+  const tankTwins = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types mt LEFT JOIN item_definitions i ON i.id = mt.id WHERE mt.stats->>'active' IS NOT NULL AND i.id IS NULL`);
+  report('active modules have item twins (100)', tankTwins.rows[0].n === 0);
+  const reactors = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE slot_type = 'reactor' AND (stats->>'capacitor') IS NULL`);
+  report('every reactor carries capacitor + recharge (100)', reactors.rows[0].n === 0, `${reactors.rows[0].n} without`);
+  const engWired = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE id LIKE 'eng_%' AND bonus_per_level->>'type' IN ('shield_max_pct','hull_max_pct','shield_boost_pct','armor_max_pct','shield_resist_pct','armor_resist_pct','active_cap_cost_pct','capacitor_pct','cap_recharge_pct','cpu_flat','overheat_damage_pct')`);
+  report('Engineering skills wired (100)', engWired.rows[0].n >= 12, `${engWired.rows[0].n} rows`);
+  const capDef = await pool.query(`SELECT unlocks::text AS u FROM tech_definitions WHERE id = 'tech_capital_def'`);
+  report('Capital Defense unlocks the T4 booster / repairer (100)', (capDef.rows[0]?.u || '').includes('utility_shield_booster_4'));
+
   // --- migration 099 (turrets + targeting) ---
   report('hull_types.max_weapon_size (099)', await columnExists('hull_types', 'max_weapon_size'));
   const tur = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('weapon_cannon_1','weapon_laser_2','weapon_beam_4','weapon_coil_4')`);

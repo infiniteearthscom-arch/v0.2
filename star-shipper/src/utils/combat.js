@@ -41,7 +41,10 @@ export const getDamageMultipliers = (weaponType) => DAMAGE_MATRIX[weaponType] ||
 //
 // Returns { killed, shieldDamaged, layerHit } so the caller can set a
 // shield-regen timer and pick a hit-spark color.
-export function applyDamage(target, rawDmg, weaponType) {
+// `resists` (Phase B, 100): { shield: 0..0.5, armor: 0..0.5 } from the
+// Compensation skills -- applied only where the layer is WEAK to the
+// weapon (multiplier > 1), so the triangle is softened, never flipped.
+export function applyDamage(target, rawDmg, weaponType, resists = null) {
   const mult = getDamageMultipliers(weaponType);
   let raw = rawDmg;
   let shieldDamaged = false;
@@ -49,7 +52,8 @@ export function applyDamage(target, rawDmg, weaponType) {
 
   for (const layer of DEFENSE_LAYERS) {
     if (raw <= 0) break;
-    const m = mult[layer] ?? 1.0;
+    let m = mult[layer] ?? 1.0;
+    if (resists && resists[layer] > 0 && m > 1) m = m * (1 - Math.min(0.5, resists[layer]));
     const pool = target[layer] ?? 0;
 
     // Skip already-empty shield/armor so damage falls through. Hull

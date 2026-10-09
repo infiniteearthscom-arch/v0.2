@@ -11,6 +11,7 @@ import { moduleGateFor, hullGateFor, assertGate, getFleetCap, getFleetCapInfo, M
 import { getGalaxy as getWarpGalaxy } from '../game/warp.js';
 import { modulesFromFitted, ejectResources, ejectItems, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
+import { getPlayerBonuses } from '../util/playerBonuses.js';
 
 const router = express.Router();
 
@@ -1366,7 +1367,12 @@ async function getFleetMaxPools(client, userId) {
       maxArmor += Math.round((tuned ? m.stats.armor_hp : 25) * qualityMultiplier(fv));
     }
   }
-  return { maxHull, maxArmor };
+  // Tank skills (100): the client scales its pools by the same percentages.
+  const b = await getPlayerBonuses(userId);
+  return {
+    maxHull: Math.round(maxHull * (1 + (b.hull_max_pct || 0) / 100)),
+    maxArmor: Math.round(maxArmor * (1 + (b.armor_max_pct || 0) / 100)),
+  };
 }
 
 const clampPct = (v) => Math.max(0, Math.min(1, Number(v)));

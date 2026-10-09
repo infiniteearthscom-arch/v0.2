@@ -1403,6 +1403,43 @@ export const SystemView = () => {
   // every LARGE turret's next shot inside a 3 s window does ×2.5. 20 s cooldown.
   const alphaVolleyRef = useRef({ until: 0, fired: new Set(), cooldownUntil: 0 });
   const ALPHA_VOLLEY_MULT = 2.5, ALPHA_VOLLEY_WINDOW = 3, ALPHA_VOLLEY_COOLDOWN = 20;
+  // CAPACITOR (combat profession Phase B, 100): a fleet-wide energy pool
+  // from the fitted reactors (× quality, × Capacitor Management). Energy
+  // and hybrid turrets spend it per shot, active modules per cycle,
+  // Overheat on activation. Empty = turrets at half rate, actives stop.
+  // A fleet with NO reactor at all has no capacitor system (free), so a
+  // hull without a reactor slot is not punished.
+  const capRef = useRef(0);
+  const capMaxRef = useRef(0);
+  const capRechargeRef = useRef(0);
+  const REACTOR_CAP_FALLBACK = { reactor_basic: [60, 2.0], reactor_advanced: [110, 3.2], reactor_helium_3: [190, 5.4], reactor_singularity_5: [330, 9.6] };
+  const ENERGY_CAP_PER_DMG = 0.25, HYBRID_CAP_PER_DMG = 0.15;
+  // Active modules (hotbar toggles): the strongest fitted booster /
+  // repairer runs fleet-wide; Electronics raises how many may run at once.
+  const activeModsRef = useRef({ shield_booster: { on: false, nextAt: 0 }, armor_repairer: { on: false, nextAt: 0 }, overheat: { until: 0, cooldownUntil: 0, settled: true } });
+  const OVERHEAT_SECONDS = 10, OVERHEAT_COOLDOWN = 45, OVERHEAT_CAP = 40, OVERHEAT_MULT = 1.3, OVERHEAT_HULL_FRAC = 0.06;
+  const bestActive = (kind) => {
+    let best = null;
+    for (const fs of (fleetShipsRef.current || [])) for (const m of Object.values(fs?.fitted_modules || {})) {
+      if (!m || m.stats?.active !== kind) continue;
+      const q = qualityMultiplier(m);
+      const amount = (kind === 'shield_booster' ? (m.stats.shield_boost || 0) : (m.stats.armor_repair || 0)) * q;
+      if (!best || amount > best.amount) best = { amount, cycle: m.stats.cycle || 3, cost: m.stats.cap_cost || 20, name: m.name || m.module_type_id };
+    }
+    return best;
+  };
+  const maxActiveModules = () => 2 + Math.floor((activeBonusesRef.current?.cpu_flat || 0));
+  const toggleActive = (kind) => {
+    const mods = activeModsRef.current;
+    const st = mods[kind];
+    if (!st) return;
+    if (st.on) { st.on = false; if (pushToast) pushToast({ kind: 'info', text: `${kind === 'shield_booster' ? 'Shield Booster' : 'Armor Repairer'} off`, duration: 1500 }); return; }
+    if (!bestActive(kind)) { if (pushToast) pushToast({ kind: 'error', text: kind === 'shield_booster' ? 'No Shield Booster fitted' : 'No Armor Repairer fitted', duration: 2500 }); return; }
+    const running = ['shield_booster', 'armor_repairer'].filter(k => mods[k].on).length;
+    if (running >= maxActiveModules()) { if (pushToast) pushToast({ kind: 'error', text: `Only ${maxActiveModules()} active modules at once — train Electronics`, duration: 3000 }); return; }
+    st.on = true; st.nextAt = 0;
+    playSound('button_click');
+  };
   const autopilotTargetRef = useRef(null);
 
   // Scanner tracking for the System Map pane.
@@ -1752,9 +1789,30 @@ export const SystemView = () => {
     const hullPct      = playerHullRef.current   / oldMaxHull;
     const shieldPct    = playerShieldRef.current / oldMaxShield;
     const armorPct     = playerArmorRef.current  / oldMaxArmor;
-    playerMaxHullRef.current   = Math.max(1, fleetStats.totalHull);
-    playerMaxShieldRef.current = Math.max(0, fleetStats.totalShield);
-    playerMaxArmorRef.current  = Math.max(0, fleetStats.totalArmor);
+    // Tank skills (100): Shield Operation / Armor Layering / Hull Upgrades +
+    // Hull Reinforcement scale the pooled maxima. The server's repair cost
+    // uses the same percentages.
+    const TB = activeBonuses || {};
+    playerMaxHullRef.current   = Math.max(1, Math.round(fleetStats.totalHull * (1 + (TB.hull_max_pct || 0) / 100)));
+    playerMaxShieldRef.current = Math.max(0, Math.round(fleetStats.totalShield * (1 + (TB.shield_max_pct || 0) / 100)));
+    playerMaxArmorRef.current  = Math.max(0, Math.round(fleetStats.totalArmor * (1 + (TB.armor_max_pct || 0) / 100)));
+    // Capacitor (100): Σ reactors (capacitor, cap_recharge) × quality.
+    {
+      let capMax = 0, capRe = 0;
+      for (const fs of fleetShips) for (const m of Object.values(fs?.fitted_modules || {})) {
+        if (!m) continue;
+        const fb = REACTOR_CAP_FALLBACK[m.module_type_id || ''];
+        const c = m.stats?.capacitor ?? fb?.[0];
+        if (!c) continue;
+        const q = qualityMultiplier(m);
+        capMax += c * q;
+        capRe += (m.stats?.cap_recharge ?? fb?.[1] ?? 0) * q;
+      }
+      const capPct = capMaxRef.current > 0 ? capRef.current / capMaxRef.current : 1;
+      capMaxRef.current = Math.max(0, Math.round(capMax * (1 + (TB.capacitor_pct || 0) / 100)));
+      capRechargeRef.current = capRe;
+      capRef.current = capMaxRef.current * capPct;
+    }
     playerHullRef.current   = Math.min(playerMaxHullRef.current,   playerHullRef.current   > 0 ? hullPct   * playerMaxHullRef.current   : playerMaxHullRef.current);
     playerShieldRef.current = Math.min(playerMaxShieldRef.current, playerShieldRef.current > 0 ? shieldPct * playerMaxShieldRef.current : playerMaxShieldRef.current);
     // Armor refills to its preserved ratio on refit (no in-combat regen).
@@ -1769,7 +1827,7 @@ export const SystemView = () => {
       playerHullRef.current  = Math.max(1, Math.round(playerMaxHullRef.current  * st.fleetHullPct));
       playerArmorRef.current = Math.round(playerMaxArmorRef.current * st.fleetArmorPct);
     }
-  }, [fleetStats.totalHull, fleetStats.totalShield, fleetStats.totalArmor]);
+  }, [fleetStats.totalHull, fleetStats.totalShield, fleetStats.totalArmor, activeBonuses, fleetShips]);
 
   // Healing hulls (2026-09-19): persist the pooled hull/armor fractions.
   // Mirrors into the store (Repair panel + HUD consumers) every call and
@@ -3852,7 +3910,9 @@ export const SystemView = () => {
         if (target && lockFor(target.id)?.lockedAt != null) m += pct('locked_target_dmg_pct');
         return m;
       };
-      const rateMult = Math.max(0.4, 1 - pct('fleet_fire_rate_pct'));
+      const heatOn = activeModsRef.current.overheat.until > gameTimeRef.current; // Overheat (100)
+      const heatMult = heatOn ? OVERHEAT_MULT : 1;
+      const rateMult = Math.max(0.4, 1 - pct('fleet_fire_rate_pct')) * (heatOn ? 1 / OVERHEAT_MULT : 1);
       const rangeMult = 1 + pct('fleet_weapon_range_pct');
       const trackMults = { tracking: 1 + pct('fleet_tracking_pct'), optimal: rangeMult * (1 + pct('weapon_optimal_range_pct')), falloff: rangeMult * (1 + pct('weapon_falloff_pct')) };
       const effRange = (w) => w.type === 'missile' ? w.range * rangeMult : (w.optimal * trackMults.optimal + w.falloff * trackMults.falloff);
@@ -3991,8 +4051,18 @@ export const SystemView = () => {
             }
           }
 
-          // Fire!
-          cooldowns.set(cooldownKey, w.fire_rate * rateMult);
+          // Fire! Energy / hybrid turrets spend capacitor (100); an empty
+          // capacitor makes the turret cycle at HALF rate (not silence).
+          let capScale = 1;
+          if (w.type !== 'missile' && capMaxRef.current > 0) {
+            const perDmg = w.family === 'energy' ? ENERGY_CAP_PER_DMG : w.family === 'hybrid' ? HYBRID_CAP_PER_DMG : 0;
+            const cost = w.damage * perDmg * Math.max(0.3, 1 + pct('weapon_cap_cost_pct'));
+            if (cost > 0) {
+              if (capRef.current >= cost) capRef.current -= cost;
+              else { capRef.current = 0; capScale = 2; }
+            }
+          }
+          cooldowns.set(cooldownKey, w.fire_rate * rateMult * capScale);
           playSound('weapon_fire');
           const aimAngle = Math.atan2(nearest.y - sy, nearest.x - sx);
           // Turret roll (099): tracking vs the target's angular velocity
@@ -4012,7 +4082,7 @@ export const SystemView = () => {
             // Gunnery skill: fleet_damage_pct from store bonuses (Small
             // Hybrid Turret Operation = +5%/level). Applies fleet-wide
             // so wingmen benefit from the captain's training too.
-            const dmgBonus = dmgMultFor(w, nearest) * alphaMult;
+            const dmgBonus = dmgMultFor(w, nearest) * alphaMult * heatMult;
             const dmg = w.damage * dmgBonus;
             // Combat F1: damage the target's FLEET pool (shield→armor→hull
             // via the triangle), not the individual member. Laser is strong
@@ -4046,7 +4116,7 @@ export const SystemView = () => {
             // bonus is baked into the projectile at spawn -- when the
             // projectile lands, it just subtracts its own damage value
             // and doesn't have to re-look-up the captain's bonus.
-            const dmgBonus = dmgMultFor(w, nearest) * alphaMult;
+            const dmgBonus = dmgMultFor(w, nearest) * alphaMult * heatMult;
             const spread = (Math.random() - 0.5) * (w.spread || 0.08) * 2;
             const fireAngle = aimAngle + spread;
             const speed = w.projectile_speed || 320;
@@ -4066,7 +4136,7 @@ export const SystemView = () => {
             // for curving paths toward moving targets). Without this
             // the global PROJECTILE_LIFETIME=0.8s despawned missiles
             // long before they reached their nominal max range.
-            const dmgBonus = dmgMultFor(w, nearest) * alphaMult;
+            const dmgBonus = dmgMultFor(w, nearest) * alphaMult * heatMult;
             const speed = w.projectile_speed || 180;
             const lifetime = ((w.range || 1120) / speed) * 1.5;
             projectiles.push({
@@ -4203,7 +4273,8 @@ export const SystemView = () => {
               armor: playerArmorRef.current,
               hull: playerHullRef.current,
             };
-            const hitRes = applyDamage(playerPool, p.damage, p.weapon_type);
+            const RB = activeBonusesRef.current || {};
+            const hitRes = applyDamage(playerPool, p.damage, p.weapon_type, { shield: (RB.shield_resist_pct || 0) / 100, armor: (RB.armor_resist_pct || 0) / 100 }); // Compensation skills (100)
             playerShieldRef.current = playerPool.shield;
             playerArmorRef.current  = playerPool.armor;
             playerHullRef.current   = playerPool.hull;
@@ -4267,6 +4338,45 @@ export const SystemView = () => {
         }
       }
       
+      // --- Capacitor + active modules + overheat (100) ---
+      {
+        const CB = activeBonusesRef.current || {};
+        const nowS = gameTimeRef.current;
+        const mods = activeModsRef.current;
+        if (capMaxRef.current > 0) {
+          capRef.current = Math.min(capMaxRef.current, capRef.current + capRechargeRef.current * (1 + (CB.cap_recharge_pct || 0) / 100) * delta);
+        }
+        const heatOnNow = mods.overheat.until > nowS;
+        if (mods.overheat.until && !heatOnNow && !mods.overheat.settled) {
+          // Overheat ends: heat damage to the hull, reduced by Thermodynamics.
+          mods.overheat.settled = true;
+          const dmg = playerMaxHullRef.current * OVERHEAT_HULL_FRAC * Math.max(0, 1 + (CB.overheat_damage_pct || 0) / 100);
+          playerHullRef.current = Math.max(1, playerHullRef.current - dmg);
+          if (pushToast) pushToast({ kind: 'info', text: `Overheat over — ${Math.round(dmg)} heat damage to the hull`, duration: 2500 });
+        }
+        const runActive = (kind, poolRef, maxRef, boostPctKey) => {
+          const st = mods[kind];
+          if (!st.on || isPodRef.current) { if (isPodRef.current) st.on = false; return; }
+          if (nowS < st.nextAt) return;
+          const best = bestActive(kind);
+          if (!best) { st.on = false; return; }
+          if (poolRef.current >= maxRef.current) { st.nextAt = nowS + 0.5; return; } // full: wait, no cost
+          const cost = best.cost * Math.max(0.3, 1 + (CB.active_cap_cost_pct || 0) / 100);
+          if (capMaxRef.current > 0 && capRef.current < cost) {
+            st.on = false;
+            if (pushToast) pushToast({ kind: 'error', text: `${best.name} stopped — capacitor empty`, duration: 2500 });
+            return;
+          }
+          if (capMaxRef.current > 0) capRef.current -= cost;
+          const amount = best.amount * (1 + (CB[boostPctKey] || 0) / 100) * (heatOnNow ? OVERHEAT_MULT : 1);
+          poolRef.current = Math.min(maxRef.current, poolRef.current + amount);
+          st.nextAt = nowS + best.cycle;
+          effects.push({ x: playerPos.x, y: playerPos.y, type: 'hit', age: 0, color: kind === 'shield_booster' ? '#818cf8' : '#d8a24a' });
+        };
+        runActive('shield_booster', playerShieldRef, playerMaxShieldRef, 'shield_boost_pct');
+        runActive('armor_repairer', playerArmorRef, playerMaxArmorRef, 'armor_repair_pct');
+      }
+
       // --- Player shield regen ---
       playerShieldRegenTimerRef.current -= delta;
       if (playerShieldRegenTimerRef.current <= 0 && playerShieldRef.current < playerMaxShieldRef.current) {
@@ -6135,6 +6245,8 @@ export const SystemView = () => {
               { label: 'SHLD', icon: '◆', cur: shield, max: maxShield, color: '#818cf8', track: '#222244' },
               { label: 'ARMR', icon: '▰', cur: armor, max: maxArmor, color: '#d8a24a', track: '#332b1a' },
               { label: repairingRef.current ? 'HULL⚕' : 'HULL', icon: '■', cur: hull, max: maxHull, color: hullColor, track: '#332222' },
+              // Capacitor (100): only when the fleet has a reactor.
+              ...(capMaxRef.current > 0 ? [{ label: activeModsRef.current.overheat.until > gameTimeRef.current ? 'CAP🔥' : 'CAP', icon: '⚡', cur: Math.round(capRef.current), max: Math.round(capMaxRef.current), color: capRef.current <= 0 ? '#ef4444' : '#38bdf8', track: '#0c2a3a' }] : []),
             ];
             return (
               <div
@@ -6329,6 +6441,57 @@ export const SystemView = () => {
                   : 'Three sonar pings, then every enemy in the system for 30s. 120s cooldown.',
                 onActivate: handleSystemSweep,
               },
+              shield_boost: (() => {
+                const best = bestActive('shield_booster');
+                const st = activeModsRef.current.shield_booster;
+                return {
+                  id: 'shield_boost', icon: '🛡️', color: st.on ? '#fbbf24' : '#818cf8', label: st.on ? 'Boost ON' : 'Shield Boost',
+                  available: !!best, disabled: false, remain: 0, active: st.on,
+                  title: !best ? 'Fit a Shield Booster (Shield Theory research) to boost shields'
+                    : st.on ? `${best.name} running: +${Math.round(best.amount)} shield every ${best.cycle}s for ${best.cost} capacitor. Press to stop.`
+                    : `Run the ${best.name}: +${Math.round(best.amount)} shield every ${best.cycle}s for ${best.cost} capacitor.`,
+                  onActivate: () => toggleActive('shield_booster'),
+                };
+              })(),
+              armor_repair: (() => {
+                const best = bestActive('armor_repairer');
+                const st = activeModsRef.current.armor_repairer;
+                return {
+                  id: 'armor_repair', icon: '🩹', color: st.on ? '#fbbf24' : '#d8a24a', label: st.on ? 'Repair ON' : 'Armor Repair',
+                  available: !!best, disabled: false, remain: 0, active: st.on,
+                  title: !best ? 'Fit an Armor Repairer (Armor Engineering research) to repair armor in the field'
+                    : st.on ? `${best.name} running: +${Math.round(best.amount)} armor every ${best.cycle}s for ${best.cost} capacitor. Press to stop.`
+                    : `Run the ${best.name}: +${Math.round(best.amount)} armor every ${best.cycle}s for ${best.cost} capacitor.`,
+                  onActivate: () => toggleActive('armor_repairer'),
+                };
+              })(),
+              overheat: (() => {
+                const st = useGameStore.getState();
+                const researched = (st.techs || []).some(t => t.id === 'tech_exotic_defense' && t.status === 'unlocked');
+                const lvl = (st.skills || []).find(sk => sk.id === 'eng_thermodynamics')?.level || 0;
+                const h = activeModsRef.current.overheat;
+                const nowS = gameTimeRef.current;
+                const active = h.until > nowS;
+                const remain = Math.max(0, Math.ceil(h.cooldownUntil - nowS));
+                return {
+                  id: 'overheat', icon: '🔥', color: active ? '#fbbf24' : '#f97316', label: active ? `HEAT ${Math.ceil(h.until - nowS)}s` : 'Overheat',
+                  available: researched && lvl >= 1, disabled: active || remain > 0, remain: active ? 0 : remain, active,
+                  title: !researched ? 'Research Exotic Defenses to unlock Overheat'
+                    : lvl < 1 ? 'Train Thermodynamics I to unlock Overheat'
+                    : active ? 'Overheating: +30% turret output and +30% boosting'
+                    : remain > 0 ? `Overheat cooling down (${remain}s)`
+                    : `+30% turret damage / rate and boosting for ${OVERHEAT_SECONDS}s, then ${Math.round(OVERHEAT_HULL_FRAC * 100 * Math.max(0, 1 - lvl * 0.1))}% max hull in heat damage. ${OVERHEAT_CAP} capacitor, ${OVERHEAT_COOLDOWN}s cooldown.`,
+                  onActivate: () => {
+                    const t = gameTimeRef.current;
+                    if (h.cooldownUntil > t) return;
+                    if (capMaxRef.current > 0 && capRef.current < OVERHEAT_CAP) { if (pushToast) pushToast({ kind: 'error', text: `Overheat needs ${OVERHEAT_CAP} capacitor`, duration: 2500 }); return; }
+                    if (capMaxRef.current > 0) capRef.current -= OVERHEAT_CAP;
+                    activeModsRef.current.overheat = { until: t + OVERHEAT_SECONDS, cooldownUntil: t + OVERHEAT_COOLDOWN, settled: false };
+                    playSound('button_click');
+                    if (pushToast) pushToast({ kind: 'info', text: 'OVERHEAT — turrets and boosters +30% for 10 s', duration: 2500 });
+                  },
+                };
+              })(),
               alpha_volley: (() => {
                 const st = useGameStore.getState();
                 const hasLarge = (fleetShipsRef.current || []).some(fs => (fs.weapons || []).some(w => w.size === 'large' && w.type !== 'missile'));

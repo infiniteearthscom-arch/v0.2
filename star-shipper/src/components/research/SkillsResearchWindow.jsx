@@ -59,6 +59,9 @@ const WIRED_BONUS_TYPES = new Set([
   'weapon_all_turret_dmg_pct', 'fleet_fire_rate_pct', 'fleet_weapon_range_pct', 'fleet_tracking_pct',
   'weapon_optimal_range_pct', 'weapon_falloff_pct',
   'max_locked_targets_flat', 'locked_target_dmg_pct', 'targeting_range_pct', 'lock_time_pct', 'lock_speed_pct',
+  // Combat profession Phase B (100): capacitor + active tank + resists + overheat
+  'shield_max_pct', 'armor_max_pct', 'hull_max_pct', 'shield_boost_pct', 'shield_resist_pct', 'armor_resist_pct',
+  'active_cap_cost_pct', 'capacitor_pct', 'cap_recharge_pct', 'cpu_flat', 'overheat_damage_pct', 'weapon_cap_cost_pct',
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'mining_range_pct',           // Beam Focusing -> mining reach (utils/mining.js + /asteroids/mine, 087)

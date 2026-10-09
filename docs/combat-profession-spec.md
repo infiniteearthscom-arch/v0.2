@@ -1,6 +1,6 @@
 # Combat Profession — Deep Class Spec
 
-**Status:** APPROVED 2026-10-08 (decisions in §8). **Phase A BUILT 2026-10-08 (migration 099)** — see STATUS; Phase B next.
+**Status:** APPROVED 2026-10-08 (decisions in §8). **Phase A SHIPPED 2026-10-08 (099); Phase B BUILT 2026-10-08 (migration 100)** — see STATUS; Phase C (EWAR + tackle) next.
 **Owner brief:** "Ultimately, this should be like EVE, where you can go all in on one profession and get to its end game faster, but it benefits you more to mix up a little… We need to bring each deep class to the forefront and define its highest tier abilities, and build from there." Combat goes first because it has the most working systems to hang skills on, the largest unwired block of the catalog, and it is the risk side every other profession plays against.
 **Guides:** EVE Online (the careers graph in `docs/eve skill tree.jpeg`: ratting, missions, incursions, piracy, gate/station camping, combat probing, solo vs fleet; the Operation → Specialization skill ladder; rigs with drawbacks; warfare links) and Stellaris (weapon classes with counters, ship sections and components, strike craft, combat computers / fleet stances, admiral traits, tech tiers).
 **Sibling specs:** `combat-progression-spec.md` (damage triangle, zoning, crafting tie-in — built), `combat-attrition-spec.md` (pooled fleets — built), `enemy-factions-spec.md` (Swarm / Synod — built), `jump-gates-spec.md` (gates, camps, §11 travel ideas).
