@@ -62,6 +62,7 @@ const WIRED_BONUS_TYPES = new Set([
   // Combat profession Phase B (100): capacitor + active tank + resists + overheat
   'shield_max_pct', 'armor_max_pct', 'hull_max_pct', 'shield_boost_pct', 'shield_resist_pct', 'armor_resist_pct',
   'active_cap_cost_pct', 'capacitor_pct', 'cap_recharge_pct', 'cpu_flat', 'overheat_damage_pct', 'weapon_cap_cost_pct',
+  'armor_repair_pct',           // Repair Systems (101) -> SystemView runActive('armor_repairer')
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'mining_range_pct',           // Beam Focusing -> mining reach (utils/mining.js + /asteroids/mine, 087)

@@ -109,11 +109,11 @@ Research: Society "Target Acquisition" T1 (locks), "Electronic Warfare" T2 (web 
 
 ### 4.5 Engineering and defense — the tank, capacitor, overheating
 
-**Pinnacle: Reactive Defense + Thermodynamics.** Resists per damage type (Shield / Armor Compensation: −4 %/level incoming of the type that counters you — soften the triangle, never flip it) and **Overheat** (hotbar): every weapon and the shield booster run at +30 % for 10 s, then take heat damage (Thermodynamics reduces it). The duel-winning button.
+**Pinnacle: Reactive Defense + Thermodynamics.** Resists per damage type (Shield / Armor Compensation: −4 %/level incoming of the type that counters you — soften the triangle, never flip it) and **Overheat** (hotbar): every weapon runs at +50 % damage AND rate (DPS ×2.25) and boosters / repairers at +50 % for 10 s, then the hull takes heat damage (Thermodynamics reduces it). The duel-winning button. (Shipped at +30 % in Phase B; raised 2026-10-09 because persistent hull damage is a steep price in the current combat state.)
 
 Capacitor: today nothing costs energy. Add a fleet **capacitor** pool (reactors' `power`, today unused, becomes capacity + recharge): turrets, EWAR, cloak, overheat, drone launch and repair modules spend it; empty cap = modules cycle at half rate. Capacitor Management (capacity), Power Management (recharge), Controlled Bursts (turret cap cost), Fuel Conservation / High Speed Maneuvering (prop-mod cap cost — see 4.6). Reactors stop being dead slots.
 
-Active defense modules: **Shield Booster** (utility, burst regen on cap), **Armor Repairer** (same for armor, slower, cheaper), the existing Repair Nanite Hive stays the passive one. Hull Upgrades / Hull Reinforcement (+hull %), Shield Operation (+max), Armor Layering (+max; today a fit gate only).
+Active defense modules: **Shield Booster** (utility, burst regen on cap), **Armor Repairer** (same for armor, slower, cheaper; its skill is **Repair Systems**, +4 % amount per level, migration 101), the existing Repair Nanite Hive stays the passive one. Hull Upgrades / Hull Reinforcement (+hull %), Shield Operation (+max), Armor Layering (+max; today a fit gate only).
 
 Wired: `eng_shield_ops`, `eng_armor`, `eng_hull_upgrades`, `eng_shield_upgrades` (keeps the gate + adds booster unlock), `eng_armor_layering`, `eng_shield_compensation`, `eng_armor_compensation`, `eng_capacitor`, `eng_capacitor_mgmt`, `eng_power_management`, `eng_electronics` (CPU: how many active modules can run at once), `eng_thermodynamics`.
 Research: Shield Theory T1 (booster), Armor Engineering T2 (repairer), Reactive Defense T3 (compensation resists), Capital Defense T3 (capital booster), Exotic Defenses T4 (overheat).

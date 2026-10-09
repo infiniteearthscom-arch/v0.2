@@ -224,10 +224,14 @@ async function main() {
   report('active modules have item twins (100)', tankTwins.rows[0].n === 0);
   const reactors = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE slot_type = 'reactor' AND (stats->>'capacitor') IS NULL`);
   report('every reactor carries capacitor + recharge (100)', reactors.rows[0].n === 0, `${reactors.rows[0].n} without`);
-  const engWired = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE id LIKE 'eng_%' AND bonus_per_level->>'type' IN ('shield_max_pct','hull_max_pct','shield_boost_pct','armor_max_pct','shield_resist_pct','armor_resist_pct','active_cap_cost_pct','capacitor_pct','cap_recharge_pct','cpu_flat','overheat_damage_pct')`);
+  const engWired = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE id LIKE 'eng_%' AND bonus_per_level->>'type' IN ('shield_max_pct','hull_max_pct','shield_boost_pct','armor_max_pct','shield_resist_pct','armor_resist_pct','active_cap_cost_pct','capacitor_pct','cap_recharge_pct','cpu_flat','overheat_damage_pct','armor_repair_pct')`);
   report('Engineering skills wired (100)', engWired.rows[0].n >= 12, `${engWired.rows[0].n} rows`);
   const capDef = await pool.query(`SELECT unlocks::text AS u FROM tech_definitions WHERE id = 'tech_capital_def'`);
   report('Capital Defense unlocks the T4 booster / repairer (100)', (capDef.rows[0]?.u || '').includes('utility_shield_booster_4'));
+
+  // --- migration 101 (Repair Systems skill) ---
+  const repSys = await pool.query(`SELECT bonus_per_level->>'type' AS t FROM skill_definitions WHERE id = 'eng_repair_systems'`);
+  report('Repair Systems skill drives armor_repair_pct (101)', repSys.rows[0]?.t === 'armor_repair_pct');
 
   // --- migration 099 (turrets + targeting) ---
   report('hull_types.max_weapon_size (099)', await columnExists('hull_types', 'max_weapon_size'));

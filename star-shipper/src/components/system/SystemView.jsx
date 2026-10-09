@@ -1417,7 +1417,11 @@ export const SystemView = () => {
   // Active modules (hotbar toggles): the strongest fitted booster /
   // repairer runs fleet-wide; Electronics raises how many may run at once.
   const activeModsRef = useRef({ shield_booster: { on: false, nextAt: 0 }, armor_repairer: { on: false, nextAt: 0 }, overheat: { until: 0, cooldownUntil: 0, settled: true } });
-  const OVERHEAT_SECONDS = 10, OVERHEAT_COOLDOWN = 45, OVERHEAT_CAP = 40, OVERHEAT_MULT = 1.3, OVERHEAT_HULL_FRAC = 0.06;
+  // OVERHEAT_MULT applies to turret damage AND cycle rate (DPS × MULT²) and to
+  // booster / repairer amounts. Owner 2026-10-09: hull damage in a long fight
+  // is dangerous, so the payoff must be big -- 1.5 => DPS ×2.25 for 10 s.
+  const OVERHEAT_SECONDS = 10, OVERHEAT_COOLDOWN = 45, OVERHEAT_CAP = 40, OVERHEAT_MULT = 1.5, OVERHEAT_HULL_FRAC = 0.06;
+  const OVERHEAT_PCT = Math.round((OVERHEAT_MULT - 1) * 100);
   const bestActive = (kind) => {
     let best = null;
     for (const fs of (fleetShipsRef.current || [])) for (const m of Object.values(fs?.fitted_modules || {})) {
@@ -6478,9 +6482,9 @@ export const SystemView = () => {
                   available: researched && lvl >= 1, disabled: active || remain > 0, remain: active ? 0 : remain, active,
                   title: !researched ? 'Research Exotic Defenses to unlock Overheat'
                     : lvl < 1 ? 'Train Thermodynamics I to unlock Overheat'
-                    : active ? 'Overheating: +30% turret output and +30% boosting'
+                    : active ? `Overheating: +${OVERHEAT_PCT}% turret damage and rate, +${OVERHEAT_PCT}% boosting`
                     : remain > 0 ? `Overheat cooling down (${remain}s)`
-                    : `+30% turret damage / rate and boosting for ${OVERHEAT_SECONDS}s, then ${Math.round(OVERHEAT_HULL_FRAC * 100 * Math.max(0, 1 - lvl * 0.1))}% max hull in heat damage. ${OVERHEAT_CAP} capacitor, ${OVERHEAT_COOLDOWN}s cooldown.`,
+                    : `+${OVERHEAT_PCT}% turret damage AND rate (×${(OVERHEAT_MULT * OVERHEAT_MULT).toFixed(2)} DPS) and +${OVERHEAT_PCT}% boosting for ${OVERHEAT_SECONDS}s, then ${Math.round(OVERHEAT_HULL_FRAC * 100 * Math.max(0, 1 - lvl * 0.1))}% max hull in heat damage. ${OVERHEAT_CAP} capacitor, ${OVERHEAT_COOLDOWN}s cooldown.`,
                   onActivate: () => {
                     const t = gameTimeRef.current;
                     if (h.cooldownUntil > t) return;
@@ -6488,7 +6492,7 @@ export const SystemView = () => {
                     if (capMaxRef.current > 0) capRef.current -= OVERHEAT_CAP;
                     activeModsRef.current.overheat = { until: t + OVERHEAT_SECONDS, cooldownUntil: t + OVERHEAT_COOLDOWN, settled: false };
                     playSound('button_click');
-                    if (pushToast) pushToast({ kind: 'info', text: 'OVERHEAT — turrets and boosters +30% for 10 s', duration: 2500 });
+                    if (pushToast) pushToast({ kind: 'info', text: `OVERHEAT — turrets and boosters +${OVERHEAT_PCT}% for ${OVERHEAT_SECONDS} s`, duration: 2500 });
                   },
                 };
               })(),
