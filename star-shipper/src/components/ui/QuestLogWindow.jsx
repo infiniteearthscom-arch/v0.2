@@ -10,6 +10,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
 import { COLORS, FONT, SectionHead, Pill, glow } from '@/components/ui/panelStyles';
+import { QuestText } from '@/components/ui/QuestText';
 import { contractsAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { tierColor, tierLabel } from '@/utils/tiers';
@@ -109,7 +110,7 @@ const QuestCard = ({ quest, isActive }) => {
           ? <PinButton pinned={!!quest.pinned} accent={accent} onClick={() => pinQuest(quest.quest_id, !quest.pinned)} />
           : <span style={{ color: COLORS.GREEN.light, fontSize: '0.8rem', fontFamily: FONT.ui, fontWeight: 700, letterSpacing: 0.5, flexShrink: 0 }}>✓ DONE</span>}
       </div>
-      <p style={bodyStyle}>{quest.description}</p>
+      <p style={bodyStyle}><QuestText text={quest.description} /></p>
       {isActive && <RewardBadges rewards={quest.rewards} />}
     </div>
   );
@@ -135,7 +136,8 @@ const ContractCard = ({ contract: c, isActive, here, busy, onDeliver, onAbandon,
   const accent = CATEGORY_COLORS[c.contract_type] || COLORS.GOLD.light;
   const left = minutesLeft(c.deadline_at);
   const prog = contractProgress(c);
-  const verb = c.contract_type === 'fetch' ? 'TURN IN' : c.contract_type === 'bounty' ? 'COLLECT' : 'DELIVER';
+  // Fetch contracts say DELIVER too (owner 2026-10-09: the quest text says Deliver, the button said Turn In).
+  const verb = c.contract_type === 'bounty' ? 'COLLECT' : 'DELIVER';
   const faceSeed = c.target_template_id ? c.target_template_id : `${c.origin_system_id}|${String(c.origin_station || '').toLowerCase()}|broker`;
   const faceRole = c.target_template_id ? 'pirate' : 'broker';
   return (

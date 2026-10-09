@@ -56,7 +56,16 @@ export const ContractsPanel = ({ body }) => {
     catch (e) { setBoard(null); setBoardError(e.message || 'Board unavailable'); }
     try { setMine(await contractsAPI.mine()); } catch (e) {}
   };
-  useEffect(() => { load(); }, [body?.id]);
+  // Reload when the docked body registers with presence (the board needs
+  // the server to know where we are docked), and retry once a moment
+  // later if the first load raced the dock announcement.
+  const dockedBodyDbId = useGameStore(s => s.dockedBodyDbId);
+  useEffect(() => { load(); }, [body?.id, dockedBodyDbId]);
+  useEffect(() => {
+    if (!boardError || board) return;
+    const t = setTimeout(load, 2500);
+    return () => clearTimeout(t);
+  }, [boardError, board]);
   useEffect(() => { const t = setInterval(() => tick(n => n + 1), 15000); return () => clearInterval(t); }, []);
 
   const accept = async (key) => {
@@ -161,7 +170,7 @@ export const ContractsPanel = ({ body }) => {
               </div>
               <div style={{ color: '#8fa3b8', fontSize: '0.78rem', fontFamily: FM }}>
                 {isFetch
-                  ? <>turn in here · {o.unit_pay} CR/unit · you have {o.have_qualifying || 0} · {left} min</>
+                  ? <>deliver here · {o.unit_pay} CR/unit at Q{o.fetch_min_quality}, more for better ore · you have {o.have_qualifying || 0} · {left} min</>
                   : isBounty
                   ? <>turn in here · kills verified when you salvage the wreck{o.target_flagship ? ' · flagships only' : ''} · {left} min</>
                   : <>→ {o.dest_station}, {o.dest_system_name} · {o.hops} hop{o.hops === 1 ? '' : 's'} · danger {'★'.repeat(o.danger_tier)} · {left} min</>}

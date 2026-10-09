@@ -59,3 +59,9 @@ WHERE id = 'tutorial_deploy_harvester';
 UPDATE quest_definitions SET
   description = 'Give the harvester time to fill its hold -- it only runs while it has fuel, so keep a Fuel Cell on it. Then dock at the planet, open the Auto tab (⚙️), and collect the output. Passive income unlocked.'
 WHERE id = 'tutorial_collect_harvester';
+
+-- Special Delivery (owner 2026-10-09): the Missions board button is
+-- DELIVER for fetch contracts too, so the text says one word.
+UPDATE quest_definitions SET description =
+  'Complete a hauling or fetch contract. Hauls: carry the sealed cargo to the destination station. Fetch: bring the requested ore back to the posting station. Either way, dock there and press Deliver on the Missions board (📋).'
+WHERE id = 'tutorial_first_delivery';

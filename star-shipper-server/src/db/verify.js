@@ -278,6 +278,21 @@ async function main() {
   report('onboarding expansion quests (085)', onb.rows[0].n === 6, `${onb.rows[0].n}/6`);
   const hook = await pool.query(`SELECT triggers_quests::text AS t FROM quest_definitions WHERE id = 'tutorial_collect_harvester'`);
   report('Coming Home triggers Hired Gun (085)', (hook.rows[0]?.t || '').includes('tutorial_first_contract'));
+  // --- migration 105 (quest text links): every [[skill:id|..]] / [[tech:id|..]] must resolve ---
+  const qdesc = await pool.query(`SELECT id, description FROM quest_definitions`);
+  const skillIds = new Set((await pool.query(`SELECT id FROM skill_definitions`)).rows.map(r => r.id));
+  const techIds = new Set((await pool.query(`SELECT id FROM tech_definitions`)).rows.map(r => r.id));
+  const badLinks = [];
+  let linkCount = 0;
+  for (const q of qdesc.rows) {
+    for (const m of String(q.description || '').matchAll(/\[\[(skill|tech|window):([a-z0-9_]+)\|[^\]]+\]\]/g)) {
+      linkCount++;
+      if (m[1] === 'skill' && !skillIds.has(m[2])) badLinks.push(`${q.id}: skill ${m[2]}`);
+      if (m[1] === 'tech' && !techIds.has(m[2])) badLinks.push(`${q.id}: tech ${m[2]}`);
+    }
+  }
+  report('quest text links resolve (105)', badLinks.length === 0 && linkCount > 0, badLinks.length ? badLinks.join('; ') : `${linkCount} links`);
+
   // --- migration 104 (Fuel Up) ---
   const fuelQ = await pool.query(`SELECT id, triggers_quests::text AS t FROM quest_definitions WHERE id IN ('tutorial_deploy_harvester','tutorial_fuel_harvester')`);
   const ft = Object.fromEntries(fuelQ.rows.map(r => [r.id, r.t]));

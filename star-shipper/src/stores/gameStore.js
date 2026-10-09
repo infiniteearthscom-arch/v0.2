@@ -85,6 +85,7 @@ const initialState = {
   // so they don't re-fire on subsequent opens.
   craftingTargetRecipeId: null,
   researchTargetTechId: null,
+  skillsTargetSkillId: null,
   // Public profile deep-link target. Set by callers (ChatPanel name
   // click, LeaderboardsWindow row click) right before opening the
   // 'profile' window; ProfileWindow reads it on mount and fires the
@@ -384,6 +385,9 @@ export const useGameStore = create(
       clearCraftingTargetRecipe: () => set(state => { state.craftingTargetRecipeId = null; }),
       setResearchTargetTech:    (techId)   => set(state => { state.researchTargetTechId = techId; }),
       clearResearchTargetTech:  () => set(state => { state.researchTargetTechId = null; }),
+      // Quest-text skill links (105): Skills tab, category + skill selected + pulse.
+      setSkillsTargetSkill:     (skillId)  => set(state => { state.skillsTargetSkillId = skillId; }),
+      clearSkillsTargetSkill:   () => set(state => { state.skillsTargetSkillId = null; }),
       setProfileTargetUserId:   (userId)   => set(state => { state.profileTargetUserId = userId; }),
       clearProfileTargetUserId: () => set(state => { state.profileTargetUserId = null; }),
       // One-call helper for the common pattern: set target + open

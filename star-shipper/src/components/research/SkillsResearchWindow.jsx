@@ -16,8 +16,9 @@
 //                     prereq lines + status-colored nodes. Click an
 //                     available node -> unlock prompt.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { QUEST_TARGET_PULSE_CSS, questTargetPulseStyle } from '@/components/ui/QuestText';
 import { ActiveTrainingIndicator } from '@/components/ui/ActiveTrainingIndicator';
 
 const EDGE  = '#1a3050';
@@ -123,7 +124,7 @@ const useSecondTick = () => {
 // SKILLS TAB
 // =================================================================
 
-const SkillsTab = () => {
+const SkillsTab = ({ target = null }) => {
   useSecondTick();
   const skills = useGameStore(s => s.skills);
   const queue = useGameStore(s => s.skillQueue);
@@ -145,6 +146,21 @@ const SkillsTab = () => {
 
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedSkillId, setSelectedSkillId] = useState(null);
+  // Quest-text link target (105): select its category + row, scroll it
+  // into view and pulse the row for a few seconds.
+  const [pulseSkillId, setPulseSkillId] = useState(null);
+  const rowRefs = useRef({});
+  useEffect(() => {
+    if (!target?.id || skills.length === 0) return;
+    const sk = skills.find(s => s.id === target.id);
+    if (!sk) return;
+    setSelectedCategory(sk.category);
+    setSelectedSkillId(sk.id);
+    setPulseSkillId(sk.id);
+    const scroll = setTimeout(() => { try { rowRefs.current[sk.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} }, 50);
+    const clear = setTimeout(() => setPulseSkillId(null), 6000);
+    return () => { clearTimeout(scroll); clearTimeout(clear); };
+  }, [target, skills]);
 
   // Default selection: first category, first skill.
   useEffect(() => {
@@ -250,8 +266,10 @@ const SkillsTab = () => {
             return (
               <div
                 key={s.id}
+                ref={el => { rowRefs.current[s.id] = el; }}
                 onClick={() => setSelectedSkillId(s.id)}
                 style={{
+                  ...(pulseSkillId === s.id ? questTargetPulseStyle : null),
                   padding: '8px 14px',
                   cursor: 'pointer',
                   background: active
@@ -629,7 +647,7 @@ const TREES = [
   { id: 'society',    label: 'Society',    accent: '#22c55e' },
 ];
 
-const ResearchTab = ({ initialTree }) => {
+const ResearchTab = ({ initialTree, pulseTechId = null }) => {
   useSecondTick();
   const techs = useGameStore(s => s.techs);
   const rpStored = useGameStore(s => s.researchPoints);
@@ -843,6 +861,7 @@ const TreeVisualizer = ({ tree, accent, techs, rp, resourceCounts, onClickTech }
             accent={accent}
             canAfford={rp >= t.rp_cost}
             resourceCounts={resourceCounts}
+            pulse={pulseTechId === t.id}
             onClick={() => {
               if (t.status === 'available') onClickTech(t);
             }}
@@ -853,7 +872,7 @@ const TreeVisualizer = ({ tree, accent, techs, rp, resourceCounts, onClickTech }
   );
 };
 
-const TechNode = ({ tech, x, y, accent, canAfford, resourceCounts, onClick }) => {
+const TechNode = ({ tech, x, y, accent, canAfford, resourceCounts, onClick, pulse = false }) => {
   const { status } = tech;
   // Material toll (T3+ nodes, migration 068): listed on the card with
   // have/need so the player knows before clicking.
@@ -893,6 +912,7 @@ const TechNode = ({ tech, x, y, accent, canAfford, resourceCounts, onClick }) =>
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
         transition: 'background 0.15s, border-color 0.15s',
         overflow: 'hidden',
+        ...(pulse ? { ...questTargetPulseStyle, borderColor: '#67e8f9' } : null),
       }}
       title={tech.description}
     >
@@ -1040,6 +1060,23 @@ export const SkillsResearchWindow = () => {
   const techs = useGameStore(s => s.techs);
   const [tab, setTab] = useState('skills');
   const [initialResearchTree, setInitialResearchTree] = useState(null);
+  // Quest-text links (105): the targeted node / skill pulses for a few
+  // seconds after arrival so the eye lands on it.
+  const [pulseTechId, setPulseTechId] = useState(null);
+  const skillsTarget = useGameStore(s => s.skillsTargetSkillId);
+  const clearSkillsTarget = useGameStore(s => s.clearSkillsTargetSkill);
+  const [skillsTargetLocal, setSkillsTargetLocal] = useState(null);
+  useEffect(() => {
+    if (!skillsTarget) return;
+    setTab('skills');
+    setSkillsTargetLocal({ id: skillsTarget, at: Date.now() });
+    clearSkillsTarget();
+  }, [skillsTarget, clearSkillsTarget]);
+  useEffect(() => {
+    if (!pulseTechId) return;
+    const t = setTimeout(() => setPulseTechId(null), 6000);
+    return () => clearTimeout(t);
+  }, [pulseTechId]);
 
   // Fetch on open; also poll once every 30s so the queue progress bars
   // and RP bar reflect server truth without manual refresh.
@@ -1057,6 +1094,7 @@ export const SkillsResearchWindow = () => {
     if (tech) {
       setTab('research');
       setInitialResearchTree(tech.tree);
+      setPulseTechId(tech.id);
     }
     clearResearchTarget();
   }, [researchTarget, techs, clearResearchTarget]);
@@ -1143,7 +1181,10 @@ export const SkillsResearchWindow = () => {
 
         {/* Body */}
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-          {tab === 'skills' ? <SkillsTab /> : <ResearchTab initialTree={initialResearchTree} />}
+          {tab === 'skills'
+            ? <SkillsTab target={skillsTargetLocal} />
+            : <ResearchTab initialTree={initialResearchTree} pulseTechId={pulseTechId} />}
+          <style>{QUEST_TARGET_PULSE_CSS}</style>
         </div>
       </div>
     </div>

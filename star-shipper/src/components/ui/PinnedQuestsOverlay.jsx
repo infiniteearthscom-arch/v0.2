@@ -21,6 +21,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { resourcesAPI } from '@/utils/api';
+import { QuestText } from '@/components/ui/QuestText';
 
 const EDGE = '#1a3050';
 const GOLD = { pri: '#f59e0b', light: '#fbbf24' };
@@ -149,7 +150,7 @@ const ContractTile = ({ contract: c }) => {
           </span>
         </div>
         <div style={{ fontSize: '0.8rem', color: '#a8b4c5', fontFamily: F, lineHeight: 1.4, marginTop: 2 }}>
-          {isFetch || isBounty ? 'turn in at' : 'deliver to'} {c.dest_station}, {c.dest_system_name} ·{' '}
+          {isBounty ? 'collect at' : 'deliver to'} {c.dest_station}, {c.dest_system_name} ·{' '}
           <span style={{ color: urgent ? '#f87171' : '#a8b4c5' }}>{left} min</span> · {Number(c.reward).toLocaleString()} CR
           {isFetch && <span> · have {c.have_qualifying || 0}/{c.cargo_volume}</span>}
           {isBounty && <span> · kills {c.progress || 0}/{c.cargo_volume}</span>}
@@ -247,7 +248,7 @@ const PinnedTile = ({ quest, onUnpin }) => {
           fontSize: '0.8rem', color: '#a8b4c5', fontFamily: F,
           lineHeight: 1.4, marginTop: 2,
         }}>
-          {quest.description}
+          <QuestText text={quest.description} />
         </div>
       </div>
 

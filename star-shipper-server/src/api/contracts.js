@@ -14,7 +14,9 @@ import { logActivity } from '../lib/activity.js';
 import {
   generateBoard, offerByKey, capsForLevel, isPort, normName, systemName,
   SEALED_ITEM_ID, currentBucket, bucketEndsAt, setResourceCatalog, hasResourceCatalog,
+  FETCH_PREMIUM,
 } from '../game/contracts.js';
+import { resourceSellPrice } from '../lib/pricing.js';
 import { completeQuestInTx } from './quests.js';
 
 // Fetch offers need the resource catalog (079). Load once per process.
@@ -35,19 +37,25 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // Docked body -> { bodyId, systemId, station } or null.
+// Returns the port the pilot is docked at, or null. On null, `req.dockWhy`
+// carries WHICH check failed (owner report 2026-10-09: "it says dock at a
+// station -- I'm docked!") so the client message and the server log pin
+// the cause instead of a generic line.
 async function dockedPort(req, userId) {
   const presence = req.app.get('io')?.presence;
-  const raw = presence?.getUserDockedBody?.(userId) || null;
-  if (!raw) return null;
+  const fail = (why) => { req.dockWhy = why; console.warn(`contracts: dockedPort refused user ${userId}: ${why}`); return null; };
+  if (!presence?.getUserDockedBody) return fail('Presence service is not running on the server — contracts need it to see where you are docked');
+  const raw = presence.getUserDockedBody(userId) || null;
+  if (!raw) return fail('The station has not registered your docking yet — undock and dock again (or reload if it persists)');
   const bodyId = await resolveBodyId(String(raw));
-  if (!bodyId) return null;
+  if (!bodyId) return fail(`Docked location "${raw}" is not a known body — undock and dock again`);
   const row = await queryOne(`
     SELECT cb.name, cb.body_type, ss.procedural_id
       FROM celestial_bodies cb JOIN star_systems ss ON ss.id = cb.system_id
      WHERE cb.id = $1`, [bodyId]);
-  if (!row) return null;
+  if (!row) return fail('Docked body row missing');
   const systemId = row.procedural_id || 'sol';
-  if (!isPort(systemId, row.name)) return null;
+  if (!isPort(systemId, row.name)) return fail(`${row.name} has no contract board — only stations post contracts`);
   return { bodyId, systemId, station: row.name };
 }
 
@@ -93,7 +101,7 @@ router.get('/board', async (req, res) => {
   try {
     const userId = req.user.id;
     const port = await dockedPort(req, userId);
-    if (!port) return res.status(400).json({ error: 'Dock at a station to see its contract board' });
+    if (!port) return res.status(400).json({ error: req.dockWhy || 'Dock at a station to see its contract board' });
     await ensureCatalog();
     await expireOverdue(userId);
     const bucket = currentBucket();
@@ -220,7 +228,7 @@ router.post('/:id/deliver', async (req, res) => {
     const userId = req.user.id;
     const id = String(req.params.id);
     const port = await dockedPort(req, userId);
-    if (!port) return res.status(400).json({ error: 'Dock at the destination station to deliver' });
+    if (!port) return res.status(400).json({ error: req.dockWhy || 'Dock at the destination station to deliver' });
     const caps = await capsFor(userId);
     const result = await transaction(async (client) => {
       const r = await client.query(
@@ -255,22 +263,34 @@ router.post('/:id/deliver', async (req, res) => {
           return { failed: true, why: 'Past the deadline', contract: { ...c, status: 'failed' } };
         }
         const stacks = await client.query(`
-          SELECT id, quantity FROM player_resource_inventory
+          SELECT id, quantity, ${AVG_Q} AS q FROM player_resource_inventory
            WHERE user_id = $1 AND item_type = 'resource' AND resource_type_id = $2 AND ${AVG_Q} >= $3
            ORDER BY ${AVG_Q} ASC, quantity DESC FOR UPDATE`, [userId, c.fetch_resource_type_id, c.fetch_min_quality]);
         const have = stacks.rows.reduce((a, s) => a + Number(s.quantity), 0);
         if (have < c.cargo_volume) {
           throw Object.assign(new Error(`Need ${c.cargo_volume} ${c.cargo_label} at Q${c.fetch_min_quality}+ (you have ${have})`), { statusCode: 400 });
         }
-        let need = c.cargo_volume;
+        // Pay for the ore ACTUALLY handed over (owner 2026-10-09: "I can sell
+        // the materials for more than the mission pays"). The posted reward
+        // was priced at the quality FLOOR; a Q80 stack vendors at far more
+        // than Q50 (RESOURCE_Q_EXP curve), so the board undercut the vendor
+        // for anything above the floor. Now each consumed unit pays the
+        // vendor price at ITS quality × the tier premium, never less than
+        // the posted reward -- a fetch always beats selling the same ore.
+        const resRow = await client.query(`SELECT base_price FROM resource_types WHERE id = $1`, [c.fetch_resource_type_id]);
+        const basePrice = Number(resRow.rows[0]?.base_price) || 0;
+        const premium = FETCH_PREMIUM[c.tier] || FETCH_PREMIUM[1];
+        let need = c.cargo_volume, valueAtQuality = 0;
         for (const s of stacks.rows) {
           if (need <= 0) break;
           const take = Math.min(need, Number(s.quantity));
+          valueAtQuality += take * resourceSellPrice(basePrice, Number(s.q));
           if (take >= Number(s.quantity)) await client.query(`DELETE FROM player_resource_inventory WHERE id = $1`, [s.id]);
           else await client.query(`UPDATE player_resource_inventory SET quantity = quantity - $1 WHERE id = $2`, [take, s.id]);
           need -= take;
         }
-        const payout = Math.round(c.reward * (1 + caps.reward_pct / 100));
+        const qualityReward = Math.round(valueAtQuality * premium);
+        const payout = Math.round(Math.max(Number(c.reward), qualityReward) * (1 + caps.reward_pct / 100));
         await client.query(`UPDATE users SET credits = credits + $1 WHERE id = $2`, [payout, userId]);
         await client.query(
           `UPDATE player_contracts SET status = 'delivered', resolved_at = NOW(), payout = $2 WHERE id = $1`, [c.id, payout]);
