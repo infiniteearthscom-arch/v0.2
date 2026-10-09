@@ -233,7 +233,7 @@ function App() {
           >
             Launch Game
           </button>
-          <p className="mt-8 text-sm text-slate-500">Version 0.4.0</p>
+          <p className="mt-8 text-sm text-slate-500">Version 0.5.0</p>
         </div>
       </div>
     );
