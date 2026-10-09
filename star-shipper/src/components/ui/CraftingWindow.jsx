@@ -1038,8 +1038,10 @@ export const CraftingWindow = () => {
       setSuccess(`Crafted ${result.crafted.item_name}!`);
       setAssignedIngredients({});
 
-      // Refresh recipes to update resource counts
+      // Refresh recipes to update resource counts, and the cargo numbers
+      // right away so SystemView's cargo-full latch releases (2026-10-09).
       await fetchRecipes();
+      try { useGameStore.getState().fetchCargoInfo?.(); } catch {}
 
       // Tutorial: crafting the basic harvester completes "Build the Bot".
       // Server is idempotent so this is safe to fire even when the
@@ -1071,8 +1073,21 @@ export const CraftingWindow = () => {
     MODULE_SUBCAT_ORDER.forEach(s => init[s] = true);
     return init;
   });
-  const toggleCat = (cat) => setCollapsed(p => ({ ...p, [cat]: !p[cat] }));
-  const toggleSub = (key) => setSubCollapsed(p => ({ ...p, [key]: !p[key] }));
+  // Accordion (owner 2026-10-09): opening a category closes the others,
+  // same for the Ship Modules subcategories, so the list never grows tall
+  // enough to push the selected recipe out of view.
+  const toggleCat = (cat) => setCollapsed(p => {
+    const next = {};
+    for (const k of Object.keys(p)) next[k] = true;
+    next[cat] = !p[cat];
+    return next;
+  });
+  const toggleSub = (key) => setSubCollapsed(p => {
+    const next = {};
+    for (const k of Object.keys(p)) next[k] = true;
+    next[key] = !p[key];
+    return next;
+  });
 
   if (!isOpen) return null;
 
@@ -1098,7 +1113,10 @@ export const CraftingWindow = () => {
 
   return (
     <ContextPanel windowId="crafting" title="Crafting" icon="🔨" accent={COLORS.PURPLE.light} width={720}>
-      <div style={{ display: 'flex', height: '100%', gap: 8 }}>
+      {/* Fixed body height (owner 2026-10-09): the recipe list scrolls on
+          its own and the detail pane stays in place, instead of the whole
+          window growing with every opened category. */}
+      <div style={{ display: 'flex', height: 'min(640px, calc(100vh - 150px))', gap: 8 }}>
         {/* Recipe sidebar */}
         <div style={{
           width: 180,

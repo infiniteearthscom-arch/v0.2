@@ -1898,6 +1898,14 @@ export const SystemView = () => {
     // the next mine click hits the server, which is authoritative.
     cargoFullRef.current = false;
   }, [dockedBody, setDockedBodyStore]);
+  // Self-healing latch (2026-10-09): whenever the store's cargo info shows
+  // free space (after a craft, a trash, a depot deposit, a sale), drop the
+  // latch so click-to-mine and the auto-miner resume without a dock.
+  const cargoInfoForLatch = useGameStore(state => state.cargoInfo);
+  useEffect(() => {
+    const ci = cargoInfoForLatch;
+    if (ci && ci.capacity > 0 && (ci.used ?? 0) < ci.capacity) cargoFullRef.current = false;
+  }, [cargoInfoForLatch]);
 
   // "Baptism by Fire" quest trigger -- watches enemyCount for the
   // exact transition from >0 to 0 (player just killed the last hostile).
@@ -2178,9 +2186,19 @@ export const SystemView = () => {
       }
       // Cargo + range gates apply BEFORE assignment so the player
       // gets the actionable error instead of a stack/release toast.
+      // The latch is only trusted while the store's cargo numbers agree
+      // (owner report 2026-10-09: crafted after filling up, cargo bar at
+      // 89 %, still refused -- the latch had no way to learn space was
+      // freed). If the store shows room, clear it and let the server,
+      // which is authoritative, decide.
       if (cargoFullRef.current) {
-        if (pushToast) pushToast({ kind: 'error', text: 'Cargo full — sell or jettison first.', duration: 3000 });
-        return;
+        const ci = useGameStore.getState().cargoInfo;
+        const storeHasRoom = ci && ci.capacity > 0 && (ci.used ?? 0) < ci.capacity;
+        if (storeHasRoom) cargoFullRef.current = false;
+        else {
+          if (pushToast) pushToast({ kind: 'error', text: 'Cargo full — sell or jettison first.', duration: 3000 });
+          return;
+        }
       }
       const mineRange = fleetMineRange();
       if (dist > mineRange) {

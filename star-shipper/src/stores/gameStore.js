@@ -276,6 +276,7 @@ const initialState = {
     muted: false,
     masterVolume: 0.8,
     sfxVolume: 1.0,
+    musicVolume: 0.6, // the repeating background ambience loop (owner 2026-10-09)
   },
 
   // View mode — 'system' (in-system flight) or 'galaxy' (interstellar flight)
@@ -998,6 +999,9 @@ export const useGameStore = create(
       }),
       setSfxVolume: (v) => set(state => {
         state.audio.sfxVolume = Math.max(0, Math.min(1, v));
+      }),
+      setMusicVolume: (v) => set(state => {
+        state.audio.musicVolume = Math.max(0, Math.min(1, v));
       }),
 
       // UI scale -- clamped 0.8..2.0. Anything outside that range either

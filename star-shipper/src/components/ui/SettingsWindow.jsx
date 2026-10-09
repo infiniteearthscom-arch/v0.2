@@ -54,6 +54,8 @@ const AudioSection = () => {
   const toggleAudioMuted = useGameStore(s => s.toggleAudioMuted);
   const setMasterVolume = useGameStore(s => s.setMasterVolume);
   const setSfxVolume = useGameStore(s => s.setSfxVolume);
+  const music = useGameStore(s => s.audio?.musicVolume ?? 0.6);
+  const setMusicVolume = useGameStore(s => s.setMusicVolume);
 
   return (
     <Card style={{ marginBottom: 12 }}>
@@ -91,9 +93,16 @@ const AudioSection = () => {
         <ValueChip text={`${Math.round(master * 100)}%`} />
       </div>
 
+      {/* Music: the repeating background ambience loop (owner 2026-10-09). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, opacity: muted ? 0.4 : 1 }}>
+        <span style={{ width: 78, fontSize: '0.8rem', color: COLORS.TEXT.muted, fontFamily: FONT.ui }} title="The background ambience that loops while you fly">Music</span>
+        <Slider value={music} min={0} max={1} step={0.05} onChange={setMusicVolume} />
+        <ValueChip text={`${Math.round(music * 100)}%`} />
+      </div>
+
       {/* SFX volume */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: muted ? 0.4 : 1 }}>
-        <span style={{ width: 78, fontSize: '0.8rem', color: COLORS.TEXT.muted, fontFamily: FONT.ui }}>Effects</span>
+        <span style={{ width: 78, fontSize: '0.8rem', color: COLORS.TEXT.muted, fontFamily: FONT.ui }} title="Weapons, mining, engine hum, clicks">Effects</span>
         <Slider value={sfx} min={0} max={1} step={0.05} onChange={setSfxVolume} />
         <ValueChip text={`${Math.round(sfx * 100)}%`} />
       </div>

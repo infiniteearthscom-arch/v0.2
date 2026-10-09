@@ -49,6 +49,12 @@ const LOOP_GAIN_MULT = 0.4;
 const LOOP_GAIN_OVERRIDES = {
   mining_laser: 0.20,
 };
+// Which volume slider a loop follows (owner 2026-10-09: a separate Music
+// slider for the repeating background ambience). Everything not listed
+// is a ship / tool sound and follows Effects.
+const LOOP_CHANNEL = {
+  system_music: 'music',
+};
 
 // Cached Howl instances. Value is a Howl on success, null after a load
 // error (so we don't retry on every play call), undefined before first use.
@@ -89,8 +95,35 @@ function getAudioSettings() {
     muted:        a.muted ?? false,
     masterVolume: a.masterVolume ?? 0.8,
     sfxVolume:    a.sfxVolume ?? 1.0,
+    musicVolume:  a.musicVolume ?? 0.6, // absent in audio slices persisted before 2026-10-09
   };
 }
+
+// Effective gain for a loop: master × (music or effects slider) × the
+// loop's baseline multiplier.
+function loopGain(id) {
+  const { masterVolume, sfxVolume, musicVolume } = getAudioSettings();
+  const channel = LOOP_CHANNEL[id] === 'music' ? musicVolume : sfxVolume;
+  const mult = LOOP_GAIN_OVERRIDES[id] ?? LOOP_GAIN_MULT;
+  return Math.max(0, Math.min(1, masterVolume * channel * mult));
+}
+
+// Re-apply gains to every loop that is currently playing, so moving a
+// slider is heard immediately instead of on the next start/stop.
+export function applyLoopVolumes() {
+  for (const [id, playId] of Object.entries(loopPlayingIds)) {
+    const howl = loopCache[id];
+    if (!howl || playId == null) continue;
+    try { howl.volume(loopGain(id), playId); } catch {}
+  }
+}
+
+// Watch the audio slice; sliders in the Settings window write to it.
+try {
+  useGameStore.subscribe((state, prev) => {
+    if (state.audio !== prev?.audio) applyLoopVolumes();
+  });
+} catch {}
 
 // Play a registered sound by event id. Safe to call from anywhere; will
 // silently no-op if muted, missing, or volume is zero.
@@ -140,11 +173,11 @@ function getLoopHowl(id) {
 }
 
 export function startLoop(id) {
-  const { muted, masterVolume, sfxVolume } = getAudioSettings();
+  const { muted } = getAudioSettings();
   if (muted) return;
-  const mult = LOOP_GAIN_OVERRIDES[id] ?? LOOP_GAIN_MULT;
-  const gain = masterVolume * sfxVolume * mult;
-  if (gain <= 0) return;
+  // A zero gain still STARTS the loop (silently) so raising the slider
+  // later is heard at once -- applyLoopVolumes only touches playing loops.
+  const gain = loopGain(id);
   const howl = getLoopHowl(id);
   if (!howl) return;
   if (loopPlayingIds[id] != null) return; // already playing
