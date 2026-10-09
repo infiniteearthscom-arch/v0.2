@@ -13,6 +13,7 @@ import {
 import { isCityPlanet, SRng } from '../util/seed.js';
 import { addResourceStack } from '../lib/wrecks.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
+import { techLink } from '../lib/textLinks.js';
 import { logActivity } from '../lib/activity.js';
 
 // Cargo bonuses applied at read time so trained-skill changes propagate
@@ -701,7 +702,7 @@ router.post('/craft', authMiddleware, async (req, res) => {
           const techDef = await client.query(`SELECT name FROM tech_definitions WHERE id = $1`, [recipe.requires_tech]);
           const techName = techDef.rows[0]?.name || recipe.requires_tech;
           throw Object.assign(
-            new Error(`Requires research: ${techName}`),
+            new Error(`Requires research: ${techLink(recipe.requires_tech, techName)}`),
             { statusCode: 403, requires_tech: recipe.requires_tech }
           );
         }

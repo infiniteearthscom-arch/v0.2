@@ -5613,7 +5613,8 @@ export const SystemView = () => {
                 // Dimmer glow than the flagship so the player can
                 // still tell which ship is "the peer" at a glance.
                 const wingmen = (fleet || []).map((w, idx) => {
-                  const wIcon = w.hull_type_id ? getShipIcon(w.hull_type_id, shipVariant(`${p.userId}:${i}`)) : null;
+                  // `userId` is the peer map key; `idx` the wingman slot (was `${p.userId}:${i}` -- `i` undefined, a ReferenceError the moment a peer with wingmen rendered; found by no-undef lint 2026-10-09).
+                  const wIcon = w.hull_type_id ? getShipIcon(w.hull_type_id, shipVariant(`${userId}:${idx}`)) : null;
                   const wiw = wIcon?.width ?? 20;
                   const wih = wIcon?.height ?? 20;
                   return (

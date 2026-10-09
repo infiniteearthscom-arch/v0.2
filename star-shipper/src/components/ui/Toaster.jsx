@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { renderQuestText } from '@/components/ui/QuestText';
 
 // ============================================
 // TOASTER
@@ -127,7 +128,8 @@ const ToastCard = ({ toast, onDismiss }) => {
           fontWeight: 500,
         }}
       >
-        {toast.text}
+        {/* Skill / research / window links in toast text (pitfall #22). */}
+        {typeof toast.text === 'string' ? renderQuestText(toast.text) : toast.text}
       </div>
       {/* Explicit close button for persistent toasts */}
       {persistent && (

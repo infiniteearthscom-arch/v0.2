@@ -13,6 +13,7 @@
 
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
+import { techLink } from '../lib/textLinks.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { resolveBodyId, getPlayerCargoInfo } from './resources.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
@@ -205,7 +206,7 @@ router.post('/queue', async (req, res) => {
     const { inventory_id, quantity, lane: laneReq, source } = req.body || {};
     if (!inventory_id || !Number.isInteger(quantity) || quantity <= 0) return res.status(400).json({ error: 'inventory_id and a positive integer quantity are required' });
     const tech = await techState(userId);
-    if (!tech.unlocked) return res.status(403).json({ error: 'Research Ore Refining first', requires_tech: 'tech_refining' });
+    if (!tech.unlocked) return res.status(403).json({ error: `Research ${techLink('tech_refining', 'Ore Refining')} first`, requires_tech: 'tech_refining' });
     const bonuses = await getPlayerBonuses(userId);
     const result = await transaction(async (client) => {
       const ctx = await dockedBaseLanes(req, userId, client);

@@ -1,6 +1,7 @@
 // Crafting Window
 // Select recipes, drag resources from Cargo window into ingredient slots, craft items
 
+import { QuestText } from '@/components/ui/QuestText';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
@@ -1358,7 +1359,7 @@ export const CraftingWindow = () => {
               {/* Status messages */}
               {error && (
                 <div style={{ marginTop: 8 }}>
-                  <MessageBar type="error">{error}</MessageBar>
+                  <MessageBar type="error"><QuestText text={error} /></MessageBar>
                 </div>
               )}
               {success && (

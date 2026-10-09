@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { fittingAPI } from '@/utils/api';
+import { QuestText } from '@/components/ui/QuestText';
 import { useGameStore } from '@/stores/gameStore';
 import { getShipImage, shipVariant, MAX_FLEET_SIZE } from '@/utils/shipRenderer';
 import { computeFleetStats } from '@/utils/fleetStats';
@@ -400,7 +401,7 @@ export const FleetWindow = () => {
             lineHeight: 1.4,
             padding: '2px 10px',
           }}>
-            Fleet cap {fleetCap}/{MAX_FLEET_SIZE} — {fleetCapHint || 'train Fleet Command (Spaceship Command) for +1 ship per level'}.
+            Fleet cap {fleetCap}/{MAX_FLEET_SIZE} — <QuestText text={fleetCapHint || 'train [[skill:cmd_fleet_command|Fleet Command]] (Spaceship Command) for +1 ship per level'} />.
           </div>
         )}
 

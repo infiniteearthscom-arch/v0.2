@@ -17,6 +17,7 @@ import {
   FETCH_PREMIUM,
 } from '../game/contracts.js';
 import { resourceSellPrice } from '../lib/pricing.js';
+import { skillLink } from '../lib/textLinks.js';
 import { completeQuestInTx } from './quests.js';
 
 // Fetch offers need the resource catalog (079). Load once per process.
@@ -179,7 +180,7 @@ router.post('/accept', async (req, res) => {
       const active = await client.query(
         `SELECT contract_key FROM player_contracts WHERE user_id = $1 AND status = 'active' FOR UPDATE`, [userId]);
       if (active.rows.some(r => r.contract_key === key)) throw Object.assign(new Error('You already hold this contract'), { statusCode: 409 });
-      if (active.rows.length >= caps.active_cap) throw Object.assign(new Error(`You can hold ${caps.active_cap} contracts (train Contracting for more)`), { statusCode: 403 });
+      if (active.rows.length >= caps.active_cap) throw Object.assign(new Error(`You can hold ${caps.active_cap} contracts (train ${skillLink('trd_contracting', 'Contracting')} for more)`), { statusCode: 403 });
       const isFetch = offer.contract_type === 'fetch';
       const isBounty = offer.contract_type === 'bounty';
       if (!isFetch && !isBounty) {

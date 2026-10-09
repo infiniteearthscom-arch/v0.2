@@ -9,6 +9,7 @@ import { normalizeItem, normalizeFittedModule, SLOT_TYPE_META } from '@/utils/it
 import { qualityMultiplier, STAT_META, fmtStatValue, statModifierColor } from '@/utils/quality';
 import { detectWeaponType } from '@/utils/weapons';
 import { moduleGateForItem, hullGateFor, gateStatus, weaponSize, SIZE_RANK } from '@/utils/fitGates';
+import { QuestText } from '@/components/ui/QuestText';
 import { describeWeaponEffectiveness } from '@/utils/combat';
 // Single source of truth for hull shape data (pitfall #11 in CLAUDE.md).
 // ShipBuilderWindow used to inline its own HULL_SHAPES const which
@@ -485,7 +486,7 @@ const ShipSelector = ({ ships, selectedId, onSelect, hulls, onBuyHull, activeShi
                 </div>
                 <div className="text-[0.8rem] text-slate-500">{h.class} • {(h.slots || []).length} slots</div>
                 {!gs.ok && (
-                  <div className="text-[0.8rem] text-yellow-400">🔒 Requires {gs.text}</div>
+                  <div className="text-[0.8rem] text-yellow-400">🔒 Requires <QuestText text={gs.link} /></div>
                 )}
               </button>
             );
@@ -975,7 +976,7 @@ export const ShipBuilderWindow = () => {
       }
       const gs = gateStatus(moduleGateForItem(cargoRow, fitGates), skills);
       if (!gs.ok) {
-        flash('error', `${cargoRow.item_name || 'This module'} requires ${gs.text} (you have ${gs.have ? gs.have : 'none'}) — train it in Skills & Research`);
+        flash('error', `${cargoRow.item_name || 'This module'} requires ${gs.link} (you have ${gs.have ? gs.have : 'none'}) — click the skill to open it`);
         return;
       }
     }

@@ -738,6 +738,7 @@ const ResearchTab = ({ initialTree, pulseTechId = null }) => {
           rp={liveRp}
           resourceCounts={resourceCounts}
           onClickTech={(t) => setConfirmTechId(t.id)}
+          pulseTechId={pulseTechId}
         />
       </div>
 
@@ -771,7 +772,7 @@ const NODE_GAP_X = 36;
 // row. Nodes within a tier are spaced horizontally by sort_order.
 // Draws SVG <line>s for prereq edges before the node cards (which are
 // HTML overlaid on the SVG via absolute positioning).
-const TreeVisualizer = ({ tree, accent, techs, rp, resourceCounts, onClickTech }) => {
+const TreeVisualizer = ({ tree, accent, techs, rp, resourceCounts, onClickTech, pulseTechId = null }) => {
   const byTier = useMemo(() => {
     const m = new Map();
     for (const t of techs) {

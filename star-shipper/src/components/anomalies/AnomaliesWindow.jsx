@@ -4,6 +4,7 @@
 // rewards and (for guarded sites) hands back a raider fleet that
 // SystemView spawns via store.pendingAmbush.
 
+import { QuestText } from '@/components/ui/QuestText';
 import React, { useEffect, useState } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
@@ -89,7 +90,7 @@ export const AnomaliesWindow = () => {
   return (
     <ContextPanel windowId="anomalies" title="Signals" icon="🔭" accent={CYAN.pri} width={520}>
       <div style={{ fontFamily: F, color: '#e2e8f0' }}>
-        {err && <div style={{ color: '#f87171', fontSize: '0.85rem' }}>{err}</div>}
+        {err && <div style={{ color: '#f87171', fontSize: '0.85rem' }}><QuestText text={err} /></div>}
         {!data && !err && <div style={{ color: '#4a6580' }}>Listening…</div>}
         {data && (
           <>

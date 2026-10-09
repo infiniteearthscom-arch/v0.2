@@ -17,6 +17,8 @@
 // the Ship Builder can show locks + requirement text from the same
 // table the server enforces. Edit here, nowhere else.
 
+import { skillLink } from '../lib/textLinks.js';
+
 export const FLEET_COMMAND_SKILL = 'cmd_fleet_command';
 export const FLEET_DISCIPLINE_SKILL = 'cmd_fleet_disc';
 export const FLEET_DISCIPLINE_LEVEL = 5;          // the level that grants the sixth ship
@@ -30,8 +32,8 @@ export const fleetCapForLevel = (level, disciplineLevel = 0) => {
 };
 // What to train next for a bigger fleet, or '' at the hard max.
 export const fleetCapHint = (level, disciplineLevel = 0) => {
-  if ((level || 0) < COMMAND_FLEET_CAP - BASE_FLEET_CAP) return 'train Fleet Command (Spaceship Command) for +1 ship per level';
-  if ((disciplineLevel || 0) < FLEET_DISCIPLINE_LEVEL) return 'train Fleet Discipline (Spaceship Command) to V for a sixth ship';
+  if ((level || 0) < COMMAND_FLEET_CAP - BASE_FLEET_CAP) return `train ${skillLink(FLEET_COMMAND_SKILL, 'Fleet Command')} (Spaceship Command) for +1 ship per level`;
+  if ((disciplineLevel || 0) < FLEET_DISCIPLINE_LEVEL) return `train ${skillLink(FLEET_DISCIPLINE_SKILL, 'Fleet Discipline')} (Spaceship Command) to V for a sixth ship`;
   return '';
 };
 
@@ -172,7 +174,7 @@ export async function assertGate(db, userId, gate, what) {
   if (have >= gate.level) return;
   const name = names[gate.skill] || gate.skill;
   throw Object.assign(
-    new Error(`${what} requires ${name} ${roman(gate.level)} (you have ${have ? roman(have) : 'none'})`),
+    new Error(`${what} requires ${skillLink(gate.skill, name)} ${roman(gate.level)} (you have ${have ? roman(have) : 'none'})`),
     { statusCode: 403, requires_skill: gate.skill, requires_level: gate.level }
   );
 }

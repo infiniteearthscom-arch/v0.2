@@ -8,6 +8,7 @@ import { getPlayerCargoInfo } from './resources.js';
 import { ensureDepositsExist } from '../game/deposits.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { completeQuestInTx } from './quests.js';
+import { skillLink } from '../lib/textLinks.js';
 
 const router = express.Router();
 
@@ -392,7 +393,7 @@ router.post('/deploy', authMiddleware, async (req, res) => {
       const { cap: myCap, count: myCount } = await getPlayerSlotCap(client, userId, body_id, body.harvester_slots || 0);
       if (myCount >= myCap) {
         throw Object.assign(
-          new Error(`You already run ${myCount} harvester${myCount === 1 ? '' : 's'} here (your cap on this planet is ${myCap}). Train Command Center Upgrades for more.`),
+          new Error(`You already run ${myCount} harvester${myCount === 1 ? '' : 's'} here (your cap on this planet is ${myCap}). Train ${skillLink('pln_cc_upgrades', 'Command Center Upgrades')} for more.`),
           { statusCode: 400 }
         );
       }

@@ -12,6 +12,7 @@ import { getGalaxy as getWarpGalaxy } from '../game/warp.js';
 import { modulesFromFitted, ejectResources, ejectItems, insertWreck, EJECT_CARGO_FRACTION } from '../lib/wrecks.js';
 import { SUPPLIES_CATALOG, resourceSellPrice, itemSellPrice, loadPricingCatalog, avgResourceQuality } from '../lib/pricing.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
+import { techLink } from '../lib/textLinks.js';
 
 const router = express.Router();
 
@@ -786,7 +787,7 @@ router.post('/buy-module', authMiddleware, async (req, res) => {
           const techDef = await client.query(`SELECT name FROM tech_definitions WHERE id = $1`, [mod.requires_tech]);
           const techName = techDef.rows[0]?.name || mod.requires_tech;
           throw Object.assign(
-            new Error(`Requires research: ${techName}`),
+            new Error(`Requires research: ${techLink(mod.requires_tech, techName)}`),
             { statusCode: 403, requires_tech: mod.requires_tech }
           );
         }

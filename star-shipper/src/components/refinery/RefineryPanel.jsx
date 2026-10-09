@@ -4,6 +4,7 @@
 // number; this shows lanes, running jobs with progress, the queue, a
 // live quote for a new job, and collect / cancel.
 
+import { QuestText } from '@/components/ui/QuestText';
 import React, { useEffect, useState } from 'react';
 import { refiningAPI, resourcesAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
@@ -77,7 +78,7 @@ export const RefineryPanel = () => {
     finally { setBusy(false); }
   };
 
-  if (err && !status) return <div style={{ color: '#f87171', fontFamily: F, fontSize: '0.85rem' }}>{err}</div>;
+  if (err && !status) return <div style={{ color: '#f87171', fontFamily: F, fontSize: '0.85rem' }}><QuestText text={err} /></div>;
   if (!status) return <div style={{ color: '#4a6580', fontFamily: F, fontSize: '0.85rem' }}>Loading refinery…</div>;
 
   if (!status.unlocked) {
@@ -168,7 +169,7 @@ export const RefineryPanel = () => {
                 </div>
               )}
               {quote?.reason && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: 4 }}>{quote.reason}</div>}
-              {err && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: 4 }}>{err}</div>}
+              {err && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: 4 }}><QuestText text={err} /></div>}
               <div style={{ marginTop: 8 }}>
                 <Btn disabled={busy || !quote || !!quote.reason || quote.fuel_cells > status.fuel_cells} onClick={() => act(() => refiningAPI.queue(selected.id, qty, lane, selected.source), r => `Queued: ${r.job.units_in} → ${r.job.units_out} in ${fmtSecs(r.quote.seconds)}`)}>⚗ QUEUE JOB</Btn>
               </div>

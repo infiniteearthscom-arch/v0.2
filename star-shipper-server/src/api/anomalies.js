@@ -4,6 +4,7 @@
 
 import express from 'express';
 import { authMiddleware } from '../auth/index.js';
+import { techLink } from '../lib/textLinks.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { getPlayerBonuses } from '../util/playerBonuses.js';
 import { addResourceStack, insertModuleItem } from '../lib/wrecks.js';
@@ -145,7 +146,7 @@ router.post('/resolve', async (req, res) => {
     const bonuses = await getPlayerBonuses(userId);
     const techs = await techSet(userId);
     if (site.type === 'relic_cache' && site.tier >= 4 && !techs.has('tech_xenoarchaeology')) {
-      return res.status(403).json({ error: 'Research Xenoarchaeology to open tier IV+ relic caches' });
+      return res.status(403).json({ error: `Research ${techLink('tech_xenoarchaeology', 'Xenoarchaeology')} to open tier IV+ relic caches` });
     }
     const catalog = await moduleCatalog();
     const result = await transaction(async (client) => {

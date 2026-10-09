@@ -31,6 +31,7 @@ import { query, queryAll, transaction } from '../db/index.js';
 import { GATE_CONFIG, WARP_CORE_MODULE_ID, ISLAND_CORE_PRICE } from '../game/fitGates.js';
 import { isWarpCoreLive } from '../game/warp.js';
 import { completeQuestInTx } from './quests.js';
+import { skillLink, techLink } from '../lib/textLinks.js';
 
 const router = express.Router();
 
@@ -364,7 +365,7 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
           );
           const techName = techDef.rows[0]?.name || def.requires_tech;
           throw Object.assign(
-            new Error(`Requires research: ${techName}`),
+            new Error(`Requires research: ${techLink(def.requires_tech, techName)}`),
             { statusCode: 403, requires_tech: def.requires_tech }
           );
         }
@@ -382,7 +383,7 @@ router.post('/queue/add', authMiddleware, async (req, res) => {
       const dynamicMax = BASE_QUEUE + (skillsById.get(TRAINING_DISCIPLINE_ID)?.level || 0);
       if (queue.length >= dynamicMax) {
         throw Object.assign(
-          new Error(`Queue full (${dynamicMax} entries max -- train Training Discipline to unlock more slots)`),
+          new Error(`Queue full (${dynamicMax} entries max -- train ${skillLink(TRAINING_DISCIPLINE_ID, 'Training Discipline')} to unlock more slots)`),
           { statusCode: 400 }
         );
       }

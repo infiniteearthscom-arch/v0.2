@@ -87,5 +87,8 @@ export const gateStatus = (gate, skills) => {
     need: gate.level,
     skillName,
     text: `${skillName} ${roman(gate.level)}`,
+    // Same line with the skill as a quest-text link (render via QuestText;
+    // keep `text` for title attributes and other plain surfaces).
+    link: `[[skill:${gate.skill}|${skillName}]] ${roman(gate.level)}`,
   };
 };
