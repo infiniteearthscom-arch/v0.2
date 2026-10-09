@@ -22,6 +22,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { resourcesAPI } from '@/utils/api';
 import { QuestText } from '@/components/ui/QuestText';
+import { TRACK_KINDS, normalizeTracked } from '@/utils/tracking';
 
 const EDGE = '#1a3050';
 const GOLD = { pri: '#f59e0b', light: '#fbbf24' };
@@ -64,8 +65,10 @@ export const PinnedQuestsOverlay = () => {
   // Tracked recipes (2026-10-08): have/need per ingredient from the fleet
   // hold, polled while anything is tracked (10 s; cheap, same endpoint the
   // Cargo window polls at 5 s).
-  const recipes = useGameStore(state => state.pinnedRecipes) || [];
-  const unpinRecipe = useGameStore(state => state.unpinRecipe);
+  const trackedRaw = useGameStore(state => state.pinnedRecipes) || [];
+  const recipes = useMemo(() => trackedRaw.map(normalizeTracked).filter(Boolean), [trackedRaw]);
+  const untrackItem = useGameStore(state => state.untrackItem);
+  const credits = useGameStore(state => state.resources?.credits ?? 0);
   const [have, setHave] = useState({});
   useEffect(() => {
     if (!recipes.length) return undefined;
@@ -122,7 +125,7 @@ export const PinnedQuestsOverlay = () => {
           <PinnedTile key={q.quest_id} quest={q} onUnpin={() => pinQuest(q.quest_id, false)} />
         ))}
         {contracts.map(c => <ContractTile key={c.id} contract={c} />)}
-        {recipes.map(r => <RecipeTile key={r.id} recipe={r} have={have} onUnpin={() => unpinRecipe(r.id)} />)}
+        {recipes.map(r => <TrackedTile key={r.key} item={r} have={have} credits={credits} onUnpin={() => untrackItem(r.key)} />)}
       </div>
     </>
   );
@@ -161,26 +164,37 @@ const ContractTile = ({ contract: c }) => {
   );
 };
 
-// Tracked recipe: one row per ingredient, have/need from the fleet hold.
-// Green when covered, amber while short; the header turns green when the
-// whole recipe is covered. Unpin with ✕ (or Untrack in the Crafting window).
-const RecipeTile = ({ recipe, have, onUnpin }) => {
-  const rows = (recipe.ingredients || []).map(g => ({ ...g, have: have[g.resource_name] || 0 }));
-  const ready = rows.length > 0 && rows.every(r => r.have >= r.quantity);
-  const accent = ready ? { pri: '#22c55e', light: '#4ade80' } : { pri: '#a855f7', light: '#c084fc' };
+// Tracked requirement (2026-10-09, generalised from the recipe tile): ONE
+// tile for every kind in utils/tracking.js -- recipes, base builds and
+// upgrades, plot buildings. One row per ingredient, have/need from the
+// fleet hold (depot stacks are not counted), plus a credits row when the
+// item costs credits. Green when covered, amber while short; the header
+// turns green when everything is covered. Unpin with ✕ or the TrackButton.
+const TrackedTile = ({ item, have, credits, onUnpin }) => {
+  const kindDef = TRACK_KINDS[item.kind] || TRACK_KINDS.recipe;
+  const rows = (item.ingredients || []).map(g => ({ ...g, have: have[g.resource_name] || 0 }));
+  const creditsOk = !item.credits || credits >= item.credits;
+  const ready = (rows.length > 0 || item.credits > 0) && rows.every(r => r.have >= r.quantity) && creditsOk;
+  const accent = ready ? { pri: '#22c55e', light: '#4ade80' } : { pri: kindDef.color, light: kindDef.light };
   return (
     <div style={{
       pointerEvents: 'auto', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 14px',
       width: '100%', boxSizing: 'border-box', background: 'rgba(8,14,28,0.92)',
       border: `1px solid ${accent.pri}55`, borderLeft: `3px solid ${accent.pri}`, borderRadius: 3, backdropFilter: 'blur(4px)',
     }}>
-      <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>⚒</div>
+      <div style={{ fontSize: '0.8125rem', color: accent.light, marginTop: 1 }}>{item.icon || kindDef.icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.6875rem', fontFamily: F, fontWeight: 800, color: accent.light, letterSpacing: 0.5 }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{recipe.name}</span>
-          <span style={{ fontSize: '0.5rem', fontFamily: FM, fontWeight: 700, color: accent.pri, opacity: 0.65, letterSpacing: 1.2, flexShrink: 0 }}>{ready ? 'READY TO CRAFT' : 'RECIPE'}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+          <span style={{ fontSize: '0.5rem', fontFamily: FM, fontWeight: 700, color: accent.pri, opacity: 0.65, letterSpacing: 1.2, flexShrink: 0 }}>{ready ? kindDef.ready : kindDef.label}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', columnGap: 10, rowGap: 1, marginTop: 3, fontFamily: FM, fontSize: '0.75rem' }}>
+          {item.credits > 0 && (
+            <React.Fragment>
+              <span style={{ color: creditsOk ? '#86efac' : '#c9d4e2' }}>Credits</span>
+              <span style={{ color: creditsOk ? '#4ade80' : '#fbbf24', textAlign: 'right' }}>{Math.min(credits, item.credits).toLocaleString()}/{item.credits.toLocaleString()}{creditsOk ? ' ✓' : ` · need ${(item.credits - credits).toLocaleString()}`}</span>
+            </React.Fragment>
+          )}
           {rows.map(r => {
             const ok = r.have >= r.quantity;
             return (
@@ -192,7 +206,7 @@ const RecipeTile = ({ recipe, have, onUnpin }) => {
           })}
         </div>
       </div>
-      <button onClick={onUnpin} title="Stop tracking this recipe"
+      <button onClick={onUnpin} title="Stop tracking this"
         style={{ background: 'transparent', border: `1px solid ${EDGE}`, color: '#5a6a7a', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 2, fontSize: '0.8rem', fontFamily: F, lineHeight: 1, flexShrink: 0, marginTop: 1 }}
         onMouseEnter={(e) => { e.currentTarget.style.color = '#a04040'; e.currentTarget.style.borderColor = '#5a3030'; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = '#5a6a7a'; e.currentTarget.style.borderColor = EDGE; }}>✕</button>

@@ -20,6 +20,8 @@ import { CargoGrid } from '@/components/items/CargoGrid';
 import { playSound } from '@/utils/audio';
 import { PixelItemIcon, moduleIconSpec, resourceIconSpecByName } from '@/components/pixel/PixelArt';
 import { RefineryPanel } from '@/components/refinery/RefineryPanel';
+import { TrackButton } from '@/components/ui/TrackButton';
+import { ingredientsFromMap } from '@/utils/tracking';
 import { paintBaseArt, BASE_ART_W, BASE_ART_H, familyColor } from '@/utils/pixelArt/baseArt';
 
 const F = "'Rajdhani', sans-serif";
@@ -523,6 +525,9 @@ export const BaseWindow = () => {
               {base.building && <Card accent="#22d3ee"><div style={{ color: '#67e8f9', fontWeight: 700, fontSize: '0.8rem' }}>🏗️ {base.upgrading ? `Upgrading to ${base.tier_name} · ${minutesLeft(base.build_completes_at)} min · production continues` : `Under construction · ${minutesLeft(base.build_completes_at)} min`}</div></Card>}
               {base.next_tier && (
                 <Card accent={GOLD.pri} title={`UPGRADE → ${base.next_tier.name.toUpperCase()}`}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                    <TrackButton small item={{ kind: 'base', id: `tier${base.next_tier.tier}`, name: `${base.next_tier.name} upgrade (tier ${base.next_tier.tier})`, ingredients: ingredientsFromMap(base.next_tier.resources), credits: base.next_tier.credits }} />
+                  </div>
                   <div style={{ color: '#8fa3b8', fontSize: '0.74rem', fontFamily: FM, lineHeight: 1.5 }}>
                     +{(base.next_tier.slots - base.slots)} plots · {base.next_tier.build_minutes} min<br />
                     {fmt(base.next_tier.credits)} cr<br />

@@ -7,6 +7,8 @@ import React, { useEffect, useState } from 'react';
 import { basesAPI } from '@/utils/api';
 import { playSound } from '@/utils/audio';
 import { useGameStore } from '@/stores/gameStore';
+import { TrackButton } from '@/components/ui/TrackButton';
+import { ingredientsFromMap } from '@/utils/tracking';
 
 const F = "'Rajdhani', sans-serif";
 const FM = "'Share Tech Mono', monospace";
@@ -107,7 +109,10 @@ export const BaseTab = ({ body }) => {
           </div>
           <input value={name} onChange={e => setName(e.target.value)} placeholder={`${kind === 'orbital' ? 'Orbital' : 'Surface'} Base name`}
             style={{ width: '100%', boxSizing: 'border-box', background: '#050a14', color: '#e2e8f0', border: `1px solid ${EDGE}`, borderRadius: 2, padding: '5px 8px', fontFamily: F, marginBottom: 8 }} />
-          <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>Framework · {t1.slots} plots</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.85rem' }}>Framework · {t1.slots} plots</div>
+            <TrackButton small item={{ kind: 'base', id: 'tier1', name: 'Framework base (tier 1)', ingredients: ingredientsFromMap(t1.resources), credits: t1.credits }} />
+          </div>
           <CostLine tier={t1} />
           {can_build && !can_build.ok && (
             <div style={{ fontSize: '0.8rem', marginTop: 6 }}>

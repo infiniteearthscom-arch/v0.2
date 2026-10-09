@@ -100,6 +100,18 @@ toggleWindow('myWindow')   // toolbar buttons
 openWindow('myWindow') / closeWindow('myWindow')
 ```
 
+### Tracked requirements (the top-right have/need tiles)
+One shape for anything the player can track — recipes, base builds / upgrades, plot buildings, blueprints (owner 2026-10-09: "standardize this feature"). Never add a bespoke pin list.
+```js
+import { TrackButton } from '@/components/ui/TrackButton';
+import { ingredientsFromMap } from '@/utils/tracking';
+<TrackButton small item={{ kind: 'base', id: 'tier2', name: 'Outpost upgrade',
+  ingredients: ingredientsFromMap(tier.resources), credits: tier.credits }} />
+// kinds: recipe | base | building | module  (labels/colours in utils/tracking.js TRACK_KINDS)
+// store: trackItem(item) toggles, untrackItem(key); key = `${kind}:${id}`; max 6, persisted
+// overlay: PinnedQuestsOverlay TrackedTile renders every kind (hold only, + credits row)
+```
+
 ### Server route — auth middleware
 ```js
 import { authMiddleware } from '../auth/index.js';

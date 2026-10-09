@@ -11,6 +11,8 @@ import { playSound } from '@/utils/audio';
 import { getFleetScanTimeMs, fleetHasScanner } from '@/utils/shipStats';
 import { COLORS, PanelButton, MessageBar, Pill } from '@/components/ui/panelStyles';
 import { STAT_META, fmtStatValue } from '@/utils/quality';
+import { hullGateFor, gateStatus } from '@/utils/fitGates';
+import { QuestText } from '@/components/ui/QuestText';
 import presence from '@/utils/presence';
 import trade from '@/utils/trade';
 import { generateGalaxy } from '@/utils/galaxyGenerator';
@@ -2113,6 +2115,10 @@ const VendorTab = ({ body }) => {
   // any non-pod ship (flying OR stored) counts. Drives hiding the
   // free Starter Scout vendor row below.
   const ownsRealShip = useGameStore(state => state.ships.some(s => s.hull_type_id !== 'pod'));
+  // Hull class gates (fitGates.js): shown on the Hulls tab with a skill link
+  // (pitfall #22) instead of only on the server's 403 at buy time.
+  const fitGates = useGameStore(state => state.fitGates);
+  const playerSkills = useGameStore(state => state.skills);
   // Subscribed (not getState) so the Reload All Missiles row appears/
   // hides immediately when launchers are fitted/unfitted — a getState
   // read only updated on unrelated re-renders. Audit fix 2026-09-03.
@@ -2539,11 +2545,15 @@ const VendorTab = ({ body }) => {
           Starter Kit to new players. */}
       {section === 'hulls' && (
         <div>
-          {hulls.filter(h => h.id !== 'starter_scout' || !ownsRealShip).map(h => (
+          {hulls.filter(h => h.id !== 'starter_scout' || !ownsRealShip).map(h => {
+            const gs = gateStatus(hullGateFor(h.id, fitGates), playerSkills);
+            const locked = !gs.ok;
+            return (
             <div key={h.id} style={{
               background: 'rgba(4,8,16,0.5)',
               border: `1px solid ${EDGE}`,
-              borderLeft: `2px solid ${EDGE}`,
+              borderLeft: `2px solid ${locked ? '#fbbf2466' : EDGE}`,
+              opacity: locked ? 0.85 : 1,
               borderRadius: 3,
               padding: 10,
               marginBottom: 6,
@@ -2577,13 +2587,34 @@ const VendorTab = ({ body }) => {
                   <span style={{ color: '#4a6580' }}>HULL <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{h.base_hull}</span></span>
                   <span style={{ color: '#4a6580' }}>SPD <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{h.base_speed}</span></span>
                   <span style={{ color: '#4a6580' }}>SLOTS <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{(h.slots || []).length}</span></span>
+                  {h.max_weapon_size && <span style={{ color: '#4a6580' }}>TURRETS <span style={{ color: '#a0b0c0', fontWeight: 700 }}>{String(h.max_weapon_size).toUpperCase()}</span></span>}
                 </div>
+                {/* Slot breakdown (owner 2026-10-09): what the hull can fit, by type. */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                  {Object.entries((h.slots || []).reduce((acc, s) => { const t = s?.type || 'other'; acc[t] = (acc[t] || 0) + 1; return acc; }, {}))
+                    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                    .map(([type, n]) => {
+                      const c = VENDOR_SLOT_COLORS[type] || '#8899aa';
+                      return (
+                        <span key={type} style={{ fontSize: '0.72rem', fontFamily: FM, color: c, background: `${c}14`, border: `1px solid ${c}55`, borderRadius: 2, padding: '1px 6px', whiteSpace: 'nowrap' }}>
+                          {n}× {type.toUpperCase()}
+                        </span>
+                      );
+                    })}
+                </div>
+                {locked && (
+                  <div style={{ marginTop: 5, fontSize: '0.8rem', fontFamily: F, color: '#fbbf24' }}>
+                    🔒 Requires <QuestText text={gs.link} /> <span style={{ color: '#8a6a2a' }}>(you have {gs.have ? gs.have : 'none'})</span>
+                  </div>
+                )}
               </div>
-              <PanelButton accent={GOLD.pri} onClick={() => { playSound('button_click'); buyHull(h.id); }}>
-                {h.price > 0 ? `${h.price.toLocaleString()} CR` : 'FREE'}
+              <PanelButton accent={locked ? '#8a6a2a' : GOLD.pri} onClick={() => { playSound('button_click'); if (!locked) buyHull(h.id); }}
+                title={locked ? `Requires ${gs.text}` : undefined}>
+                {locked ? '🔒' : h.price > 0 ? `${h.price.toLocaleString()} CR` : 'FREE'}
               </PanelButton>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

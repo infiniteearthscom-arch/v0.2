@@ -1,4 +1,5 @@
 import { setWarpCoreLive } from '../utils/warp';
+import { normalizeTracked, trackKey, TRACK_MAX } from '../utils/tracking';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
@@ -646,17 +647,26 @@ export const useGameStore = create(
         }
       },
 
-      // Track / untrack a crafting recipe in the pinned stack (max 6).
-      pinRecipe: (recipe) => set(state => {
-        if (!recipe?.id) return;
-        const list = state.pinnedRecipes || [];
-        const i = list.findIndex(r => r.id === recipe.id);
-        if (i >= 0) { list.splice(i, 1); return; }
-        list.push({ id: recipe.id, name: recipe.name, ingredients: (recipe.ingredients || []).map(g => ({ resource_name: g.resource_name, quantity: g.quantity })) });
-        while (list.length > 6) list.shift();
+      // Tracked requirements (2026-10-09, generalised from recipe pins):
+      // ONE list for recipes, base builds / upgrades, plot buildings, ...
+      // Shape + key rules live in utils/tracking.js; surfaces use
+      // <TrackButton item={...} />, the overlay renders every kind alike.
+      // `pinnedRecipes` keeps its name for the persisted state.
+      trackItem: (item) => set(state => {
+        const norm = normalizeTracked(item);
+        if (!norm) return;
+        const list = (state.pinnedRecipes || []).map(normalizeTracked).filter(Boolean);
+        const i = list.findIndex(r => r.key === norm.key);
+        if (i >= 0) list.splice(i, 1); else list.push(norm);
+        while (list.length > TRACK_MAX) list.shift();
         state.pinnedRecipes = list;
       }),
-      unpinRecipe: (id) => set(state => { state.pinnedRecipes = (state.pinnedRecipes || []).filter(r => r.id !== id); }),
+      untrackItem: (key) => set(state => {
+        state.pinnedRecipes = (state.pinnedRecipes || []).map(normalizeTracked).filter(r => r && r.key !== key);
+      }),
+      // Back-compat wrappers (Crafting window used these before TrackButton).
+      pinRecipe: (recipe) => get().trackItem({ kind: 'recipe', id: recipe?.id, name: recipe?.name, ingredients: recipe?.ingredients }),
+      unpinRecipe: (id) => get().untrackItem(trackKey('recipe', id)),
 
       completeQuest: async (questId) => {
         try {

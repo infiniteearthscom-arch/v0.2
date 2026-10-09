@@ -2,6 +2,7 @@
 // Select recipes, drag resources from Cargo window into ingredient slots, craft items
 
 import { QuestText } from '@/components/ui/QuestText';
+import { TrackButton } from '@/components/ui/TrackButton';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ContextPanel } from '@/components/ui/ContextPanel';
 import { useGameStore } from '@/stores/gameStore';
@@ -864,21 +865,11 @@ const CraftingCargoPanel = ({ isOpen, selectedRecipe, onAssign }) => {
 // Track / untrack a recipe in the top-right pinned stack (owner 2026-10-08:
 // "pin crafting item recipe requirements ... so a player can easily track
 // what they need to mine"). Lives in gameStore.pinnedRecipes (persisted).
-const TrackRecipeButton = ({ recipe }) => {
-  const pinned = useGameStore(state => state.pinnedRecipes) || [];
-  const pinRecipe = useGameStore(state => state.pinRecipe);
-  const on = pinned.some(r => r.id === recipe?.id);
-  return (
-    <button onClick={() => pinRecipe(recipe)} title={on ? 'Stop tracking this recipe' : 'Track this recipe\'s ingredients in the top-right stack'}
-      style={{
-        flexShrink: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer', fontFamily: FONT.ui, fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5,
-        background: on ? '#22c55e22' : 'transparent', color: on ? '#4ade80' : COLORS.TEXT.dim,
-        border: `1px solid ${on ? '#22c55e66' : COLORS.EDGE}`,
-      }}>
-      {on ? '📌 TRACKING' : '📌 TRACK'}
-    </button>
-  );
-};
+// Now the shared TrackButton (2026-10-09) -- same control as base builds /
+// upgrades; the item shape is utils/tracking.js.
+const TrackRecipeButton = ({ recipe }) => (
+  <TrackButton item={recipe ? { kind: 'recipe', id: recipe.id, name: recipe.name, ingredients: recipe.ingredients } : null} />
+);
 
 export const CraftingWindow = () => {
   const windows = useGameStore(state => state.windows);
