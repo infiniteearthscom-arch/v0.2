@@ -1677,6 +1677,9 @@ const HarvestersTab = ({ body, effectiveBodyId }) => {
       const result = await harvesterAPI.refuel(harvesterId, fuelItemId);
       flash('success', `Added ${result.fuel_added_hours.toFixed(1)}h fuel.`);
       await fetchData();
+      // Tutorial "Fuel Up" (104) is completed server-side; sync credits + quests.
+      const st = useGameStore.getState();
+      if (result.quest && st.applyServerQuest) st.applyServerQuest(result.quest);
     } catch (err) {
       flash('error', err.message);
     }

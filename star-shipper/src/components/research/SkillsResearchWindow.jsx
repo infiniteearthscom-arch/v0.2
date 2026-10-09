@@ -65,6 +65,7 @@ const WIRED_BONUS_TYPES = new Set([
   'armor_repair_pct',           // Repair Systems (101) -> SystemView runActive('armor_repairer')
   // Tank tuning (102): Overheat duration / cooldown, hive delay, shield regen, empty-cap penalty, repair bill
   'overheat_duration_pct', 'overheat_cooldown_pct', 'repair_delay_pct', 'shield_recharge_pct', 'cap_empty_rate_pct', 'repair_cost_pct',
+  'harvester_rate_pct', 'harvester_hopper_pct', 'harvester_fuel_pct', // Harvester Operations / Hopper Expansion / Fuel Efficiency (103) -> api/harvesters.js
   // Mining + industry
   'mining_yield_pct',           // /asteroids/mine endpoint
   'mining_range_pct',           // Beam Focusing -> mining reach (utils/mining.js + /asteroids/mine, 087)

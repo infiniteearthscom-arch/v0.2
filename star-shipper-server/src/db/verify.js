@@ -237,6 +237,10 @@ async function main() {
   const tune = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE id IN ('eng_heat_sinks','eng_heat_dissipation','eng_nanite_interfacing','eng_shield_management','eng_emergency_power','log_dock_maintenance') AND bonus_per_level->>'type' IN ('overheat_duration_pct','overheat_cooldown_pct','repair_delay_pct','shield_recharge_pct','cap_empty_rate_pct','repair_cost_pct')`);
   report('tank tuning skills (102)', tune.rows[0].n === 6, `${tune.rows[0].n}/6`);
 
+  // --- migration 103 (harvester skills) ---
+  const hops = await pool.query(`SELECT COUNT(*)::int AS n FROM skill_definitions WHERE (id, bonus_per_level->>'type') IN (('pln_harvester_ops','harvester_rate_pct'),('pln_hopper_expansion','harvester_hopper_pct'),('pln_fuel_efficiency','harvester_fuel_pct'))`);
+  report('harvester skills rate / hopper / fuel (103)', hops.rows[0].n === 3, `${hops.rows[0].n}/3`);
+
   // --- migration 099 (turrets + targeting) ---
   report('hull_types.max_weapon_size (099)', await columnExists('hull_types', 'max_weapon_size'));
   const tur = await pool.query(`SELECT COUNT(*)::int AS n FROM module_types WHERE id IN ('weapon_cannon_1','weapon_laser_2','weapon_beam_4','weapon_coil_4')`);
@@ -274,6 +278,10 @@ async function main() {
   report('onboarding expansion quests (085)', onb.rows[0].n === 6, `${onb.rows[0].n}/6`);
   const hook = await pool.query(`SELECT triggers_quests::text AS t FROM quest_definitions WHERE id = 'tutorial_collect_harvester'`);
   report('Coming Home triggers Hired Gun (085)', (hook.rows[0]?.t || '').includes('tutorial_first_contract'));
+  // --- migration 104 (Fuel Up) ---
+  const fuelQ = await pool.query(`SELECT id, triggers_quests::text AS t FROM quest_definitions WHERE id IN ('tutorial_deploy_harvester','tutorial_fuel_harvester')`);
+  const ft = Object.fromEntries(fuelQ.rows.map(r => [r.id, r.t]));
+  report('Set & Forget -> Fuel Up -> Coming Home (104)', ft.tutorial_deploy_harvester?.includes('tutorial_fuel_harvester') && ft.tutorial_fuel_harvester?.includes('tutorial_collect_harvester'), JSON.stringify(ft));
 
   // --- migration 084 (contracts on the Missions board) ---
   report('player_contracts.pinned (084)', await columnExists('player_contracts', 'pinned'));

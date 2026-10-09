@@ -74,6 +74,8 @@ router.get('/', authMiddleware, async (req, res) => {
 const AUTO_SATISFY = {
   // 096: a pilot who already trains or queues anything has learned the skill queue.
   tutorial_queue_skill:       `SELECT 1 FROM player_skill_queue WHERE user_id = $1 UNION ALL SELECT 1 FROM player_skills WHERE user_id = $1 AND level > 0 LIMIT 1`,
+  // 104: a harvester that has fuel or is running has been fueled.
+  tutorial_fuel_harvester:    `SELECT 1 FROM deployed_harvesters WHERE user_id = $1 AND (fuel_remaining_hours > 0 OR status IN ('active','full')) LIMIT 1`,
   tutorial_first_contract:    `SELECT 1 FROM player_contracts WHERE user_id = $1 LIMIT 1`,
   tutorial_first_delivery:    `SELECT 1 FROM player_contracts WHERE user_id = $1 AND status = 'delivered' AND contract_type IN ('haul','fetch') LIMIT 1`,
   tutorial_first_refine:      `SELECT 1 FROM player_refine_jobs WHERE user_id = $1 AND status = 'collected' LIMIT 1`,

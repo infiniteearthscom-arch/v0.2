@@ -6,8 +6,25 @@ import { authMiddleware } from '../auth/index.js';
 import { query, queryOne, queryAll, transaction } from '../db/index.js';
 import { getPlayerCargoInfo } from './resources.js';
 import { ensureDepositsExist } from '../game/deposits.js';
+import { getPlayerBonuses } from '../util/playerBonuses.js';
+import { completeQuestInTx } from './quests.js';
 
 const router = express.Router();
+
+// Harvester skills (103), applied at TICK / refuel time, never baked into
+// the row or the item (pick-up returns the base harvester):
+//   harvester_rate_pct    Harvester Operations  +5 %/level  extraction rate
+//   harvester_hopper_pct  Hopper Expansion     +10 %/level  hopper capacity
+//   harvester_fuel_pct    Fuel Efficiency       +8 %/level  hours per Fuel Cell
+const harvesterMults = async (userId) => {
+  const b = await getPlayerBonuses(userId);
+  return {
+    rate:   1 + (b.harvester_rate_pct   || 0) / 100,
+    hopper: 1 + (b.harvester_hopper_pct || 0) / 100,
+    fuel:   1 + (b.harvester_fuel_pct   || 0) / 100,
+  };
+};
+const effectiveHopperCap = (harvester, hm) => Math.round(harvester.storage_capacity * (hm?.hopper ?? 1));
 
 // Per-player harvester cap per planet (2026-09-20). Slots are shared
 // planet-wide (first come), so cap what one pilot can hold on a single
@@ -54,7 +71,8 @@ const resolveBodyId = async (bodyIdOrName) => {
 // HELPER: Update harvester state based on elapsed time
 // ============================================
 
-const updateHarvesterState = (harvester, depositRemaining = null) => {
+const updateHarvesterState = (harvester, depositRemaining = null, mults = {}) => {
+  const rateMult = mults.rate ?? 1;
   // Calculate what happened since last update
   const now = new Date();
   const lastCheck = new Date(harvester.last_hopper_update_at || harvester.last_fuel_check_at);
@@ -72,8 +90,8 @@ const updateHarvesterState = (harvester, depositRemaining = null) => {
   }
   
   const fuelRemaining = parseFloat(harvester.fuel_remaining_hours);
-  const harvestRate = parseFloat(harvester.harvest_rate);
-  const storageCapacity = harvester.storage_capacity;
+  const harvestRate = parseFloat(harvester.harvest_rate) * rateMult;
+  const storageCapacity = effectiveHopperCap(harvester, mults);
   const currentHopper = harvester.hopper_quantity;
   const hopperSpace = storageCapacity - currentHopper;
   
@@ -148,6 +166,7 @@ const persistHarvesterState = async (harvester, computed, client = null) => {
 router.get('/mine', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const rows = await queryAll(`
       SELECT dh.*, cb.id AS body_id, cb.name AS body_name,
              ss.procedural_id AS system_procedural_id, ss.name AS system_name,
@@ -166,13 +185,13 @@ router.get('/mine', authMiddleware, async (req, res) => {
       const sys = bySystem[sysId] || (bySystem[sysId] = { system_name: h.system_name, count: 0, planets: [] });
       let planet = sys.planets.find(p => p.body_id === h.body_id);
       if (!planet) { planet = { body_id: h.body_id, body_name: h.body_name, harvesters: [] }; sys.planets.push(planet); }
-      const computed = updateHarvesterState(h, h.deposit_remaining);
+      const computed = updateHarvesterState(h, h.deposit_remaining, hm);
       planet.harvesters.push({
         id: h.id,
         harvester_type: h.harvester_type,
         resource_name: h.resource_name,
         hopper_quantity: computed.computed_hopper,
-        storage_capacity: h.storage_capacity,
+        storage_capacity: effectiveHopperCap(h, hm),
         fuel_remaining_hours: computed.computed_fuel,
         status: computed.computed_status,
       });
@@ -188,6 +207,7 @@ router.get('/mine', authMiddleware, async (req, res) => {
 router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const bodyId = await resolveBodyId(req.params.bodyId);
     
     if (!bodyId) {
@@ -226,13 +246,15 @@ router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
     
     // Update each harvester's computed state
     const updatedHarvesters = harvesters.map(h => {
-      const computed = updateHarvesterState(h, h.deposit_remaining);
+      const computed = updateHarvesterState(h, h.deposit_remaining, hm);
       return {
         id: h.id,
         slot_index: h.slot_index,
         harvester_type: h.harvester_type,
-        harvest_rate: parseFloat(h.harvest_rate),
-        storage_capacity: h.storage_capacity,
+        harvest_rate: Math.round(parseFloat(h.harvest_rate) * hm.rate * 10) / 10, // effective (skill applied)
+        base_harvest_rate: parseFloat(h.harvest_rate),
+        storage_capacity: effectiveHopperCap(h, hm), // effective (Hopper Expansion)
+        base_storage_capacity: h.storage_capacity,
         fuel_efficiency: parseFloat(h.fuel_efficiency),
         deposit_id: h.deposit_id,
         resource_name: h.resource_name,
@@ -262,7 +284,7 @@ router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
     
     // Persist updated states and deplete deposits
     for (const h of harvesters) {
-      const computed = updateHarvesterState(h, h.deposit_remaining);
+      const computed = updateHarvesterState(h, h.deposit_remaining, hm);
       if (computed._unitsMined > 0 || computed._fuelUsed > 0) {
         await persistHarvesterState(h, computed);
       }
@@ -319,6 +341,7 @@ router.get('/planet/:bodyId', authMiddleware, async (req, res) => {
 router.post('/deploy', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const { body_id: rawBodyId, slot_index, cargo_item_id, deposit_id } = req.body;
     
     if (!rawBodyId || slot_index == null || !cargo_item_id) {
@@ -452,6 +475,7 @@ router.post('/deploy', authMiddleware, async (req, res) => {
 router.post('/assign-deposit', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const { harvester_id, deposit_id } = req.body;
     
     if (!harvester_id || !deposit_id) {
@@ -472,7 +496,7 @@ router.post('/assign-deposit', authMiddleware, async (req, res) => {
         const dr = await client.query(`SELECT quantity_remaining FROM resource_deposits WHERE id = $1`, [harvester.deposit_id]);
         curDepRemaining = dr.rows[0]?.quantity_remaining ?? null;
       }
-      const computed = updateHarvesterState(harvester, curDepRemaining);
+      const computed = updateHarvesterState(harvester, curDepRemaining, hm);
       await persistHarvesterState(harvester, computed, client);
       
       const depositResult = await client.query(
@@ -528,6 +552,7 @@ router.post('/assign-deposit', authMiddleware, async (req, res) => {
 router.post('/refuel', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const { harvester_id, fuel_item_id } = req.body;
     
     if (!harvester_id || !fuel_item_id) {
@@ -548,7 +573,7 @@ router.post('/refuel', authMiddleware, async (req, res) => {
         const dr = await client.query(`SELECT quantity_remaining FROM resource_deposits WHERE id = $1`, [harvester.deposit_id]);
         refuelDepRemaining = dr.rows[0]?.quantity_remaining ?? null;
       }
-      const computed = updateHarvesterState(harvester, refuelDepRemaining);
+      const computed = updateHarvesterState(harvester, refuelDepRemaining, hm);
       await persistHarvesterState(harvester, computed, client);
       
       // Get fuel from cargo
@@ -562,7 +587,8 @@ router.post('/refuel', authMiddleware, async (req, res) => {
       }
       
       const fuelData = fuelItem.item_data || {};
-      const fuelHours = (fuelData.fuel_hours || 6) * parseFloat(harvester.fuel_efficiency);
+      // Fuel Efficiency (103): more hours per cell, applied as the cell is loaded.
+      const fuelHours = (fuelData.fuel_hours || 6) * parseFloat(harvester.fuel_efficiency) * hm.fuel;
       
       // Consume one fuel cell
       if (fuelItem.quantity <= 1) {
@@ -576,16 +602,25 @@ router.post('/refuel', authMiddleware, async (req, res) => {
       
       // Add fuel
       const newFuel = computed.computed_fuel + fuelHours;
-      const newStatus = harvester.deposit_id && computed.computed_hopper < harvester.storage_capacity
-        ? 'active' : (computed.computed_hopper >= harvester.storage_capacity ? 'full' : 'idle');
+      const refuelCap = effectiveHopperCap(harvester, hm);
+      const newStatus = harvester.deposit_id && computed.computed_hopper < refuelCap
+        ? 'active' : (computed.computed_hopper >= refuelCap ? 'full' : 'idle');
       
       await client.query(`
         UPDATE deployed_harvesters
         SET fuel_remaining_hours = $1, status = $2, last_fuel_check_at = NOW(), updated_at = NOW()
         WHERE id = $3
       `, [newFuel, newStatus, harvester_id]);
-      
-      return { fuel_added_hours: fuelHours, total_fuel_hours: newFuel, status: newStatus };
+
+      // Tutorial "Fuel Up" (104) completes here, server-side, like the
+      // contract / base / skill-queue quests; the client toasts off `quest`.
+      let quest = null;
+      try {
+        const qr = await completeQuestInTx(client, userId, 'tutorial_fuel_harvester');
+        if (qr && !qr.already_complete) quest = { quest_id: 'tutorial_fuel_harvester', title: qr.title || 'Fuel Up', credits: qr.credits };
+      } catch (e) { console.warn('refuel: quest hook failed', e?.message); }
+
+      return { fuel_added_hours: fuelHours, total_fuel_hours: newFuel, status: newStatus, quest };
     });
     
     res.json({ success: true, ...result });
@@ -603,6 +638,7 @@ router.post('/refuel', authMiddleware, async (req, res) => {
 router.post('/collect', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const { harvester_id } = req.body;
     
     if (!harvester_id) {
@@ -627,7 +663,7 @@ router.post('/collect', authMiddleware, async (req, res) => {
       }
       
       // Compute current state (also depletes deposit via persist)
-      const computed = updateHarvesterState(harvester, depositRemaining);
+      const computed = updateHarvesterState(harvester, depositRemaining, hm);
       await persistHarvesterState(harvester, computed, client);
       
       if (computed.computed_hopper <= 0) {
@@ -710,7 +746,7 @@ router.post('/collect', authMiddleware, async (req, res) => {
         SET hopper_quantity = $1, fuel_remaining_hours = $2, status = $3,
             last_hopper_update_at = NOW(), last_fuel_check_at = NOW(), updated_at = NOW()
         WHERE id = $4
-      `, [newHopper, computed.computed_fuel, newHopper >= harvester.storage_capacity ? 'full' : newStatus, harvester_id]);
+      `, [newHopper, computed.computed_fuel, newHopper >= effectiveHopperCap(harvester, hm) ? 'full' : newStatus, harvester_id]);
       
       return { units_collected: unitsToCollect, hopper_remaining: newHopper, message: `Collected ${unitsToCollect} units.` };
     });
@@ -730,6 +766,7 @@ router.post('/collect', authMiddleware, async (req, res) => {
 router.post('/remove', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
+    const hm = await harvesterMults(userId); // Harvester Operations / Hopper Expansion / Fuel Efficiency (103)
     const { harvester_id } = req.body;
     
     if (!harvester_id) {
@@ -752,7 +789,7 @@ router.post('/remove', authMiddleware, async (req, res) => {
         );
         depositRemaining = depResult.rows[0]?.quantity_remaining ?? null;
       }
-      const computed = updateHarvesterState(harvester, depositRemaining);
+      const computed = updateHarvesterState(harvester, depositRemaining, hm);
       await persistHarvesterState(harvester, computed, client);
       
       // If hopper has resources, must collect first

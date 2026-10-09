@@ -1166,10 +1166,36 @@ router.post('/harvest/start', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Must ground-scan this body before mining' });
     }
 
-    // Base rate: 50 units/hr (future: modify by mining bay modules).
-    // Was 3600 ("DEV: 1 unit/sec") — shipped to prod by accident and ran
-    // planet mining at 72x intended for months. Audit fix 2026-09-02.
-    const harvestRate = 50;
+    // Rate (owner 2026-10-09): the FLEET's mining lasers (pitfall #15 --
+    // every flying ship, stored ships excluded) at PLANET_LASER_FRACTION of
+    // their asteroid rate (you are docked, not aiming), × quality × Mining
+    // Operations; never below the old flat PLANET_MINING_BASE_RATE so a
+    // laserless pilot can still finish the tutorial. Stats come from the
+    // fit-time snapshot (062), falling back to module_types for older fits.
+    // Was a flat 50/hr (and 3600 by accident before the 2026-09-02 audit).
+    const PLANET_MINING_BASE_RATE = 50;
+    const PLANET_LASER_FRACTION = 0.25;
+    const fleetRows = await queryAll(
+      `SELECT fitted_modules FROM ships WHERE user_id = $1 AND storage_body_id IS NULL`, [userId]
+    );
+    const bonuses = await getPlayerBonuses(userId);
+    let laserPerHour = 0, laserCount = 0;
+    for (const row of fleetRows) {
+      for (const slot of Object.values(row.fitted_modules || {})) {
+        const id = slot?.module_type_id;
+        if (!id || !(id === 'mining_basic' || id.startsWith('mining_'))) continue;
+        let y = slot.stats?.mine_yield, c = slot.stats?.mine_cycle;
+        if (!(y > 0) || !(c > 0)) {
+          const mt = await queryOne(`SELECT stats FROM module_types WHERE id = $1`, [id]);
+          if (!(y > 0)) y = mt?.stats?.mine_yield > 0 ? mt.stats.mine_yield : 5;
+          if (!(c > 0)) c = mt?.stats?.mine_cycle > 0 ? mt.stats.mine_cycle : 2;
+        }
+        laserPerHour += (y / c) * 3600 * qualityMultiplier(slot);
+        laserCount++;
+      }
+    }
+    const skillMult = 1 + (bonuses.mining_yield_pct || 0) / 100;
+    const harvestRate = Math.max(PLANET_MINING_BASE_RATE, Math.round(laserPerHour * PLANET_LASER_FRACTION * skillMult));
 
     // Create session
     const session = await queryOne(`
@@ -1210,7 +1236,9 @@ router.post('/harvest/start', authMiddleware, async (req, res) => {
         used: cargo.used,
         remaining: cargo.remaining,
       },
-      message: `Started mining ${deposit.resource_name}. Extracting at ${harvestRate} units/hr.`,
+      message: laserCount > 0
+        ? `Started mining ${deposit.resource_name}. ${laserCount} mining laser${laserCount === 1 ? '' : 's'} extracting at ${harvestRate.toLocaleString()} units/hr.`
+        : `Started mining ${deposit.resource_name}. No mining laser fitted — extracting at the base ${harvestRate} units/hr.`,
     });
   } catch (error) {
     console.error('Error starting harvest:', error);
